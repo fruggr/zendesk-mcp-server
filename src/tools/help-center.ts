@@ -2,15 +2,19 @@ import * as z from 'zod/v4';
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '../constants';
 import type {
   ZendeskArticle,
+  ZendeskArticleAttachment,
   ZendeskCategory,
+  ZendeskContentTag,
+  ZendeskLabel,
   ZendeskListResponse,
   ZendeskPermissionGroup,
   ZendeskSection,
   ZendeskTranslation,
+  ZendeskUserSegment,
 } from '../types';
-import { helpCenterGet, helpCenterPost, helpCenterPut, zendeskGet } from '../client/zendesk-api';
+import { helpCenterGet, helpCenterPost, helpCenterPut, helpCenterUpload, zendeskGet, zendeskPost } from '../client/zendesk-api';
 import { buildCursorParams, buildOffsetParams, extractPaginationMeta, extractSearchPaginationMeta } from '../utils/pagination';
-import { formatArticle, formatArticleSummary, formatCategory, formatList, formatPermissionGroup, formatSection, formatTranslation, formatTranslationSummary, truncateIfNeeded } from '../utils/formatting';
+import { formatArticle, formatArticleSummary, formatAttachment, formatCategory, formatContentTag, formatLabel, formatList, formatPermissionGroup, formatSection, formatTranslation, formatTranslationSummary, formatUserSegment, truncateIfNeeded } from '../utils/formatting';
 import type { ToolContext, ToolDefinition } from './definitions';
 
 export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
@@ -226,10 +230,13 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         title: z.string().min(1),
         body: z.string().min(1).describe('Article body (HTML)'),
         permission_group_id: z.number().int().describe('Permission group ID (use list_permission_groups to find it)'),
+        user_segment_id: z.number().int().optional().describe('User segment ID for visibility (use list_user_segments to find it). Defaults to everyone.'),
+        author_id: z.number().int().optional().describe('Author user ID. Defaults to the authenticated user.'),
+        content_tag_ids: z.array(z.string()).optional().describe('Content tag IDs (use list_content_tags to find them)'),
         locale: z.string().optional(),
         draft: z.boolean().default(true),
         promoted: z.boolean().default(false),
-        label_names: z.array(z.string()).optional(),
+        label_names: z.array(z.string()).optional().describe('Label names for search ranking (use list_labels to see existing labels)'),
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
       handler: async (params) => {
@@ -251,7 +258,11 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         body: z.string().optional(),
         draft: z.boolean().optional(),
         promoted: z.boolean().optional(),
-        label_names: z.array(z.string()).optional(),
+        label_names: z.array(z.string()).optional().describe('Label names for search ranking'),
+        content_tag_ids: z.array(z.string()).optional().describe('Content tag IDs'),
+        user_segment_id: z.number().int().optional().describe('User segment ID for visibility'),
+        author_id: z.number().int().optional().describe('Author user ID'),
+        permission_group_id: z.number().int().optional().describe('Permission group ID'),
         section_id: z.number().int().optional(),
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
@@ -260,6 +271,110 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         const token = await getToken();
         const { article } = await helpCenterPut<{ article: ZendeskArticle }>(subdomain, token, `/articles/${article_id}`, { article: updates });
         return { content: [{ type: 'text', text: `Article #${article.id} updated.\n\n${formatArticle(article)}` }] };
+      },
+    },
+    {
+      name: 'list_content_tags',
+      namespace: 'help_center',
+      readOnly: true,
+      title: 'List Content Tags',
+      description: 'List all Guide content tags. Content tags are visible to end users and help them find related articles.',
+      inputSchema: z.object({}),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+      handler: async () => {
+        const token = await getToken();
+        const response = await zendeskGet<{ records: ZendeskContentTag[]; count: number }>(subdomain, token, '/guide/content_tags');
+        return { content: [{ type: 'text', text: formatList(response.records ?? [], formatContentTag) }] };
+      },
+    },
+    {
+      name: 'create_content_tag',
+      namespace: 'help_center',
+      readOnly: false,
+      title: 'Create Content Tag',
+      description: 'Create a new content tag for Guide articles.',
+      inputSchema: z.object({
+        name: z.string().min(1).describe('Content tag name'),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+      handler: async (params) => {
+        const { name } = params as { name: string };
+        const token = await getToken();
+        const { record } = await zendeskPost<{ record: ZendeskContentTag }>(subdomain, token, '/guide/content_tags', { record: { name } });
+        return { content: [{ type: 'text', text: `Content tag created.\n\n${formatContentTag(record)}` }] };
+      },
+    },
+    {
+      name: 'list_labels',
+      namespace: 'help_center',
+      readOnly: true,
+      title: 'List Article Labels',
+      description: 'List all article labels. Labels improve Help Center search ranking and are not visible to end users.',
+      inputSchema: z.object({}),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+      handler: async () => {
+        const token = await getToken();
+        const response = await helpCenterGet<{ labels: ZendeskLabel[]; count: number }>(subdomain, token, '/articles/labels');
+        return { content: [{ type: 'text', text: formatList(response.labels ?? [], formatLabel) }] };
+      },
+    },
+    {
+      name: 'list_user_segments',
+      namespace: 'help_center',
+      readOnly: true,
+      title: 'List User Segments',
+      description: 'List all user segments. User segments control article visibility (who can view). Use the ID when creating or updating articles.',
+      inputSchema: z.object({}),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+      handler: async () => {
+        const token = await getToken();
+        const response = await helpCenterGet<{ user_segments: ZendeskUserSegment[]; count: number }>(subdomain, token, '/user_segments');
+        return { content: [{ type: 'text', text: formatList(response.user_segments ?? [], formatUserSegment) }] };
+      },
+    },
+    {
+      name: 'list_article_attachments',
+      namespace: 'help_center',
+      readOnly: true,
+      title: 'List Article Attachments',
+      description: 'List all attachments for an article.',
+      inputSchema: z.object({
+        article_id: z.number().int().describe('Article ID'),
+      }),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+      handler: async (params) => {
+        const { article_id } = params as { article_id: number };
+        const token = await getToken();
+        const response = await helpCenterGet<{ article_attachments: ZendeskArticleAttachment[]; count: number }>(subdomain, token, `/articles/${article_id}/attachments`);
+        return { content: [{ type: 'text', text: formatList(response.article_attachments ?? [], formatAttachment) }] };
+      },
+    },
+    {
+      name: 'create_article_attachment',
+      namespace: 'help_center',
+      readOnly: false,
+      title: 'Create Article Attachment',
+      description: 'Upload an attachment to an article. Provide file content as base64-encoded string.',
+      inputSchema: z.object({
+        article_id: z.number().int().describe('Article ID'),
+        file_name: z.string().min(1).describe('File name (e.g., "screenshot.png")'),
+        file_base64: z.string().min(1).describe('File content encoded as base64'),
+        content_type: z.string().default('application/octet-stream').describe('MIME type (e.g., "image/png", "application/pdf")'),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+      handler: async (params) => {
+        const { article_id, file_name, file_base64, content_type } = params as {
+          article_id: number; file_name: string; file_base64: string; content_type: string;
+        };
+        const token = await getToken();
+        const buffer = Buffer.from(file_base64, 'base64');
+        const blob = new Blob([buffer], { type: content_type });
+        const formData = new FormData();
+        formData.append('file', blob, file_name);
+        const { article_attachment } = await helpCenterUpload<{ article_attachment: ZendeskArticleAttachment }>(
+          subdomain, token, `/articles/${article_id}/attachments`, formData,
+        );
+        return { content: [{ type: 'text', text: `Attachment created for article #${article_id}.\n\n${formatAttachment(article_attachment)}` }] };
       },
     },
   ];

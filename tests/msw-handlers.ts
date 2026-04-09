@@ -100,6 +100,38 @@ export const MOCK_PERMISSION_GROUP = {
   updated_at: '2026-01-02T00:00:00Z',
 };
 
+export const MOCK_CONTENT_TAG = {
+  id: 'ct_001',
+  name: 'scanner',
+  created_at: '2026-01-01T00:00:00Z',
+  updated_at: '2026-01-02T00:00:00Z',
+};
+
+export const MOCK_LABEL = {
+  id: 9001,
+  name: 'getting-started',
+  created_at: '2026-01-01T00:00:00Z',
+  updated_at: '2026-01-02T00:00:00Z',
+};
+
+export const MOCK_USER_SEGMENT = {
+  id: 15001,
+  name: 'Signed-in users',
+  user_type: 'signed_in_users',
+  built_in: true,
+  created_at: '2026-01-01T00:00:00Z',
+  updated_at: '2026-01-02T00:00:00Z',
+};
+
+export const MOCK_ARTICLE_ATTACHMENT = {
+  id: 20001,
+  file_name: 'screenshot.png',
+  content_url: 'https://testsubdomain.zendesk.com/hc/article_attachments/20001/screenshot.png',
+  content_type: 'image/png',
+  size: 12345,
+  created_at: '2026-01-01T00:00:00Z',
+};
+
 export const MOCK_COMMENT = {
   id: 3000,
   body: 'This is a comment',
@@ -179,6 +211,9 @@ export const handlers = [
   http.get(`${HC_BASE}/articles/search`, () =>
     HttpResponse.json({ results: [MOCK_ARTICLE], count: 1 }),
   ),
+  http.get(`${HC_BASE}/articles/labels`, () =>
+    HttpResponse.json({ labels: [MOCK_LABEL], count: 1 }),
+  ),
   http.get(`${HC_BASE}/articles/:id`, ({ params }) =>
     HttpResponse.json({ article: { ...MOCK_ARTICLE, id: Number(params['id']) } }),
   ),
@@ -213,6 +248,27 @@ export const handlers = [
   // Guide - Permission Groups
   http.get(`${BASE}/guide/permission_groups`, () =>
     HttpResponse.json({ permission_groups: [MOCK_PERMISSION_GROUP], count: 1 }),
+  ),
+
+  // Guide - Content Tags
+  http.get(`${BASE}/guide/content_tags`, () =>
+    HttpResponse.json({ records: [MOCK_CONTENT_TAG], count: 1 }),
+  ),
+  http.post(`${BASE}/guide/content_tags`, () =>
+    HttpResponse.json({ record: MOCK_CONTENT_TAG }),
+  ),
+
+  // Help Center - User Segments
+  http.get(`${HC_BASE}/user_segments`, () =>
+    HttpResponse.json({ user_segments: [MOCK_USER_SEGMENT], count: 1 }),
+  ),
+
+  // Help Center - Article Attachments
+  http.get(`${HC_BASE}/articles/:id/attachments`, () =>
+    HttpResponse.json({ article_attachments: [MOCK_ARTICLE_ATTACHMENT], count: 1 }),
+  ),
+  http.post(`${HC_BASE}/articles/:id/attachments`, () =>
+    HttpResponse.json({ article_attachment: MOCK_ARTICLE_ATTACHMENT }),
   ),
 
   // Help Center - Categories & Sections

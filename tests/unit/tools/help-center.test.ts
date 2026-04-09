@@ -12,8 +12,8 @@ const findTool = (name: string) => {
 };
 
 describe('help center tools', () => {
-  it('creates 11 tools', () => {
-    expect(createHelpCenterTools(ctx)).toHaveLength(11);
+  it('creates 17 tools', () => {
+    expect(createHelpCenterTools(ctx)).toHaveLength(17);
   });
 
   describe('search_articles', () => {
@@ -179,6 +179,64 @@ describe('help center tools', () => {
       const tool = findTool('update_article');
       const result = await tool.handler({ article_id: 5000, title: 'Updated' });
       expect(result.content[0]?.text).toContain('Article #5000 updated');
+    });
+  });
+
+  describe('list_content_tags', () => {
+    it('lists content tags', async () => {
+      const tool = findTool('list_content_tags');
+      const result = await tool.handler({});
+      expect(result.content[0]?.text).toContain('scanner');
+      expect(result.content[0]?.text).toContain('ct_001');
+    });
+  });
+
+  describe('create_content_tag', () => {
+    it('creates a content tag', async () => {
+      const tool = findTool('create_content_tag');
+      const result = await tool.handler({ name: 'accessibility' });
+      expect(result.content[0]?.text).toContain('Content tag created');
+      expect(result.content[0]?.text).toContain('scanner');
+    });
+  });
+
+  describe('list_labels', () => {
+    it('lists article labels', async () => {
+      const tool = findTool('list_labels');
+      const result = await tool.handler({});
+      expect(result.content[0]?.text).toContain('getting-started');
+    });
+  });
+
+  describe('list_user_segments', () => {
+    it('lists user segments', async () => {
+      const tool = findTool('list_user_segments');
+      const result = await tool.handler({});
+      expect(result.content[0]?.text).toContain('Signed-in users');
+      expect(result.content[0]?.text).toContain('15001');
+    });
+  });
+
+  describe('list_article_attachments', () => {
+    it('lists attachments for an article', async () => {
+      const tool = findTool('list_article_attachments');
+      const result = await tool.handler({ article_id: 5000 });
+      expect(result.content[0]?.text).toContain('screenshot.png');
+      expect(result.content[0]?.text).toContain('20001');
+    });
+  });
+
+  describe('create_article_attachment', () => {
+    it('creates an attachment', async () => {
+      const tool = findTool('create_article_attachment');
+      const result = await tool.handler({
+        article_id: 5000,
+        file_name: 'doc.pdf',
+        file_base64: btoa('fake content'),
+        content_type: 'application/pdf',
+      });
+      expect(result.content[0]?.text).toContain('Attachment created');
+      expect(result.content[0]?.text).toContain('screenshot.png');
     });
   });
 });

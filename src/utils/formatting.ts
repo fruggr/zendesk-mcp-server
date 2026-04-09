@@ -2,14 +2,18 @@ import { CHARACTER_LIMIT } from '../constants.js';
 import type {
   PaginationMeta,
   ZendeskArticle,
+  ZendeskArticleAttachment,
   ZendeskCategory,
   ZendeskComment,
+  ZendeskContentTag,
+  ZendeskLabel,
   ZendeskOrganization,
   ZendeskPermissionGroup,
   ZendeskSection,
   ZendeskTicket,
   ZendeskTranslation,
   ZendeskUser,
+  ZendeskUserSegment,
 } from '../types.js';
 
 export const truncateIfNeeded = (text: string): string => {
@@ -100,6 +104,18 @@ export const formatSection = (section: ZendeskSection): string =>
 
 export const formatPermissionGroup = (group: ZendeskPermissionGroup): string =>
   `- **${group.name}** (${group.id})${group.built_in ? ' — Built-in' : ''}`;
+
+export const formatContentTag = (tag: ZendeskContentTag): string =>
+  `- **${tag.name}** (${tag.id})`;
+
+export const formatLabel = (label: ZendeskLabel): string =>
+  `- **${label.name}** (${label.id})`;
+
+export const formatUserSegment = (segment: ZendeskUserSegment): string =>
+  `- **${segment.name}** (${segment.id}) — ${segment.user_type}${segment.built_in ? ' — Built-in' : ''}`;
+
+export const formatAttachment = (attachment: ZendeskArticleAttachment): string =>
+  `- **${attachment.file_name}** (${attachment.id}) — ${attachment.content_type} — ${attachment.size} bytes`;
 
 export const formatList = <T>(
   items: T[],

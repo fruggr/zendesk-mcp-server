@@ -136,3 +136,25 @@ export const helpCenterPut = <T>(
   const url = buildUrl(getHelpCenterBaseUrl(subdomain), path);
   return executeRequest<T>(url, token, { method: 'PUT', body });
 };
+
+export const helpCenterUpload = async <T>(
+  subdomain: string,
+  token: string,
+  path: string,
+  formData: FormData,
+): Promise<T> => {
+  const url = buildUrl(getHelpCenterBaseUrl(subdomain), path);
+  const authorization = token.startsWith('Basic ') ? token : `Bearer ${token}`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: authorization },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const responseBody = await response.text();
+    throw new ZendeskApiError(response.status, response.statusText, responseBody);
+  }
+
+  return response.json() as Promise<T>;
+};

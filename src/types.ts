@@ -71,6 +71,38 @@ export interface ZendeskPermissionGroup {
   updated_at: string;
 }
 
+export interface ZendeskContentTag {
+  id: string;
+  name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ZendeskLabel {
+  id: number;
+  name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ZendeskUserSegment {
+  id: number;
+  name: string;
+  user_type: string;
+  built_in: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ZendeskArticleAttachment {
+  id: number;
+  file_name: string;
+  content_url: string;
+  content_type: string;
+  size: number;
+  created_at: string;
+}
+
 export interface ZendeskTranslation {
   id: number;
   locale: string;
