@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pnpm exec biome check --write --no-errors-on-unmatched \"$CLAUDE_FILE_PATHS\" || true"
+          }
+        ]
+      }
+    ]
+  }
+}
