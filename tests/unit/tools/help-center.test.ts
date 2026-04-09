@@ -177,7 +177,7 @@ describe('help center tools', () => {
   describe('update_article', () => {
     it('updates an article', async () => {
       const tool = findTool('update_article');
-      const result = await tool.handler({ article_id: 5000, title: 'Updated' });
+      const result = await tool.handler({ article_id: 5000, draft: false });
       expect(result.content[0]?.text).toContain('Article #5000 updated');
     });
   });

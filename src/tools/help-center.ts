@@ -189,7 +189,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       namespace: 'help_center',
       readOnly: false,
       title: 'Update Article Translation',
-      description: 'Update an existing translation of an article.',
+      description: 'Update article content (title, body) in a specific locale. This is the recommended way to update article text. Use the article\'s source_locale (from get_article) for the default language, or another locale for translations.',
       inputSchema: z.object({
         article_id: z.number().int(),
         locale: z.string(),
@@ -224,7 +224,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       namespace: 'help_center',
       readOnly: false,
       title: 'Create Help Center Article',
-      description: 'Create a new article in a section. Requires a permission_group_id (use list_permission_groups to find available IDs).',
+      description: 'Create a new article in a section. The locale becomes the article\'s source_locale. Requires a permission_group_id (use list_permission_groups to find available IDs). To add content in other locales afterwards, use create_article_translation.',
       inputSchema: z.object({
         section_id: z.number().int(),
         title: z.string().min(1),
@@ -251,11 +251,9 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       namespace: 'help_center',
       readOnly: false,
       title: 'Update Help Center Article',
-      description: 'Update an existing article metadata or content.',
+      description: 'Update article metadata only (draft, promoted, labels, tags, visibility, section, etc.). Does NOT update content (title, body) — use update_article_translation for that.',
       inputSchema: z.object({
         article_id: z.number().int(),
-        title: z.string().optional(),
-        body: z.string().optional(),
         draft: z.boolean().optional(),
         promoted: z.boolean().optional(),
         label_names: z.array(z.string()).optional().describe('Label names for search ranking'),
