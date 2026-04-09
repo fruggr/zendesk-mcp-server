@@ -92,6 +92,14 @@ export const MOCK_SECTION = {
   updated_at: '2026-01-02T00:00:00Z',
 };
 
+export const MOCK_PERMISSION_GROUP = {
+  id: 12001,
+  name: 'Editors',
+  built_in: false,
+  created_at: '2026-01-01T00:00:00Z',
+  updated_at: '2026-01-02T00:00:00Z',
+};
+
 export const MOCK_COMMENT = {
   id: 3000,
   body: 'This is a comment',
@@ -200,6 +208,11 @@ export const handlers = [
   ),
   http.put(`${HC_BASE}/articles/:id`, () =>
     HttpResponse.json({ article: MOCK_ARTICLE }),
+  ),
+
+  // Guide - Permission Groups
+  http.get(`${BASE}/guide/permission_groups`, () =>
+    HttpResponse.json({ permission_groups: [MOCK_PERMISSION_GROUP], count: 1 }),
   ),
 
   // Help Center - Categories & Sections

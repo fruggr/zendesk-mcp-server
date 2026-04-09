@@ -4,12 +4,13 @@ import type {
   ZendeskArticle,
   ZendeskCategory,
   ZendeskListResponse,
+  ZendeskPermissionGroup,
   ZendeskSection,
   ZendeskTranslation,
 } from '../types';
-import { helpCenterGet, helpCenterPost, helpCenterPut } from '../client/zendesk-api';
+import { helpCenterGet, helpCenterPost, helpCenterPut, zendeskGet } from '../client/zendesk-api';
 import { buildCursorParams, buildOffsetParams, extractPaginationMeta, extractSearchPaginationMeta } from '../utils/pagination';
-import { formatArticle, formatArticleSummary, formatCategory, formatList, formatSection, formatTranslation, formatTranslationSummary, truncateIfNeeded } from '../utils/formatting';
+import { formatArticle, formatArticleSummary, formatCategory, formatList, formatPermissionGroup, formatSection, formatTranslation, formatTranslationSummary, truncateIfNeeded } from '../utils/formatting';
 import type { ToolContext, ToolDefinition } from './definitions';
 
 export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
@@ -201,15 +202,30 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       },
     },
     {
+      name: 'list_permission_groups',
+      namespace: 'help_center',
+      readOnly: true,
+      title: 'List Permission Groups',
+      description: 'List all Guide permission groups. Use this to find the permission_group_id required when creating articles.',
+      inputSchema: z.object({}),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+      handler: async () => {
+        const token = await getToken();
+        const response = await zendeskGet<{ permission_groups: ZendeskPermissionGroup[]; count: number }>(subdomain, token, '/guide/permission_groups');
+        return { content: [{ type: 'text', text: formatList(response.permission_groups ?? [], formatPermissionGroup) }] };
+      },
+    },
+    {
       name: 'create_article',
       namespace: 'help_center',
       readOnly: false,
       title: 'Create Help Center Article',
-      description: 'Create a new article in a section.',
+      description: 'Create a new article in a section. Requires a permission_group_id (use list_permission_groups to find available IDs).',
       inputSchema: z.object({
         section_id: z.number().int(),
         title: z.string().min(1),
         body: z.string().min(1).describe('Article body (HTML)'),
+        permission_group_id: z.number().int().describe('Permission group ID (use list_permission_groups to find it)'),
         locale: z.string().optional(),
         draft: z.boolean().default(true),
         promoted: z.boolean().default(false),

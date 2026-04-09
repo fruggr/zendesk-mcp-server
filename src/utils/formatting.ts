@@ -5,6 +5,7 @@ import type {
   ZendeskCategory,
   ZendeskComment,
   ZendeskOrganization,
+  ZendeskPermissionGroup,
   ZendeskSection,
   ZendeskTicket,
   ZendeskTranslation,
@@ -96,6 +97,9 @@ export const formatCategory = (category: ZendeskCategory): string =>
 
 export const formatSection = (section: ZendeskSection): string =>
   `- **${section.name}** (${section.id}) — Category: ${section.category_id} — ${section.description || 'No description'}`;
+
+export const formatPermissionGroup = (group: ZendeskPermissionGroup): string =>
+  `- **${group.name}** (${group.id})${group.built_in ? ' — Built-in' : ''}`;
 
 export const formatList = <T>(
   items: T[],

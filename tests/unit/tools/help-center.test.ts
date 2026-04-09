@@ -12,8 +12,8 @@ const findTool = (name: string) => {
 };
 
 describe('help center tools', () => {
-  it('creates 10 tools', () => {
-    expect(createHelpCenterTools(ctx)).toHaveLength(10);
+  it('creates 11 tools', () => {
+    expect(createHelpCenterTools(ctx)).toHaveLength(11);
   });
 
   describe('search_articles', () => {
@@ -150,13 +150,23 @@ describe('help center tools', () => {
     });
   });
 
+  describe('list_permission_groups', () => {
+    it('lists permission groups', async () => {
+      const tool = findTool('list_permission_groups');
+      const result = await tool.handler({});
+      expect(result.content[0]?.text).toContain('Editors');
+      expect(result.content[0]?.text).toContain('12001');
+    });
+  });
+
   describe('create_article', () => {
-    it('creates an article', async () => {
+    it('creates an article with permission_group_id', async () => {
       const tool = findTool('create_article');
       const result = await tool.handler({
         section_id: 600,
         title: 'New article',
         body: '<p>Content</p>',
+        permission_group_id: 12001,
         draft: true,
         promoted: false,
       });

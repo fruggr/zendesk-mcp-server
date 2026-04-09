@@ -54,10 +54,19 @@ export interface ZendeskArticle {
   source_locale: string;
   author_id: number;
   section_id: number;
+  permission_group_id: number;
   draft: boolean;
   promoted: boolean;
   position: number;
   label_names: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ZendeskPermissionGroup {
+  id: number;
+  name: string;
+  built_in: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -111,6 +120,7 @@ export interface ZendeskListResponse<T> {
   sections?: T[];
   comments?: T[];
   translations?: T[];
+  permission_groups?: T[];
   meta?: {
     has_more: boolean;
     after_cursor: string;
