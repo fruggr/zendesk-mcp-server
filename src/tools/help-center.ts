@@ -809,7 +809,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: true,
       title: 'Get Article Section',
       description:
-        'Retrieve the content of a single section of an article in a given locale. Use get_article_outline first to discover section indexes. Pass format="markdown" to get a token-efficient Markdown representation.',
+        'Retrieve the content of a single section of an article in a given locale. Use get_article_outline first to discover section indexes. Default format="html" for round-trip safety. Pass format="markdown" only for human review — the Markdown representation is lossy on some structures (<pre> with <br>, tables with multi-<p> cells are kept as raw HTML to limit the damage, but do not round-trip markdown content back through update_article_section).',
       inputSchema: z.object({
         article_id: z.number().int().describe('Article ID'),
         locale: z.string().describe('Locale of the body (e.g., "en-us", "fr")'),
@@ -818,7 +818,12 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           .int()
           .min(0)
           .describe('0-based index of the section (see get_article_outline)'),
-        format: z.enum(['html', 'markdown']).default('markdown').describe('Output format'),
+        format: z
+          .enum(['html', 'markdown'])
+          .default('html')
+          .describe(
+            'Output format. "html" (default) is round-trip safe. "markdown" is lossy on some HTML structures — use only for human review, not before update_article_section.',
+          ),
       }),
       annotations: {
         readOnlyHint: true,
@@ -865,7 +870,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: false,
       title: 'Update Article Section',
       description:
-        'Replace the content of a single section of an article in a given locale, keeping the rest of the body intact. The server fetches the current body, replaces the targeted section, and PUTs the full reconstructed body via the Translations API. Use format="markdown" to send Markdown (converted to HTML server-side); the section heading is preserved and is NOT part of the replaced content.',
+        'Replace the content of a single section of an article in a given locale, keeping the rest of the body intact. The server fetches the current body, replaces the targeted section, and PUTs the full reconstructed body via the Translations API. Default format="html" for fidelity. Use format="markdown" only when you control the input and know it does not rely on structures that round-trip poorly (code blocks with line breaks, tables with multi-paragraph cells). The section heading is preserved and is NOT part of the replaced content.',
       inputSchema: z.object({
         article_id: z.number().int().describe('Article ID'),
         locale: z.string().describe('Locale of the translation to update'),
@@ -881,8 +886,10 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           ),
         format: z
           .enum(['html', 'markdown'])
-          .default('markdown')
-          .describe('Input format for content'),
+          .default('html')
+          .describe(
+            'Input format. "html" (default) is the safe path. "markdown" is converted to HTML server-side but may introduce artifacts on complex content.',
+          ),
       }),
       annotations: {
         readOnlyHint: false,
@@ -929,7 +936,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: true,
       title: 'Compare Article Translations',
       description:
-        'Compare section structure between two locales of the same article. Returns a compact table (one row per section) with status: "ok" (both present, similar word counts), "different" (word counts diverge significantly, >25%) or "missing" (section absent in target). Use this before translating to identify stale or missing sections.',
+        'Compare section structure between two locales of the same article, matched by index. Returns a compact table (one row per section) with status: "ok" (both present, source/target word count ratio within 25%), "different" (word count ratio diverges by more than 25% — size signal only, NOT a semantic divergence: two locales may legitimately differ in verbosity) or "missing" (section absent in target). Useful to spot structurally stale or missing sections; do not interpret "different" as an edit regression on its own.',
       inputSchema: z.object({
         article_id: z.number().int().describe('Article ID'),
         source_locale: z.string().describe('Source (reference) locale'),

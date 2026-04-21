@@ -116,6 +116,12 @@ export const replaceSectionContent = (
 
 let turndownInstance: TurndownService | null = null;
 
+// Keep structural HTML that turndown / gfm flatten lossily:
+// <pre> with <br> collapses to a single line, and <table> cells with multiple
+// <p> break GFM pipe tables. Leaving them as raw HTML is safer for round-trip.
+// addRule takes precedence over gfm's built-in table/code rules.
+const keepAsHtml = (node: { outerHTML?: string }): string => node.outerHTML ?? '';
+
 const getTurndown = (): TurndownService => {
   if (turndownInstance) return turndownInstance;
   const td = new TurndownService({
@@ -125,6 +131,8 @@ const getTurndown = (): TurndownService => {
     emDelimiter: '_',
   });
   td.use(gfm);
+  td.addRule('keepPre', { filter: 'pre', replacement: (_c, node) => keepAsHtml(node) });
+  td.addRule('keepTable', { filter: 'table', replacement: (_c, node) => keepAsHtml(node) });
   turndownInstance = td;
   return td;
 };

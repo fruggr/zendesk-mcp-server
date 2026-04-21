@@ -352,6 +352,16 @@ describe('help center tools', () => {
         tool.handler({ article_id: 5000, locale: 'en-us', section_index: 99 }),
       ).rejects.toThrow();
     });
+
+    it('defaults format to "html" for round-trip safety', () => {
+      const tool = findTool('get_article_section');
+      const parsed = tool.inputSchema.parse({
+        article_id: 5000,
+        locale: 'en-us',
+        section_index: 0,
+      });
+      expect((parsed as { format: string }).format).toBe('html');
+    });
   });
 
   describe('update_article_section', () => {
@@ -381,6 +391,17 @@ describe('help center tools', () => {
       });
       expect(result.content[0]?.text).toContain('updated for article #5000');
     });
+
+    it('defaults format to "html" for round-trip safety', () => {
+      const tool = findTool('update_article_section');
+      const parsed = tool.inputSchema.parse({
+        article_id: 5000,
+        locale: 'fr',
+        section_index: 0,
+        content: '<p>x</p>',
+      });
+      expect((parsed as { format: string }).format).toBe('html');
+    });
   });
 
   describe('compare_translations', () => {
@@ -405,6 +426,12 @@ describe('help center tools', () => {
         target_locale: 'fr',
       });
       expect(result.content[0]?.text).toContain('different');
+    });
+
+    it('description clarifies that "different" is based on a word count ratio', () => {
+      const tool = findTool('compare_translations');
+      expect(tool.description.toLowerCase()).toContain('word count');
+      expect(tool.description).toContain('25');
     });
   });
 });

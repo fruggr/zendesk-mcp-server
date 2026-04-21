@@ -141,17 +141,33 @@ describe('htmlToMarkdown', () => {
     expect(htmlToMarkdown('<a href="https://x">link</a>').trim()).toBe('[link](https://x)');
   });
 
-  it('converts tables (gfm)', () => {
+  it('keeps tables as raw HTML (safer for round-trip than GFM conversion)', () => {
     const html =
       '<table><thead><tr><th>a</th><th>b</th></tr></thead><tbody><tr><td>1</td><td>2</td></tr></tbody></table>';
     const md = htmlToMarkdown(html);
-    expect(md).toContain('|');
-    expect(md).toContain('a');
-    expect(md).toContain('1');
+    expect(md).toContain('<table>');
+    expect(md).not.toContain('|');
   });
 
   it('returns an empty string for empty html', () => {
     expect(htmlToMarkdown('')).toBe('');
+  });
+
+  it('preserves <pre> blocks as raw HTML (keeps <br> intact)', () => {
+    const html = '<pre><code>line1<br>line2</code></pre>';
+    const md = htmlToMarkdown(html);
+    expect(md).toContain('<pre>');
+    expect(md).toContain('<br>');
+    expect(md).toContain('line1');
+    expect(md).toContain('line2');
+  });
+
+  it('preserves <table> blocks as raw HTML (keeps multi-<p> cells intact)', () => {
+    const html = '<table><tbody><tr><td><p>A1</p><p>A2</p></td><td>B</td></tr></tbody></table>';
+    const md = htmlToMarkdown(html);
+    expect(md).toContain('<table>');
+    expect(md).toContain('<p>A1</p>');
+    expect(md).toContain('<p>A2</p>');
   });
 });
 
