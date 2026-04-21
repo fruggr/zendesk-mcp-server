@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Config } from '../../src/config';
-import { createMcpServer } from '../../src/server';
+import { buildOperationList, createMcpServer, summarizeDescription } from '../../src/server';
 
 const baseConfig: Config = {
   subdomain: 'testsubdomain',
@@ -44,5 +44,52 @@ describe('createMcpServer', () => {
       getToken,
     );
     expect(server).toBeDefined();
+  });
+});
+
+describe('summarizeDescription', () => {
+  it('returns the first sentence when the description has multiple sentences', () => {
+    expect(summarizeDescription('First. Second. Third.')).toBe('First.');
+  });
+
+  it('returns the whole string when there is no sentence delimiter', () => {
+    expect(summarizeDescription('One sentence only')).toBe('One sentence only');
+  });
+
+  it('preserves trailing period on the kept sentence', () => {
+    expect(summarizeDescription('Do X. Then Y.')).toBe('Do X.');
+  });
+
+  it('handles an empty string', () => {
+    expect(summarizeDescription('')).toBe('');
+  });
+});
+
+describe('buildOperationList', () => {
+  const sample = [
+    {
+      name: 'get_thing',
+      description: 'Retrieve a thing by ID. Lots more context that should be trimmed.',
+      readOnly: true,
+    },
+    {
+      name: 'update_thing',
+      description: 'Update a thing. Prefer update_thing_section for targeted edits.',
+      readOnly: false,
+    },
+  ];
+
+  it('uses only the first sentence of each description', () => {
+    const out = buildOperationList(sample);
+    expect(out).toContain('Retrieve a thing by ID.');
+    expect(out).not.toContain('Lots more context');
+    expect(out).toContain('Update a thing.');
+    expect(out).not.toContain('Prefer update_thing_section');
+  });
+
+  it('flags write operations with a (write) marker', () => {
+    const out = buildOperationList(sample);
+    expect(out).toMatch(/update_thing\*\*.*\(write\)/);
+    expect(out).not.toMatch(/get_thing\*\*.*\(write\)/);
   });
 });

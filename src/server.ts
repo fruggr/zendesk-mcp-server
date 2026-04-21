@@ -10,8 +10,24 @@ const NAMESPACE_LABELS: Record<string, { toolName: string; title: string }> = {
   users: { toolName: 'zendesk_users', title: 'Zendesk Users' },
 };
 
-const buildOperationList = (tools: ToolDefinition[]): string =>
-  tools.map((t) => `- **${t.name}**: ${t.description}${t.readOnly ? '' : ' (write)'}`).join('\n');
+// Keep proxy descriptions compact: a proxy tool concatenates one line per
+// sub-operation, so only the first sentence of each tool description is
+// included. Clients still receive the full schema via the wrapped tool.
+export const summarizeDescription = (description: string): string => {
+  const idx = description.indexOf('. ');
+  if (idx === -1) return description;
+  return description.slice(0, idx + 1);
+};
+
+export const buildOperationList = (
+  tools: ReadonlyArray<Pick<ToolDefinition, 'name' | 'description' | 'readOnly'>>,
+): string =>
+  tools
+    .map(
+      (t) =>
+        `- **${t.name}**: ${summarizeDescription(t.description)}${t.readOnly ? '' : ' (write)'}`,
+    )
+    .join('\n');
 
 const registerProxyTool = (
   server: McpServer,
