@@ -7,7 +7,8 @@ A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that co
 Most Zendesk integrations use a shared admin API key, giving every user full access to every ticket. This server takes a different approach:
 
 - **Per-user authentication** — Each user authenticates with their own Zendesk credentials via OAuth 2.1 PKCE. No shared admin key, no elevated privileges. The LLM sees exactly what the user is allowed to see.
-- **Context-friendly tool modes** — Expose 25 individual tools, 3 namespace proxies, or a single unified tool. Choose the mode that fits your LLM's context budget.
+- **Context-friendly tool modes** — Expose 36 individual tools, 3 namespace proxies, or a single unified tool. Choose the mode that fits your LLM's context budget.
+- **Section-based article editing** — For large Help Center articles, read and rewrite one section at a time (parsed by h1/h2/h3 headings) instead of shuffling the full HTML body through the LLM. Reduces tokens by 10–100× on targeted edits.
 - **Read-only mode** — Restrict the server to read operations only, ideal for assistants that should never modify data.
 - **Zero runtime dependencies beyond the MCP SDK** — Built on `@modelcontextprotocol/sdk` and `zod`. No Express, no heavyweight frameworks.
 
@@ -19,13 +20,13 @@ The server registers tools in one of three modes, controlled by `--mode`:
 
 | Mode | Tools exposed | Best for |
 |------|--------------|----------|
-| **`all`** | 25 individual tools (`get_ticket`, `search_articles`, ...) | Clients with good tool selection, full granularity |
+| **`all`** | 36 individual tools (`get_ticket`, `search_articles`, ...) | Clients with good tool selection, full granularity |
 | **`namespace`** (default) | 3 proxy tools (`zendesk_tickets`, `zendesk_help_center`, `zendesk_users`) | Balanced context usage, grouped operations |
 | **`single`** | 1 proxy tool (`zendesk`) | Minimal context footprint, single entry point |
 
-In `namespace` and `single` modes, the proxy tool accepts `{ "operation": "<tool_name>", "params": { ... } }` and dispatches to the appropriate handler after validating params through the original Zod schema.
+In `namespace` and `single` modes, the proxy tool accepts `{ "operation": "<tool_name>", "params": { ... } }` and dispatches to the appropriate handler after validating params through the original Zod schema. Proxy descriptions include only the first sentence of each sub-operation to stay compact; the full schema is applied when the operation is actually called.
 
-> **Tip:** The `single` mode is particularly useful for models with limited tool slots — one tool handles all 25 operations.
+> **Tip:** The `single` mode is particularly useful for models with limited tool slots — one tool handles all 36 operations.
 
 ## Available tools
 
@@ -47,20 +48,31 @@ In `namespace` and `single` modes, the proxy tool accepts `{ "operation": "<tool
 </details>
 
 <details>
-<summary><strong>Help Center</strong> (10 tools)</summary>
+<summary><strong>Help Center</strong> (21 tools)</summary>
 
 | Tool | Description | Mode |
 |------|-------------|------|
 | `search_articles` | Full-text search across Help Center articles | read |
 | `get_article` | Retrieve article by ID with full HTML body | read |
+| `get_article_outline` | Compact outline of an article (sections + available translations) | read |
+| `get_article_section` | Retrieve a single section (html or markdown) | read |
 | `list_categories` | List all Help Center categories | read |
 | `list_sections` | List sections, optionally filtered by category | read |
 | `list_articles` | List articles with sorting and translation info | read |
 | `list_article_translations` | List available translations for an article | read |
+| `list_article_attachments` | List attachments on an article | read |
+| `list_permission_groups` | List Guide permission groups (needed to create articles) | read |
+| `list_content_tags` | List Guide content tags (end-user visible) | read |
+| `list_labels` | List article labels (search ranking, not user-visible) | read |
+| `list_user_segments` | List user segments (article visibility) | read |
+| `compare_translations` | Section-level diff between two locales of an article | read |
 | `create_article` | Create a new article in a section | write |
-| `update_article` | Update article metadata or content | write |
+| `update_article` | Update article metadata (draft, labels, tags, visibility, section) | write |
 | `create_article_translation` | Create a translation for an article | write |
-| `update_article_translation` | Update an existing article translation | write |
+| `update_article_translation` | Update an article's translation (full body) | write |
+| `update_article_section` | Replace a single section of an article | write |
+| `create_content_tag` | Create a new Guide content tag | write |
+| `create_article_attachment` | Upload an attachment to an article | write |
 
 </details>
 
@@ -93,15 +105,28 @@ In `namespace` and `single` modes, the proxy tool accepts `{ "operation": "<tool
 
 ## Installation
 
+This server is not yet published on npm. Install directly from GitHub:
+
 ```bash
-npx @digital4better/zendesk-mcp-server <your-subdomain>
+# Run once from GitHub (npx clones and caches the repo, then runs)
+npx github:fruggr/zendesk-mcp-server <your-subdomain>
 ```
 
-Or install globally:
+Or install globally from GitHub:
 
 ```bash
-npm install -g @digital4better/zendesk-mcp-server
+npm install -g github:fruggr/zendesk-mcp-server
 zendesk-mcp-server <your-subdomain>
+```
+
+Or clone and run locally:
+
+```bash
+git clone https://github.com/fruggr/zendesk-mcp-server.git
+cd zendesk-mcp-server
+pnpm install
+pnpm build
+node dist/index.js <your-subdomain>
 ```
 
 ## Authentication
@@ -157,7 +182,7 @@ Add to your `claude_desktop_config.json`:
   "mcpServers": {
     "zendesk": {
       "command": "npx",
-      "args": ["-y", "@digital4better/zendesk-mcp-server", "<your-subdomain>", "--mode", "single"],
+      "args": ["-y", "github:fruggr/zendesk-mcp-server", "<your-subdomain>", "--mode", "single"],
       "env": {
         "ZENDESK_EMAIL": "you@example.com",
         "ZENDESK_API_TOKEN": "your-api-token"
@@ -173,7 +198,7 @@ Add to your `claude_desktop_config.json`:
 <summary><strong>Claude Code</strong></summary>
 
 ```bash
-claude mcp add zendesk -- npx -y @digital4better/zendesk-mcp-server <your-subdomain> --mode single
+claude mcp add zendesk -- npx -y github:fruggr/zendesk-mcp-server <your-subdomain> --mode single
 ```
 
 For API token auth, set the env vars before launching Claude Code or add them to your shell profile.
@@ -190,7 +215,7 @@ Add to your `.vscode/mcp.json`:
   "servers": {
     "zendesk": {
       "command": "npx",
-      "args": ["-y", "@digital4better/zendesk-mcp-server", "<your-subdomain>", "--mode", "single"],
+      "args": ["-y", "github:fruggr/zendesk-mcp-server", "<your-subdomain>", "--mode", "single"],
       "env": {
         "ZENDESK_EMAIL": "you@example.com",
         "ZENDESK_API_TOKEN": "your-api-token"
@@ -218,7 +243,7 @@ Options:
 **Examples:**
 
 ```bash
-# Single tool mode — minimal context, all 25 operations in one tool
+# Single tool mode — minimal context, all 36 operations in one tool
 zendesk-mcp-server acme --mode single
 
 # Read-only tickets only

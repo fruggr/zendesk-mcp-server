@@ -33,7 +33,7 @@ src/
 │   ├── definitions.ts    # ToolDefinition type
 │   ├── index.ts          # Aggregates all tool factories
 │   ├── tickets.ts        # 9 ticket tools
-│   ├── help-center.ts    # 10 Help Center tools (articles, translations)
+│   ├── help-center.ts    # 21 Help Center tools (articles, section editing, translations, taxonomy)
 │   ├── search.ts         # Unified search tool (namespace: tickets)
 │   └── users.ts          # 5 user/organization tools
 ├── transports/
@@ -47,7 +47,7 @@ src/
 
 Tools are registered at startup based on `--mode`:
 
-- **`all`** (25 individual tools) — each tool registered separately
+- **`all`** (36 individual tools) — each tool registered separately
 - **`namespace`** (default, 3 proxy tools) — `zendesk_tickets`, `zendesk_help_center`, `zendesk_users`, each dispatching to sub-operations
 - **`single`** (1 proxy tool) — `zendesk` dispatches to all operations
 
@@ -164,3 +164,17 @@ Tests use vitest + MSW for mocking the Zendesk API.
 - Biome for linting and formatting (`pnpm check`, `pnpm check:fix`)
 - Functional style: pure functions, no classes (except `ZendeskApiError`), immutable data
 - Tool handlers are standalone functions in `ToolDefinition[]` arrays, not tied to `registerTool`
+
+## Documentation maintenance
+
+Any change to the tool surface requires a README sync in the same PR. The
+README is what external users rely on — it drifts fast if ignored.
+
+When you add, remove, rename, or meaningfully re-describe a tool, update:
+
+- **`README.md`** — the matching row in the `Tickets` / `Help Center` / `Users & Organizations` / `Search` table, the `(N tools)` count in the `<summary>`, and the global tool count (currently **36**) wherever it appears ("Expose 36 individual tools", mode table, single-mode tip, CLI example).
+- **`AGENTS.md`** — the per-file tool counts in the Architecture section (`tickets.ts # 9 ticket tools`, `help-center.ts # 21 Help Center tools`, `users.ts # 5 user/organization tools`) and the `all` mode line in "Tool modes".
+- Namespace counts in `tests/unit/routing/registry.test.ts` if you touch the `help_center`, `tickets`, or `users` namespace.
+- The `createHelpCenterTools` length assertion in `tests/unit/tools/help-center.test.ts` (and equivalents for other namespaces).
+
+If you change a description in a way that alters its first sentence, remember that proxy tool descriptions (`namespace` / `single` modes) only surface that first sentence — verify it still makes sense standalone.
