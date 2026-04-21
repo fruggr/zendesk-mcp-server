@@ -105,11 +105,9 @@ export const formatSection = (section: ZendeskSection): string =>
 export const formatPermissionGroup = (group: ZendeskPermissionGroup): string =>
   `- **${group.name}** (${group.id})${group.built_in ? ' — Built-in' : ''}`;
 
-export const formatContentTag = (tag: ZendeskContentTag): string =>
-  `- **${tag.name}** (${tag.id})`;
+export const formatContentTag = (tag: ZendeskContentTag): string => `- **${tag.name}** (${tag.id})`;
 
-export const formatLabel = (label: ZendeskLabel): string =>
-  `- **${label.name}** (${label.id})`;
+export const formatLabel = (label: ZendeskLabel): string => `- **${label.name}** (${label.id})`;
 
 export const formatUserSegment = (segment: ZendeskUserSegment): string =>
   `- **${segment.name}** (${segment.id}) — ${segment.user_type}${segment.built_in ? ' — Built-in' : ''}`;

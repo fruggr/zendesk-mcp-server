@@ -5,10 +5,7 @@ interface StoredToken {
   refreshToken?: string | undefined;
 }
 
-export const createTokenStore = (config: {
-  subdomain: string;
-  oauthClientId: string;
-}) => {
+export const createTokenStore = (config: { subdomain: string; oauthClientId: string }) => {
   let token: StoredToken | undefined;
   let authPromise: Promise<StoredToken> | undefined;
 
@@ -23,18 +20,20 @@ export const createTokenStore = (config: {
       authPromise = authenticateViaBrowser({
         subdomain: config.subdomain,
         oauthClientId: config.oauthClientId,
-      }).then((result) => {
-        const stored: StoredToken = {
-          accessToken: result.access_token,
-          refreshToken: result.refresh_token,
-        };
-        token = stored;
-        authPromise = undefined;
-        return stored;
-      }).catch((err) => {
-        authPromise = undefined;
-        throw err;
-      });
+      })
+        .then((result) => {
+          const stored: StoredToken = {
+            accessToken: result.access_token,
+            refreshToken: result.refresh_token,
+          };
+          token = stored;
+          authPromise = undefined;
+          return stored;
+        })
+        .catch((err) => {
+          authPromise = undefined;
+          throw err;
+        });
     }
 
     return authPromise;

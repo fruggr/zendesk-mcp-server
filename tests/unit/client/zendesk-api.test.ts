@@ -1,15 +1,15 @@
-import { describe, it, expect } from 'vitest';
-import { http, HttpResponse } from 'msw';
-import { mswServer } from '../../setup';
+import { HttpResponse, http } from 'msw';
+import { describe, expect, it } from 'vitest';
 import {
-  zendeskGet,
-  zendeskPost,
-  zendeskPut,
   helpCenterGet,
   helpCenterPost,
   helpCenterPut,
   ZendeskApiError,
+  zendeskGet,
+  zendeskPost,
+  zendeskPut,
 } from '../../../src/client/zendesk-api';
+import { mswServer } from '../../setup';
 
 const SUB = 'testsubdomain';
 const TOKEN = 'test-bearer-token';
@@ -79,12 +79,9 @@ describe('zendeskPost', () => {
 
 describe('zendeskPut', () => {
   it('puts data and returns result', async () => {
-    const result = await zendeskPut<{ ticket: { status: string } }>(
-      SUB,
-      TOKEN,
-      '/tickets/1',
-      { ticket: { status: 'solved' } },
-    );
+    const result = await zendeskPut<{ ticket: { status: string } }>(SUB, TOKEN, '/tickets/1', {
+      ticket: { status: 'solved' },
+    });
     expect(result.ticket.status).toBe('solved');
   });
 });
@@ -110,12 +107,9 @@ describe('helpCenterPost', () => {
 
 describe('helpCenterPut', () => {
   it('puts to help center', async () => {
-    const result = await helpCenterPut<{ article: { id: number } }>(
-      SUB,
-      TOKEN,
-      '/articles/5000',
-      { article: { title: 'Updated' } },
-    );
+    const result = await helpCenterPut<{ article: { id: number } }>(SUB, TOKEN, '/articles/5000', {
+      article: { title: 'Updated' },
+    });
     expect(result.article.id).toBe(5000);
   });
 });

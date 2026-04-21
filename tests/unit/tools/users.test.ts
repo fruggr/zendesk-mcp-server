@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
-import { createUserTools } from '../../../src/tools/users';
+import { describe, expect, it } from 'vitest';
 import type { ToolContext } from '../../../src/tools/definitions';
+import { createUserTools } from '../../../src/tools/users';
 
 const ctx: ToolContext = { subdomain: 'testsubdomain', getToken: () => 'test-token' };
 

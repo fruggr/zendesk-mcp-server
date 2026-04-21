@@ -1,10 +1,7 @@
 import type { PaginationMeta, ZendeskListResponse } from '../types';
 
 // Cursor-based pagination (for list endpoints: /tickets, /organizations, etc.)
-export const buildCursorParams = (
-  pageSize: number,
-  cursor?: string,
-): Record<string, string> => {
+export const buildCursorParams = (pageSize: number, cursor?: string): Record<string, string> => {
   const params: Record<string, string> = {
     'page[size]': String(pageSize),
   };
@@ -15,10 +12,7 @@ export const buildCursorParams = (
 };
 
 // Offset-based pagination (for search endpoints: /search, /help_center/articles/search)
-export const buildOffsetParams = (
-  perPage: number,
-  page?: number,
-): Record<string, string> => {
+export const buildOffsetParams = (perPage: number, page?: number): Record<string, string> => {
   const params: Record<string, string> = {
     per_page: String(perPage),
   };
@@ -29,13 +23,17 @@ export const buildOffsetParams = (
 };
 
 export const extractPaginationMeta = <T>(response: ZendeskListResponse<T>): PaginationMeta => ({
-  has_more: response.meta?.has_more ?? (response.next_page != null),
+  has_more: response.meta?.has_more ?? response.next_page != null,
   after_cursor: response.meta?.after_cursor ?? null,
   count: response.count ?? 0,
 });
 
 // For search responses — offset-based, count is always present
-export const extractSearchPaginationMeta = <T>(response: ZendeskListResponse<T>, perPage: number, page: number): PaginationMeta => {
+export const extractSearchPaginationMeta = <T>(
+  response: ZendeskListResponse<T>,
+  perPage: number,
+  page: number,
+): PaginationMeta => {
   const count = response.count ?? 0;
   const has_more = count > page * perPage;
   return {

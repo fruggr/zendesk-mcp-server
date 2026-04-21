@@ -1,8 +1,8 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import * as z from 'zod/v4';
 import type { Config } from './config';
-import { createAllTools, type ToolDefinition } from './tools/index';
 import { filterTools, groupByNamespace } from './routing/registry';
+import { createAllTools, type ToolDefinition } from './tools/index';
 
 const NAMESPACE_LABELS: Record<string, { toolName: string; title: string }> = {
   tickets: { toolName: 'zendesk_tickets', title: 'Zendesk Tickets' },
@@ -37,7 +37,12 @@ const registerProxyTool = (
       const def = handlerMap.get(operation);
       if (!def) {
         return {
-          content: [{ type: 'text' as const, text: `Unknown operation "${operation}". Available: ${operationNames.join(', ')}` }],
+          content: [
+            {
+              type: 'text' as const,
+              text: `Unknown operation "${operation}". Available: ${operationNames.join(', ')}`,
+            },
+          ],
         };
       }
       // Validate params through the tool's own schema
@@ -47,7 +52,10 @@ const registerProxyTool = (
   );
 };
 
-export const createMcpServer = (config: Config, getToken: () => string | Promise<string>): McpServer => {
+export const createMcpServer = (
+  config: Config,
+  getToken: () => string | Promise<string>,
+): McpServer => {
   const server = new McpServer({
     name: '@digital4better/zendesk-mcp-server',
     version: '0.1.0',

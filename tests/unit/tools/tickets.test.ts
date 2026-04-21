@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
-import { createTicketTools } from '../../../src/tools/tickets';
+import { describe, expect, it } from 'vitest';
 import type { ToolContext } from '../../../src/tools/definitions';
+import { createTicketTools } from '../../../src/tools/tickets';
 
 const ctx: ToolContext = { subdomain: 'testsubdomain', getToken: () => 'test-token' };
 

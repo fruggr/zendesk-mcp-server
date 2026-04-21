@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
-import { createMcpServer } from '../../src/server';
+import { describe, expect, it } from 'vitest';
 import type { Config } from '../../src/config';
+import { createMcpServer } from '../../src/server';
 
 const baseConfig: Config = {
   subdomain: 'testsubdomain',
@@ -34,10 +34,7 @@ describe('createMcpServer', () => {
   });
 
   it('creates a server with namespace filter', () => {
-    const server = createMcpServer(
-      { ...baseConfig, namespaces: ['tickets'] },
-      getToken,
-    );
+    const server = createMcpServer({ ...baseConfig, namespaces: ['tickets'] }, getToken);
     expect(server).toBeDefined();
   });
 

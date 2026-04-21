@@ -44,7 +44,11 @@ const buildUrl = (base: string, path: string, params?: Record<string, string>): 
   return url.toString();
 };
 
-const executeRequest = async <T>(url: string, token: string, options: ZendeskRequestOptions = {}): Promise<T> => {
+const executeRequest = async <T>(
+  url: string,
+  token: string,
+  options: ZendeskRequestOptions = {},
+): Promise<T> => {
   const { method = 'GET', body } = options;
 
   // token is either a Bearer OAuth token or a "Basic xxx" string (stdio API token mode)

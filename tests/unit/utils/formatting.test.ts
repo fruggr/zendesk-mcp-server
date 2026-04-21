@@ -1,27 +1,27 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
-  formatTicket,
-  formatComment,
-  formatUser,
-  formatOrganization,
   formatArticle,
   formatArticleSummary,
+  formatCategory,
+  formatComment,
+  formatList,
+  formatOrganization,
+  formatSection,
+  formatTicket,
   formatTranslation,
   formatTranslationSummary,
-  formatCategory,
-  formatSection,
-  formatList,
+  formatUser,
   truncateIfNeeded,
 } from '../../../src/utils/formatting';
 import {
-  MOCK_TICKET,
-  MOCK_COMMENT,
-  MOCK_USER,
-  MOCK_ORGANIZATION,
   MOCK_ARTICLE,
-  MOCK_TRANSLATION,
   MOCK_CATEGORY,
+  MOCK_COMMENT,
+  MOCK_ORGANIZATION,
   MOCK_SECTION,
+  MOCK_TICKET,
+  MOCK_TRANSLATION,
+  MOCK_USER,
 } from '../../msw-handlers';
 
 describe('truncateIfNeeded', () => {
@@ -191,11 +191,11 @@ describe('formatSection', () => {
 
 describe('formatList', () => {
   it('formats items with pagination meta', () => {
-    const result = formatList(
-      [MOCK_TICKET],
-      formatTicket,
-      { has_more: true, after_cursor: 'abc', count: 42 },
-    );
+    const result = formatList([MOCK_TICKET], formatTicket, {
+      has_more: true,
+      after_cursor: 'abc',
+      count: 42,
+    });
     expect(result).toContain('Results: 42');
     expect(result).toContain('More available');
     expect(result).toContain('Test ticket');

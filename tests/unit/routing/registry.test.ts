@@ -1,7 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { filterTools, groupByNamespace } from '../../../src/routing/registry';
-import { createAllTools } from '../../../src/tools/index';
 import type { ToolContext } from '../../../src/tools/definitions';
+import { createAllTools } from '../../../src/tools/index';
 
 const ctx: ToolContext = { subdomain: 'testsubdomain', getToken: () => 'token' };
 const allTools = createAllTools(ctx);
@@ -62,7 +62,7 @@ describe('groupByNamespace', () => {
     const hcCount = grouped.get('help_center')?.length ?? 0;
     const userCount = grouped.get('users')?.length ?? 0;
     expect(ticketCount).toBe(10); // 9 ticket tools + 1 search
-    expect(hcCount).toBe(17);
+    expect(hcCount).toBe(21);
     expect(userCount).toBe(5);
   });
 });

@@ -1,5 +1,5 @@
+import { createHash, randomBytes } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
-import { randomBytes, createHash } from 'node:crypto';
 import { getOAuthUrls } from '../constants';
 
 const DEFAULT_CALLBACK_PORT = 3000;
@@ -28,10 +28,7 @@ const openBrowser = async (url: string): Promise<void> => {
   const { exec } = await import('node:child_process');
   const os = platform();
 
-  const command =
-    os === 'darwin' ? 'open'
-    : os === 'win32' ? 'start'
-    : 'xdg-open';
+  const command = os === 'darwin' ? 'open' : os === 'win32' ? 'start' : 'xdg-open';
 
   exec(`${command} "${url}"`);
 };
@@ -106,15 +103,17 @@ export const authenticateViaBrowser = (config: BrowserOAuthConfig): Promise<Toke
         res.writeHead(200, { 'Content-Type': 'text/html' });
         res.end(
           '<html><body><h1>Authentication successful!</h1>' +
-          '<p>You can close this tab and return to Claude Code.</p>' +
-          '<script>window.close()</script></body></html>',
+            '<p>You can close this tab and return to Claude Code.</p>' +
+            '<script>window.close()</script></body></html>',
         );
 
         callbackServer.close();
         resolve(tokenData);
       } catch (err) {
         res.writeHead(500, { 'Content-Type': 'text/html' });
-        res.end(`<html><body><h1>Token exchange failed</h1><p>${err instanceof Error ? err.message : String(err)}</p></body></html>`);
+        res.end(
+          `<html><body><h1>Token exchange failed</h1><p>${err instanceof Error ? err.message : String(err)}</p></body></html>`,
+        );
         callbackServer.close();
         reject(err);
       }
@@ -144,9 +143,12 @@ export const authenticateViaBrowser = (config: BrowserOAuthConfig): Promise<Toke
     });
 
     // Timeout after 5 minutes
-    setTimeout(() => {
-      callbackServer.close();
-      reject(new Error('OAuth authentication timed out (5 min). Please try again.'));
-    }, 5 * 60 * 1000).unref();
+    setTimeout(
+      () => {
+        callbackServer.close();
+        reject(new Error('OAuth authentication timed out (5 min). Please try again.'));
+      },
+      5 * 60 * 1000,
+    ).unref();
   });
 };

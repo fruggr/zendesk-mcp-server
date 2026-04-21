@@ -37,7 +37,8 @@ const parseCliArgs = (args: string[]): CliResult => {
   let positionalIndex = 0;
 
   for (let i = 0; i < args.length; i++) {
-    const arg = args[i]!;
+    const arg = args[i];
+    if (arg === undefined) continue;
     const next = args[i + 1];
 
     if (arg === '--mode' && next) {

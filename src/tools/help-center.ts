@@ -1,4 +1,12 @@
 import * as z from 'zod/v4';
+import {
+  helpCenterGet,
+  helpCenterPost,
+  helpCenterPut,
+  helpCenterUpload,
+  zendeskGet,
+  zendeskPost,
+} from '../client/zendesk-api';
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '../constants';
 import type {
   ZendeskArticle,
@@ -12,9 +20,33 @@ import type {
   ZendeskTranslation,
   ZendeskUserSegment,
 } from '../types';
-import { helpCenterGet, helpCenterPost, helpCenterPut, helpCenterUpload, zendeskGet, zendeskPost } from '../client/zendesk-api';
-import { buildCursorParams, buildOffsetParams, extractPaginationMeta, extractSearchPaginationMeta } from '../utils/pagination';
-import { formatArticle, formatArticleSummary, formatAttachment, formatCategory, formatContentTag, formatLabel, formatList, formatPermissionGroup, formatSection, formatTranslation, formatTranslationSummary, formatUserSegment, truncateIfNeeded } from '../utils/formatting';
+import {
+  htmlToMarkdown,
+  markdownToHtml,
+  parseSections,
+  replaceSectionContent,
+} from '../utils/article-sections';
+import {
+  formatArticle,
+  formatArticleSummary,
+  formatAttachment,
+  formatCategory,
+  formatContentTag,
+  formatLabel,
+  formatList,
+  formatPermissionGroup,
+  formatSection,
+  formatTranslation,
+  formatTranslationSummary,
+  formatUserSegment,
+  truncateIfNeeded,
+} from '../utils/formatting';
+import {
+  buildCursorParams,
+  buildOffsetParams,
+  extractPaginationMeta,
+  extractSearchPaginationMeta,
+} from '../utils/pagination';
 import type { ToolContext, ToolDefinition } from './definitions';
 
 export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
@@ -26,21 +58,54 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       namespace: 'help_center',
       readOnly: true,
       title: 'Search Help Center Articles',
-      description: 'Full-text search across Help Center articles (metadata only, no body). Use get_article for full content. Supports locale filtering. Returns total count.',
+      description:
+        'Full-text search across Help Center articles (metadata only, no body). Use get_article for full content. Supports locale filtering. Returns total count.',
       inputSchema: z.object({
         query: z.string().min(1).describe('Search query'),
         locale: z.string().optional().describe('Filter by locale (e.g., "en-us", "fr")'),
-        per_page: z.number().int().min(1).max(MAX_PAGE_SIZE).default(DEFAULT_PAGE_SIZE).describe('Results per page'),
+        per_page: z
+          .number()
+          .int()
+          .min(1)
+          .max(MAX_PAGE_SIZE)
+          .default(DEFAULT_PAGE_SIZE)
+          .describe('Results per page'),
         page: z.number().int().min(1).default(1).describe('Page number'),
       }),
-      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
       handler: async (params) => {
-        const { query, locale, per_page, page } = params as { query: string; locale?: string; per_page: number; page: number };
+        const { query, locale, per_page, page } = params as {
+          query: string;
+          locale?: string;
+          per_page: number;
+          page: number;
+        };
         const token = await getToken();
         const p: Record<string, string> = { query, ...buildOffsetParams(per_page, page) };
         if (locale) p['locale'] = locale;
-        const response = await helpCenterGet<ZendeskListResponse<ZendeskArticle>>(subdomain, token, '/articles/search', p);
-        return { content: [{ type: 'text', text: formatList(response.results ?? [], formatArticleSummary, extractSearchPaginationMeta(response, per_page, page)) }] };
+        const response = await helpCenterGet<ZendeskListResponse<ZendeskArticle>>(
+          subdomain,
+          token,
+          '/articles/search',
+          p,
+        );
+        return {
+          content: [
+            {
+              type: 'text',
+              text: formatList(
+                response.results ?? [],
+                formatArticleSummary,
+                extractSearchPaginationMeta(response, per_page, page),
+              ),
+            },
+          ],
+        };
       },
     },
     {
@@ -48,19 +113,35 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       namespace: 'help_center',
       readOnly: true,
       title: 'Get Help Center Article',
-      description: 'Retrieve an article by ID with full body content. Optionally specify locale for a translated version. Returns body (HTML), metadata, source_locale, and list of available translations.',
+      description:
+        'Retrieve an article by ID with full body content. Optionally specify locale for a translated version. Returns body (HTML), metadata, source_locale, and list of available translations.',
       inputSchema: z.object({
         article_id: z.number().int().describe('Article ID'),
         locale: z.string().optional().describe('Locale for translated version'),
       }),
-      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
       handler: async (params) => {
         const { article_id, locale } = params as { article_id: number; locale?: string };
         const token = await getToken();
         const path = locale ? `/${locale}/articles/${article_id}` : `/articles/${article_id}`;
-        const { article } = await helpCenterGet<{ article: ZendeskArticle }>(subdomain, token, path);
-        const { translations } = await helpCenterGet<{ translations: ZendeskTranslation[] }>(subdomain, token, `/articles/${article_id}/translations`);
-        const text = formatArticle(article) + `\n\n**Available translations**: ${translations.map((t) => t.locale).join(', ')}`;
+        const { article } = await helpCenterGet<{ article: ZendeskArticle }>(
+          subdomain,
+          token,
+          path,
+        );
+        const { translations } = await helpCenterGet<{ translations: ZendeskTranslation[] }>(
+          subdomain,
+          token,
+          `/articles/${article_id}/translations`,
+        );
+        const text =
+          formatArticle(article) +
+          `\n\n**Available translations**: ${translations.map((t) => t.locale).join(', ')}`;
         return { content: [{ type: 'text', text: truncateIfNeeded(text) }] };
       },
     },
@@ -75,13 +156,38 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         page_size: z.number().int().min(1).max(MAX_PAGE_SIZE).default(DEFAULT_PAGE_SIZE),
         cursor: z.string().optional(),
       }),
-      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
       handler: async (params) => {
-        const { locale, page_size, cursor } = params as { locale?: string; page_size: number; cursor?: string };
+        const { locale, page_size, cursor } = params as {
+          locale?: string;
+          page_size: number;
+          cursor?: string;
+        };
         const token = await getToken();
         const path = locale ? `/${locale}/categories` : '/categories';
-        const response = await helpCenterGet<ZendeskListResponse<ZendeskCategory>>(subdomain, token, path, buildCursorParams(page_size, cursor));
-        return { content: [{ type: 'text', text: formatList(response.categories ?? [], formatCategory, extractPaginationMeta(response)) }] };
+        const response = await helpCenterGet<ZendeskListResponse<ZendeskCategory>>(
+          subdomain,
+          token,
+          path,
+          buildCursorParams(page_size, cursor),
+        );
+        return {
+          content: [
+            {
+              type: 'text',
+              text: formatList(
+                response.categories ?? [],
+                formatCategory,
+                extractPaginationMeta(response),
+              ),
+            },
+          ],
+        };
       },
     },
     {
@@ -96,15 +202,46 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         page_size: z.number().int().min(1).max(MAX_PAGE_SIZE).default(DEFAULT_PAGE_SIZE),
         cursor: z.string().optional(),
       }),
-      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
       handler: async (params) => {
-        const { category_id, locale, page_size, cursor } = params as { category_id?: number; locale?: string; page_size: number; cursor?: string };
+        const { category_id, locale, page_size, cursor } = params as {
+          category_id?: number;
+          locale?: string;
+          page_size: number;
+          cursor?: string;
+        };
         const token = await getToken();
-        const path = category_id && locale ? `/${locale}/categories/${category_id}/sections`
-          : category_id ? `/categories/${category_id}/sections`
-          : locale ? `/${locale}/sections` : '/sections';
-        const response = await helpCenterGet<ZendeskListResponse<ZendeskSection>>(subdomain, token, path, buildCursorParams(page_size, cursor));
-        return { content: [{ type: 'text', text: formatList(response.sections ?? [], formatSection, extractPaginationMeta(response)) }] };
+        const path =
+          category_id && locale
+            ? `/${locale}/categories/${category_id}/sections`
+            : category_id
+              ? `/categories/${category_id}/sections`
+              : locale
+                ? `/${locale}/sections`
+                : '/sections';
+        const response = await helpCenterGet<ZendeskListResponse<ZendeskSection>>(
+          subdomain,
+          token,
+          path,
+          buildCursorParams(page_size, cursor),
+        );
+        return {
+          content: [
+            {
+              type: 'text',
+              text: formatList(
+                response.sections ?? [],
+                formatSection,
+                extractPaginationMeta(response),
+              ),
+            },
+          ],
+        };
       },
     },
     {
@@ -112,38 +249,83 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       namespace: 'help_center',
       readOnly: true,
       title: 'List Help Center Articles',
-      description: 'List articles (metadata only, no body). Use get_article for full content. Optionally filter by section ID and locale. Supports sort_by ("title", "created_at", "updated_at") and include_translations: true to show available translation locales per article. Note: include_translations must be re-sent on each paginated request.',
+      description:
+        'List articles (metadata only, no body). Use get_article for full content. Optionally filter by section ID and locale. Supports sort_by ("title", "created_at", "updated_at") and include_translations: true to show available translation locales per article. Note: include_translations must be re-sent on each paginated request.',
       inputSchema: z.object({
         section_id: z.number().int().optional(),
         locale: z.string().optional(),
         page_size: z.number().int().min(1).max(MAX_PAGE_SIZE).default(DEFAULT_PAGE_SIZE),
         cursor: z.string().optional(),
-        sort_by: z.enum(['created_at', 'updated_at', 'position', 'title']).default('position').describe('Sort field'),
+        sort_by: z
+          .enum(['created_at', 'updated_at', 'position', 'title'])
+          .default('position')
+          .describe('Sort field'),
         sort_order: z.enum(['asc', 'desc']).default('asc').describe('Sort direction'),
-        include_translations: z.boolean().default(false).describe('Include available translation locales per article (causes 1 extra API call per article)'),
+        include_translations: z
+          .boolean()
+          .default(false)
+          .describe(
+            'Include available translation locales per article (causes 1 extra API call per article)',
+          ),
       }),
-      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
       handler: async (params) => {
-        const { section_id, locale, page_size, cursor, sort_by, sort_order, include_translations } = params as {
-          section_id?: number; locale?: string; page_size: number; cursor?: string;
-          sort_by: string; sort_order: string; include_translations: boolean;
-        };
+        const { section_id, locale, page_size, cursor, sort_by, sort_order, include_translations } =
+          params as {
+            section_id?: number;
+            locale?: string;
+            page_size: number;
+            cursor?: string;
+            sort_by: string;
+            sort_order: string;
+            include_translations: boolean;
+          };
         const token = await getToken();
-        const path = section_id && locale ? `/${locale}/sections/${section_id}/articles`
-          : section_id ? `/sections/${section_id}/articles`
-          : locale ? `/${locale}/articles` : '/articles';
-        const response = await helpCenterGet<ZendeskListResponse<ZendeskArticle>>(subdomain, token, path, { ...buildCursorParams(page_size, cursor), sort_by, sort_order });
+        const path =
+          section_id && locale
+            ? `/${locale}/sections/${section_id}/articles`
+            : section_id
+              ? `/sections/${section_id}/articles`
+              : locale
+                ? `/${locale}/articles`
+                : '/articles';
+        const response = await helpCenterGet<ZendeskListResponse<ZendeskArticle>>(
+          subdomain,
+          token,
+          path,
+          { ...buildCursorParams(page_size, cursor), sort_by, sort_order },
+        );
         const articles = response.articles ?? [];
         if (!include_translations) {
-          return { content: [{ type: 'text', text: formatList(articles, formatArticleSummary, extractPaginationMeta(response)) }] };
+          return {
+            content: [
+              {
+                type: 'text',
+                text: formatList(articles, formatArticleSummary, extractPaginationMeta(response)),
+              },
+            ],
+          };
         }
-        const formatted = await Promise.all(articles.map(async (article) => {
-          const { translations } = await helpCenterGet<{ translations: ZendeskTranslation[] }>(subdomain, token, `/articles/${article.id}/translations`);
-          const locales = translations.map((t) => t.locale).join(', ');
-          return `${formatArticleSummary(article)}\n- **Translations**: ${locales}`;
-        }));
+        const formatted = await Promise.all(
+          articles.map(async (article) => {
+            const { translations } = await helpCenterGet<{ translations: ZendeskTranslation[] }>(
+              subdomain,
+              token,
+              `/articles/${article.id}/translations`,
+            );
+            const locales = translations.map((t) => t.locale).join(', ');
+            return `${formatArticleSummary(article)}\n- **Translations**: ${locales}`;
+          }),
+        );
         const meta = extractPaginationMeta(response);
-        const header = meta.count ? `Results: ${meta.count}${meta.has_more ? ` | More available (cursor: ${meta.after_cursor})` : ''}` : '';
+        const header = meta.count
+          ? `Results: ${meta.count}${meta.has_more ? ` | More available (cursor: ${meta.after_cursor})` : ''}`
+          : '';
         const text = [header, ...formatted].filter(Boolean).join('\n\n');
         return { content: [{ type: 'text', text: truncateIfNeeded(text) }] };
       },
@@ -153,14 +335,26 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       namespace: 'help_center',
       readOnly: true,
       title: 'List Article Translations',
-      description: 'List all available translations for an article (metadata only, no body: locale, title, draft, updated_at). Use get_article with locale for full translated content.',
+      description:
+        'List all available translations for an article (metadata only, no body: locale, title, draft, updated_at). Use get_article with locale for full translated content.',
       inputSchema: z.object({ article_id: z.number().int().describe('Article ID') }),
-      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
       handler: async (params) => {
         const { article_id } = params as { article_id: number };
         const token = await getToken();
-        const { translations } = await helpCenterGet<{ translations: ZendeskTranslation[] }>(subdomain, token, `/articles/${article_id}/translations`);
-        return { content: [{ type: 'text', text: formatList(translations, formatTranslationSummary) }] };
+        const { translations } = await helpCenterGet<{ translations: ZendeskTranslation[] }>(
+          subdomain,
+          token,
+          `/articles/${article_id}/translations`,
+        );
+        return {
+          content: [{ type: 'text', text: formatList(translations, formatTranslationSummary) }],
+        };
       },
     },
     {
@@ -176,12 +370,35 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         body: z.string().min(1).describe('Translated body (HTML)'),
         draft: z.boolean().default(false),
       }),
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
       handler: async (params) => {
-        const { article_id, locale, title, body, draft } = params as { article_id: number; locale: string; title: string; body: string; draft: boolean };
+        const { article_id, locale, title, body, draft } = params as {
+          article_id: number;
+          locale: string;
+          title: string;
+          body: string;
+          draft: boolean;
+        };
         const token = await getToken();
-        const { translation } = await helpCenterPost<{ translation: ZendeskTranslation }>(subdomain, token, `/articles/${article_id}/translations`, { translation: { locale, title, body, draft } });
-        return { content: [{ type: 'text', text: `Translation created for article #${article_id} in "${locale}".\n\n${formatTranslation(translation)}` }] };
+        const { translation } = await helpCenterPost<{ translation: ZendeskTranslation }>(
+          subdomain,
+          token,
+          `/articles/${article_id}/translations`,
+          { translation: { locale, title, body, draft } },
+        );
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Translation created for article #${article_id} in "${locale}".\n\n${formatTranslation(translation)}`,
+            },
+          ],
+        };
       },
     },
     {
@@ -189,7 +406,8 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       namespace: 'help_center',
       readOnly: false,
       title: 'Update Article Translation',
-      description: 'Update article content (title, body) in a specific locale. This is the recommended way to update article text. Use the article\'s source_locale (from get_article) for the default language, or another locale for translations.',
+      description:
+        "Update article content (title, body) in a specific locale. This is the recommended way to update article text. Use the article's source_locale (from get_article) for the default language, or another locale for translations.",
       inputSchema: z.object({
         article_id: z.number().int(),
         locale: z.string(),
@@ -197,12 +415,32 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         body: z.string().optional(),
         draft: z.boolean().optional(),
       }),
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
       handler: async (params) => {
-        const { article_id, locale, ...updates } = params as { article_id: number; locale: string } & Record<string, unknown>;
+        const { article_id, locale, ...updates } = params as {
+          article_id: number;
+          locale: string;
+        } & Record<string, unknown>;
         const token = await getToken();
-        const { translation } = await helpCenterPut<{ translation: ZendeskTranslation }>(subdomain, token, `/articles/${article_id}/translations/${locale}`, { translation: updates });
-        return { content: [{ type: 'text', text: `Translation updated for article #${article_id} in "${locale}".\n\n${formatTranslation(translation)}` }] };
+        const { translation } = await helpCenterPut<{ translation: ZendeskTranslation }>(
+          subdomain,
+          token,
+          `/articles/${article_id}/translations/${locale}`,
+          { translation: updates },
+        );
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Translation updated for article #${article_id} in "${locale}".\n\n${formatTranslation(translation)}`,
+            },
+          ],
+        };
       },
     },
     {
@@ -210,13 +448,29 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       namespace: 'help_center',
       readOnly: true,
       title: 'List Permission Groups',
-      description: 'List all Guide permission groups. Use this to find the permission_group_id required when creating articles.',
+      description:
+        'List all Guide permission groups. Use this to find the permission_group_id required when creating articles.',
       inputSchema: z.object({}),
-      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
       handler: async () => {
         const token = await getToken();
-        const response = await zendeskGet<{ permission_groups: ZendeskPermissionGroup[]; count: number }>(subdomain, token, '/guide/permission_groups');
-        return { content: [{ type: 'text', text: formatList(response.permission_groups ?? [], formatPermissionGroup) }] };
+        const response = await zendeskGet<{
+          permission_groups: ZendeskPermissionGroup[];
+          count: number;
+        }>(subdomain, token, '/guide/permission_groups');
+        return {
+          content: [
+            {
+              type: 'text',
+              text: formatList(response.permission_groups ?? [], formatPermissionGroup),
+            },
+          ],
+        };
       },
     },
     {
@@ -224,26 +478,63 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       namespace: 'help_center',
       readOnly: false,
       title: 'Create Help Center Article',
-      description: 'Create a new article in a section. The locale becomes the article\'s source_locale. Requires a permission_group_id (use list_permission_groups to find available IDs). To add content in other locales afterwards, use create_article_translation.',
+      description:
+        "Create a new article in a section. The locale becomes the article's source_locale. Requires a permission_group_id (use list_permission_groups to find available IDs). To add content in other locales afterwards, use create_article_translation.",
       inputSchema: z.object({
         section_id: z.number().int(),
         title: z.string().min(1),
         body: z.string().min(1).describe('Article body (HTML)'),
-        permission_group_id: z.number().int().describe('Permission group ID (use list_permission_groups to find it)'),
-        user_segment_id: z.number().int().optional().describe('User segment ID for visibility (use list_user_segments to find it). Defaults to everyone.'),
-        author_id: z.number().int().optional().describe('Author user ID. Defaults to the authenticated user.'),
-        content_tag_ids: z.array(z.string()).optional().describe('Content tag IDs (use list_content_tags to find them)'),
+        permission_group_id: z
+          .number()
+          .int()
+          .describe('Permission group ID (use list_permission_groups to find it)'),
+        user_segment_id: z
+          .number()
+          .int()
+          .optional()
+          .describe(
+            'User segment ID for visibility (use list_user_segments to find it). Defaults to everyone.',
+          ),
+        author_id: z
+          .number()
+          .int()
+          .optional()
+          .describe('Author user ID. Defaults to the authenticated user.'),
+        content_tag_ids: z
+          .array(z.string())
+          .optional()
+          .describe('Content tag IDs (use list_content_tags to find them)'),
         locale: z.string().optional(),
         draft: z.boolean().default(true),
         promoted: z.boolean().default(false),
-        label_names: z.array(z.string()).optional().describe('Label names for search ranking (use list_labels to see existing labels)'),
+        label_names: z
+          .array(z.string())
+          .optional()
+          .describe('Label names for search ranking (use list_labels to see existing labels)'),
       }),
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
       handler: async (params) => {
-        const { section_id, ...articleData } = params as { section_id: number } & Record<string, unknown>;
+        const { section_id, ...articleData } = params as { section_id: number } & Record<
+          string,
+          unknown
+        >;
         const token = await getToken();
-        const { article } = await helpCenterPost<{ article: ZendeskArticle }>(subdomain, token, `/sections/${section_id}/articles`, { article: articleData });
-        return { content: [{ type: 'text', text: `Article #${article.id} created.\n\n${formatArticle(article)}` }] };
+        const { article } = await helpCenterPost<{ article: ZendeskArticle }>(
+          subdomain,
+          token,
+          `/sections/${section_id}/articles`,
+          { article: articleData },
+        );
+        return {
+          content: [
+            { type: 'text', text: `Article #${article.id} created.\n\n${formatArticle(article)}` },
+          ],
+        };
       },
     },
     {
@@ -251,7 +542,8 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       namespace: 'help_center',
       readOnly: false,
       title: 'Update Help Center Article',
-      description: 'Update article metadata only (draft, promoted, labels, tags, visibility, section, etc.). Does NOT update content (title, body) — use update_article_translation for that.',
+      description:
+        'Update article metadata only (draft, promoted, labels, tags, visibility, section, etc.). Does NOT update content (title, body) — use update_article_translation for that.',
       inputSchema: z.object({
         article_id: z.number().int(),
         draft: z.boolean().optional(),
@@ -263,12 +555,29 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         permission_group_id: z.number().int().optional().describe('Permission group ID'),
         section_id: z.number().int().optional(),
       }),
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
       handler: async (params) => {
-        const { article_id, ...updates } = params as { article_id: number } & Record<string, unknown>;
+        const { article_id, ...updates } = params as { article_id: number } & Record<
+          string,
+          unknown
+        >;
         const token = await getToken();
-        const { article } = await helpCenterPut<{ article: ZendeskArticle }>(subdomain, token, `/articles/${article_id}`, { article: updates });
-        return { content: [{ type: 'text', text: `Article #${article.id} updated.\n\n${formatArticle(article)}` }] };
+        const { article } = await helpCenterPut<{ article: ZendeskArticle }>(
+          subdomain,
+          token,
+          `/articles/${article_id}`,
+          { article: updates },
+        );
+        return {
+          content: [
+            { type: 'text', text: `Article #${article.id} updated.\n\n${formatArticle(article)}` },
+          ],
+        };
       },
     },
     {
@@ -276,13 +585,25 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       namespace: 'help_center',
       readOnly: true,
       title: 'List Content Tags',
-      description: 'List all Guide content tags. Content tags are visible to end users and help them find related articles.',
+      description:
+        'List all Guide content tags. Content tags are visible to end users and help them find related articles.',
       inputSchema: z.object({}),
-      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
       handler: async () => {
         const token = await getToken();
-        const response = await zendeskGet<{ records: ZendeskContentTag[]; count: number }>(subdomain, token, '/guide/content_tags');
-        return { content: [{ type: 'text', text: formatList(response.records ?? [], formatContentTag) }] };
+        const response = await zendeskGet<{ records: ZendeskContentTag[]; count: number }>(
+          subdomain,
+          token,
+          '/guide/content_tags',
+        );
+        return {
+          content: [{ type: 'text', text: formatList(response.records ?? [], formatContentTag) }],
+        };
       },
     },
     {
@@ -294,12 +615,24 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       inputSchema: z.object({
         name: z.string().min(1).describe('Content tag name'),
       }),
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
       handler: async (params) => {
         const { name } = params as { name: string };
         const token = await getToken();
-        const { record } = await zendeskPost<{ record: ZendeskContentTag }>(subdomain, token, '/guide/content_tags', { record: { name } });
-        return { content: [{ type: 'text', text: `Content tag created.\n\n${formatContentTag(record)}` }] };
+        const { record } = await zendeskPost<{ record: ZendeskContentTag }>(
+          subdomain,
+          token,
+          '/guide/content_tags',
+          { record: { name } },
+        );
+        return {
+          content: [{ type: 'text', text: `Content tag created.\n\n${formatContentTag(record)}` }],
+        };
       },
     },
     {
@@ -307,13 +640,25 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       namespace: 'help_center',
       readOnly: true,
       title: 'List Article Labels',
-      description: 'List all article labels. Labels improve Help Center search ranking and are not visible to end users.',
+      description:
+        'List all article labels. Labels improve Help Center search ranking and are not visible to end users.',
       inputSchema: z.object({}),
-      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
       handler: async () => {
         const token = await getToken();
-        const response = await helpCenterGet<{ labels: ZendeskLabel[]; count: number }>(subdomain, token, '/articles/labels');
-        return { content: [{ type: 'text', text: formatList(response.labels ?? [], formatLabel) }] };
+        const response = await helpCenterGet<{ labels: ZendeskLabel[]; count: number }>(
+          subdomain,
+          token,
+          '/articles/labels',
+        );
+        return {
+          content: [{ type: 'text', text: formatList(response.labels ?? [], formatLabel) }],
+        };
       },
     },
     {
@@ -321,13 +666,26 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       namespace: 'help_center',
       readOnly: true,
       title: 'List User Segments',
-      description: 'List all user segments. User segments control article visibility (who can view). Use the ID when creating or updating articles.',
+      description:
+        'List all user segments. User segments control article visibility (who can view). Use the ID when creating or updating articles.',
       inputSchema: z.object({}),
-      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
       handler: async () => {
         const token = await getToken();
-        const response = await helpCenterGet<{ user_segments: ZendeskUserSegment[]; count: number }>(subdomain, token, '/user_segments');
-        return { content: [{ type: 'text', text: formatList(response.user_segments ?? [], formatUserSegment) }] };
+        const response = await helpCenterGet<{
+          user_segments: ZendeskUserSegment[];
+          count: number;
+        }>(subdomain, token, '/user_segments');
+        return {
+          content: [
+            { type: 'text', text: formatList(response.user_segments ?? [], formatUserSegment) },
+          ],
+        };
       },
     },
     {
@@ -339,12 +697,280 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       inputSchema: z.object({
         article_id: z.number().int().describe('Article ID'),
       }),
-      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
       handler: async (params) => {
         const { article_id } = params as { article_id: number };
         const token = await getToken();
-        const response = await helpCenterGet<{ article_attachments: ZendeskArticleAttachment[]; count: number }>(subdomain, token, `/articles/${article_id}/attachments`);
-        return { content: [{ type: 'text', text: formatList(response.article_attachments ?? [], formatAttachment) }] };
+        const response = await helpCenterGet<{
+          article_attachments: ZendeskArticleAttachment[];
+          count: number;
+        }>(subdomain, token, `/articles/${article_id}/attachments`);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: formatList(response.article_attachments ?? [], formatAttachment),
+            },
+          ],
+        };
+      },
+    },
+    {
+      name: 'get_article_outline',
+      namespace: 'help_center',
+      readOnly: true,
+      title: 'Get Article Outline',
+      description:
+        'Return a compact outline of an article (list of sections delimited by h1/h2/h3, with word counts) for the given locale (defaults to source_locale). Includes available translations with their outdated status. Use get_article_section to fetch a specific section.',
+      inputSchema: z.object({
+        article_id: z.number().int().describe('Article ID'),
+        locale: z
+          .string()
+          .optional()
+          .describe('Locale of the body to outline (defaults to article source_locale)'),
+      }),
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+      handler: async (params) => {
+        const { article_id, locale } = params as { article_id: number; locale?: string };
+        const token = await getToken();
+        const { article } = await helpCenterGet<{ article: ZendeskArticle }>(
+          subdomain,
+          token,
+          `/articles/${article_id}`,
+        );
+        const effectiveLocale = locale ?? article.source_locale;
+        const { translation } = await helpCenterGet<{ translation: ZendeskTranslation }>(
+          subdomain,
+          token,
+          `/articles/${article_id}/translations/${effectiveLocale}`,
+        );
+        const { translations } = await helpCenterGet<{
+          translations: Array<ZendeskTranslation & { outdated?: boolean }>;
+        }>(subdomain, token, `/articles/${article_id}/translations`);
+        const sections = parseSections(translation.body);
+
+        const outlineLines = sections.length
+          ? sections
+              .map(
+                (s) =>
+                  `- [${s.index}] ${s.headingTag ? `${s.headingTag}: ` : ''}${s.heading} (${s.wordCount} words)`,
+              )
+              .join('\n')
+          : '_(no sections detected)_';
+        const translationsList = translations
+          .map((t) => `- ${t.locale}${t.outdated ? ' (outdated)' : ''}`)
+          .join('\n');
+
+        const text = [
+          `# Outline — Article #${article_id} (${effectiveLocale})`,
+          `**Title**: ${translation.title}`,
+          '',
+          '## Sections',
+          outlineLines,
+          '',
+          '## Available translations',
+          translationsList,
+        ].join('\n');
+        return { content: [{ type: 'text', text }] };
+      },
+    },
+    {
+      name: 'get_article_section',
+      namespace: 'help_center',
+      readOnly: true,
+      title: 'Get Article Section',
+      description:
+        'Retrieve the content of a single section of an article in a given locale. Use get_article_outline first to discover section indexes. Pass format="markdown" to get a token-efficient Markdown representation.',
+      inputSchema: z.object({
+        article_id: z.number().int().describe('Article ID'),
+        locale: z.string().describe('Locale of the body (e.g., "en-us", "fr")'),
+        section_index: z
+          .number()
+          .int()
+          .min(0)
+          .describe('0-based index of the section (see get_article_outline)'),
+        format: z.enum(['html', 'markdown']).default('markdown').describe('Output format'),
+      }),
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+      handler: async (params) => {
+        const { article_id, locale, section_index, format } = params as {
+          article_id: number;
+          locale: string;
+          section_index: number;
+          format: 'html' | 'markdown';
+        };
+        const token = await getToken();
+        const { translation } = await helpCenterGet<{ translation: ZendeskTranslation }>(
+          subdomain,
+          token,
+          `/articles/${article_id}/translations/${locale}`,
+        );
+        const sections = parseSections(translation.body);
+        const section = sections[section_index];
+        if (!section) {
+          throw new Error(
+            `Section index ${section_index} not found. Article has ${sections.length} section(s) (0-${Math.max(0, sections.length - 1)}).`,
+          );
+        }
+        const content = format === 'markdown' ? htmlToMarkdown(section.html) : section.html;
+        const headerLine = section.headingTag
+          ? `## [${section.index}] ${section.headingTag}: ${section.heading}`
+          : `## [${section.index}] ${section.heading}`;
+        const text = [
+          headerLine,
+          `_Locale: ${locale} | Words: ${section.wordCount} | Format: ${format}_`,
+          '',
+          content,
+        ].join('\n');
+        return { content: [{ type: 'text', text: truncateIfNeeded(text) }] };
+      },
+    },
+    {
+      name: 'update_article_section',
+      namespace: 'help_center',
+      readOnly: false,
+      title: 'Update Article Section',
+      description:
+        'Replace the content of a single section of an article in a given locale, keeping the rest of the body intact. The server fetches the current body, replaces the targeted section, and PUTs the full reconstructed body via the Translations API. Use format="markdown" to send Markdown (converted to HTML server-side); the section heading is preserved and is NOT part of the replaced content.',
+      inputSchema: z.object({
+        article_id: z.number().int().describe('Article ID'),
+        locale: z.string().describe('Locale of the translation to update'),
+        section_index: z
+          .number()
+          .int()
+          .min(0)
+          .describe('0-based index of the section to replace (see get_article_outline)'),
+        content: z
+          .string()
+          .describe(
+            'New content for the section (heading excluded). HTML by default, Markdown if format="markdown".',
+          ),
+        format: z
+          .enum(['html', 'markdown'])
+          .default('markdown')
+          .describe('Input format for content'),
+      }),
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+      handler: async (params) => {
+        const { article_id, locale, section_index, content, format } = params as {
+          article_id: number;
+          locale: string;
+          section_index: number;
+          content: string;
+          format: 'html' | 'markdown';
+        };
+        const token = await getToken();
+        const { translation } = await helpCenterGet<{ translation: ZendeskTranslation }>(
+          subdomain,
+          token,
+          `/articles/${article_id}/translations/${locale}`,
+        );
+        const newSectionHtml = format === 'markdown' ? markdownToHtml(content) : content;
+        const newBody = replaceSectionContent(translation.body, section_index, newSectionHtml);
+        const { translation: updated } = await helpCenterPut<{ translation: ZendeskTranslation }>(
+          subdomain,
+          token,
+          `/articles/${article_id}/translations/${locale}`,
+          { translation: { body: newBody } },
+        );
+        const updatedSections = parseSections(updated.body);
+        const updatedSection = updatedSections[section_index];
+        const newWordCount = updatedSection?.wordCount ?? 0;
+        const headingLabel = updatedSection?.heading ?? '(intro)';
+        const text = [
+          `Section [${section_index}] "${headingLabel}" updated for article #${article_id} (${locale}).`,
+          `New word count: ${newWordCount}.`,
+        ].join('\n');
+        return { content: [{ type: 'text', text }] };
+      },
+    },
+    {
+      name: 'compare_translations',
+      namespace: 'help_center',
+      readOnly: true,
+      title: 'Compare Article Translations',
+      description:
+        'Compare section structure between two locales of the same article. Returns a compact table (one row per section) with status: "ok" (both present, similar word counts), "different" (word counts diverge significantly, >25%) or "missing" (section absent in target). Use this before translating to identify stale or missing sections.',
+      inputSchema: z.object({
+        article_id: z.number().int().describe('Article ID'),
+        source_locale: z.string().describe('Source (reference) locale'),
+        target_locale: z.string().describe('Target locale to compare against source'),
+      }),
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+      handler: async (params) => {
+        const { article_id, source_locale, target_locale } = params as {
+          article_id: number;
+          source_locale: string;
+          target_locale: string;
+        };
+        const token = await getToken();
+        const [sourceRes, targetRes] = await Promise.all([
+          helpCenterGet<{ translation: ZendeskTranslation }>(
+            subdomain,
+            token,
+            `/articles/${article_id}/translations/${source_locale}`,
+          ),
+          helpCenterGet<{ translation: ZendeskTranslation }>(
+            subdomain,
+            token,
+            `/articles/${article_id}/translations/${target_locale}`,
+          ),
+        ]);
+        const sourceSections = parseSections(sourceRes.translation.body);
+        const targetSections = parseSections(targetRes.translation.body);
+        const maxLen = Math.max(sourceSections.length, targetSections.length);
+
+        const rows: string[] = [];
+        rows.push(`| Idx | Heading | Status | Source words | Target words |`);
+        rows.push(`| --- | --- | --- | --- | --- |`);
+        for (let i = 0; i < maxLen; i += 1) {
+          const src = sourceSections[i];
+          const tgt = targetSections[i];
+          const heading = src?.heading ?? tgt?.heading ?? '';
+          const sourceWords = src?.wordCount ?? 0;
+          const targetWords = tgt?.wordCount ?? 0;
+          let status: 'ok' | 'missing' | 'different';
+          if (!tgt) status = 'missing';
+          else if (!src) status = 'different';
+          else {
+            const denom = Math.max(sourceWords, 1);
+            const diffRatio = Math.abs(sourceWords - targetWords) / denom;
+            status = diffRatio > 0.25 ? 'different' : 'ok';
+          }
+          rows.push(`| ${i} | ${heading} | ${status} | ${sourceWords} | ${targetWords} |`);
+        }
+
+        const text = [
+          `# Translation diff — Article #${article_id} (${source_locale} → ${target_locale})`,
+          '',
+          ...rows,
+        ].join('\n');
+        return { content: [{ type: 'text', text }] };
       },
     },
     {
@@ -352,27 +978,46 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       namespace: 'help_center',
       readOnly: false,
       title: 'Create Article Attachment',
-      description: 'Upload an attachment to an article. Provide file content as base64-encoded string.',
+      description:
+        'Upload an attachment to an article. Provide file content as base64-encoded string.',
       inputSchema: z.object({
         article_id: z.number().int().describe('Article ID'),
         file_name: z.string().min(1).describe('File name (e.g., "screenshot.png")'),
         file_base64: z.string().min(1).describe('File content encoded as base64'),
-        content_type: z.string().default('application/octet-stream').describe('MIME type (e.g., "image/png", "application/pdf")'),
+        content_type: z
+          .string()
+          .default('application/octet-stream')
+          .describe('MIME type (e.g., "image/png", "application/pdf")'),
       }),
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
       handler: async (params) => {
         const { article_id, file_name, file_base64, content_type } = params as {
-          article_id: number; file_name: string; file_base64: string; content_type: string;
+          article_id: number;
+          file_name: string;
+          file_base64: string;
+          content_type: string;
         };
         const token = await getToken();
         const buffer = Buffer.from(file_base64, 'base64');
         const blob = new Blob([buffer], { type: content_type });
         const formData = new FormData();
         formData.append('file', blob, file_name);
-        const { article_attachment } = await helpCenterUpload<{ article_attachment: ZendeskArticleAttachment }>(
-          subdomain, token, `/articles/${article_id}/attachments`, formData,
-        );
-        return { content: [{ type: 'text', text: `Attachment created for article #${article_id}.\n\n${formatAttachment(article_attachment)}` }] };
+        const { article_attachment } = await helpCenterUpload<{
+          article_attachment: ZendeskArticleAttachment;
+        }>(subdomain, token, `/articles/${article_id}/attachments`, formData);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Attachment created for article #${article_id}.\n\n${formatAttachment(article_attachment)}`,
+            },
+          ],
+        };
       },
     },
   ];

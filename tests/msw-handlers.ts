@@ -1,4 +1,4 @@
-import { http, HttpResponse } from 'msw';
+import { HttpResponse, http } from 'msw';
 
 const BASE = 'https://testsubdomain.zendesk.com/api/v2';
 const HC_BASE = 'https://testsubdomain.zendesk.com/api/v2/help_center';
@@ -146,12 +146,8 @@ export const handlers = [
     if (params['id'] === '404') return HttpResponse.json({}, { status: 404 });
     return HttpResponse.json({ ticket: { ...MOCK_TICKET, id: Number(params['id']) } });
   }),
-  http.get(`${BASE}/tickets/:id/comments`, () =>
-    HttpResponse.json({ comments: [MOCK_COMMENT] }),
-  ),
-  http.get(`${BASE}/tickets/:id/incidents`, () =>
-    HttpResponse.json({ tickets: [MOCK_TICKET] }),
-  ),
+  http.get(`${BASE}/tickets/:id/comments`, () => HttpResponse.json({ comments: [MOCK_COMMENT] })),
+  http.get(`${BASE}/tickets/:id/incidents`, () => HttpResponse.json({ tickets: [MOCK_TICKET] })),
   http.get(`${BASE}/tickets`, () =>
     HttpResponse.json({
       tickets: [MOCK_TICKET],
@@ -218,32 +214,67 @@ export const handlers = [
     HttpResponse.json({ article: { ...MOCK_ARTICLE, id: Number(params['id']) } }),
   ),
   http.get(`${HC_BASE}/:locale/articles/:id`, ({ params }) =>
-    HttpResponse.json({ article: { ...MOCK_ARTICLE, id: Number(params['id']), locale: params['locale'] as string } }),
+    HttpResponse.json({
+      article: { ...MOCK_ARTICLE, id: Number(params['id']), locale: params['locale'] as string },
+    }),
   ),
   http.get(`${HC_BASE}/articles/:id/translations`, () =>
-    HttpResponse.json({ translations: [MOCK_TRANSLATION, { ...MOCK_TRANSLATION, id: 7001, locale: 'en-us' }] }),
+    HttpResponse.json({
+      translations: [
+        { ...MOCK_TRANSLATION, outdated: false },
+        { ...MOCK_TRANSLATION, id: 7001, locale: 'en-us', outdated: true },
+      ],
+    }),
   ),
+  http.get(`${HC_BASE}/articles/:id/translations/:locale`, ({ params }) => {
+    const locale = params['locale'] as string;
+    const body =
+      locale === 'en-us'
+        ? '<h2>Intro</h2><p>Source intro</p><h2>Setup</h2><p>one two three four</p>'
+        : '<h2>Intro</h2><p>French intro</p><h2>Setup</h2><p>un deux</p>';
+    return HttpResponse.json({
+      translation: { ...MOCK_TRANSLATION, locale, body },
+    });
+  }),
   http.post(`${HC_BASE}/articles/:id/translations`, () =>
     HttpResponse.json({ translation: MOCK_TRANSLATION }),
   ),
-  http.put(`${HC_BASE}/articles/:id/translations/:locale`, () =>
-    HttpResponse.json({ translation: MOCK_TRANSLATION }),
-  ),
+  http.put(`${HC_BASE}/articles/:id/translations/:locale`, async ({ request, params }) => {
+    const reqBody = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const update = (reqBody['translation'] as Record<string, unknown> | undefined) ?? {};
+    return HttpResponse.json({
+      translation: {
+        ...MOCK_TRANSLATION,
+        locale: params['locale'] as string,
+        ...update,
+      },
+    });
+  }),
   http.get(`${HC_BASE}/articles`, () =>
-    HttpResponse.json({ articles: [MOCK_ARTICLE], meta: { has_more: false, after_cursor: '' }, count: 1 }),
+    HttpResponse.json({
+      articles: [MOCK_ARTICLE],
+      meta: { has_more: false, after_cursor: '' },
+      count: 1,
+    }),
   ),
   http.get(`${HC_BASE}/:locale/articles`, () =>
-    HttpResponse.json({ articles: [MOCK_ARTICLE], meta: { has_more: false, after_cursor: '' }, count: 1 }),
+    HttpResponse.json({
+      articles: [MOCK_ARTICLE],
+      meta: { has_more: false, after_cursor: '' },
+      count: 1,
+    }),
   ),
   http.get(`${HC_BASE}/sections/:sid/articles`, () =>
-    HttpResponse.json({ articles: [MOCK_ARTICLE], meta: { has_more: false, after_cursor: '' }, count: 1 }),
+    HttpResponse.json({
+      articles: [MOCK_ARTICLE],
+      meta: { has_more: false, after_cursor: '' },
+      count: 1,
+    }),
   ),
   http.post(`${HC_BASE}/sections/:sid/articles`, () =>
     HttpResponse.json({ article: MOCK_ARTICLE }),
   ),
-  http.put(`${HC_BASE}/articles/:id`, () =>
-    HttpResponse.json({ article: MOCK_ARTICLE }),
-  ),
+  http.put(`${HC_BASE}/articles/:id`, () => HttpResponse.json({ article: MOCK_ARTICLE })),
 
   // Guide - Permission Groups
   http.get(`${BASE}/guide/permission_groups`, () =>
@@ -254,9 +285,7 @@ export const handlers = [
   http.get(`${BASE}/guide/content_tags`, () =>
     HttpResponse.json({ records: [MOCK_CONTENT_TAG], count: 1 }),
   ),
-  http.post(`${BASE}/guide/content_tags`, () =>
-    HttpResponse.json({ record: MOCK_CONTENT_TAG }),
-  ),
+  http.post(`${BASE}/guide/content_tags`, () => HttpResponse.json({ record: MOCK_CONTENT_TAG })),
 
   // Help Center - User Segments
   http.get(`${HC_BASE}/user_segments`, () =>
@@ -273,18 +302,38 @@ export const handlers = [
 
   // Help Center - Categories & Sections
   http.get(`${HC_BASE}/categories`, () =>
-    HttpResponse.json({ categories: [MOCK_CATEGORY], meta: { has_more: false, after_cursor: '' }, count: 1 }),
+    HttpResponse.json({
+      categories: [MOCK_CATEGORY],
+      meta: { has_more: false, after_cursor: '' },
+      count: 1,
+    }),
   ),
   http.get(`${HC_BASE}/:locale/categories`, () =>
-    HttpResponse.json({ categories: [MOCK_CATEGORY], meta: { has_more: false, after_cursor: '' }, count: 1 }),
+    HttpResponse.json({
+      categories: [MOCK_CATEGORY],
+      meta: { has_more: false, after_cursor: '' },
+      count: 1,
+    }),
   ),
   http.get(`${HC_BASE}/sections`, () =>
-    HttpResponse.json({ sections: [MOCK_SECTION], meta: { has_more: false, after_cursor: '' }, count: 1 }),
+    HttpResponse.json({
+      sections: [MOCK_SECTION],
+      meta: { has_more: false, after_cursor: '' },
+      count: 1,
+    }),
   ),
   http.get(`${HC_BASE}/:locale/sections`, () =>
-    HttpResponse.json({ sections: [MOCK_SECTION], meta: { has_more: false, after_cursor: '' }, count: 1 }),
+    HttpResponse.json({
+      sections: [MOCK_SECTION],
+      meta: { has_more: false, after_cursor: '' },
+      count: 1,
+    }),
   ),
   http.get(`${HC_BASE}/categories/:cid/sections`, () =>
-    HttpResponse.json({ sections: [MOCK_SECTION], meta: { has_more: false, after_cursor: '' }, count: 1 }),
+    HttpResponse.json({
+      sections: [MOCK_SECTION],
+      meta: { has_more: false, after_cursor: '' },
+      count: 1,
+    }),
   ),
 ];

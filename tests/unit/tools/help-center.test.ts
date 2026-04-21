@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
-import { createHelpCenterTools } from '../../../src/tools/help-center';
+import { describe, expect, it } from 'vitest';
 import type { ToolContext } from '../../../src/tools/definitions';
+import { createHelpCenterTools } from '../../../src/tools/help-center';
 
 const ctx: ToolContext = { subdomain: 'testsubdomain', getToken: () => 'test-token' };
 
@@ -12,8 +12,8 @@ const findTool = (name: string) => {
 };
 
 describe('help center tools', () => {
-  it('creates 17 tools', () => {
-    expect(createHelpCenterTools(ctx)).toHaveLength(17);
+  it('creates 21 tools', () => {
+    expect(createHelpCenterTools(ctx)).toHaveLength(21);
   });
 
   describe('search_articles', () => {
@@ -103,7 +103,11 @@ describe('help center tools', () => {
 
     it('supports sort_by and sort_order', async () => {
       const tool = findTool('list_articles');
-      const result = await tool.handler({ page_size: 25, sort_by: 'created_at', sort_order: 'desc' });
+      const result = await tool.handler({
+        page_size: 25,
+        sort_by: 'created_at',
+        sort_order: 'desc',
+      });
       expect(result.content[0]?.text).toContain('How to test');
     });
   });
@@ -237,6 +241,116 @@ describe('help center tools', () => {
       });
       expect(result.content[0]?.text).toContain('Attachment created');
       expect(result.content[0]?.text).toContain('screenshot.png');
+    });
+  });
+
+  describe('get_article_outline', () => {
+    it('returns compact outline with sections and available translations', async () => {
+      const tool = findTool('get_article_outline');
+      const result = await tool.handler({ article_id: 5000 });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('Outline — Article #5000');
+      expect(text).toContain('Intro');
+      expect(text).toContain('Setup');
+      expect(text).toContain('Available translations');
+      expect(text).toContain('fr');
+      expect(text).toContain('en-us');
+    });
+
+    it('flags outdated translations', async () => {
+      const tool = findTool('get_article_outline');
+      const result = await tool.handler({ article_id: 5000 });
+      expect(result.content[0]?.text).toContain('(outdated)');
+    });
+  });
+
+  describe('get_article_section', () => {
+    it('returns a single section as markdown', async () => {
+      const tool = findTool('get_article_section');
+      const result = await tool.handler({
+        article_id: 5000,
+        locale: 'en-us',
+        section_index: 1,
+        format: 'markdown',
+      });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('Setup');
+      expect(text).toContain('one two three four');
+      expect(text).toContain('Format: markdown');
+    });
+
+    it('returns html when format=html', async () => {
+      const tool = findTool('get_article_section');
+      const result = await tool.handler({
+        article_id: 5000,
+        locale: 'en-us',
+        section_index: 1,
+        format: 'html',
+      });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('<p>');
+      expect(text).toContain('Format: html');
+    });
+
+    it('throws when section_index is out of range', async () => {
+      const tool = findTool('get_article_section');
+      await expect(
+        tool.handler({ article_id: 5000, locale: 'en-us', section_index: 99 }),
+      ).rejects.toThrow();
+    });
+  });
+
+  describe('update_article_section', () => {
+    it('updates a section and confirms the new word count', async () => {
+      const tool = findTool('update_article_section');
+      const result = await tool.handler({
+        article_id: 5000,
+        locale: 'fr',
+        section_index: 1,
+        content: 'un deux trois',
+        format: 'markdown',
+      });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('Section [1]');
+      expect(text).toContain('updated for article #5000');
+      expect(text).toContain('(fr)');
+    });
+
+    it('accepts raw HTML when format=html', async () => {
+      const tool = findTool('update_article_section');
+      const result = await tool.handler({
+        article_id: 5000,
+        locale: 'fr',
+        section_index: 0,
+        content: '<p>Nouveau contenu</p>',
+        format: 'html',
+      });
+      expect(result.content[0]?.text).toContain('updated for article #5000');
+    });
+  });
+
+  describe('compare_translations', () => {
+    it('returns a section diff table', async () => {
+      const tool = findTool('compare_translations');
+      const result = await tool.handler({
+        article_id: 5000,
+        source_locale: 'en-us',
+        target_locale: 'fr',
+      });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('Translation diff');
+      expect(text).toContain('| Idx | Heading | Status');
+      expect(text).toContain('Setup');
+    });
+
+    it('flags sections with diverging word counts as different', async () => {
+      const tool = findTool('compare_translations');
+      const result = await tool.handler({
+        article_id: 5000,
+        source_locale: 'en-us',
+        target_locale: 'fr',
+      });
+      expect(result.content[0]?.text).toContain('different');
     });
   });
 });

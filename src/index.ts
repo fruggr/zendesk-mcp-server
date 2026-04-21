@@ -1,8 +1,8 @@
+import { buildBasicAuthHeader } from './auth/api-token';
+import { createTokenStore } from './auth/token-store';
 import { loadConfig } from './config';
 import { createMcpServer } from './server';
 import { startStdioTransport } from './transports/stdio';
-import { buildBasicAuthHeader } from './auth/api-token';
-import { createTokenStore } from './auth/token-store';
 
 const main = async (): Promise<void> => {
   const config = loadConfig();

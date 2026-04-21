@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { getBaseUrl, getHelpCenterBaseUrl, getOAuthUrls } from '../../src/constants';
 
 describe('getBaseUrl', () => {
