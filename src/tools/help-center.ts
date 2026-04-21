@@ -7,7 +7,12 @@ import {
   zendeskGet,
   zendeskPost,
 } from '../client/zendesk-api';
-import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '../constants';
+import {
+  DEFAULT_PAGE_SIZE,
+  LARGE_ARTICLE_BODY_CHARS,
+  LARGE_ARTICLE_SECTION_COUNT,
+  MAX_PAGE_SIZE,
+} from '../constants';
 import type {
   ZendeskArticle,
   ZendeskArticleAttachment,
@@ -48,6 +53,18 @@ import {
   extractSearchPaginationMeta,
 } from '../utils/pagination';
 import type { ToolContext, ToolDefinition } from './definitions';
+
+const largeArticleHint = (body: string, sectionCount: number): string | null => {
+  if (body.length < LARGE_ARTICLE_BODY_CHARS && sectionCount < LARGE_ARTICLE_SECTION_COUNT) {
+    return null;
+  }
+  return [
+    `> ⚠ Large article (${body.length} chars, ${sectionCount} sections).`,
+    '> For targeted edits, prefer get_article_outline + get_article_section +',
+    '> update_article_section to avoid re-sending the full body on each write.',
+    '',
+  ].join('\n');
+};
 
 export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
   const { subdomain, getToken } = ctx;
@@ -114,7 +131,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: true,
       title: 'Get Help Center Article',
       description:
-        'Retrieve an article by ID with full body content. Optionally specify locale for a translated version. Returns body (HTML), metadata, source_locale, and list of available translations.',
+        'Retrieve an article by ID with full body content. For large articles, prefer get_article_outline + get_article_section to save tokens. Optionally specify locale for a translated version. Returns body (HTML), metadata, source_locale, and list of available translations.',
       inputSchema: z.object({
         article_id: z.number().int().describe('Article ID'),
         locale: z.string().optional().describe('Locale for translated version'),
@@ -139,7 +156,9 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           token,
           `/articles/${article_id}/translations`,
         );
+        const hint = largeArticleHint(article.body, parseSections(article.body).length);
         const text =
+          (hint ?? '') +
           formatArticle(article) +
           `\n\n**Available translations**: ${translations.map((t) => t.locale).join(', ')}`;
         return { content: [{ type: 'text', text: truncateIfNeeded(text) }] };
@@ -407,7 +426,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: false,
       title: 'Update Article Translation',
       description:
-        "Update article content (title, body) in a specific locale. This is the recommended way to update article text. Use the article's source_locale (from get_article) for the default language, or another locale for translations.",
+        "Update article content (title, body) in a specific locale. For targeted edits on one or a few sections, prefer update_article_section — this tool replaces the FULL body and re-sends the entire article on each write. Use the article's source_locale (from get_article) for the default language, or another locale for translations.",
       inputSchema: z.object({
         article_id: z.number().int(),
         locale: z.string(),

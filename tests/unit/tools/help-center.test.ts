@@ -1,8 +1,12 @@
+import { HttpResponse, http } from 'msw';
 import { describe, expect, it } from 'vitest';
 import type { ToolContext } from '../../../src/tools/definitions';
 import { createHelpCenterTools } from '../../../src/tools/help-center';
+import { MOCK_ARTICLE } from '../../msw-handlers';
+import { mswServer } from '../../setup';
 
 const ctx: ToolContext = { subdomain: 'testsubdomain', getToken: () => 'test-token' };
+const HC_BASE = 'https://testsubdomain.zendesk.com/api/v2/help_center';
 
 const findTool = (name: string) => {
   const tools = createHelpCenterTools(ctx);
@@ -43,6 +47,56 @@ describe('help center tools', () => {
       const tool = findTool('get_article');
       const result = await tool.handler({ article_id: 5000, locale: 'fr' });
       expect(result.content[0]?.text).toContain('5000');
+    });
+
+    it('does not show the large-article hint on small articles', async () => {
+      const tool = findTool('get_article');
+      const result = await tool.handler({ article_id: 5000 });
+      expect(result.content[0]?.text).not.toContain('get_article_outline');
+    });
+
+    it('prepends a hint pointing to get_article_outline on large articles (by size)', async () => {
+      mswServer.use(
+        http.get(`${HC_BASE}/articles/:id`, () =>
+          HttpResponse.json({
+            article: { ...MOCK_ARTICLE, body: '<p>x</p>'.repeat(500) },
+          }),
+        ),
+      );
+      const tool = findTool('get_article');
+      const result = await tool.handler({ article_id: 5000 });
+      expect(result.content[0]?.text).toContain('get_article_outline');
+      expect(result.content[0]?.text).toContain('update_article_section');
+    });
+
+    it('prepends a hint pointing to get_article_outline on multi-section articles', async () => {
+      mswServer.use(
+        http.get(`${HC_BASE}/articles/:id`, () =>
+          HttpResponse.json({
+            article: {
+              ...MOCK_ARTICLE,
+              body: '<h2>A</h2><p>1</p><h2>B</h2><p>2</p><h2>C</h2><p>3</p><h2>D</h2><p>4</p>',
+            },
+          }),
+        ),
+      );
+      const tool = findTool('get_article');
+      const result = await tool.handler({ article_id: 5000 });
+      expect(result.content[0]?.text).toContain('get_article_outline');
+    });
+  });
+
+  describe('update_article_translation description', () => {
+    it('steers callers toward update_article_section for targeted edits', () => {
+      const tool = findTool('update_article_translation');
+      expect(tool.description).toContain('update_article_section');
+    });
+  });
+
+  describe('get_article description', () => {
+    it('mentions get_article_outline as a lighter alternative', () => {
+      const tool = findTool('get_article');
+      expect(tool.description).toContain('get_article_outline');
     });
   });
 
