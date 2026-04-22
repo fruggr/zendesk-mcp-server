@@ -169,6 +169,22 @@ describe('htmlToMarkdown', () => {
     expect(md).toContain('<p>A1</p>');
     expect(md).toContain('<p>A2</p>');
   });
+
+  it('converts <del> to GFM strikethrough (~~...~~)', () => {
+    expect(htmlToMarkdown('<p><del>gone</del></p>')).toContain('~~gone~~');
+  });
+
+  it('converts <s> and <strike> to GFM strikethrough', () => {
+    expect(htmlToMarkdown('<p><s>a</s> <strike>b</strike></p>')).toMatch(/~~a~~.*~~b~~/);
+  });
+
+  it('converts GFM task list items with state', () => {
+    const html =
+      '<ul><li><input type="checkbox" checked="">done</li><li><input type="checkbox">todo</li></ul>';
+    const md = htmlToMarkdown(html);
+    expect(md).toMatch(/\[x\][^\n]*done/);
+    expect(md).toMatch(/\[ \][^\n]*todo/);
+  });
 });
 
 describe('markdownToHtml', () => {
@@ -184,5 +200,34 @@ describe('markdownToHtml', () => {
 
   it('handles empty input', () => {
     expect(markdownToHtml('')).toBe('');
+  });
+
+  it('converts GFM strikethrough to <del>', () => {
+    const html = markdownToHtml('~~gone~~');
+    expect(html).toMatch(/<del>gone<\/del>/);
+  });
+
+  it('converts GFM task list items to checkbox inputs', () => {
+    const html = markdownToHtml('- [x] done\n- [ ] todo\n');
+    expect(html).toMatch(
+      /<input[^>]*checked[^>]*type="checkbox"|<input[^>]*type="checkbox"[^>]*checked/,
+    );
+    expect(html).toMatch(/<li[^>]*>[^<]*<input(?:(?!checked)[^>])*>[^<]*todo/);
+  });
+});
+
+describe('round-trip HTML ↔ Markdown', () => {
+  it('preserves <del> through html → md → html', () => {
+    const src = '<p><del>gone</del></p>';
+    const roundTrip = markdownToHtml(htmlToMarkdown(src));
+    expect(roundTrip).toMatch(/<del>gone<\/del>/);
+  });
+
+  it('preserves a checked task list item through html → md → html', () => {
+    const src = '<ul><li><input type="checkbox" checked="">done</li></ul>';
+    const roundTrip = markdownToHtml(htmlToMarkdown(src));
+    expect(roundTrip).toMatch(
+      /<input[^>]*checked[^>]*type="checkbox"|<input[^>]*type="checkbox"[^>]*checked/,
+    );
   });
 });

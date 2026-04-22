@@ -1,7 +1,16 @@
 import * as cheerio from 'cheerio';
-import { marked } from 'marked';
-import TurndownService from 'turndown';
-import { gfm } from 'turndown-plugin-gfm';
+import type { Element } from 'hast';
+import { toHtml } from 'hast-util-to-html';
+import type { Handle } from 'hast-util-to-mdast';
+import rehypeParse from 'rehype-parse';
+import rehypeRaw from 'rehype-raw';
+import rehypeRemark from 'rehype-remark';
+import rehypeStringify from 'rehype-stringify';
+import remarkGfm from 'remark-gfm';
+import remarkParse from 'remark-parse';
+import remarkRehype from 'remark-rehype';
+import remarkStringify from 'remark-stringify';
+import { unified } from 'unified';
 
 export interface Section {
   index: number;
@@ -114,35 +123,33 @@ export const replaceSectionContent = (
     .join('');
 };
 
-let turndownInstance: TurndownService | null = null;
+// Keep structural HTML that markdown flattens lossily: <pre> with inline <br>
+// collapses to a single line, and <table> cells with multiple <p> break GFM
+// pipe tables. Leaving them as raw HTML is safer for round-trip.
+const keepAsHtml: Handle = (_state, node) => ({
+  type: 'html',
+  value: toHtml(node as Element),
+});
 
-// Keep structural HTML that turndown / gfm flatten lossily:
-// <pre> with <br> collapses to a single line, and <table> cells with multiple
-// <p> break GFM pipe tables. Leaving them as raw HTML is safer for round-trip.
-// addRule takes precedence over gfm's built-in table/code rules.
-const keepAsHtml = (node: { outerHTML?: string }): string => node.outerHTML ?? '';
+const htmlToMdProcessor = unified()
+  .use(rehypeParse, { fragment: true })
+  .use(rehypeRemark, { handlers: { table: keepAsHtml, pre: keepAsHtml } })
+  .use(remarkGfm)
+  .use(remarkStringify, { bullet: '-', emphasis: '_', fences: true });
 
-const getTurndown = (): TurndownService => {
-  if (turndownInstance) return turndownInstance;
-  const td = new TurndownService({
-    headingStyle: 'atx',
-    codeBlockStyle: 'fenced',
-    bulletListMarker: '-',
-    emDelimiter: '_',
-  });
-  td.use(gfm);
-  td.addRule('keepPre', { filter: 'pre', replacement: (_c, node) => keepAsHtml(node) });
-  td.addRule('keepTable', { filter: 'table', replacement: (_c, node) => keepAsHtml(node) });
-  turndownInstance = td;
-  return td;
-};
+const mdToHtmlProcessor = unified()
+  .use(remarkParse)
+  .use(remarkGfm)
+  .use(remarkRehype, { allowDangerousHtml: true })
+  .use(rehypeRaw)
+  .use(rehypeStringify);
 
 export const htmlToMarkdown = (html: string): string => {
   if (!html) return '';
-  return getTurndown().turndown(html);
+  return String(htmlToMdProcessor.processSync(html));
 };
 
 export const markdownToHtml = (markdown: string): string => {
   if (!markdown) return '';
-  return marked.parse(markdown, { async: false });
+  return String(mdToHtmlProcessor.processSync(markdown));
 };
