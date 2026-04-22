@@ -53,6 +53,8 @@ Tools are registered at startup based on `--mode`:
 
 Proxy tools accept `{ operation, params }` and validate params through the original Zod schema before calling the handler.
 
+`--namespace` and `--read-only` are applied by `filterTools` (`src/routing/registry.ts`) *before* the mode switch in `src/server.ts`. They therefore narrow every mode, including the default `namespace` mode — e.g. `--namespace help_center --read-only` registers a single `zendesk_help_center` proxy whose description only lists read-only operations. `--tool <name>` is also filtered here but additionally forces `mode: 'all'` in `src/config.ts`.
+
 ### Token passing
 
 In API token mode, a static Basic auth header is built from `ZENDESK_EMAIL` + `ZENDESK_API_TOKEN`. In OAuth mode, the token is obtained on-demand via browser PKCE flow and cached in memory by `token-store.ts`. Both modes pass a `getToken` function to tool handlers.

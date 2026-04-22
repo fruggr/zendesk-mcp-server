@@ -28,6 +28,20 @@ In `namespace` and `single` modes, the proxy tool accepts `{ "operation": "<tool
 
 > **Tip:** The `single` mode is particularly useful for models with limited tool slots — one tool handles all 36 operations.
 
+### Scoping the surface
+
+`--namespace` and `--read-only` apply to every mode (including the default `namespace` mode) — they filter tools **before** the proxies are built, so the description of each proxy reflects only the operations that survive the filters. Combine them to register a focused surface:
+
+```bash
+# Only the Help Center proxy, only read-only operations
+zendesk-mcp-server acme --namespace help_center --read-only
+
+# Only the Tickets proxy (read + write)
+zendesk-mcp-server acme --namespace tickets
+```
+
+`--namespace` is repeatable. `--tool` is also available for cherry-picking individual operations but forces `--mode all`.
+
 ## Available tools
 
 <details>
@@ -239,6 +253,8 @@ Options:
   --read-only             Only expose read operations
   --log-level <level>     debug | info (default) | warn | error
 ```
+
+`--namespace` and `--read-only` are applied before the proxies are registered, so they narrow the surface in every mode — in the default `namespace` mode, `--namespace help_center` registers a single proxy (`zendesk_help_center`) instead of three.
 
 **Examples:**
 

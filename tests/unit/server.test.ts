@@ -45,6 +45,34 @@ describe('createMcpServer', () => {
     );
     expect(server).toBeDefined();
   });
+
+  it('registers a single read-only proxy when namespace and read-only are combined', () => {
+    const server = createMcpServer(
+      {
+        ...baseConfig,
+        mode: 'namespace',
+        namespaces: ['help_center'],
+        readOnly: true,
+      },
+      getToken,
+    );
+
+    const registered = (
+      server as unknown as {
+        _registeredTools: Record<string, { description?: string }>;
+      }
+    )._registeredTools;
+    const names = Object.keys(registered);
+
+    expect(names).toEqual(['zendesk_help_center']);
+
+    const description = registered['zendesk_help_center']?.description ?? '';
+    expect(description).not.toMatch(/\(write\)/);
+    expect(description).toContain('search_articles');
+    expect(description).toContain('get_article');
+    expect(description).not.toContain('create_article');
+    expect(description).not.toContain('update_article');
+  });
 });
 
 describe('summarizeDescription', () => {
