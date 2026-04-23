@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
+import open from 'open';
 import { getOAuthUrls } from '../constants';
 
 const DEFAULT_CALLBACK_PORT = 3000;
@@ -21,17 +22,6 @@ const generateCodeVerifier = (): string => randomBytes(32).toString('base64url')
 
 const generateCodeChallenge = (verifier: string): string =>
   createHash('sha256').update(verifier).digest('base64url');
-
-const openBrowser = async (url: string): Promise<void> => {
-  // Dynamic import to handle different platforms
-  const { platform } = await import('node:os');
-  const { exec } = await import('node:child_process');
-  const os = platform();
-
-  const command = os === 'darwin' ? 'open' : os === 'win32' ? 'start' : 'xdg-open';
-
-  exec(`${command} "${url}"`);
-};
 
 /**
  * Performs OAuth 2.1 PKCE flow by opening the user's browser.
@@ -137,7 +127,7 @@ export const authenticateViaBrowser = (config: BrowserOAuthConfig): Promise<Toke
       console.error(`Opening browser for Zendesk authentication...`);
       console.error(`If the browser doesn't open, visit: ${authUrl}`);
 
-      openBrowser(authUrl).catch(() => {
+      open(authUrl).catch(() => {
         // Browser open failed — the URL is already logged
       });
     });
