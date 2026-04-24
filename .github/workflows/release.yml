@@ -52,6 +52,13 @@ jobs:
           # Bootstrap only: required for the very first publish, since
           # NPM Trusted Publisher cannot be configured before the package
           # exists. After configuring Trusted Publisher on npmjs.com, remove
-          # this line and the NPM_TOKEN secret. OIDC takes over via
+          # these two lines and the NPM_TOKEN secret. OIDC takes over via
           # `id-token: write`.
+          #
+          # NODE_AUTH_TOKEN is consumed by the .npmrc that actions/setup-node
+          # wrote at the job level (`_authToken=${NODE_AUTH_TOKEN}`); without
+          # it the registry receives the literal placeholder and rejects the
+          # publish with EINVALIDNPMTOKEN. NPM_TOKEN is what @semantic-release/npm
+          # itself reads.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
