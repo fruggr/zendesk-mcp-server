@@ -1,6 +1,6 @@
 {
   "name": "@fruggr/zendesk-mcp-server",
-  "version": "0.0.0-semantic-release",
+  "version": "1.0.0",
   "description": "MCP server for Zendesk Support & Help Center APIs with OAuth 2.1 PKCE",
   "type": "module",
   "main": "dist/index.js",
