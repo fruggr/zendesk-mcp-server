@@ -1,5 +1,7 @@
 # Zendesk MCP Server
 
+[![npm](https://img.shields.io/npm/v/@fruggr/zendesk-mcp-server)](https://www.npmjs.com/package/@fruggr/zendesk-mcp-server)
+
 A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that connects LLMs to the **Zendesk Support & Help Center APIs** — with per-user OAuth 2.1 PKCE authentication and fine-grained tool visibility controls.
 
 ## Why this server?
@@ -119,17 +121,15 @@ zendesk-mcp-server acme --namespace tickets
 
 ## Installation
 
-This server is not yet published on npm. Install directly from GitHub:
-
 ```bash
-# Run once from GitHub (npx clones and caches the repo, then runs)
-npx github:fruggr/zendesk-mcp-server <your-subdomain>
+# Run without installing
+npx -y @fruggr/zendesk-mcp-server <your-subdomain>
 ```
 
-Or install globally from GitHub:
+Or install globally:
 
 ```bash
-npm install -g github:fruggr/zendesk-mcp-server
+npm install -g @fruggr/zendesk-mcp-server
 zendesk-mcp-server <your-subdomain>
 ```
 
@@ -196,7 +196,7 @@ Add to your `claude_desktop_config.json`:
   "mcpServers": {
     "zendesk": {
       "command": "npx",
-      "args": ["-y", "github:fruggr/zendesk-mcp-server", "<your-subdomain>", "--mode", "single"],
+      "args": ["-y", "@fruggr/zendesk-mcp-server", "<your-subdomain>", "--mode", "single"],
       "env": {
         "ZENDESK_EMAIL": "you@example.com",
         "ZENDESK_API_TOKEN": "your-api-token"
@@ -212,7 +212,7 @@ Add to your `claude_desktop_config.json`:
 <summary><strong>Claude Code</strong></summary>
 
 ```bash
-claude mcp add zendesk -- npx -y github:fruggr/zendesk-mcp-server <your-subdomain> --mode single
+claude mcp add zendesk -- npx -y @fruggr/zendesk-mcp-server <your-subdomain> --mode single
 ```
 
 For API token auth, set the env vars before launching Claude Code or add them to your shell profile.
@@ -229,7 +229,7 @@ Add to your `.vscode/mcp.json`:
   "servers": {
     "zendesk": {
       "command": "npx",
-      "args": ["-y", "github:fruggr/zendesk-mcp-server", "<your-subdomain>", "--mode", "single"],
+      "args": ["-y", "@fruggr/zendesk-mcp-server", "<your-subdomain>", "--mode", "single"],
       "env": {
         "ZENDESK_EMAIL": "you@example.com",
         "ZENDESK_API_TOKEN": "your-api-token"
@@ -311,6 +311,17 @@ This project was built with reference to:
 - [mattcoatsworth/zendesk-mcp-server](https://github.com/mattcoatsworth/zendesk-mcp-server)
 - [koundinya/zd-mcp-server](https://github.com/koundinya/zd-mcp-server)
 
+## Releases & versioning
+
+Versions follow [SemVer](https://semver.org/) and are calculated **automatically** from commit messages — no one bumps the version by hand. Every merge to `main` triggers [semantic-release](https://github.com/semantic-release/semantic-release), which inspects the new [Conventional Commits](https://www.conventionalcommits.org/) since the previous tag, computes the next version, updates [`CHANGELOG.md`](CHANGELOG.md), publishes to npm, and creates the matching GitHub Release.
+
+| Commit type | Resulting bump |
+|---|---|
+| `fix:`, `perf:` | patch |
+| `feat:` | minor |
+| `feat!:`, `fix!:`, or a `BREAKING CHANGE:` footer | major |
+| `docs:`, `chore:`, `refactor:`, `test:`, `ci:`, `style:`, `build:` | no release |
+
 ## Contributing
 
 Pull requests are welcome! Whether you write code by hand or with the help of AI, contributions are appreciated.
@@ -320,7 +331,8 @@ If you'd like to contribute:
 1. Fork the repository
 2. Create a feature branch
 3. Write tests (we practice TDD)
-4. Submit a pull request
+4. Use [Conventional Commits](https://www.conventionalcommits.org/) in your commit messages — they directly drive the next version bump
+5. Submit a pull request
 
 Please ensure `pnpm check` and `pnpm test` pass before submitting.
 
