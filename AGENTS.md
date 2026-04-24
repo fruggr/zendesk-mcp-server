@@ -180,3 +180,21 @@ When you add, remove, rename, or meaningfully re-describe a tool, update:
 - The `createHelpCenterTools` length assertion in `tests/unit/tools/help-center.test.ts` (and equivalents for other namespaces).
 
 If you change a description in a way that alters its first sentence, remember that proxy tool descriptions (`namespace` / `single` modes) only surface that first sentence — verify it still makes sense standalone.
+
+## Release workflow
+
+Versions are **fully automated** via [semantic-release](https://github.com/semantic-release/semantic-release). Never bump the version manually, never run `npm version`, never touch the `version` field in `package.json` (kept at `0.0.0-semantic-release` as a placeholder).
+
+- **Trigger**: every push to `main` runs `.github/workflows/release.yml`, which rebuilds, retests, then calls `semantic-release`.
+- **Version calculation**: driven by [Conventional Commits](https://www.conventionalcommits.org/) since the previous tag.
+
+| Commit type | Bump |
+|---|---|
+| `fix:`, `perf:` | patch |
+| `feat:` | minor |
+| `feat!:`, `fix!:`, or `BREAKING CHANGE:` footer | major |
+| `docs:`, `chore:`, `refactor:`, `test:`, `ci:`, `style:`, `build:` | none (no release) |
+
+- **Side effects of a release**: new git tag `vX.Y.Z`, `CHANGELOG.md` and `package.json` committed back to `main` with message `chore(release): X.Y.Z [skip ci]`, new GitHub Release with generated notes, new npm version published to `@fruggr/zendesk-mcp-server`.
+- **npm auth**: publishing uses NPM Trusted Publishing (OIDC) — no `NPM_TOKEN` secret is stored in the repo (except during the initial bootstrap of v1.0.0, documented inline in `release.yml`).
+- **If you want a release to happen**: land at least one `fix:` / `feat:` / breaking change commit in your PR. A PR made only of `chore:` / `docs:` will merge cleanly but produce no new version.

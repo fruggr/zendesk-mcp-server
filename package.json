@@ -1,6 +1,6 @@
 {
-  "name": "@digital4better/zendesk-mcp-server",
-  "version": "0.1.0",
+  "name": "@fruggr/zendesk-mcp-server",
+  "version": "0.0.0-semantic-release",
   "description": "MCP server for Zendesk Support & Help Center APIs with OAuth 2.1 PKCE",
   "type": "module",
   "main": "dist/index.js",
@@ -16,7 +16,6 @@
     "typecheck": "tsc --noEmit",
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
-    "prepare": "npm run build",
     "prepublishOnly": "npm run build",
     "check": "biome check src/",
     "check:fix": "biome check --write src/",
@@ -24,11 +23,31 @@
     "test:watch": "vitest watch",
     "test:smoke": "pnpm build && node scripts/smoke-test.mjs"
   },
+  "keywords": [
+    "mcp",
+    "zendesk",
+    "help-center",
+    "modelcontextprotocol",
+    "ai",
+    "claude"
+  ],
+  "author": "Digital4Better <hello@digital4better.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fruggr/zendesk-mcp-server.git"
+  },
+  "bugs": {
+    "url": "https://github.com/fruggr/zendesk-mcp-server/issues"
+  },
+  "homepage": "https://github.com/fruggr/zendesk-mcp-server#readme",
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
     "node": ">=20"
   },
   "packageManager": "pnpm@10.32.1",
-  "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
     "cheerio": "1.2.0",
@@ -48,12 +67,18 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.7",
+    "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/git": "^10.0.1",
+    "@semantic-release/github": "^12.0.6",
+    "@semantic-release/npm": "^13.1.5",
     "@tsconfig/node20": "^20.1.9",
     "@tsconfig/strictest": "^2.0.8",
     "@types/hast": "^3.0.4",
     "@types/node": "^22.15.0",
     "@vitest/coverage-v8": "^4.1.0",
+    "conventional-changelog-conventionalcommits": "^9.3.1",
     "msw": "^2.12.13",
+    "semantic-release": "^25.0.3",
     "shx": "^0.3.4",
     "tsup": "^8.5.1",
     "tsx": "^4.21.0",
