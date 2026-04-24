@@ -32,7 +32,11 @@ jobs:
           # supported runtime.
           node-version: 22
           cache: pnpm
-          registry-url: https://registry.npmjs.org
+          # No `registry-url`: with NPM Trusted Publishing, the OIDC exchange
+          # happens inside @semantic-release/npm. Letting setup-node write
+          # an ~/.npmrc with an `_authToken=${NODE_AUTH_TOKEN}` placeholder
+          # would either require us to re-introduce NPM_TOKEN or break the
+          # pre-publish `npm whoami` check.
 
       - run: pnpm install --frozen-lockfile
 
@@ -49,16 +53,6 @@ jobs:
       - run: pnpm exec semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Bootstrap only: required for the very first publish, since
-          # NPM Trusted Publisher cannot be configured before the package
-          # exists. After configuring Trusted Publisher on npmjs.com, remove
-          # these two lines and the NPM_TOKEN secret. OIDC takes over via
-          # `id-token: write`.
-          #
-          # NODE_AUTH_TOKEN is consumed by the .npmrc that actions/setup-node
-          # wrote at the job level (`_authToken=${NODE_AUTH_TOKEN}`); without
-          # it the registry receives the literal placeholder and rejects the
-          # publish with EINVALIDNPMTOKEN. NPM_TOKEN is what @semantic-release/npm
-          # itself reads.
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # Auth to npm is via NPM Trusted Publishing (OIDC), configured on
+          # npmjs.com against this workflow file. The `id-token: write`
+          # permission above is all that's needed — no NPM_TOKEN secret.
