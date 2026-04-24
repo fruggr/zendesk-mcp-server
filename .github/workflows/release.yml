@@ -27,7 +27,10 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # semantic-release v25+ requires Node >= 22.14. Keep ci.yml on
+          # Node 20 (matching `engines.node`) to test against the minimum
+          # supported runtime.
+          node-version: 22
           cache: pnpm
           registry-url: https://registry.npmjs.org
 
