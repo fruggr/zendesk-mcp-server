@@ -167,6 +167,42 @@ Tests use vitest + MSW for mocking the Zendesk API.
 - Functional style: pure functions, no classes (except `ZendeskApiError`), immutable data
 - Tool handlers are standalone functions in `ToolDefinition[]` arrays, not tied to `registerTool`
 
+## Submission quality bar
+
+This is the bar to clear before opening a PR or asking the maintainer to
+review. It applies the same way whether the code was written by a human or
+by an AI assistant — the goal is that the patch survives external scrutiny
+and that the human author can defend every line.
+
+Before you submit:
+
+1. **Re-read your own diff in full.** No skimming. If a hunk no longer makes
+   sense out of the context where you wrote it, rewrite it.
+2. **Justify each change.** For every non-trivial hunk, you should be able
+   to answer: why is this change here, what would break without it, and is
+   it the smallest version of the fix.
+3. **Look for what you didn't write.** Missing zod validation on an input,
+   missing test for an edge case, missing README/AGENTS update on a renamed
+   tool, missing error path. Reviewers find these — find them first.
+4. **Self-review prompt.** Run a Claude Code pass on the diff against
+   `main` using the prompt in the
+   [`CONTRIBUTING.md`](CONTRIBUTING.md#author-side-ai-review) "Author-side
+   AI review" section. Address findings or document why you're skipping
+   them in the PR description.
+5. **Run the full local gate**: `pnpm check`, `pnpm typecheck`, `pnpm test`,
+   `pnpm build`. A green CI on a non-green local run means a flaky check,
+   not a free pass.
+6. **Scope discipline.** Don't bundle unrelated cleanups into a feature PR.
+   If you spot something worth fixing along the way, note it and open a
+   separate PR.
+7. **No invented behavior.** If a Zendesk API field, an SDK option, or a
+   library API isn't confirmed by the docs, an existing test, or a typed
+   response, mark it `// TODO:` and surface the question in the PR
+   description rather than guessing.
+
+The maintainer's review starts from the assumption that everything above
+has already been done.
+
 ## Documentation maintenance
 
 Any change to the tool surface requires a README sync in the same PR. The
