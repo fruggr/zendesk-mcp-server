@@ -1,0 +1,40 @@
+# CodeRabbit configuration.
+# Schema reference: https://docs.coderabbit.ai/reference/configuration
+# Only keys documented in the official schema are set here. New options
+# should be added with a comment linking to the doc that introduced them.
+
+language: en-US
+
+reviews:
+  profile: chill
+  high_level_summary: true
+  poem: false
+  review_status: true
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - main
+  path_filters:
+    - '!dist/**'
+    - '!node_modules/**'
+    - '!coverage/**'
+    - '!pnpm-lock.yaml'
+    - '!CHANGELOG.md'
+  path_instructions:
+    - path: 'src/tools/**'
+      instructions: |
+        These files define MCP tools exposed to the LLM. Check that:
+        - The Zod schema validates all inputs and matches the handler's usage.
+        - The first sentence of the tool description reads as a self-contained
+          summary (proxy modes only surface that first sentence).
+        - Any new, renamed, or removed tool is reflected in README.md and
+          AGENTS.md (tool tables and per-namespace counts).
+    - path: 'tests/**'
+      instructions: |
+        Zendesk API calls in tests must go through MSW handlers in
+        tests/msw-handlers.ts. Flag any test that hits the real network.
+
+knowledge_base:
+  learnings:
+    scope: local

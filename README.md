@@ -324,17 +324,18 @@ Versions follow [SemVer](https://semver.org/) and are calculated **automatically
 
 ## Contributing
 
-Pull requests are welcome! Whether you write code by hand or with the help of AI, contributions are appreciated.
+Pull requests are welcome — including AI-assisted ones, as long as the human author has read and validated every line.
 
-If you'd like to contribute:
+The full guide is in [`CONTRIBUTING.md`](CONTRIBUTING.md). The short version:
 
-1. Fork the repository
-2. Create a feature branch
-3. Write tests (we practice TDD)
-4. Use [Conventional Commits](https://www.conventionalcommits.org/) in your commit messages — they directly drive the next version bump
-5. Submit a pull request
+1. Fork and create a feature branch from `main`.
+2. Practice TDD: write the failing test first, then implement.
+3. Use [Conventional Commits](https://www.conventionalcommits.org/) — they drive the next version bump via semantic-release.
+4. Make `pnpm check`, `pnpm typecheck`, and `pnpm test` pass locally.
+5. Run a Claude Code review on your diff before pushing.
+6. Open a PR.
 
-Please ensure `pnpm check` and `pnpm test` pass before submitting.
+Every PR is reviewed automatically by [CodeRabbit](https://www.coderabbit.ai) in CI, on top of the author-side AI review. The project is maintained in part with [Claude Code](https://www.anthropic.com/claude-code) assistance; that workflow is documented in [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## License
 
