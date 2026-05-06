@@ -83,9 +83,82 @@ describe('ticket tools', () => {
         .map((b) => (b as { text: string }).text)
         .join('\n');
       expect(allText).toContain('huge.png');
-      expect(allText).toContain('skipped: exceeds 5 MB limit');
+      expect(allText).toContain('skipped: exceeds 5 MB per-image limit');
       const imageBlocks = result.content.filter((c) => c.type === 'image');
       expect(imageBlocks).toHaveLength(1);
+    });
+
+    it('caps embedded image count to MAX_EMBEDDED_IMAGE_COUNT', async () => {
+      const manyImages = Array.from({ length: 12 }, (_, i) => ({
+        id: 40000 + i,
+        file_name: `img-${i}.png`,
+        content_url: `https://testsubdomain.zendesk.com/attachments/token/abc/?name=img-${i}.png`,
+        content_type: 'image/png',
+        size: 1024,
+        inline: false,
+      }));
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/comments', () =>
+          HttpResponse.json({
+            comments: [
+              {
+                id: 1,
+                body: '',
+                author_id: 1,
+                public: true,
+                created_at: '2026-01-01T00:00:00Z',
+                attachments: manyImages,
+              },
+            ],
+          }),
+        ),
+      );
+      const tool = findTool('get_ticket_attachments');
+      const result = await tool.handler({ ticket_id: 1 });
+      const imageBlocks = result.content.filter((c) => c.type === 'image');
+      expect(imageBlocks).toHaveLength(10);
+      const allText = result.content
+        .filter((c) => c.type === 'text')
+        .map((b) => (b as { text: string }).text)
+        .join('\n');
+      expect(allText).toContain('skipped: max 10 embedded images reached');
+    });
+
+    it('caps total embedded bytes to MAX_TOTAL_ATTACHMENT_BYTES', async () => {
+      const fiveMb = 5 * 1024 * 1024;
+      const heavyImages = Array.from({ length: 6 }, (_, i) => ({
+        id: 50000 + i,
+        file_name: `heavy-${i}.png`,
+        content_url: `https://testsubdomain.zendesk.com/attachments/token/abc/?name=heavy-${i}.png`,
+        content_type: 'image/png',
+        size: fiveMb - 1,
+        inline: false,
+      }));
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/comments', () =>
+          HttpResponse.json({
+            comments: [
+              {
+                id: 1,
+                body: '',
+                author_id: 1,
+                public: true,
+                created_at: '2026-01-01T00:00:00Z',
+                attachments: heavyImages,
+              },
+            ],
+          }),
+        ),
+      );
+      const tool = findTool('get_ticket_attachments');
+      const result = await tool.handler({ ticket_id: 1 });
+      const imageBlocks = result.content.filter((c) => c.type === 'image');
+      expect(imageBlocks).toHaveLength(4);
+      const allText = result.content
+        .filter((c) => c.type === 'text')
+        .map((b) => (b as { text: string }).text)
+        .join('\n');
+      expect(allText).toContain('skipped: total embedded budget (20 MB) reached');
     });
 
     it('returns "no attachments" message when ticket has none', async () => {
