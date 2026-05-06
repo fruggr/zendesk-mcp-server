@@ -155,7 +155,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: true,
       title: 'Get Zendesk Ticket Attachments',
       description:
-        "Retrieve all attachments from a ticket's comments. Call this whenever a ticket or comment mentions an attachment, screenshot, or file. Images are returned as base64-encoded image content blocks the LLM can describe directly (useful for accessibility). Non-image attachments are listed as text references (file name, type, size, URL).",
+        "Retrieve all attachments from a ticket's comments. Call this whenever a ticket or comment mentions an attached file or screenshot. Images are returned as base64-encoded image content blocks the LLM can describe directly (useful for accessibility). Non-image attachments are listed as text references (file name, type, size, URL).",
       inputSchema: z.object({
         ticket_id: z.number().int().describe('Ticket ID'),
         comment_id: z.number().int().optional().describe('Restrict to attachments of this comment'),
