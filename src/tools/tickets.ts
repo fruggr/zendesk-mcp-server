@@ -27,7 +27,7 @@ import {
 import type { ToolContext, ToolDefinition, ToolImageContent, ToolTextContent } from './definitions';
 
 const formatReference = (attachment: ZendeskTicketAttachment): string =>
-  `- **${attachment.file_name}** (${attachment.content_type}, ${attachment.size} bytes) — ${attachment.content_url}`;
+  `**${attachment.file_name}** (id ${attachment.id}, ${attachment.content_type}, ${attachment.size} bytes) — ${attachment.content_url}`;
 
 const buildEmbeddedImageBlocks = async (
   token: string,
@@ -36,10 +36,7 @@ const buildEmbeddedImageBlocks = async (
   const { data, contentType } = await fetchZendeskBinary(token, attachment.content_url);
   return [
     { type: 'image', data: data.toString('base64'), mimeType: contentType },
-    {
-      type: 'text',
-      text: `**${attachment.file_name}** (id ${attachment.id}, ${attachment.size} bytes) — ${attachment.content_url}`,
-    },
+    { type: 'text', text: formatReference(attachment) },
   ];
 };
 
