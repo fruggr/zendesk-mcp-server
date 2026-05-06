@@ -47,11 +47,12 @@ zendesk-mcp-server acme --namespace tickets
 ## Available tools
 
 <details>
-<summary><strong>Tickets</strong> (9 tools)</summary>
+<summary><strong>Tickets</strong> (10 tools)</summary>
 
 | Tool | Description | Mode |
 |------|-------------|------|
 | `get_ticket` | Retrieve a ticket by ID with optional comments | read |
+| `get_ticket_attachments` | Download ticket attachments (images as base64, others as references) | read |
 | `search_tickets` | Search tickets using Zendesk query syntax | read |
 | `list_tickets` | List tickets with cursor-based pagination | read |
 | `get_linked_incidents` | Get incidents linked to a problem ticket | read |
