@@ -263,6 +263,26 @@ describe('ticket tools', () => {
       expect(fetchCount).toBe(1);
     });
 
+    it('returns a "comment not found" message when comment_id does not match', async () => {
+      const tool = findTool('get_ticket_attachments');
+      const result = await tool.handler({ ticket_id: 1, comment_id: 99999 });
+      expect(result.content).toHaveLength(1);
+      expect((result.content[0] as { text: string }).text).toBe(
+        'Comment #99999 not found on ticket #1.',
+      );
+    });
+
+    it('returns attachments scoped to comment_id when it matches', async () => {
+      const tool = findTool('get_ticket_attachments');
+      const result = await tool.handler({ ticket_id: 1, comment_id: 3000 });
+      const allText = result.content
+        .filter((c) => c.type === 'text')
+        .map((b) => (b as { text: string }).text)
+        .join('\n');
+      expect(allText).toContain('# Attachments for ticket #1 (3 total)');
+      expect(allText).toContain('screenshot.png');
+    });
+
     it('returns "no attachments" message when ticket has none', async () => {
       mswServer.use(
         http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/comments', () =>

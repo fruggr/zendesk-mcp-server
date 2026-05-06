@@ -176,6 +176,16 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         };
         const token = await getToken();
         const comments = await getTicketComments(subdomain, token, ticket_id);
+        if (comment_id !== undefined && !comments.some((c) => c.id === comment_id)) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `Comment #${comment_id} not found on ticket #${ticket_id}.`,
+              },
+            ],
+          };
+        }
         const scoped = comment_id ? comments.filter((c) => c.id === comment_id) : comments;
         const attachments = scoped.flatMap((c) => c.attachments ?? []);
         if (attachments.length === 0) {
