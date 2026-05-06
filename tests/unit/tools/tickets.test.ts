@@ -337,6 +337,28 @@ describe('ticket tools', () => {
       expect(allText).toContain('screenshot.png');
     });
 
+    it('handles comments where the attachments field is omitted', async () => {
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/comments', () =>
+          HttpResponse.json({
+            comments: [
+              {
+                id: 1,
+                body: 'no attachments key',
+                author_id: 1,
+                public: true,
+                created_at: '2026-01-01T00:00:00Z',
+              },
+            ],
+          }),
+        ),
+      );
+      const tool = findTool('get_ticket_attachments');
+      const result = await tool.handler({ ticket_id: 1 });
+      expect(result.content).toHaveLength(1);
+      expect((result.content[0] as { text: string }).text).toContain('No attachments found');
+    });
+
     it('returns "no attachments" message when ticket has none', async () => {
       mswServer.use(
         http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/comments', () =>
