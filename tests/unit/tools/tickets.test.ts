@@ -337,6 +337,64 @@ describe('ticket tools', () => {
       expect(allText).toContain('screenshot.png');
     });
 
+    it('preserves order and image/caption pairing across multiple images', async () => {
+      const images = [
+        {
+          id: 90001,
+          file_name: 'first.png',
+          content_url: 'https://testsubdomain.zendesk.com/attachments/token/p1/?name=first.png',
+          content_type: 'image/png',
+          size: 100,
+          inline: false,
+        },
+        {
+          id: 90002,
+          file_name: 'second.png',
+          content_url: 'https://testsubdomain.zendesk.com/attachments/token/p2/?name=second.png',
+          content_type: 'image/png',
+          size: 200,
+          inline: false,
+        },
+        {
+          id: 90003,
+          file_name: 'third.png',
+          content_url: 'https://testsubdomain.zendesk.com/attachments/token/p3/?name=third.png',
+          content_type: 'image/png',
+          size: 300,
+          inline: false,
+        },
+      ];
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/comments', () =>
+          HttpResponse.json({
+            comments: [
+              {
+                id: 1,
+                body: '',
+                author_id: 1,
+                public: true,
+                created_at: '2026-01-01T00:00:00Z',
+                attachments: images,
+              },
+            ],
+          }),
+        ),
+      );
+      const tool = findTool('get_ticket_attachments');
+      const result = await tool.handler({ ticket_id: 1 });
+      expect(result.content).toHaveLength(7);
+      expect(result.content[0]).toMatchObject({ type: 'text' });
+      expect((result.content[0] as { text: string }).text).toContain(
+        '# Attachments for ticket #1 (3 total)',
+      );
+      expect(result.content[1]).toMatchObject({ type: 'image' });
+      expect((result.content[2] as { text: string }).text).toContain('first.png');
+      expect(result.content[3]).toMatchObject({ type: 'image' });
+      expect((result.content[4] as { text: string }).text).toContain('second.png');
+      expect(result.content[5]).toMatchObject({ type: 'image' });
+      expect((result.content[6] as { text: string }).text).toContain('third.png');
+    });
+
     it('handles comments where the attachments field is omitted', async () => {
       mswServer.use(
         http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/comments', () =>
