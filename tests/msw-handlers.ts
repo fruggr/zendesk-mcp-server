@@ -132,12 +132,44 @@ export const MOCK_ARTICLE_ATTACHMENT = {
   created_at: '2026-01-01T00:00:00Z',
 };
 
+export const MOCK_TICKET_ATTACHMENT_IMAGE = {
+  id: 30001,
+  file_name: 'screenshot.png',
+  content_url: 'https://testsubdomain.zendesk.com/attachments/token/abc/?name=screenshot.png',
+  content_type: 'image/png',
+  size: 1024,
+  inline: true,
+};
+
+export const MOCK_TICKET_ATTACHMENT_PDF = {
+  id: 30002,
+  file_name: 'report.pdf',
+  content_url: 'https://testsubdomain.zendesk.com/attachments/token/def/?name=report.pdf',
+  content_type: 'application/pdf',
+  size: 4096,
+  inline: false,
+};
+
+export const MOCK_TICKET_ATTACHMENT_LARGE_IMAGE = {
+  id: 30003,
+  file_name: 'huge.png',
+  content_url: 'https://testsubdomain.zendesk.com/attachments/token/ghi/?name=huge.png',
+  content_type: 'image/png',
+  size: 10 * 1024 * 1024,
+  inline: false,
+};
+
 export const MOCK_COMMENT = {
   id: 3000,
   body: 'This is a comment',
   author_id: 9999,
   public: true,
   created_at: '2026-01-01T00:00:00Z',
+  attachments: [
+    MOCK_TICKET_ATTACHMENT_IMAGE,
+    MOCK_TICKET_ATTACHMENT_PDF,
+    MOCK_TICKET_ATTACHMENT_LARGE_IMAGE,
+  ],
 };
 
 export const handlers = [
@@ -147,6 +179,17 @@ export const handlers = [
     return HttpResponse.json({ ticket: { ...MOCK_TICKET, id: Number(params['id']) } });
   }),
   http.get(`${BASE}/tickets/:id/comments`, () => HttpResponse.json({ comments: [MOCK_COMMENT] })),
+  http.get('https://testsubdomain.zendesk.com/attachments/token/:token/', ({ request }) => {
+    const token = new URL(request.url).pathname.split('/')[3];
+    if (token === 'def') {
+      return HttpResponse.arrayBuffer(new Uint8Array([0x25, 0x50, 0x44, 0x46]).buffer, {
+        headers: { 'content-type': 'application/pdf' },
+      });
+    }
+    return HttpResponse.arrayBuffer(new Uint8Array([0x89, 0x50, 0x4e, 0x47]).buffer, {
+      headers: { 'content-type': 'image/png' },
+    });
+  }),
   http.get(`${BASE}/tickets/:id/incidents`, () => HttpResponse.json({ tickets: [MOCK_TICKET] })),
   http.get(`${BASE}/tickets`, () =>
     HttpResponse.json({

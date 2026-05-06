@@ -1,6 +1,8 @@
+import { HttpResponse, http } from 'msw';
 import { describe, expect, it } from 'vitest';
 import type { ToolContext } from '../../../src/tools/definitions';
 import { createTicketTools } from '../../../src/tools/tickets';
+import { mswServer } from '../../setup';
 
 const ctx: ToolContext = { subdomain: 'testsubdomain', getToken: () => 'test-token' };
 
@@ -12,10 +14,9 @@ const findTool = (name: string) => {
 };
 
 describe('ticket tools', () => {
-  it('creates 10 tools (9 tickets + 1 search)', () => {
-    // search is in search.ts, tickets.ts has 9
+  it('creates 10 tools (10 tickets + 1 search elsewhere)', () => {
     const tools = createTicketTools(ctx);
-    expect(tools).toHaveLength(9);
+    expect(tools).toHaveLength(10);
   });
 
   describe('get_ticket', () => {
@@ -35,6 +36,64 @@ describe('ticket tools', () => {
 
     it('has readOnly annotation', () => {
       const tool = findTool('get_ticket');
+      expect(tool.annotations.readOnlyHint).toBe(true);
+    });
+  });
+
+  describe('get_ticket_attachments', () => {
+    it('returns image content for image attachments', async () => {
+      const tool = findTool('get_ticket_attachments');
+      const result = await tool.handler({ ticket_id: 1 });
+      const imageBlocks = result.content.filter((c) => c.type === 'image');
+      expect(imageBlocks).toHaveLength(1);
+      const image = imageBlocks[0] as { type: 'image'; data: string; mimeType: string };
+      expect(image.mimeType).toBe('image/png');
+      expect(image.data.length).toBeGreaterThan(0);
+    });
+
+    it('returns text reference for non-image attachments', async () => {
+      const tool = findTool('get_ticket_attachments');
+      const result = await tool.handler({ ticket_id: 1 });
+      const textBlocks = result.content.filter((c) => c.type === 'text');
+      const allText = textBlocks.map((b) => (b as { text: string }).text).join('\n');
+      expect(allText).toContain('report.pdf');
+      expect(allText).toContain('application/pdf');
+      expect(allText).toContain(
+        'https://testsubdomain.zendesk.com/attachments/token/def/?name=report.pdf',
+      );
+    });
+
+    it('respects MAX_ATTACHMENT_BYTES for oversize images', async () => {
+      const tool = findTool('get_ticket_attachments');
+      const result = await tool.handler({ ticket_id: 1 });
+      const allText = result.content
+        .filter((c) => c.type === 'text')
+        .map((b) => (b as { text: string }).text)
+        .join('\n');
+      expect(allText).toContain('huge.png');
+      expect(allText).toContain('skipped: exceeds 5 MB limit');
+      const imageBlocks = result.content.filter((c) => c.type === 'image');
+      expect(imageBlocks).toHaveLength(1);
+    });
+
+    it('returns "no attachments" message when ticket has none', async () => {
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/comments', () =>
+          HttpResponse.json({
+            comments: [
+              { id: 99, body: '', author_id: 1, public: true, created_at: '2026-01-01T00:00:00Z' },
+            ],
+          }),
+        ),
+      );
+      const tool = findTool('get_ticket_attachments');
+      const result = await tool.handler({ ticket_id: 1 });
+      expect(result.content).toHaveLength(1);
+      expect((result.content[0] as { text: string }).text).toContain('No attachments found');
+    });
+
+    it('has readOnly annotation', () => {
+      const tool = findTool('get_ticket_attachments');
       expect(tool.annotations.readOnlyHint).toBe(true);
     });
   });
