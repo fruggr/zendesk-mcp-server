@@ -39,6 +39,24 @@ const buildEmbeddedImageBlocks = async (
   ];
 };
 
+const fetchAllTicketComments = async (
+  subdomain: string,
+  token: string,
+  ticketId: number,
+): Promise<ZendeskComment[]> => {
+  const all: ZendeskComment[] = [];
+  let cursor: string | undefined;
+  for (;;) {
+    const response = await zendeskGet<{
+      comments: ZendeskComment[];
+      meta?: { has_more: boolean; after_cursor: string };
+    }>(subdomain, token, `/tickets/${ticketId}/comments`, buildCursorParams(MAX_PAGE_SIZE, cursor));
+    all.push(...response.comments);
+    if (!response.meta?.has_more || !response.meta?.after_cursor) return all;
+    cursor = response.meta.after_cursor;
+  }
+};
+
 const collectAttachmentBlocks = async (
   token: string,
   attachments: ZendeskTicketAttachment[],
@@ -145,11 +163,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           comment_id?: number;
         };
         const token = await getToken();
-        const { comments } = await zendeskGet<{ comments: ZendeskComment[] }>(
-          subdomain,
-          token,
-          `/tickets/${ticket_id}/comments`,
-        );
+        const comments = await fetchAllTicketComments(subdomain, token, ticket_id);
         const scoped = comment_id ? comments.filter((c) => c.id === comment_id) : comments;
         const attachments = scoped.flatMap((c) => c.attachments ?? []);
         if (attachments.length === 0) {

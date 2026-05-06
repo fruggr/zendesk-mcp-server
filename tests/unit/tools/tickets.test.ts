@@ -161,6 +161,67 @@ describe('ticket tools', () => {
       expect(allText).toContain('skipped: total embedded budget (20 MB) reached');
     });
 
+    it('paginates through all pages of comments', async () => {
+      const page1Attachment = {
+        id: 60001,
+        file_name: 'page1.png',
+        content_url: 'https://testsubdomain.zendesk.com/attachments/token/p1/?name=page1.png',
+        content_type: 'image/png',
+        size: 1024,
+        inline: false,
+      };
+      const page2Attachment = {
+        id: 60002,
+        file_name: 'page2.png',
+        content_url: 'https://testsubdomain.zendesk.com/attachments/token/p2/?name=page2.png',
+        content_type: 'image/png',
+        size: 1024,
+        inline: false,
+      };
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/comments', ({ request }) => {
+          const cursor = new URL(request.url).searchParams.get('page[after]');
+          if (!cursor) {
+            return HttpResponse.json({
+              comments: [
+                {
+                  id: 1,
+                  body: '',
+                  author_id: 1,
+                  public: true,
+                  created_at: '2026-01-01T00:00:00Z',
+                  attachments: [page1Attachment],
+                },
+              ],
+              meta: { has_more: true, after_cursor: 'CURSOR_2' },
+            });
+          }
+          return HttpResponse.json({
+            comments: [
+              {
+                id: 2,
+                body: '',
+                author_id: 1,
+                public: true,
+                created_at: '2026-01-02T00:00:00Z',
+                attachments: [page2Attachment],
+              },
+            ],
+            meta: { has_more: false, after_cursor: null },
+          });
+        }),
+      );
+      const tool = findTool('get_ticket_attachments');
+      const result = await tool.handler({ ticket_id: 1 });
+      const allText = result.content
+        .filter((c) => c.type === 'text')
+        .map((b) => (b as { text: string }).text)
+        .join('\n');
+      expect(allText).toContain('page1.png');
+      expect(allText).toContain('page2.png');
+      expect(allText).toContain('# Attachments for ticket #1 (2 total)');
+    });
+
     it('returns "no attachments" message when ticket has none', async () => {
       mswServer.use(
         http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/comments', () =>
