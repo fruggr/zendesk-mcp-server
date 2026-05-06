@@ -1,6 +1,12 @@
 import * as z from 'zod/v4';
 import { fetchZendeskBinary, zendeskGet, zendeskPost, zendeskPut } from '../client/zendesk-api';
-import { DEFAULT_PAGE_SIZE, MAX_ATTACHMENT_BYTES, MAX_PAGE_SIZE } from '../constants';
+import {
+  DEFAULT_PAGE_SIZE,
+  MAX_ATTACHMENT_BYTES,
+  MAX_EMBEDDED_IMAGE_COUNT,
+  MAX_PAGE_SIZE,
+  MAX_TOTAL_ATTACHMENT_BYTES,
+} from '../constants';
 import type {
   ZendeskComment,
   ZendeskListResponse,
@@ -16,18 +22,13 @@ import {
 } from '../utils/pagination';
 import type { ToolContext, ToolDefinition, ToolImageContent, ToolTextContent } from './definitions';
 
-const buildAttachmentBlocks = async (
+const formatReference = (attachment: ZendeskTicketAttachment): string =>
+  `- **${attachment.file_name}** (${attachment.content_type}, ${attachment.size} bytes) — ${attachment.content_url}`;
+
+const buildEmbeddedImageBlocks = async (
   token: string,
   attachment: ZendeskTicketAttachment,
 ): Promise<Array<ToolTextContent | ToolImageContent>> => {
-  const isImage = attachment.content_type.startsWith('image/');
-  const reference = `- **${attachment.file_name}** (${attachment.content_type}, ${attachment.size} bytes) — ${attachment.content_url}`;
-  if (!isImage) {
-    return [{ type: 'text', text: reference }];
-  }
-  if (attachment.size > MAX_ATTACHMENT_BYTES) {
-    return [{ type: 'text', text: `${reference} — skipped: exceeds 5 MB limit` }];
-  }
   const { data, contentType } = await fetchZendeskBinary(token, attachment.content_url);
   return [
     { type: 'image', data: Buffer.from(data).toString('base64'), mimeType: contentType },
@@ -36,6 +37,45 @@ const buildAttachmentBlocks = async (
       text: `**${attachment.file_name}** (id ${attachment.id}, ${attachment.size} bytes) — ${attachment.content_url}`,
     },
   ];
+};
+
+const collectAttachmentBlocks = async (
+  token: string,
+  attachments: ZendeskTicketAttachment[],
+): Promise<Array<ToolTextContent | ToolImageContent>> => {
+  const blocks: Array<ToolTextContent | ToolImageContent> = [];
+  let totalEmbeddedBytes = 0;
+  let embeddedCount = 0;
+
+  for (const attachment of attachments) {
+    const reference = formatReference(attachment);
+    const isImage = attachment.content_type.startsWith('image/');
+
+    if (!isImage) {
+      blocks.push({ type: 'text', text: reference });
+      continue;
+    }
+
+    let skipReason: string | null = null;
+    if (attachment.size > MAX_ATTACHMENT_BYTES) {
+      skipReason = 'skipped: exceeds 5 MB per-image limit';
+    } else if (embeddedCount >= MAX_EMBEDDED_IMAGE_COUNT) {
+      skipReason = `skipped: max ${MAX_EMBEDDED_IMAGE_COUNT} embedded images reached`;
+    } else if (totalEmbeddedBytes + attachment.size > MAX_TOTAL_ATTACHMENT_BYTES) {
+      skipReason = 'skipped: total embedded budget (20 MB) reached';
+    }
+
+    if (skipReason) {
+      blocks.push({ type: 'text', text: `${reference} — ${skipReason}` });
+      continue;
+    }
+
+    blocks.push(...(await buildEmbeddedImageBlocks(token, attachment)));
+    totalEmbeddedBytes += attachment.size;
+    embeddedCount += 1;
+  }
+
+  return blocks;
 };
 
 export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
@@ -122,14 +162,14 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
             ],
           };
         }
-        const blocks = await Promise.all(attachments.map((a) => buildAttachmentBlocks(token, a)));
+        const blocks = await collectAttachmentBlocks(token, attachments);
         return {
           content: [
             {
               type: 'text',
               text: `# Attachments for ticket #${ticket_id} (${attachments.length} total)`,
             },
-            ...blocks.flat(),
+            ...blocks,
           ],
         };
       },
