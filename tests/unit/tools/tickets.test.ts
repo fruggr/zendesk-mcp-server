@@ -1,6 +1,5 @@
 import { HttpResponse, http } from 'msw';
-import { beforeEach, describe, expect, it } from 'vitest';
-import { clearTicketCommentsCache } from '../../../src/cache/ticket-comments';
+import { describe, expect, it } from 'vitest';
 import type { ToolContext } from '../../../src/tools/definitions';
 import { createTicketTools } from '../../../src/tools/tickets';
 import { mswServer } from '../../setup';
@@ -13,10 +12,6 @@ const findTool = (name: string) => {
   if (!tool) throw new Error(`Tool ${name} not found`);
   return tool;
 };
-
-beforeEach(() => {
-  clearTicketCommentsCache();
-});
 
 describe('ticket tools', () => {
   it('creates 10 tools (10 tickets + 1 search elsewhere)', () => {
@@ -279,42 +274,6 @@ describe('ticket tools', () => {
       expect(allText).toContain('good.png');
       expect(allText).toContain('broken.png');
       expect(allText).toContain('download failed: 404');
-    });
-
-    it('reuses cached comments across get_ticket and get_ticket_attachments', async () => {
-      let fetchCount = 0;
-      mswServer.use(
-        http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/comments', () => {
-          fetchCount += 1;
-          return HttpResponse.json({
-            comments: [
-              {
-                id: 1,
-                body: 'cached comment',
-                author_id: 1,
-                public: true,
-                created_at: '2026-01-01T00:00:00Z',
-                attachments: [
-                  {
-                    id: 70001,
-                    file_name: 'cached.png',
-                    content_url:
-                      'https://testsubdomain.zendesk.com/attachments/token/abc/?name=cached.png',
-                    content_type: 'image/png',
-                    size: 1024,
-                    inline: false,
-                  },
-                ],
-              },
-            ],
-          });
-        }),
-      );
-      const getTicketTool = findTool('get_ticket');
-      const attachmentsTool = findTool('get_ticket_attachments');
-      await getTicketTool.handler({ ticket_id: 1, include_comments: true });
-      await attachmentsTool.handler({ ticket_id: 1 });
-      expect(fetchCount).toBe(1);
     });
 
     it('returns a "comment not found" message when comment_id does not match', async () => {
