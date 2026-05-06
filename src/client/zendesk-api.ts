@@ -146,7 +146,7 @@ export const helpCenterPut = <T>(
 export const fetchZendeskBinary = async (
   token: string,
   contentUrl: string,
-): Promise<{ data: Uint8Array; contentType: string }> => {
+): Promise<{ data: Buffer; contentType: string }> => {
   const response = await fetch(contentUrl, {
     headers: { Authorization: buildAuthHeader(token) },
   });
@@ -155,8 +155,8 @@ export const fetchZendeskBinary = async (
     throw new ZendeskApiError(response.status, response.statusText, body);
   }
   const contentType = response.headers.get('content-type') ?? 'application/octet-stream';
-  const buffer = await response.arrayBuffer();
-  return { data: new Uint8Array(buffer), contentType };
+  const arrayBuffer = await response.arrayBuffer();
+  return { data: Buffer.from(arrayBuffer), contentType };
 };
 
 export const helpCenterUpload = async <T>(

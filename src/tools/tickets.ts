@@ -35,7 +35,7 @@ const buildEmbeddedImageBlocks = async (
 ): Promise<Array<ToolTextContent | ToolImageContent>> => {
   const { data, contentType } = await fetchZendeskBinary(token, attachment.content_url);
   return [
-    { type: 'image', data: Buffer.from(data).toString('base64'), mimeType: contentType },
+    { type: 'image', data: data.toString('base64'), mimeType: contentType },
     {
       type: 'text',
       text: `**${attachment.file_name}** (id ${attachment.id}, ${attachment.size} bytes) — ${attachment.content_url}`,
