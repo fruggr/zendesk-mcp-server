@@ -3,7 +3,13 @@ import {
   getCachedTicketCommentsEntry,
   setCachedTicketCommentsEntry,
 } from '../cache/ticket-comments';
-import { fetchZendeskBinary, zendeskGet, zendeskPost, zendeskPut } from '../client/zendesk-api';
+import {
+  fetchZendeskBinary,
+  ZendeskApiError,
+  zendeskGet,
+  zendeskPost,
+  zendeskPut,
+} from '../client/zendesk-api';
 import {
   DEFAULT_PAGE_SIZE,
   MAX_ATTACHMENT_BYTES,
@@ -101,9 +107,17 @@ const collectAttachmentBlocks = async (
       continue;
     }
 
-    blocks.push(...(await buildEmbeddedImageBlocks(token, attachment)));
-    totalEmbeddedBytes += attachment.size;
-    embeddedCount += 1;
+    try {
+      blocks.push(...(await buildEmbeddedImageBlocks(token, attachment)));
+      totalEmbeddedBytes += attachment.size;
+      embeddedCount += 1;
+    } catch (error) {
+      const reason =
+        error instanceof ZendeskApiError
+          ? `download failed: ${error.status} ${error.statusText}`
+          : 'download failed';
+      blocks.push({ type: 'text', text: `${reference} — ${reason}` });
+    }
   }
 
   return blocks;

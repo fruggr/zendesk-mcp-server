@@ -227,6 +227,60 @@ describe('ticket tools', () => {
       expect(allText).toContain('# Attachments for ticket #1 (2 total)');
     });
 
+    it('falls back to a text reference when binary download fails', async () => {
+      const goodImage = {
+        id: 80001,
+        file_name: 'good.png',
+        content_url: 'https://testsubdomain.zendesk.com/attachments/token/good/?name=good.png',
+        content_type: 'image/png',
+        size: 1024,
+        inline: false,
+      };
+      const brokenImage = {
+        id: 80002,
+        file_name: 'broken.png',
+        content_url: 'https://testsubdomain.zendesk.com/attachments/token/broken/?name=broken.png',
+        content_type: 'image/png',
+        size: 1024,
+        inline: false,
+      };
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/comments', () =>
+          HttpResponse.json({
+            comments: [
+              {
+                id: 1,
+                body: '',
+                author_id: 1,
+                public: true,
+                created_at: '2026-01-01T00:00:00Z',
+                attachments: [goodImage, brokenImage],
+              },
+            ],
+          }),
+        ),
+        http.get('https://testsubdomain.zendesk.com/attachments/token/good/', () =>
+          HttpResponse.arrayBuffer(new Uint8Array([0x89, 0x50, 0x4e, 0x47]).buffer, {
+            headers: { 'content-type': 'image/png' },
+          }),
+        ),
+        http.get('https://testsubdomain.zendesk.com/attachments/token/broken/', () =>
+          HttpResponse.text('Not Found', { status: 404, statusText: 'Not Found' }),
+        ),
+      );
+      const tool = findTool('get_ticket_attachments');
+      const result = await tool.handler({ ticket_id: 1 });
+      const imageBlocks = result.content.filter((c) => c.type === 'image');
+      expect(imageBlocks).toHaveLength(1);
+      const allText = result.content
+        .filter((c) => c.type === 'text')
+        .map((b) => (b as { text: string }).text)
+        .join('\n');
+      expect(allText).toContain('good.png');
+      expect(allText).toContain('broken.png');
+      expect(allText).toContain('download failed: 404');
+    });
+
     it('reuses cached comments across get_ticket and get_ticket_attachments', async () => {
       let fetchCount = 0;
       mswServer.use(
