@@ -34,6 +34,10 @@ export interface ZendeskRequestOptions {
   params?: Record<string, string>;
 }
 
+// token is either a Bearer OAuth token or a "Basic xxx" string (stdio API token mode)
+const buildAuthHeader = (token: string): string =>
+  token.startsWith('Basic ') ? token : `Bearer ${token}`;
+
 const buildUrl = (base: string, path: string, params?: Record<string, string>): string => {
   const url = new URL(`${base}${path}`);
   if (params) {
@@ -51,10 +55,8 @@ const executeRequest = async <T>(
 ): Promise<T> => {
   const { method = 'GET', body } = options;
 
-  // token is either a Bearer OAuth token or a "Basic xxx" string (stdio API token mode)
-  const authorization = token.startsWith('Basic ') ? token : `Bearer ${token}`;
   const headers: Record<string, string> = {
-    Authorization: authorization,
+    Authorization: buildAuthHeader(token),
     Accept: 'application/json',
   };
 
@@ -145,8 +147,9 @@ export const fetchZendeskBinary = async (
   token: string,
   contentUrl: string,
 ): Promise<{ data: Uint8Array; contentType: string }> => {
-  const authorization = token.startsWith('Basic ') ? token : `Bearer ${token}`;
-  const response = await fetch(contentUrl, { headers: { Authorization: authorization } });
+  const response = await fetch(contentUrl, {
+    headers: { Authorization: buildAuthHeader(token) },
+  });
   if (!response.ok) {
     const body = await response.text();
     throw new ZendeskApiError(response.status, response.statusText, body);
@@ -163,10 +166,9 @@ export const helpCenterUpload = async <T>(
   formData: FormData,
 ): Promise<T> => {
   const url = buildUrl(getHelpCenterBaseUrl(subdomain), path);
-  const authorization = token.startsWith('Basic ') ? token : `Bearer ${token}`;
   const response = await fetch(url, {
     method: 'POST',
-    headers: { Authorization: authorization },
+    headers: { Authorization: buildAuthHeader(token) },
     body: formData,
   });
 
