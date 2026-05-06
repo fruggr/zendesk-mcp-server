@@ -1,4 +1,8 @@
 import * as z from 'zod/v4';
+import {
+  getCachedTicketCommentsEntry,
+  setCachedTicketCommentsEntry,
+} from '../cache/ticket-comments';
 import { fetchZendeskBinary, zendeskGet, zendeskPost, zendeskPut } from '../client/zendesk-api';
 import {
   DEFAULT_PAGE_SIZE,
@@ -55,6 +59,18 @@ const fetchAllTicketComments = async (
     if (!response.meta?.has_more || !response.meta?.after_cursor) return all;
     cursor = response.meta.after_cursor;
   }
+};
+
+const getTicketComments = async (
+  subdomain: string,
+  token: string,
+  ticketId: number,
+): Promise<ZendeskComment[]> => {
+  const cached = getCachedTicketCommentsEntry(ticketId);
+  if (cached) return cached;
+  const comments = await fetchAllTicketComments(subdomain, token, ticketId);
+  setCachedTicketCommentsEntry(ticketId, comments);
+  return comments;
 };
 
 const collectAttachmentBlocks = async (
@@ -130,11 +146,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         );
         let text = formatTicket(ticket);
         if (include_comments) {
-          const { comments } = await zendeskGet<{ comments: ZendeskComment[] }>(
-            subdomain,
-            token,
-            `/tickets/${ticket_id}/comments`,
-          );
+          const comments = await getTicketComments(subdomain, token, ticket_id);
           text += `\n\n---\n# Comments\n\n${comments.map(formatComment).join('\n\n')}`;
         }
         return { content: [{ type: 'text', text: truncateIfNeeded(text) }] };
@@ -163,7 +175,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           comment_id?: number;
         };
         const token = await getToken();
-        const comments = await fetchAllTicketComments(subdomain, token, ticket_id);
+        const comments = await getTicketComments(subdomain, token, ticket_id);
         const scoped = comment_id ? comments.filter((c) => c.id === comment_id) : comments;
         const attachments = scoped.flatMap((c) => c.attachments ?? []);
         if (attachments.length === 0) {
