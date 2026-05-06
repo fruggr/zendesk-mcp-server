@@ -51,6 +51,18 @@ describe('ticket tools', () => {
       expect(image.data.length).toBeGreaterThan(0);
     });
 
+    it('includes content_url in caption of embedded images', async () => {
+      const tool = findTool('get_ticket_attachments');
+      const result = await tool.handler({ ticket_id: 1 });
+      const allText = result.content
+        .filter((c) => c.type === 'text')
+        .map((b) => (b as { text: string }).text)
+        .join('\n');
+      expect(allText).toContain(
+        'https://testsubdomain.zendesk.com/attachments/token/abc/?name=screenshot.png',
+      );
+    });
+
     it('returns text reference for non-image attachments', async () => {
       const tool = findTool('get_ticket_attachments');
       const result = await tool.handler({ ticket_id: 1 });

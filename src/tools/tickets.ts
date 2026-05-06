@@ -33,7 +33,7 @@ const buildAttachmentBlocks = async (
     { type: 'image', data: Buffer.from(data).toString('base64'), mimeType: contentType },
     {
       type: 'text',
-      text: `**${attachment.file_name}** (id ${attachment.id}, ${attachment.size} bytes)`,
+      text: `**${attachment.file_name}** (id ${attachment.id}, ${attachment.size} bytes) — ${attachment.content_url}`,
     },
   ];
 };
