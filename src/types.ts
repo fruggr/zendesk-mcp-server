@@ -15,12 +15,22 @@ export interface ZendeskTicket {
   custom_fields: Array<{ id: number; value: unknown }>;
 }
 
+export interface ZendeskTicketAttachment {
+  id: number;
+  file_name: string;
+  content_url: string;
+  content_type: string;
+  size: number;
+  inline: boolean;
+}
+
 export interface ZendeskComment {
   id: number;
   body: string;
   author_id: number;
   public: boolean;
   created_at: string;
+  attachments?: ZendeskTicketAttachment[];
 }
 
 export interface ZendeskUser {

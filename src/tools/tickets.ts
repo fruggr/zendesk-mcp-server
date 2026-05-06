@@ -1,7 +1,12 @@
 import * as z from 'zod/v4';
-import { zendeskGet, zendeskPost, zendeskPut } from '../client/zendesk-api';
-import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '../constants';
-import type { ZendeskComment, ZendeskListResponse, ZendeskTicket } from '../types';
+import { fetchZendeskBinary, zendeskGet, zendeskPost, zendeskPut } from '../client/zendesk-api';
+import { DEFAULT_PAGE_SIZE, MAX_ATTACHMENT_BYTES, MAX_PAGE_SIZE } from '../constants';
+import type {
+  ZendeskComment,
+  ZendeskListResponse,
+  ZendeskTicket,
+  ZendeskTicketAttachment,
+} from '../types';
 import { formatComment, formatList, formatTicket, truncateIfNeeded } from '../utils/formatting';
 import {
   buildCursorParams,
@@ -9,7 +14,29 @@ import {
   extractPaginationMeta,
   extractSearchPaginationMeta,
 } from '../utils/pagination';
-import type { ToolContext, ToolDefinition } from './definitions';
+import type { ToolContext, ToolDefinition, ToolImageContent, ToolTextContent } from './definitions';
+
+const buildAttachmentBlocks = async (
+  token: string,
+  attachment: ZendeskTicketAttachment,
+): Promise<Array<ToolTextContent | ToolImageContent>> => {
+  const isImage = attachment.content_type.startsWith('image/');
+  const reference = `- **${attachment.file_name}** (${attachment.content_type}, ${attachment.size} bytes) — ${attachment.content_url}`;
+  if (!isImage) {
+    return [{ type: 'text', text: reference }];
+  }
+  if (attachment.size > MAX_ATTACHMENT_BYTES) {
+    return [{ type: 'text', text: `${reference} — skipped: exceeds 5 MB limit` }];
+  }
+  const { data, contentType } = await fetchZendeskBinary(token, attachment.content_url);
+  return [
+    { type: 'image', data: Buffer.from(data).toString('base64'), mimeType: contentType },
+    {
+      type: 'text',
+      text: `**${attachment.file_name}** (id ${attachment.id}, ${attachment.size} bytes)`,
+    },
+  ];
+};
 
 export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
   const { subdomain, getToken } = ctx;
@@ -53,6 +80,58 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           text += `\n\n---\n# Comments\n\n${comments.map(formatComment).join('\n\n')}`;
         }
         return { content: [{ type: 'text', text: truncateIfNeeded(text) }] };
+      },
+    },
+    {
+      name: 'get_ticket_attachments',
+      namespace: 'tickets',
+      readOnly: true,
+      title: 'Get Zendesk Ticket Attachments',
+      description:
+        "Retrieve all attachments from a ticket's comments. Images are returned as base64-encoded image content blocks the LLM can describe directly (useful for accessibility). Non-image attachments are listed as text references (file name, type, size, URL).",
+      inputSchema: z.object({
+        ticket_id: z.number().int().describe('Ticket ID'),
+        comment_id: z.number().int().optional().describe('Restrict to attachments of this comment'),
+      }),
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+      handler: async (params) => {
+        const { ticket_id, comment_id } = params as {
+          ticket_id: number;
+          comment_id?: number;
+        };
+        const token = await getToken();
+        const { comments } = await zendeskGet<{ comments: ZendeskComment[] }>(
+          subdomain,
+          token,
+          `/tickets/${ticket_id}/comments`,
+        );
+        const scoped = comment_id ? comments.filter((c) => c.id === comment_id) : comments;
+        const attachments = scoped.flatMap((c) => c.attachments ?? []);
+        if (attachments.length === 0) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `No attachments found on ticket #${ticket_id}${comment_id ? ` (comment ${comment_id})` : ''}.`,
+              },
+            ],
+          };
+        }
+        const blocks = await Promise.all(attachments.map((a) => buildAttachmentBlocks(token, a)));
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `# Attachments for ticket #${ticket_id} (${attachments.length} total)`,
+            },
+            ...blocks.flat(),
+          ],
+        };
       },
     },
     {

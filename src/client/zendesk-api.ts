@@ -141,6 +141,21 @@ export const helpCenterPut = <T>(
   return executeRequest<T>(url, token, { method: 'PUT', body });
 };
 
+export const fetchZendeskBinary = async (
+  token: string,
+  contentUrl: string,
+): Promise<{ data: Uint8Array; contentType: string }> => {
+  const authorization = token.startsWith('Basic ') ? token : `Bearer ${token}`;
+  const response = await fetch(contentUrl, { headers: { Authorization: authorization } });
+  if (!response.ok) {
+    const body = await response.text();
+    throw new ZendeskApiError(response.status, response.statusText, body);
+  }
+  const contentType = response.headers.get('content-type') ?? 'application/octet-stream';
+  const buffer = await response.arrayBuffer();
+  return { data: new Uint8Array(buffer), contentType };
+};
+
 export const helpCenterUpload = async <T>(
   subdomain: string,
   token: string,

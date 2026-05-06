@@ -3,6 +3,11 @@ export const DEFAULT_PAGE_SIZE = 100;
 export const MAX_PAGE_SIZE = 100;
 export const TOKEN_CACHE_TTL_MS = 5 * 60 * 1000;
 
+// Per-attachment cap for inline image content. Images larger than this are
+// returned as text references instead of base64 image content blocks.
+// Aligned with the Anthropic vision API per-image limit.
+export const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+
 // Thresholds used to nudge callers toward section-scoped article tools
 // (get_article_outline / get_article_section / update_article_section)
 // instead of fetching/rewriting the full body.
