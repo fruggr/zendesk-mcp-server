@@ -9,7 +9,7 @@ A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that co
 Most Zendesk integrations use a shared admin API key, giving every user full access to every ticket. This server takes a different approach:
 
 - **Per-user authentication** — Each user authenticates with their own Zendesk credentials via OAuth 2.1 PKCE. No shared admin key, no elevated privileges. The LLM sees exactly what the user is allowed to see.
-- **Context-friendly tool modes** — Expose 36 individual tools, 3 namespace proxies, or a single unified tool. Choose the mode that fits your LLM's context budget.
+- **Context-friendly tool modes** — Expose 37 individual tools, 3 namespace proxies, or a single unified tool. Choose the mode that fits your LLM's context budget.
 - **Section-based article editing** — For large Help Center articles, read and rewrite one section at a time (parsed by h1/h2/h3 headings) instead of shuffling the full HTML body through the LLM. Reduces tokens by 10–100× on targeted edits.
 - **Read-only mode** — Restrict the server to read operations only, ideal for assistants that should never modify data.
 - **Zero runtime dependencies beyond the MCP SDK** — Built on `@modelcontextprotocol/sdk` and `zod`. No Express, no heavyweight frameworks.
@@ -22,7 +22,7 @@ The server registers tools in one of three modes, controlled by `--mode`:
 
 | Mode | Tools exposed | Best for |
 |------|--------------|----------|
-| **`all`** | 36 individual tools (`get_ticket`, `search_articles`, ...) | Clients with good tool selection, full granularity |
+| **`all`** | 37 individual tools (`get_ticket`, `search_articles`, ...) | Clients with good tool selection, full granularity |
 | **`namespace`** (default) | 3 proxy tools (`zendesk_tickets`, `zendesk_help_center`, `zendesk_users`) | Balanced context usage, grouped operations |
 | **`single`** | 1 proxy tool (`zendesk`) | Minimal context footprint, single entry point |
 
@@ -260,7 +260,7 @@ Options:
 **Examples:**
 
 ```bash
-# Single tool mode — minimal context, all 36 operations in one tool
+# Single tool mode — minimal context, all 37 operations in one tool
 zendesk-mcp-server acme --mode single
 
 # Read-only tickets only
