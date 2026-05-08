@@ -13,6 +13,12 @@ const findTool = (name: string) => {
   return tool;
 };
 
+const getAllText = (result: { content: Array<{ type: string; text?: string }> }): string =>
+  result.content
+    .filter((c) => c.type === 'text')
+    .map((b) => (b as { text: string }).text)
+    .join('\n');
+
 describe('ticket tools', () => {
   it('creates 10 tools (10 tickets + 1 search elsewhere)', () => {
     const tools = createTicketTools(ctx);
@@ -54,10 +60,7 @@ describe('ticket tools', () => {
     it('includes content_url in caption of embedded images', async () => {
       const tool = findTool('get_ticket_attachments');
       const result = await tool.handler({ ticket_id: 1 });
-      const allText = result.content
-        .filter((c) => c.type === 'text')
-        .map((b) => (b as { text: string }).text)
-        .join('\n');
+      const allText = getAllText(result);
       expect(allText).toContain(
         'https://testsubdomain.zendesk.com/attachments/token/abc/?name=screenshot.png',
       );
@@ -66,8 +69,7 @@ describe('ticket tools', () => {
     it('returns text reference for non-image attachments', async () => {
       const tool = findTool('get_ticket_attachments');
       const result = await tool.handler({ ticket_id: 1 });
-      const textBlocks = result.content.filter((c) => c.type === 'text');
-      const allText = textBlocks.map((b) => (b as { text: string }).text).join('\n');
+      const allText = getAllText(result);
       expect(allText).toContain('report.pdf');
       expect(allText).toContain('application/pdf');
       expect(allText).toContain(
@@ -78,10 +80,7 @@ describe('ticket tools', () => {
     it('respects MAX_ATTACHMENT_BYTES for oversize images', async () => {
       const tool = findTool('get_ticket_attachments');
       const result = await tool.handler({ ticket_id: 1 });
-      const allText = result.content
-        .filter((c) => c.type === 'text')
-        .map((b) => (b as { text: string }).text)
-        .join('\n');
+      const allText = getAllText(result);
       expect(allText).toContain('huge.png');
       expect(allText).toContain('skipped: exceeds 5 MB per-image limit');
       const imageBlocks = result.content.filter((c) => c.type === 'image');
@@ -117,10 +116,7 @@ describe('ticket tools', () => {
       const result = await tool.handler({ ticket_id: 1 });
       const imageBlocks = result.content.filter((c) => c.type === 'image');
       expect(imageBlocks).toHaveLength(10);
-      const allText = result.content
-        .filter((c) => c.type === 'text')
-        .map((b) => (b as { text: string }).text)
-        .join('\n');
+      const allText = getAllText(result);
       expect(allText).toContain('skipped: max 10 embedded images reached');
     });
 
@@ -154,10 +150,7 @@ describe('ticket tools', () => {
       const result = await tool.handler({ ticket_id: 1 });
       const imageBlocks = result.content.filter((c) => c.type === 'image');
       expect(imageBlocks).toHaveLength(4);
-      const allText = result.content
-        .filter((c) => c.type === 'text')
-        .map((b) => (b as { text: string }).text)
-        .join('\n');
+      const allText = getAllText(result);
       expect(allText).toContain('skipped: total embedded budget (20 MB) reached');
     });
 
@@ -213,10 +206,7 @@ describe('ticket tools', () => {
       );
       const tool = findTool('get_ticket_attachments');
       const result = await tool.handler({ ticket_id: 1 });
-      const allText = result.content
-        .filter((c) => c.type === 'text')
-        .map((b) => (b as { text: string }).text)
-        .join('\n');
+      const allText = getAllText(result);
       expect(allText).toContain('page1.png');
       expect(allText).toContain('page2.png');
       expect(allText).toContain('# Attachments for ticket #1 (2 total)');
@@ -267,10 +257,7 @@ describe('ticket tools', () => {
       const result = await tool.handler({ ticket_id: 1 });
       const imageBlocks = result.content.filter((c) => c.type === 'image');
       expect(imageBlocks).toHaveLength(1);
-      const allText = result.content
-        .filter((c) => c.type === 'text')
-        .map((b) => (b as { text: string }).text)
-        .join('\n');
+      const allText = getAllText(result);
       expect(allText).toContain('good.png');
       expect(allText).toContain('broken.png');
       expect(allText).toContain('download failed: 404');
@@ -288,10 +275,7 @@ describe('ticket tools', () => {
     it('returns attachments scoped to comment_id when it matches', async () => {
       const tool = findTool('get_ticket_attachments');
       const result = await tool.handler({ ticket_id: 1, comment_id: 3000 });
-      const allText = result.content
-        .filter((c) => c.type === 'text')
-        .map((b) => (b as { text: string }).text)
-        .join('\n');
+      const allText = getAllText(result);
       expect(allText).toContain('# Attachments for ticket #1 (3 total)');
       expect(allText).toContain('screenshot.png');
     });
