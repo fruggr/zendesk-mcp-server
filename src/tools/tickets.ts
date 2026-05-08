@@ -34,11 +34,12 @@ const formatReference = (attachment: ZendeskTicketAttachment): string =>
 const buildEmbeddedImageBlocks = async (
   token: string,
   attachment: ZendeskTicketAttachment,
+  reference: string,
 ): Promise<Array<ToolTextContent | ToolImageContent>> => {
   const { data, contentType } = await fetchZendeskBinary(token, attachment.content_url);
   return [
     { type: 'image', data: data.toString('base64'), mimeType: contentType },
-    { type: 'text', text: formatReference(attachment) },
+    { type: 'text', text: reference },
   ];
 };
 
@@ -92,7 +93,7 @@ const collectAttachmentBlocks = async (
     }
 
     try {
-      blocks.push(...(await buildEmbeddedImageBlocks(token, attachment)));
+      blocks.push(...(await buildEmbeddedImageBlocks(token, attachment, reference)));
       totalEmbeddedBytes += attachment.size;
       embeddedCount += 1;
     } catch (error) {
@@ -175,7 +176,9 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         };
         const token = await getToken();
         const comments = await fetchAllTicketComments(subdomain, token, ticket_id);
-        if (comment_id !== undefined && !comments.some((c) => c.id === comment_id)) {
+        const scoped =
+          comment_id !== undefined ? comments.filter((c) => c.id === comment_id) : comments;
+        if (comment_id !== undefined && scoped.length === 0) {
           return {
             content: [
               {
@@ -185,7 +188,6 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
             ],
           };
         }
-        const scoped = comment_id ? comments.filter((c) => c.id === comment_id) : comments;
         const attachments = scoped.flatMap((c) => c.attachments ?? []);
         if (attachments.length === 0) {
           return {
