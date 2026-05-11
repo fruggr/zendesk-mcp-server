@@ -146,7 +146,7 @@ export const MOCK_TICKET_ATTACHMENT_PDF = {
   file_name: 'report.pdf',
   content_url: 'https://testsubdomain.zendesk.com/attachments/token/def/?name=report.pdf',
   content_type: 'application/pdf',
-  size: 4096,
+  size: 4,
   inline: false,
 };
 

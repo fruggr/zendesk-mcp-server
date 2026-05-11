@@ -162,7 +162,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: true,
       title: 'Get Zendesk Ticket Attachments',
       description:
-        "Retrieve attachments from a ticket. Call this when a ticket or one of its comments mentions an attached file (e.g. screenshot, PDF). If you have already loaded the ticket via get_ticket(include_comments=true), you saw an `Attachments: #<id> (<type>), …` line under each comment listing its attachments — pass only the IDs whose content_type matches what the comment evokes (e.g. only image/* IDs when the body says 'see screenshot') via attachment_ids to skip re-fetching comments entirely. When attachment_ids is omitted, all attachments of the ticket are fetched. Images are returned as base64-encoded image content blocks the LLM can describe directly (useful for accessibility). Non-image attachments are listed as text references (file name, type, size, URL).",
+        'Retrieve ticket attachments. Images are embedded inline; other files are listed as text references.',
       inputSchema: z.object({
         ticket_id: z.number().int().describe('Ticket ID'),
         attachment_ids: z
@@ -197,7 +197,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
               );
               attachments.push(attachment);
             } catch (error) {
-              if (!(error instanceof ZendeskApiError)) throw error;
+              if (!(error instanceof ZendeskApiError) || error.status !== 404) throw error;
             }
           }
         } else {
