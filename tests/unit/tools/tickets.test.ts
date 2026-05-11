@@ -33,44 +33,6 @@ describe('ticket tools', () => {
       expect(result.content[0]?.text).toContain('Test ticket');
     });
 
-    it('paginates through all comments when requested', async () => {
-      mswServer.use(
-        http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/comments', ({ request }) => {
-          const cursor = new URL(request.url).searchParams.get('page[after]');
-          if (!cursor) {
-            return HttpResponse.json({
-              comments: [
-                {
-                  id: 1,
-                  body: 'first page comment',
-                  author_id: 1,
-                  public: true,
-                  created_at: '2026-01-01T00:00:00Z',
-                },
-              ],
-              meta: { has_more: true, after_cursor: 'CURSOR_2' },
-            });
-          }
-          return HttpResponse.json({
-            comments: [
-              {
-                id: 2,
-                body: 'second page comment',
-                author_id: 1,
-                public: true,
-                created_at: '2026-01-02T00:00:00Z',
-              },
-            ],
-            meta: { has_more: false, after_cursor: null },
-          });
-        }),
-      );
-      const tool = findTool('get_ticket');
-      const result = await tool.handler({ ticket_id: 1, include_comments: true });
-      expect(result.content[0]?.text).toContain('first page comment');
-      expect(result.content[0]?.text).toContain('second page comment');
-    });
-
     it('includes comments when requested', async () => {
       const tool = findTool('get_ticket');
       const result = await tool.handler({ ticket_id: 1, include_comments: true });

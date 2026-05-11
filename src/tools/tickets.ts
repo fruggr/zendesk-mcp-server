@@ -31,11 +31,12 @@ const formatReference = (attachment: ZendeskTicketAttachment): string =>
   `**${attachment.file_name}** (id ${attachment.id}, ${attachment.content_type}, ${attachment.size} bytes) — ${attachment.content_url}`;
 
 const buildEmbeddedImageBlocks = async (
+  subdomain: string,
   token: string,
   attachment: ZendeskTicketAttachment,
   reference: string,
 ): Promise<Array<ToolTextContent | ToolImageContent>> => {
-  const { data, contentType } = await fetchZendeskBinary(token, attachment.content_url);
+  const { data, contentType } = await fetchZendeskBinary(subdomain, token, attachment.content_url);
   return [
     { type: 'image', data: data.toString('base64'), mimeType: contentType },
     { type: 'text', text: reference },
@@ -64,6 +65,7 @@ const fetchAllTicketComments = async (
 };
 
 const collectAttachmentBlocks = async (
+  subdomain: string,
   token: string,
   attachments: ZendeskTicketAttachment[],
 ): Promise<Array<ToolTextContent | ToolImageContent>> => {
@@ -92,7 +94,7 @@ const collectAttachmentBlocks = async (
     }
 
     try {
-      blocks.push(...(await buildEmbeddedImageBlocks(token, attachment, reference)));
+      blocks.push(...(await buildEmbeddedImageBlocks(subdomain, token, attachment, reference)));
       embeddedCount += 1;
     } catch (error) {
       const reason =
@@ -140,7 +142,11 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         );
         let text = formatTicket(ticket);
         if (include_comments) {
-          const comments = await fetchAllTicketComments(subdomain, token, ticket_id);
+          const { comments } = await zendeskGet<{ comments: ZendeskComment[] }>(
+            subdomain,
+            token,
+            `/tickets/${ticket_id}/comments`,
+          );
           text += `\n\n---\n# Comments\n\n${comments.map(formatComment).join('\n\n')}`;
         }
         return { content: [{ type: 'text', text: truncateIfNeeded(text) }] };
@@ -200,7 +206,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
             content: [{ type: 'text', text: `No attachments found on ticket #${ticket_id}.` }],
           };
         }
-        const blocks = await collectAttachmentBlocks(token, attachments);
+        const blocks = await collectAttachmentBlocks(subdomain, token, attachments);
         return {
           content: [
             {

@@ -144,12 +144,16 @@ export const helpCenterPut = <T>(
 };
 
 export const fetchZendeskBinary = async (
+  subdomain: string,
   token: string,
   contentUrl: string,
 ): Promise<{ data: Buffer; contentType: string }> => {
-  const response = await fetch(contentUrl, {
-    headers: { Authorization: buildAuthHeader(token) },
-  });
+  const expectedHost = `${subdomain}.zendesk.com`;
+  const headers: Record<string, string> = {};
+  if (new URL(contentUrl).hostname === expectedHost) {
+    headers['Authorization'] = buildAuthHeader(token);
+  }
+  const response = await fetch(contentUrl, { headers });
   if (!response.ok) {
     const body = await response.text();
     throw new ZendeskApiError(response.status, response.statusText, body);
