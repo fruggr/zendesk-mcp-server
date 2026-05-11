@@ -142,11 +142,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         );
         let text = formatTicket(ticket);
         if (include_comments) {
-          const { comments } = await zendeskGet<{ comments: ZendeskComment[] }>(
-            subdomain,
-            token,
-            `/tickets/${ticket_id}/comments`,
-          );
+          const comments = await fetchAllTicketComments(subdomain, token, ticket_id);
           text += `\n\n---\n# Comments\n\n${comments.map(formatComment).join('\n\n')}`;
         }
         return { content: [{ type: 'text', text: truncateIfNeeded(text) }] };
@@ -158,10 +154,15 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: true,
       title: 'Get Zendesk Ticket Attachments',
       description:
-        "Retrieve all attachments from a ticket's comments. Call this whenever a ticket or comment mentions an attached file or screenshot. Images are returned as base64-encoded image content blocks the LLM can describe directly (useful for accessibility). Non-image attachments are listed as text references (file name, type, size, URL).",
+        "Retrieve attachments from a ticket. Call this when a ticket or one of its comments mentions an attached file (e.g. screenshot, PDF). If you have already loaded the ticket via get_ticket(include_comments=true), you saw an `Attachments: #<id> (<type>), …` line under each comment listing its attachments — pass only the IDs whose content_type matches what the comment evokes (e.g. only image/* IDs when the body says 'see screenshot') via attachment_ids to skip re-fetching comments entirely. When attachment_ids is omitted, all attachments of the ticket are fetched. Images are returned as base64-encoded image content blocks the LLM can describe directly (useful for accessibility). Non-image attachments are listed as text references (file name, type, size, URL).",
       inputSchema: z.object({
         ticket_id: z.number().int().describe('Ticket ID'),
-        comment_id: z.number().int().optional().describe('Restrict to attachments of this comment'),
+        attachment_ids: z
+          .array(z.number().int())
+          .optional()
+          .describe(
+            'Attachment IDs to fetch directly (e.g. extracted from a previous get_ticket(include_comments=true) call). When provided, skips the comments fetch entirely. When omitted, all attachments of the ticket are returned.',
+          ),
       }),
       annotations: {
         readOnlyHint: true,
@@ -170,33 +171,35 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         openWorldHint: true,
       },
       handler: async (params) => {
-        const { ticket_id, comment_id } = params as {
+        const { ticket_id, attachment_ids } = params as {
           ticket_id: number;
-          comment_id?: number;
+          attachment_ids?: number[];
         };
         const token = await getToken();
-        const comments = await fetchAllTicketComments(subdomain, token, ticket_id);
-        const scoped =
-          comment_id !== undefined ? comments.filter((c) => c.id === comment_id) : comments;
-        if (comment_id !== undefined && scoped.length === 0) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: `Comment #${comment_id} not found on ticket #${ticket_id}.`,
-              },
-            ],
-          };
+
+        let attachments: ZendeskTicketAttachment[];
+        if (attachment_ids && attachment_ids.length > 0) {
+          attachments = [];
+          for (const id of attachment_ids) {
+            try {
+              const { attachment } = await zendeskGet<{ attachment: ZendeskTicketAttachment }>(
+                subdomain,
+                token,
+                `/attachments/${id}`,
+              );
+              attachments.push(attachment);
+            } catch (error) {
+              if (!(error instanceof ZendeskApiError)) throw error;
+            }
+          }
+        } else {
+          const comments = await fetchAllTicketComments(subdomain, token, ticket_id);
+          attachments = comments.flatMap((c) => c.attachments ?? []);
         }
-        const attachments = scoped.flatMap((c) => c.attachments ?? []);
+
         if (attachments.length === 0) {
           return {
-            content: [
-              {
-                type: 'text',
-                text: `No attachments found on ticket #${ticket_id}${comment_id ? ` (comment ${comment_id})` : ''}.`,
-              },
-            ],
+            content: [{ type: 'text', text: `No attachments found on ticket #${ticket_id}.` }],
           };
         }
         const blocks = await collectAttachmentBlocks(token, attachments);

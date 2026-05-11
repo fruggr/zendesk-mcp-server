@@ -179,6 +179,19 @@ export const handlers = [
     return HttpResponse.json({ ticket: { ...MOCK_TICKET, id: Number(params['id']) } });
   }),
   http.get(`${BASE}/tickets/:id/comments`, () => HttpResponse.json({ comments: [MOCK_COMMENT] })),
+  http.get(`${BASE}/attachments/:id`, ({ params }) => {
+    const id = Number(params['id']);
+    if (id === MOCK_TICKET_ATTACHMENT_IMAGE.id) {
+      return HttpResponse.json({ attachment: MOCK_TICKET_ATTACHMENT_IMAGE });
+    }
+    if (id === MOCK_TICKET_ATTACHMENT_PDF.id) {
+      return HttpResponse.json({ attachment: MOCK_TICKET_ATTACHMENT_PDF });
+    }
+    if (id === MOCK_TICKET_ATTACHMENT_LARGE_IMAGE.id) {
+      return HttpResponse.json({ attachment: MOCK_TICKET_ATTACHMENT_LARGE_IMAGE });
+    }
+    return HttpResponse.json({}, { status: 404 });
+  }),
   http.get('https://testsubdomain.zendesk.com/attachments/token/:token/', ({ request }) => {
     const token = new URL(request.url).pathname.split('/')[3];
     if (token === 'def') {
