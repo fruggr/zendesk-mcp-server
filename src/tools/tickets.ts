@@ -11,7 +11,6 @@ import {
   MAX_ATTACHMENT_BYTES,
   MAX_EMBEDDED_IMAGE_COUNT,
   MAX_PAGE_SIZE,
-  MAX_TOTAL_ATTACHMENT_BYTES,
 } from '../constants';
 import type {
   ZendeskComment,
@@ -43,6 +42,9 @@ const buildEmbeddedImageBlocks = async (
   ];
 };
 
+// Zendesk has no endpoint to list a ticket's attachments directly.
+// Attachments are always attached to comments, so the only way to collect
+// them all is to walk through every comment page and extract their attachments.
 const fetchAllTicketComments = async (
   subdomain: string,
   token: string,
@@ -66,7 +68,6 @@ const collectAttachmentBlocks = async (
   attachments: ZendeskTicketAttachment[],
 ): Promise<Array<ToolTextContent | ToolImageContent>> => {
   const blocks: Array<ToolTextContent | ToolImageContent> = [];
-  let totalEmbeddedBytes = 0;
   let embeddedCount = 0;
 
   for (const attachment of attachments) {
@@ -83,8 +84,6 @@ const collectAttachmentBlocks = async (
       skipReason = 'skipped: exceeds 5 MB per-image limit';
     } else if (embeddedCount >= MAX_EMBEDDED_IMAGE_COUNT) {
       skipReason = `skipped: max ${MAX_EMBEDDED_IMAGE_COUNT} embedded images reached`;
-    } else if (totalEmbeddedBytes + attachment.size > MAX_TOTAL_ATTACHMENT_BYTES) {
-      skipReason = 'skipped: total embedded budget (20 MB) reached';
     }
 
     if (skipReason) {
@@ -94,7 +93,6 @@ const collectAttachmentBlocks = async (
 
     try {
       blocks.push(...(await buildEmbeddedImageBlocks(token, attachment, reference)));
-      totalEmbeddedBytes += attachment.size;
       embeddedCount += 1;
     } catch (error) {
       const reason =

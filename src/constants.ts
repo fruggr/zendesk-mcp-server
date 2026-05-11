@@ -8,11 +8,6 @@ export const TOKEN_CACHE_TTL_MS = 5 * 60 * 1000;
 // Aligned with the Anthropic vision API per-image limit.
 export const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 
-// Cumulative cap on the bytes of images embedded in a single tool call.
-// Once reached, remaining images are returned as text references to keep
-// the LLM context bounded.
-export const MAX_TOTAL_ATTACHMENT_BYTES = 20 * 1024 * 1024;
-
 // Maximum number of images embedded as base64 in a single tool call.
 // Remaining images are returned as text references.
 export const MAX_EMBEDDED_IMAGE_COUNT = 10;

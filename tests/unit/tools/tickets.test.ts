@@ -158,40 +158,6 @@ describe('ticket tools', () => {
       expect(allText).toContain('skipped: max 10 embedded images reached');
     });
 
-    it('caps total embedded bytes to MAX_TOTAL_ATTACHMENT_BYTES', async () => {
-      const fiveMb = 5 * 1024 * 1024;
-      const heavyImages = Array.from({ length: 6 }, (_, i) => ({
-        id: 50000 + i,
-        file_name: `heavy-${i}.png`,
-        content_url: `https://testsubdomain.zendesk.com/attachments/token/abc/?name=heavy-${i}.png`,
-        content_type: 'image/png',
-        size: fiveMb - 1,
-        inline: false,
-      }));
-      mswServer.use(
-        http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/comments', () =>
-          HttpResponse.json({
-            comments: [
-              {
-                id: 1,
-                body: '',
-                author_id: 1,
-                public: true,
-                created_at: '2026-01-01T00:00:00Z',
-                attachments: heavyImages,
-              },
-            ],
-          }),
-        ),
-      );
-      const tool = findTool('get_ticket_attachments');
-      const result = await tool.handler({ ticket_id: 1 });
-      const imageBlocks = result.content.filter((c) => c.type === 'image');
-      expect(imageBlocks).toHaveLength(4);
-      const allText = getAllText(result);
-      expect(allText).toContain('skipped: total embedded budget (20 MB) reached');
-    });
-
     it('paginates through all pages of comments', async () => {
       const page1Attachment = {
         id: 60001,
