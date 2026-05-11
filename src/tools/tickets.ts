@@ -9,6 +9,7 @@ import {
 import {
   DEFAULT_PAGE_SIZE,
   MAX_ATTACHMENT_BYTES,
+  MAX_COMMENT_PAGES,
   MAX_EMBEDDED_IMAGE_COUNT,
   MAX_PAGE_SIZE,
 } from '../constants';
@@ -53,15 +54,18 @@ const fetchAllTicketComments = async (
 ): Promise<ZendeskComment[]> => {
   const all: ZendeskComment[] = [];
   let cursor: string | undefined;
-  for (;;) {
+  let pages = 0;
+  while (pages < MAX_COMMENT_PAGES) {
     const response = await zendeskGet<{
       comments: ZendeskComment[];
       meta?: { has_more: boolean; after_cursor: string };
     }>(subdomain, token, `/tickets/${ticketId}/comments`, buildCursorParams(MAX_PAGE_SIZE, cursor));
     all.push(...response.comments);
-    if (!response.meta?.has_more || !response.meta?.after_cursor) return all;
+    pages += 1;
+    if (!response.meta?.has_more || !response.meta?.after_cursor) break;
     cursor = response.meta.after_cursor;
   }
+  return all;
 };
 
 const collectAttachmentBlocks = async (

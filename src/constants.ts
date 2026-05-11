@@ -12,6 +12,10 @@ export const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 // Remaining images are returned as text references.
 export const MAX_EMBEDDED_IMAGE_COUNT = 10;
 
+// Hard cap on comment pages fetched when collecting ticket attachments.
+// Overridable via ZENDESK_MAX_COMMENT_PAGES for tickets with many comments.
+export const MAX_COMMENT_PAGES = Number(process.env['ZENDESK_MAX_COMMENT_PAGES'] ?? 10);
+
 // Thresholds used to nudge callers toward section-scoped article tools
 // (get_article_outline / get_article_section / update_article_section)
 // instead of fetching/rewriting the full body.
