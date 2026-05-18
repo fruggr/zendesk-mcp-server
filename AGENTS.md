@@ -32,7 +32,7 @@ src/
 ├── tools/
 │   ├── definitions.ts    # ToolDefinition type
 │   ├── index.ts          # Aggregates all tool factories
-│   ├── tickets.ts        # 9 ticket tools
+│   ├── tickets.ts        # 10 ticket tools
 │   ├── help-center.ts    # 21 Help Center tools (articles, section editing, translations, taxonomy)
 │   ├── search.ts         # Unified search tool (namespace: tickets)
 │   └── users.ts          # 5 user/organization tools
@@ -47,7 +47,7 @@ src/
 
 Tools are registered at startup based on `--mode`:
 
-- **`all`** (36 individual tools) — each tool registered separately
+- **`all`** (37 individual tools) — each tool registered separately
 - **`namespace`** (default, 3 proxy tools) — `zendesk_tickets`, `zendesk_help_center`, `zendesk_users`, each dispatching to sub-operations
 - **`single`** (1 proxy tool) — `zendesk` dispatches to all operations
 
