@@ -1,3 +1,9 @@
+## [1.1.0](https://github.com/fruggr/zendesk-mcp-server/compare/v1.0.0...v1.1.0) (2026-05-18)
+
+### Features
+
+* **tickets:** add get_ticket_attachments tool ([#13](https://github.com/fruggr/zendesk-mcp-server/issues/13)) ([3eef08c](https://github.com/fruggr/zendesk-mcp-server/commit/3eef08c29da601eba2bb7e34f9f314ce4a872b79))
+
 ## 1.0.0 (2026-04-24)
 
 ### ⚠ BREAKING CHANGES
