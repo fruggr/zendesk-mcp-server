@@ -38,6 +38,13 @@ jobs:
           # would either require us to re-introduce NPM_TOKEN or break the
           # pre-publish `npm whoami` check.
 
+      - name: Upgrade npm to a version that supports OIDC Trusted Publishing
+        # Node 22 ships npm 10.9.x. Full Trusted Publishing OIDC (publish
+        # without NPM_TOKEN, using only id-token: write) needs npm >= 11.5.1.
+        # @semantic-release/npm shells out to the npm CLI, so it is the
+        # global npm version that matters here.
+        run: npm install -g npm@^11.5.1
+
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm check
@@ -56,3 +63,8 @@ jobs:
           # Auth to npm is via NPM Trusted Publishing (OIDC), configured on
           # npmjs.com against this workflow file. The `id-token: write`
           # permission above is all that's needed — no NPM_TOKEN secret.
+          # Verbose logging so the next failure is debuggable from the run
+          # log alone (the OIDC publish step previously exit-1'd without
+          # surfacing the actual npm error).
+          DEBUG: 'semantic-release:*'
+          NPM_CONFIG_LOGLEVEL: verbose

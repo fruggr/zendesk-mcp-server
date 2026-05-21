@@ -1,0 +1,46 @@
+name: Republish a tagged version
+
+# One-shot recovery workflow. The v1.1.0 release on 2026-05-18 pushed the
+# tag and chore(release) commit but failed at the npm publish step (npm 10.9
+# bundled with Node 22 does not support OIDC Trusted Publishing without
+# NPM_TOKEN — needs npm >= 11.5.1). semantic-release is idempotent and won't
+# retry an existing tag, so this workflow lets a maintainer republish a tag
+# manually via workflow_dispatch.
+#
+# Delete this file once recovery is done; the regular release.yml is the
+# canonical path going forward.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Git tag to publish (e.g. v1.1.0)'
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  republish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Upgrade npm for OIDC Trusted Publishing
+        run: npm install -g npm@^11.5.1
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm build
+
+      - run: npm publish --provenance --access public
