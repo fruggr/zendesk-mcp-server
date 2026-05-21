@@ -1,3 +1,9 @@
+## [1.1.1](https://github.com/fruggr/zendesk-mcp-server/compare/v1.1.0...v1.1.1) (2026-05-21)
+
+### Bug Fixes
+
+* **ci:** upgrade npm to support OIDC Trusted Publishing + recover v1.1.0 ([#16](https://github.com/fruggr/zendesk-mcp-server/issues/16)) ([5314cfd](https://github.com/fruggr/zendesk-mcp-server/commit/5314cfd31d4c2d561e2c533e4d58342894c8d4a1)), closes [#10](https://github.com/fruggr/zendesk-mcp-server/issues/10)
+
 ## [1.1.0](https://github.com/fruggr/zendesk-mcp-server/compare/v1.0.0...v1.1.0) (2026-05-18)
 
 ### Features
