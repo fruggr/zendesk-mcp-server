@@ -72,6 +72,24 @@ describe('formatComment', () => {
     const result = formatComment({ ...MOCK_COMMENT, public: false });
     expect(result).toContain('Internal note');
   });
+
+  it('lists attachment ids and content types when the comment has attachments', () => {
+    const result = formatComment(MOCK_COMMENT);
+    expect(result).toContain('Attachments:');
+    expect(result).toContain('#30001 (image/png)');
+    expect(result).toContain('#30002 (application/pdf)');
+    expect(result).toContain('#30003 (image/png)');
+  });
+
+  it('omits the Attachments line when the comment has none', () => {
+    const result = formatComment({ ...MOCK_COMMENT, attachments: undefined });
+    expect(result).not.toContain('Attachments:');
+  });
+
+  it('omits the Attachments line when the attachments array is empty', () => {
+    const result = formatComment({ ...MOCK_COMMENT, attachments: [] });
+    expect(result).not.toContain('Attachments:');
+  });
 });
 
 describe('formatUser', () => {

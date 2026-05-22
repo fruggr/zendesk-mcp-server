@@ -1,7 +1,24 @@
 import * as z from 'zod/v4';
-import { zendeskGet, zendeskPost, zendeskPut } from '../client/zendesk-api';
-import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '../constants';
-import type { ZendeskComment, ZendeskListResponse, ZendeskTicket } from '../types';
+import {
+  fetchZendeskBinary,
+  ZendeskApiError,
+  zendeskGet,
+  zendeskPost,
+  zendeskPut,
+} from '../client/zendesk-api';
+import {
+  DEFAULT_PAGE_SIZE,
+  MAX_ATTACHMENT_BYTES,
+  MAX_COMMENT_PAGES,
+  MAX_EMBEDDED_IMAGE_COUNT,
+  MAX_PAGE_SIZE,
+} from '../constants';
+import type {
+  ZendeskComment,
+  ZendeskListResponse,
+  ZendeskTicket,
+  ZendeskTicketAttachment,
+} from '../types';
 import { formatComment, formatList, formatTicket, truncateIfNeeded } from '../utils/formatting';
 import {
   buildCursorParams,
@@ -9,7 +26,91 @@ import {
   extractPaginationMeta,
   extractSearchPaginationMeta,
 } from '../utils/pagination';
-import type { ToolContext, ToolDefinition } from './definitions';
+import type { ToolContext, ToolDefinition, ToolImageContent, ToolTextContent } from './definitions';
+
+const formatReference = (attachment: ZendeskTicketAttachment): string =>
+  `**${attachment.file_name}** (id ${attachment.id}, ${attachment.content_type}, ${attachment.size} bytes) — ${attachment.content_url}`;
+
+const buildEmbeddedImageBlocks = async (
+  subdomain: string,
+  token: string,
+  attachment: ZendeskTicketAttachment,
+  reference: string,
+): Promise<Array<ToolTextContent | ToolImageContent>> => {
+  const { data, contentType } = await fetchZendeskBinary(subdomain, token, attachment.content_url);
+  return [
+    { type: 'image', data: data.toString('base64'), mimeType: contentType },
+    { type: 'text', text: reference },
+  ];
+};
+
+// Zendesk has no endpoint to list a ticket's attachments directly.
+// Attachments are always attached to comments, so the only way to collect
+// them all is to walk through every comment page and extract their attachments.
+const fetchAllTicketComments = async (
+  subdomain: string,
+  token: string,
+  ticketId: number,
+): Promise<ZendeskComment[]> => {
+  const all: ZendeskComment[] = [];
+  let cursor: string | undefined;
+  let pages = 0;
+  while (pages < MAX_COMMENT_PAGES) {
+    const response = await zendeskGet<{
+      comments: ZendeskComment[];
+      meta?: { has_more: boolean; after_cursor: string };
+    }>(subdomain, token, `/tickets/${ticketId}/comments`, buildCursorParams(MAX_PAGE_SIZE, cursor));
+    all.push(...response.comments);
+    pages += 1;
+    if (!response.meta?.has_more || !response.meta?.after_cursor) break;
+    cursor = response.meta.after_cursor;
+  }
+  return all;
+};
+
+const collectAttachmentBlocks = async (
+  subdomain: string,
+  token: string,
+  attachments: ZendeskTicketAttachment[],
+): Promise<Array<ToolTextContent | ToolImageContent>> => {
+  const blocks: Array<ToolTextContent | ToolImageContent> = [];
+  let embeddedCount = 0;
+
+  for (const attachment of attachments) {
+    const reference = formatReference(attachment);
+    const isImage = attachment.content_type.startsWith('image/');
+
+    if (!isImage) {
+      blocks.push({ type: 'text', text: reference });
+      continue;
+    }
+
+    let skipReason: string | null = null;
+    if (attachment.size > MAX_ATTACHMENT_BYTES) {
+      skipReason = 'skipped: exceeds 5 MB per-image limit';
+    } else if (embeddedCount >= MAX_EMBEDDED_IMAGE_COUNT) {
+      skipReason = `skipped: max ${MAX_EMBEDDED_IMAGE_COUNT} embedded images reached`;
+    }
+
+    if (skipReason) {
+      blocks.push({ type: 'text', text: `${reference} — ${skipReason}` });
+      continue;
+    }
+
+    try {
+      blocks.push(...(await buildEmbeddedImageBlocks(subdomain, token, attachment, reference)));
+      embeddedCount += 1;
+    } catch (error) {
+      const reason =
+        error instanceof ZendeskApiError
+          ? `download failed: ${error.status} ${error.statusText}`
+          : 'download failed';
+      blocks.push({ type: 'text', text: `${reference} — ${reason}` });
+    }
+  }
+
+  return blocks;
+};
 
 export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
   const { subdomain, getToken } = ctx;
@@ -53,6 +154,72 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           text += `\n\n---\n# Comments\n\n${comments.map(formatComment).join('\n\n')}`;
         }
         return { content: [{ type: 'text', text: truncateIfNeeded(text) }] };
+      },
+    },
+    {
+      name: 'get_ticket_attachments',
+      namespace: 'tickets',
+      readOnly: true,
+      title: 'Get Zendesk Ticket Attachments',
+      description:
+        'Retrieve ticket attachments. Images are embedded inline; other files are listed as text references.',
+      inputSchema: z.object({
+        ticket_id: z.number().int().describe('Ticket ID'),
+        attachment_ids: z
+          .array(z.number().int())
+          .optional()
+          .describe(
+            'Attachment IDs to fetch directly (e.g. extracted from a previous get_ticket(include_comments=true) call). When provided, skips the comments fetch entirely. When omitted, all attachments of the ticket are returned.',
+          ),
+      }),
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+      handler: async (params) => {
+        const { ticket_id, attachment_ids } = params as {
+          ticket_id: number;
+          attachment_ids?: number[];
+        };
+        const token = await getToken();
+
+        let attachments: ZendeskTicketAttachment[];
+        if (attachment_ids && attachment_ids.length > 0) {
+          attachments = [];
+          for (const id of attachment_ids) {
+            try {
+              const { attachment } = await zendeskGet<{ attachment: ZendeskTicketAttachment }>(
+                subdomain,
+                token,
+                `/attachments/${id}`,
+              );
+              attachments.push(attachment);
+            } catch (error) {
+              if (!(error instanceof ZendeskApiError) || error.status !== 404) throw error;
+            }
+          }
+        } else {
+          const comments = await fetchAllTicketComments(subdomain, token, ticket_id);
+          attachments = comments.flatMap((c) => c.attachments ?? []);
+        }
+
+        if (attachments.length === 0) {
+          return {
+            content: [{ type: 'text', text: `No attachments found on ticket #${ticket_id}.` }],
+          };
+        }
+        const blocks = await collectAttachmentBlocks(subdomain, token, attachments);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `# Attachments for ticket #${ticket_id} (${attachments.length} total)`,
+            },
+            ...blocks,
+          ],
+        };
       },
     },
     {

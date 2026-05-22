@@ -41,13 +41,18 @@ export const formatTicket = (ticket: ZendeskTicket): string =>
     .filter(Boolean)
     .join('\n');
 
-export const formatComment = (comment: ZendeskComment): string =>
-  [
+export const formatComment = (comment: ZendeskComment): string => {
+  const lines = [
     `### ${comment.public ? 'Public comment' : 'Internal note'} by ${comment.author_id}`,
     `*${comment.created_at}*`,
-    '',
-    comment.body,
-  ].join('\n');
+  ];
+  if (comment.attachments?.length) {
+    const summary = comment.attachments.map((a) => `#${a.id} (${a.content_type})`).join(', ');
+    lines.push(`Attachments: ${summary}`);
+  }
+  lines.push('', comment.body);
+  return lines.join('\n');
+};
 
 export const formatUser = (user: ZendeskUser): string =>
   [
