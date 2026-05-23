@@ -4,7 +4,7 @@ This document describes how dependency updates and releases are automated in thi
 
 ## Flow overview
 
-```
+```text
 Renovate detects an update
         │
         ▼
