@@ -2,5 +2,7 @@ allowBuilds:
   esbuild: true
   msw: true
 
+minimumReleaseAge: 10080
+
 overrides:
   ip-address: ^10.2.0
