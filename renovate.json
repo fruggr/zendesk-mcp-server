@@ -49,6 +49,11 @@
     {
       "matchManagers": ["github-actions"],
       "automerge": false
+    },
+    {
+      "description": "Hold @tsconfig/node* updates and replacements until #28 (Node 24 runtime migration) lands. Replacement PRs (e.g. #19) bypass dependencyDashboardApproval, so we silence the whole family here. Remove this rule when #28 is merged.",
+      "matchPackageNames": ["@tsconfig/node20", "@tsconfig/node22", "@tsconfig/node24"],
+      "enabled": false
     }
   ]
 }

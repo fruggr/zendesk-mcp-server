@@ -27,10 +27,12 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          # semantic-release v25+ requires Node >= 22.14. Keep ci.yml on
-          # Node 20 (matching `engines.node`) to test against the minimum
-          # supported runtime.
-          node-version: 22
+          # Single source of truth for the tooling Node version: .nvmrc.
+          # ci.yml uses the same file. Node 20 compatibility (the floor
+          # declared in package.json#engines.node) is verified by the
+          # `smoke-node20` job in ci.yml, which installs the packed tarball
+          # on Node 20 and runs the smoke test.
+          node-version-file: .nvmrc
           cache: pnpm
           # No `registry-url`: with NPM Trusted Publishing, the OIDC exchange
           # happens inside @semantic-release/npm. Letting setup-node write
@@ -39,10 +41,11 @@ jobs:
           # pre-publish `npm whoami` check.
 
       - name: Upgrade npm to a version that supports OIDC Trusted Publishing
-        # Node 22 ships npm 10.9.x. Full Trusted Publishing OIDC (publish
-        # without NPM_TOKEN, using only id-token: write) needs npm >= 11.5.1.
-        # @semantic-release/npm shells out to the npm CLI, so it is the
-        # global npm version that matters here.
+        # Full Trusted Publishing OIDC (publish without NPM_TOKEN, using
+        # only id-token: write) needs npm >= 11.5.1. @semantic-release/npm
+        # shells out to the npm CLI, so it is the global npm version that
+        # matters here. Kept as a defensive upgrade even when the Node
+        # release bundles a newer npm — it's a no-op if already satisfied.
         run: npm install -g npm@^11.5.1
 
       - run: pnpm install --frozen-lockfile
