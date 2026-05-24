@@ -13,10 +13,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          # pnpm 11 requires Node >= 22.13. `engines.node` keeps the published
-          # package compatible with Node 20, but the build toolchain itself runs
-          # on Node 22.
-          node-version: 22
+          node-version: 20
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile

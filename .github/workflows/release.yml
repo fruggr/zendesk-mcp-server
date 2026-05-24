@@ -27,10 +27,9 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          # semantic-release v25+ requires Node >= 22.14 and pnpm 11 requires
-          # Node >= 22.13, so both ci.yml and release.yml run on Node 22 even
-          # though `engines.node` keeps the published package compatible with
-          # Node 20.
+          # semantic-release v25+ requires Node >= 22.14. Keep ci.yml on
+          # Node 20 (matching `engines.node`) to test against the minimum
+          # supported runtime.
           node-version: 22
           cache: pnpm
           # No `registry-url`: with NPM Trusted Publishing, the OIDC exchange
