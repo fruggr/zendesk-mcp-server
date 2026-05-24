@@ -9,6 +9,8 @@
   "rangeStrategy": "replace",
   "platformAutomerge": true,
   "osvVulnerabilityAlerts": true,
+  "minimumReleaseAge": "7 days",
+  "internalChecksFilter": "strict",
   "lockFileMaintenance": {
     "enabled": true,
     "automerge": true,
@@ -19,6 +21,7 @@
     "enabled": true,
     "commitMessagePrefix": "fix(security):",
     "labels": ["security"],
+    "minimumReleaseAge": "0 days",
     "packageRules": [
       {
         "matchUpdateTypes": ["patch"],

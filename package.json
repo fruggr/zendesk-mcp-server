@@ -66,6 +66,7 @@
     "zod": "4.4.3"
   },
   "pnpm": {
+    "minimumReleaseAge": 10080,
     "overrides": {
       "ip-address": "^10.2.0"
     }
