@@ -62,7 +62,7 @@ In API token mode, a static Basic auth header is built from `ZENDESK_EMAIL` + `Z
 ## Build & run
 
 ```bash
-# Build (tsup bundles to dist/index.js with shebang)
+# Build (tsdown bundles to dist/index.js with shebang)
 pnpm build
 
 # Type-check without emitting
