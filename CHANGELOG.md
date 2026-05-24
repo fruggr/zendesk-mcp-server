@@ -1,3 +1,9 @@
+## [1.1.2](https://github.com/fruggr/zendesk-mcp-server/compare/v1.1.1...v1.1.2) (2026-05-24)
+
+### Bug Fixes
+
+* **security:** patch transitive vulns + enable Renovate lockfile maintenance ([#26](https://github.com/fruggr/zendesk-mcp-server/issues/26)) ([cd49c00](https://github.com/fruggr/zendesk-mcp-server/commit/cd49c0069a5f6a1df37d5613db99eb6986a965f5))
+
 ## [1.1.1](https://github.com/fruggr/zendesk-mcp-server/compare/v1.1.0...v1.1.1) (2026-05-21)
 
 ### Bug Fixes
