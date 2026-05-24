@@ -20,14 +20,8 @@
   "vulnerabilityAlerts": {
     "enabled": true,
     "commitMessagePrefix": "fix(security):",
-    "labels": ["security"],
-    "minimumReleaseAge": "0 days",
-    "packageRules": [
-      {
-        "matchUpdateTypes": ["patch"],
-        "automerge": true
-      }
-    ]
+    "labels": ["security", "needs-review"],
+    "minimumReleaseAge": "3 days"
   },
   "packageRules": [
     {
