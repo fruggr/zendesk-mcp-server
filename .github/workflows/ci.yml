@@ -3,6 +3,9 @@ name: CI
 on:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
@@ -13,7 +16,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version-file: .nvmrc
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
@@ -27,3 +30,33 @@ jobs:
       - run: pnpm build
 
       - run: node scripts/smoke-test.mjs
+
+      - run: pnpm pack --pack-destination .
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: tarball
+          path: '*.tgz'
+          retention-days: 1
+          if-no-files-found: error
+
+  smoke-node20:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v6
+        with:
+          name: tarball
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+
+      - run: npm install -g ./*.tgz
+
+      - name: Verify tarball runs on Node 20
+        run: |
+          set -euo pipefail
+          OUT=$(timeout 5 zendesk-mcp-server smoke-test 2>&1 || true)
+          echo "$OUT"
+          echo "$OUT" | grep -q "running via stdio"

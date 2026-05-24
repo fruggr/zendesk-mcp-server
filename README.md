@@ -117,8 +117,11 @@ zendesk-mcp-server acme --namespace tickets
 
 ## Prerequisites
 
-- **Node.js** >= 20
+- **Node.js** >= 20 (runtime — declared in `package.json#engines.node`)
 - A **Zendesk** instance (Support or Suite)
+
+> Contributors and maintainers run the toolchain on a newer Node + pnpm —
+> see [Development](#development).
 
 ## Installation
 
@@ -283,6 +286,18 @@ zendesk-mcp-server acme --tool get_ticket --tool search_tickets --tool get_curre
 If both `ZENDESK_EMAIL` and `ZENDESK_API_TOKEN` are set, the server uses API token auth. Otherwise, it uses OAuth 2.1 PKCE.
 
 ## Development
+
+### Toolchain
+
+| Tool | Version | Source of truth |
+| ---- | ------- | ---------------- |
+| Node | 24 | [`.nvmrc`](.nvmrc) — read by `nvm`, `fnm`, `mise`, `asdf`, `volta` |
+| pnpm | 11 | [`package.json#packageManager`](package.json) (pinned with a corepack integrity hash) |
+
+The toolchain (Node 24 + pnpm 11) is used to build, lint, type-check and
+test the project. The **published package** still runs on Node 20+ (see
+`engines.node`); a dedicated CI job installs the packed tarball on Node 20
+and runs the smoke test to keep that promise honest.
 
 ```bash
 # Install dependencies
