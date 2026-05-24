@@ -45,7 +45,7 @@ The commit-type → release-level mapping lives in `.releaserc.json` (preset `co
 | **major** (any deps, prod and dev)                | dashboard approval       | dashboard approval       |
 | **patch / minor** on `pnpm` (`packageManager`)    | auto-merge               | auto-merge               |
 | **patch / minor** on `pnpm.overrides` entries     | auto-merge               | auto-merge               |
-| Weekly `lockFileMaintenance` (Friday)             | auto-merge               | auto-merge               |
+| Weekly `lockFileMaintenance` (Friday before 8am, Europe/Paris) | auto-merge | auto-merge |
 | GitHub Actions (`uses: org/action@…`)             | manual review            | manual review            |
 
 \* Vulnerability-minor updates carry the `fix(security):` prefix, so merging them publishes a release. We keep them under manual review to allow an impact assessment first.
@@ -62,7 +62,7 @@ Concrete examples:
 - Patch or minor bump of `pnpm` (via `packageManager` field) → PR `chore(deps): update pnpm to X` → auto-merge → no release. The corepack hash in `packageManager` is updated automatically by Renovate when the format is `pnpm@VERSION+sha512.HASH`.
 - Non-vuln patch update of `hono` (prod) → PR `chore(deps): update hono to X` → manual review → no release on merge.
 - GitHub Action digest bump → PR `chore(deps): update actions/X` → manual review → no release.
-- Weekly Friday lockfile maintenance → PR `chore(deps): lock file maintenance` → auto-merge → no release. Picks up transitive updates whose parent ranges already allow the new version (e.g. a `^3.0.1`-ranged transitive moving from 3.1.0 to 3.1.2).
+- Weekly Friday lockfile maintenance (before 8am, Europe/Paris) → PR `chore(deps): lock file maintenance` → auto-merge → no release. Picks up transitive updates whose parent ranges already allow the new version (e.g. a `^3.0.1`-ranged transitive moving from 3.1.0 to 3.1.2).
 
 ## Transitive vulnerabilities
 
