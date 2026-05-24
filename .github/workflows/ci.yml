@@ -33,7 +33,7 @@ jobs:
 
       - run: pnpm pack --pack-destination .
 
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: tarball
           path: '*.tgz'
@@ -44,7 +44,7 @@ jobs:
     needs: build-and-test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v6
+      - uses: actions/download-artifact@v8
         with:
           name: tarball
 

@@ -34,6 +34,13 @@ reviews:
       instructions: |
         Zendesk API calls in tests must go through MSW handlers in
         tests/msw-handlers.ts. Flag any test that hits the real network.
+    - path: '.github/workflows/**'
+      instructions: |
+        This project pins first-party actions (actions/*, pnpm/action-setup)
+        to floating major tags (@vN) by design. Do not raise unpinned-uses
+        / "pin to commit SHA" findings on these actions — the trade-off was
+        discussed and decided in issue #32. Renovate opens a PR when a new
+        major lands, and bumps go through normal review.
 
 knowledge_base:
   learnings:
