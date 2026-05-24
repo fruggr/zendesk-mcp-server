@@ -43,6 +43,7 @@ The commit-type → release-level mapping lives in `.releaserc.json` (preset `co
 | **patch** on `devDependencies`                    | auto-merge               | auto-merge               |
 | **minor** on `devDependencies`                    | manual review\*          | auto-merge               |
 | **major** (any deps, prod and dev)                | dashboard approval       | dashboard approval       |
+| **patch / minor** on `pnpm` (`packageManager`)    | auto-merge               | auto-merge               |
 | GitHub Actions (`uses: org/action@…`)             | manual review            | manual review            |
 
 \* Vulnerability-minor updates carry the `fix(security):` prefix, so merging them publishes a release. We keep them under manual review to allow an impact assessment first.
@@ -56,6 +57,7 @@ Concrete examples:
 - Major vulnerability in `hono` (prod) → **no auto PR**, entry in the dashboard awaiting approval.
 - Minor update of `vitest` (devDep) → PR `chore(deps): update vitest to X` → auto-merge → no release.
 - Major update of `vitest` (devDep) → entry in the dashboard, manual approval required.
+- Patch or minor bump of `pnpm` (via `packageManager` field) → PR `chore(deps): update pnpm to X` → auto-merge → no release. The corepack hash in `packageManager` is updated automatically by Renovate when the format is `pnpm@VERSION+sha512.HASH`.
 - Non-vuln patch update of `hono` (prod) → PR `chore(deps): update hono to X` → manual review → no release on merge.
 - GitHub Action digest bump → PR `chore(deps): update actions/X` → manual review → no release.
 
