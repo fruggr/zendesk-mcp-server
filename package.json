@@ -65,6 +65,11 @@
     "unified": "11.0.5",
     "zod": "4.3.6"
   },
+  "pnpm": {
+    "overrides": {
+      "ip-address": "^10.2.0"
+    }
+  },
   "devDependencies": {
     "@biomejs/biome": "^2.4.7",
     "@semantic-release/changelog": "^6.0.3",

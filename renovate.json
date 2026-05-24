@@ -9,6 +9,12 @@
   "rangeStrategy": "replace",
   "platformAutomerge": true,
   "osvVulnerabilityAlerts": true,
+  "lockFileMaintenance": {
+    "enabled": true,
+    "automerge": true,
+    "schedule": ["before 8am on friday"],
+    "timezone": "Europe/Paris"
+  },
   "vulnerabilityAlerts": {
     "enabled": true,
     "commitMessagePrefix": "fix(security):",
@@ -32,6 +38,11 @@
     },
     {
       "matchDepNames": ["pnpm"],
+      "matchUpdateTypes": ["patch", "minor"],
+      "automerge": true
+    },
+    {
+      "matchDepTypes": ["pnpm.overrides"],
       "matchUpdateTypes": ["patch", "minor"],
       "automerge": true
     },
