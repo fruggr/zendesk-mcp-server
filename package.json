@@ -52,7 +52,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
     "cheerio": "1.2.0",
-    "fastmcp": "^4.0.1",
+    "fastmcp": "4.0.1",
     "hast-util-to-html": "9.0.5",
     "hast-util-to-mdast": "10.1.2",
     "open": "11.0.0",

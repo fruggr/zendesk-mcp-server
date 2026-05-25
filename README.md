@@ -8,8 +8,8 @@ A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that co
 
 Most Zendesk integrations use a shared admin API key, giving every user full access to every ticket. This server takes a different approach:
 
-- **Per-user authentication** — Every caller, local or remote, authenticates with their own Zendesk credentials via OAuth 2.1 PKCE. No shared admin key, no elevated privileges. The LLM sees exactly what the user is allowed to see.
-- **Two deployment shapes, same auth story** — Run it on your laptop as a stdio MCP server (Claude Desktop / Claude Code / VS Code) or deploy it as a private remote MCP server one user, one Zendesk session per HTTP request.
+- **Per-user authentication by default** — In both transports, the default is OAuth 2.1 PKCE: each user authenticates with their own Zendesk credentials, so the LLM sees exactly what the user is allowed to see. A static API-token escape hatch is documented below for stdio-only CI / headless contexts; it's refused at boot in HTTP mode.
+- **Two deployment shapes, same auth story** — Run it on your laptop as a stdio MCP server (Claude Desktop / Claude Code / VS Code) or deploy it as a private remote MCP server with one user, one Zendesk session per HTTP request.
 - **Context-friendly tool modes** — Expose 37 individual tools, 3 namespace proxies, or a single unified tool. Choose the mode that fits your LLM's context budget.
 - **Section-based article editing** — For large Help Center articles, read and rewrite one section at a time (parsed by h1/h2/h3 headings) instead of shuffling the full HTML body through the LLM. Reduces tokens by 10–100× on targeted edits.
 - **Read-only mode** — Restrict the server to read operations only, ideal for assistants that should never modify data.

@@ -75,7 +75,12 @@ const parseCliArgs = (args: string[]): CliResult => {
       result.host = next;
       i++;
     } else if (arg === '--port' && next) {
-      result.port = Number.parseInt(next, 10);
+      // Number.parseInt('8080abc', 10) === 8080 — silently accepts a numeric
+      // prefix. Validate strictly so malformed values fail loudly instead.
+      if (!/^\d+$/.test(next)) {
+        throw new Error(`Invalid --port value: "${next}". Expected an integer 0-65535.`);
+      }
+      result.port = Number(next);
       i++;
     } else if (arg === '--public-url' && next) {
       result.publicUrl = next;
@@ -90,9 +95,11 @@ const parseCliArgs = (args: string[]): CliResult => {
 };
 
 const parsePortEnv = (raw: string | undefined): number | undefined => {
-  if (raw === undefined) return undefined;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) ? parsed : undefined;
+  if (raw === undefined || raw === '') return undefined;
+  if (!/^\d+$/.test(raw)) {
+    throw new Error(`Invalid PORT value: "${raw}". Expected an integer 0-65535.`);
+  }
+  return Number(raw);
 };
 
 export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {

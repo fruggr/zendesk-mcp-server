@@ -119,6 +119,16 @@ describe('loadConfig', () => {
       expect(config.port).toBe(5000);
     });
 
+    it('rejects --port values that are not strictly numeric', () => {
+      expect(() => loadConfig(['mycompany', '--port', '8080abc'])).toThrow(/Invalid --port value/);
+      expect(() => loadConfig(['mycompany', '--port', 'abc'])).toThrow();
+    });
+
+    it('rejects PORT env values that are not strictly numeric', () => {
+      process.env['PORT'] = '8080abc';
+      expect(() => loadConfig(['mycompany'])).toThrow(/Invalid PORT value/);
+    });
+
     it('refuses API token credentials in HTTP mode when both are set', () => {
       process.env['ZENDESK_EMAIL'] = 'a@b.com';
       process.env['ZENDESK_API_TOKEN'] = 'tok';

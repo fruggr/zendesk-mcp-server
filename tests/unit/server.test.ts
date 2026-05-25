@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Config } from '../../src/config';
 import { filterTools } from '../../src/routing/registry';
-import { buildOperationList, createMcpServer, summarizeDescription } from '../../src/server';
+import {
+  buildOperationList,
+  buildProxyDispatch,
+  createMcpServer,
+  summarizeDescription,
+} from '../../src/server';
 import { createAllTools } from '../../src/tools/index';
 
 const baseConfig: Config = {
@@ -138,6 +143,30 @@ describe('createMcpServer', () => {
       getToken,
     );
     expect(server.options.oauth?.protectedResource?.resource).toBe('http://127.0.0.1:8080');
+  });
+
+  it('namespace proxy dispatch rejects operations outside its scoped tools', async () => {
+    // Regression: previously, every proxy shared one global handlerMap, so a
+    // caller could invoke `zendesk_tickets` with operation="get_article" and
+    // dispatch a help-center handler. Each proxy must scope dispatch to its
+    // own operations. We exercise the pure helper directly rather than peek
+    // at fastmcp internals, since its registered tools are truly private.
+    const allTools = createAllTools({ subdomain: 'x', getToken });
+    const ticketsTools = filterTools(allTools, {
+      readOnly: false,
+      namespaces: ['tickets'],
+    });
+    const dispatch = buildProxyDispatch(ticketsTools);
+
+    // get_article belongs to the help_center namespace; the tickets-scoped
+    // dispatch must reject it without ever reaching a real handler.
+    const out = await dispatch({ operation: 'get_article', params: { article_id: 1 } });
+    expect(out.content[0]?.type).toBe('text');
+    const text = (out.content[0] as { type: 'text'; text: string }).text;
+    expect(text).toMatch(/Unknown operation "get_article"/);
+    // The error message must list only the scoped operations, not the global set.
+    expect(text).toContain('get_ticket');
+    expect(text).not.toContain('search_articles');
   });
 
   it('warns and falls back when host is the wildcard and publicUrl is not set', () => {

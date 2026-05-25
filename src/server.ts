@@ -147,24 +147,21 @@ const registerLeafTool = (
   });
 };
 
-const registerProxyTool = (
-  server: FastMCP<SessionAuth>,
-  toolName: string,
-  title: string,
-  tools: ToolDefinition[],
-  handlerMap: Map<string, ToolDefinition>,
-  config: Config,
-): void => {
+// Each proxy carries its OWN handler map, scoped to the operations it
+// advertises. In `namespace` mode this is essential: without it, a caller
+// could invoke `zendesk_tickets` with operation="get_article" and dispatch
+// a help-center handler via a shared global map. The description would lie
+// but the call would still succeed.
+export const buildProxyDispatch = (tools: ToolDefinition[]): LeafExecute => {
   const operationNames = tools.map((t) => t.name);
-  const operationList = buildOperationList(tools);
-  const allReadOnly = tools.every((t) => t.readOnly);
+  const localHandlers = new Map<string, ToolDefinition>(tools.map((t) => [t.name, t]));
 
-  const dispatch: LeafExecute = async (args) => {
+  return async (args) => {
     const { operation, params } = args as {
       operation: string;
       params: Record<string, unknown>;
     };
-    const def = handlerMap.get(operation);
+    const def = localHandlers.get(operation);
     if (!def) {
       return {
         content: [
@@ -178,6 +175,20 @@ const registerProxyTool = (
     const validated = def.inputSchema.parse(params);
     return def.handler(validated);
   };
+};
+
+const registerProxyTool = (
+  server: FastMCP<SessionAuth>,
+  toolName: string,
+  title: string,
+  tools: ToolDefinition[],
+  config: Config,
+): void => {
+  const operationNames = tools.map((t) => t.name);
+  const operationList = buildOperationList(tools);
+  const allReadOnly = tools.every((t) => t.readOnly);
+
+  const dispatch = buildProxyDispatch(tools);
 
   server.addTool({
     name: toolName,
@@ -257,11 +268,6 @@ export const createMcpServer = (
     tools: config.tools,
   });
 
-  const handlerMap = new Map<string, ToolDefinition>();
-  for (const tool of filteredTools) {
-    handlerMap.set(tool.name, tool);
-  }
-
   const registeredToolNames: string[] = [];
 
   switch (config.mode) {
@@ -277,14 +283,14 @@ export const createMcpServer = (
       for (const [namespace, tools] of grouped) {
         const label = NAMESPACE_LABELS[namespace];
         if (label) {
-          registerProxyTool(server, label.toolName, label.title, tools, handlerMap, config);
+          registerProxyTool(server, label.toolName, label.title, tools, config);
           registeredToolNames.push(label.toolName);
         }
       }
       break;
     }
     case 'single': {
-      registerProxyTool(server, 'zendesk', 'Zendesk', filteredTools, handlerMap, config);
+      registerProxyTool(server, 'zendesk', 'Zendesk', filteredTools, config);
       registeredToolNames.push('zendesk');
       break;
     }
