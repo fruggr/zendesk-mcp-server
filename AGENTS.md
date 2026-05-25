@@ -16,15 +16,16 @@ pnpm install
 
 ```
 src/
-├── index.ts              # Entry point, CLI args, auth mode selection
-├── server.ts             # McpServer setup, tool registration per mode
-├── config.ts             # CLI + env vars parsing (Zod validated)
-├── constants.ts          # Zendesk API URLs, limits
+├── index.ts              # Entry point, CLI args, transport + auth dispatch
+├── server.ts             # FastMCP setup, tool registration per mode, OAuth discovery
+├── config.ts             # CLI + env vars parsing (Zod validated, transport-aware)
+├── constants.ts          # Zendesk API URLs, OAuth URLs, limits
 ├── types.ts              # Zendesk API response interfaces
 ├── auth/
-│   ├── browser-oauth.ts  # OAuth 2.1 PKCE browser flow (authorize/callback/token)
-│   ├── token-store.ts    # In-memory token cache, on-demand auth trigger
-│   └── api-token.ts      # Basic auth for stdio mode
+│   ├── browser-oauth.ts  # OAuth 2.1 PKCE browser flow for stdio (authorize/callback/token)
+│   ├── token-store.ts    # In-memory token cache, on-demand auth trigger (stdio)
+│   ├── session-token.ts  # Per-request bearer token via AsyncLocalStorage (HTTP)
+│   └── api-token.ts      # Basic auth for stdio CI/headless escape hatch
 ├── client/
 │   └── zendesk-api.ts    # HTTP client (fetch, error handling)
 ├── routing/
@@ -36,12 +37,12 @@ src/
 │   ├── help-center.ts    # 21 Help Center tools (articles, section editing, translations, taxonomy)
 │   ├── search.ts         # Unified search tool (namespace: tickets)
 │   └── users.ts          # 5 user/organization tools
-├── transports/
-│   └── stdio.ts          # Stdio transport
 └── utils/
     ├── formatting.ts     # Markdown formatters per entity type
     └── pagination.ts     # Cursor-based pagination helpers
 ```
+
+Transports are provided by [`fastmcp`](https://github.com/punkpeye/fastmcp) — `stdio` for local CLI use and `httpStream` (Streamable HTTP at `/mcp`) for remote deployment. fastmcp also serves `/.well-known/oauth-protected-resource` (RFC 9728) and `/.well-known/oauth-authorization-server` (RFC 8414) in HTTP mode, advertising Zendesk as the upstream authorization server per MCP Specification 2025-06-18.
 
 ### Tool modes (pattern Azure MCP Server)
 
@@ -57,7 +58,13 @@ Proxy tools accept `{ operation, params }` and validate params through the origi
 
 ### Token passing
 
-In API token mode, a static Basic auth header is built from `ZENDESK_EMAIL` + `ZENDESK_API_TOKEN`. In OAuth mode, the token is obtained on-demand via browser PKCE flow and cached in memory by `token-store.ts`. Both modes pass a `getToken` function to tool handlers.
+`createMcpServer(config, getToken)` injects a single `getToken: () => string | Promise<string>` closure into every tool handler. Where the closure pulls the token from depends on the transport:
+
+- **stdio + OAuth** (default): `getToken` is backed by `token-store.ts`, which lazily triggers the browser PKCE flow (`browser-oauth.ts`) and caches the access token in memory.
+- **stdio + API token** (CI/headless escape hatch): `getToken` returns a static Basic auth header built from `ZENDESK_EMAIL` + `ZENDESK_API_TOKEN`. **Refused at boot in HTTP mode** — see below.
+- **HTTP + per-user OAuth**: `getToken` reads from `AsyncLocalStorage` (`session-token.ts`). fastmcp's `authenticate(request)` extracts the `Authorization: Bearer <token>` header on each new session; the per-tool `execute` wrapper in `server.ts` puts that token in async-local storage before calling the original handler, so the 37 handlers stay transport-agnostic.
+
+API token authentication is **explicitly refused in HTTP mode** because a shared static credential reachable over the network would expose every user to the same rights — the anti-pattern this server's per-user OAuth design was built to avoid. The refusal is enforced in `loadConfig` (`src/config.ts`).
 
 ## Build & run
 
@@ -130,6 +137,9 @@ Options:
   --tool <name>           Filter by tool name (repeatable, forces mode all)
   --read-only             Only expose read operations
   --log-level <level>     debug | info (default) | warn | error
+  --transport <t>         stdio (default) | http
+  --host <host>           HTTP bind host (default: 0.0.0.0)
+  --port <port>           HTTP bind port (default: 3000; 0 = OS-assigned)
 ```
 
 ## Environment variables
@@ -138,11 +148,14 @@ Options:
 |----------|----------|---------|-------------|
 | `ZENDESK_SUBDOMAIN` | yes (or CLI arg) | — | Zendesk subdomain (e.g., `mycompany` for mycompany.zendesk.com) |
 | `ZENDESK_OAUTH_CLIENT_ID` | no | `${subdomain}_zendesk` | OAuth client identifier |
-| `ZENDESK_EMAIL` | for API token auth | — | Agent email for Basic auth |
-| `ZENDESK_API_TOKEN` | for API token auth | — | Zendesk API token |
+| `ZENDESK_EMAIL` | stdio API-token mode only | — | Agent email for Basic auth (refused in HTTP) |
+| `ZENDESK_API_TOKEN` | stdio API-token mode only | — | Zendesk API token (refused in HTTP) |
+| `TRANSPORT` | no | `stdio` | `stdio` or `http` |
+| `HOST` | no | `0.0.0.0` | HTTP bind host |
+| `PORT` | no | `3000` | HTTP bind port (`0` to let the OS pick) |
 | `LOG_LEVEL` | no | `info` | Log verbosity |
 
-If both `ZENDESK_EMAIL` and `ZENDESK_API_TOKEN` are set, the server uses API token authentication. Otherwise, it uses OAuth 2.1 PKCE (browser opens on first tool call).
+In stdio mode, if both `ZENDESK_EMAIL` and `ZENDESK_API_TOKEN` are set the server uses API token authentication; otherwise it uses OAuth 2.1 PKCE (browser opens on first tool call). In HTTP mode, API token credentials are refused at boot — only per-user OAuth 2.1 PKCE is accepted (each MCP session sends its own bearer token).
 
 ## Tests
 

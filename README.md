@@ -2,19 +2,27 @@
 
 [![npm](https://img.shields.io/npm/v/@fruggr/zendesk-mcp-server)](https://www.npmjs.com/package/@fruggr/zendesk-mcp-server)
 
-A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that connects LLMs to the **Zendesk Support & Help Center APIs** — with per-user OAuth 2.1 PKCE authentication and fine-grained tool visibility controls.
+A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that connects LLMs to the **Zendesk Support & Help Center APIs** — with per-user OAuth 2.1 PKCE authentication and fine-grained tool visibility controls. Runs locally over **stdio** or as a private **remote MCP server** over HTTP.
 
 ## Why this server?
 
 Most Zendesk integrations use a shared admin API key, giving every user full access to every ticket. This server takes a different approach:
 
-- **Per-user authentication** — Each user authenticates with their own Zendesk credentials via OAuth 2.1 PKCE. No shared admin key, no elevated privileges. The LLM sees exactly what the user is allowed to see.
+- **Per-user authentication** — Every caller, local or remote, authenticates with their own Zendesk credentials via OAuth 2.1 PKCE. No shared admin key, no elevated privileges. The LLM sees exactly what the user is allowed to see.
+- **Two deployment shapes, same auth story** — Run it on your laptop as a stdio MCP server (Claude Desktop / Claude Code / VS Code) or deploy it as a private remote MCP server one user, one Zendesk session per HTTP request.
 - **Context-friendly tool modes** — Expose 37 individual tools, 3 namespace proxies, or a single unified tool. Choose the mode that fits your LLM's context budget.
 - **Section-based article editing** — For large Help Center articles, read and rewrite one section at a time (parsed by h1/h2/h3 headings) instead of shuffling the full HTML body through the LLM. Reduces tokens by 10–100× on targeted edits.
 - **Read-only mode** — Restrict the server to read operations only, ideal for assistants that should never modify data.
-- **Zero runtime dependencies beyond the MCP SDK** — Built on `@modelcontextprotocol/sdk` and `zod`. No Express, no heavyweight frameworks.
+- **Lean stack** — Built on `@modelcontextprotocol/sdk`, [`fastmcp`](https://github.com/punkpeye/fastmcp) and `zod`. No Express, no Hono — just the MCP-spec OAuth metadata fastmcp ships out of the box.
 
 > Built and maintained by [Digital4better](https://digital4better.com) for the [Fruggr](https://www.fruggr.io) project.
+
+## Use cases
+
+| Persona | Transport | Auth | Quick start |
+|---------|-----------|------|-------------|
+| **Run it on your laptop** — single user, plugged into Claude Desktop / Claude Code / VS Code | `stdio` (default) | OAuth 2.1 PKCE in your browser (or API token for CI) | [Quick start: local](#quick-start-local-stdio) |
+| **Deploy a private remote MCP server** — one server per Zendesk account, each MCP client carries its own user's OAuth token | `http` | Per-user OAuth 2.1 PKCE bearer in `Authorization:` header; API token refused | [Quick start: remote](#quick-start-remote-http) |
 
 ## Tool modes
 
@@ -123,72 +131,36 @@ zendesk-mcp-server acme --namespace tickets
 > Contributors and maintainers run the toolchain on a newer Node + pnpm —
 > see [Development](#development).
 
-## Installation
+## Quick start: local (stdio)
+
+The default mode. One developer, one Zendesk account, OAuth 2.1 PKCE in the browser.
+
+### Install
 
 ```bash
 # Run without installing
 npx -y @fruggr/zendesk-mcp-server <your-subdomain>
-```
 
-Or install globally:
-
-```bash
+# Or install globally
 npm install -g @fruggr/zendesk-mcp-server
 zendesk-mcp-server <your-subdomain>
-```
 
-Or clone and run locally:
-
-```bash
+# Or clone and run from source
 git clone https://github.com/fruggr/zendesk-mcp-server.git
-cd zendesk-mcp-server
-pnpm install
-pnpm build
+cd zendesk-mcp-server && pnpm install && pnpm build
 node dist/index.js <your-subdomain>
 ```
 
-## Authentication
+### Zendesk OAuth setup
 
-The server supports two authentication methods:
-
-### Option A: OAuth 2.1 PKCE (recommended)
-
-No API key needed. Each user authenticates via their browser on the first tool call.
-
-**Zendesk setup:**
-
-1. Go to **Admin Center > Apps and integrations > APIs > OAuth Clients**
-2. Create a public client:
+1. Go to **Admin Center → Apps and integrations → APIs → OAuth Clients**
+2. Create a **public** client:
    - **Identifier**: `<your-subdomain>_zendesk` (or set `ZENDESK_OAUTH_CLIENT_ID`)
    - **Redirect URL**: `http://localhost:3000/callback`
 
-**Run:**
+On the first tool call, a browser window opens for OAuth login. The token is cached in memory for the session.
 
-```bash
-zendesk-mcp-server <your-subdomain>
-```
-
-On the first tool call, a browser window opens for the user to authenticate. The token is cached in memory for the session.
-
-### Option B: API token
-
-For headless/CI environments or quick testing.
-
-**Zendesk setup:**
-
-1. Go to **Admin Center > Apps and integrations > APIs > Zendesk API**
-2. Enable **Token Access**, create a token
-
-**Run:**
-
-```bash
-ZENDESK_EMAIL=you@example.com ZENDESK_API_TOKEN=dneib123... \
-  zendesk-mcp-server <your-subdomain>
-```
-
-## Configuration
-
-### MCP client configuration
+### MCP client wiring
 
 <details>
 <summary><strong>Claude Desktop</strong></summary>
@@ -200,11 +172,7 @@ Add to your `claude_desktop_config.json`:
   "mcpServers": {
     "zendesk": {
       "command": "npx",
-      "args": ["-y", "@fruggr/zendesk-mcp-server", "<your-subdomain>", "--mode", "single"],
-      "env": {
-        "ZENDESK_EMAIL": "you@example.com",
-        "ZENDESK_API_TOKEN": "your-api-token"
-      }
+      "args": ["-y", "@fruggr/zendesk-mcp-server", "<your-subdomain>", "--mode", "single"]
     }
   }
 }
@@ -219,8 +187,6 @@ Add to your `claude_desktop_config.json`:
 claude mcp add zendesk -- npx -y @fruggr/zendesk-mcp-server <your-subdomain> --mode single
 ```
 
-For API token auth, set the env vars before launching Claude Code or add them to your shell profile.
-
 </details>
 
 <details>
@@ -233,11 +199,7 @@ Add to your `.vscode/mcp.json`:
   "servers": {
     "zendesk": {
       "command": "npx",
-      "args": ["-y", "@fruggr/zendesk-mcp-server", "<your-subdomain>", "--mode", "single"],
-      "env": {
-        "ZENDESK_EMAIL": "you@example.com",
-        "ZENDESK_API_TOKEN": "your-api-token"
-      }
+      "args": ["-y", "@fruggr/zendesk-mcp-server", "<your-subdomain>", "--mode", "single"]
     }
   }
 }
@@ -245,7 +207,56 @@ Add to your `.vscode/mcp.json`:
 
 </details>
 
-### CLI reference
+## Quick start: remote (HTTP)
+
+Deploy a private MCP server for **one** Zendesk account. Every MCP client connecting to the server presents its **own** user's OAuth bearer in `Authorization:` — the server never sees a shared admin key.
+
+### Zendesk OAuth setup
+
+1. Go to **Admin Center → Apps and integrations → APIs → OAuth Clients**
+2. Create a **public** client:
+   - **Client kind**: Public
+   - **Identifier**: `<your-subdomain>_zendesk` (or set `ZENDESK_OAUTH_CLIENT_ID`)
+   - **Redirect URL**: the callback your MCP client uses (provided by the client itself — for Claude Code on the web this is `https://claude.ai/oauth/callback`, etc.)
+
+### Run the server
+
+```bash
+zendesk-mcp-server <your-subdomain> --transport http --port 3000
+# stderr: Zendesk MCP server running via http on 0.0.0.0:3000
+```
+
+Verify the OAuth discovery endpoints (served automatically by fastmcp):
+
+```bash
+curl -s http://localhost:3000/.well-known/oauth-protected-resource
+# → { "authorization_servers": ["https://<subdomain>.zendesk.com"], ... }
+
+curl -s http://localhost:3000/.well-known/oauth-authorization-server
+# → { "issuer": "https://<subdomain>.zendesk.com", "authorization_endpoint": "...", ... }
+
+curl -s -i http://localhost:3000/healthz   # → 200 OK
+```
+
+### MCP client wiring
+
+```bash
+# Claude Code (CLI) — replace localhost with your deployed origin
+claude mcp add zendesk --transport http http://localhost:3000/mcp
+```
+
+On the first call the MCP client fetches the discovery metadata, performs the OAuth 2.1 PKCE flow against Zendesk on behalf of the **end user**, and sends the resulting access token as a `Bearer` to the server. Each subsequent tool call runs with that user's Zendesk permissions.
+
+### Operator responsibilities
+
+This server provides the MCP transport and the OAuth discovery metadata. The operator is still responsible for:
+
+- **TLS termination** (put the server behind a reverse proxy like Caddy / nginx / Cloudflare Tunnel)
+- **Network exposure & firewall** (the server binds `0.0.0.0` by default — choose carefully)
+- **Process supervision** (systemd, Docker, fly.io, your hosting provider's runner — none is shipped here)
+- **API token credentials are refused at boot in HTTP mode** by design — see [API token authentication](#appendix-api-token-authentication-stdio-only).
+
+## CLI reference
 
 ```
 zendesk-mcp-server <subdomain> [options]
@@ -256,6 +267,9 @@ Options:
   --tool <name>           Filter by tool name (repeatable, forces --mode all)
   --read-only             Only expose read operations
   --log-level <level>     debug | info (default) | warn | error
+  --transport <t>         stdio (default) | http
+  --host <host>           HTTP bind host (default: 0.0.0.0)
+  --port <port>           HTTP bind port (default: 3000; 0 = OS-assigned)
 ```
 
 `--namespace` and `--read-only` are applied before the proxies are registered, so they narrow the surface in every mode — in the default `namespace` mode, `--namespace help_center` registers a single proxy (`zendesk_help_center`) instead of three.
@@ -263,7 +277,7 @@ Options:
 **Examples:**
 
 ```bash
-# Single tool mode — minimal context, all 37 operations in one tool
+# Local single-tool mode — minimal context, all 37 operations in one tool
 zendesk-mcp-server acme --mode single
 
 # Read-only tickets only
@@ -271,19 +285,26 @@ zendesk-mcp-server acme --read-only --namespace tickets
 
 # Cherry-pick specific tools
 zendesk-mcp-server acme --tool get_ticket --tool search_tickets --tool get_current_user
+
+# Remote HTTP, read-only Help Center surface
+zendesk-mcp-server acme --transport http --port 8080 \
+  --namespace help_center --read-only
 ```
 
-### Environment variables
+## Environment variables
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `ZENDESK_SUBDOMAIN` | yes (or CLI arg) | — | Zendesk subdomain (e.g., `acme` for acme.zendesk.com) |
 | `ZENDESK_OAUTH_CLIENT_ID` | no | `<subdomain>_zendesk` | OAuth client identifier |
-| `ZENDESK_EMAIL` | for API token auth | — | Agent email for Basic auth |
-| `ZENDESK_API_TOKEN` | for API token auth | — | Zendesk API token |
+| `ZENDESK_EMAIL` | stdio API-token only | — | Agent email for Basic auth — **refused in HTTP** |
+| `ZENDESK_API_TOKEN` | stdio API-token only | — | Zendesk API token — **refused in HTTP** |
+| `TRANSPORT` | no | `stdio` | `stdio` or `http` |
+| `HOST` | no | `0.0.0.0` | HTTP bind host |
+| `PORT` | no | `3000` | HTTP bind port (`0` to let the OS pick) |
 | `LOG_LEVEL` | no | `info` | Log verbosity |
 
-If both `ZENDESK_EMAIL` and `ZENDESK_API_TOKEN` are set, the server uses API token auth. Otherwise, it uses OAuth 2.1 PKCE.
+In stdio, if both `ZENDESK_EMAIL` and `ZENDESK_API_TOKEN` are set, the server uses API token auth; otherwise it uses OAuth 2.1 PKCE. In HTTP mode, API token credentials are refused at boot — only per-user OAuth 2.1 PKCE is accepted.
 
 ## Development
 
@@ -319,6 +340,27 @@ pnpm check
 # Tests
 pnpm test
 ```
+
+## Appendix: API token authentication (stdio only)
+
+<details>
+<summary>Reveal the escape hatch for CI / headless contexts where a browser OAuth flow is impossible.</summary>
+
+A Zendesk API token grants the **issuing user's full rights** to anyone holding it. In HTTP mode this would expose every caller to the same permissions, which is exactly the anti-pattern the per-user OAuth design was built to avoid — the server refuses API-token credentials at boot in HTTP mode.
+
+In stdio mode, however, the credentials never leave the local machine, so an API token is a reasonable escape hatch for CI or headless contexts where no browser is available:
+
+1. **Admin Center → Apps and integrations → APIs → Zendesk API** → enable **Token Access** and create a token.
+2. Invoke the binary with the credentials in the environment:
+
+   ```bash
+   ZENDESK_EMAIL=you@example.com ZENDESK_API_TOKEN=dneib123... \
+     zendesk-mcp-server <your-subdomain> --mode single
+   ```
+
+For every other context — laptops, desktops, remote servers — prefer the OAuth flows documented in the local and remote quick-start sections above.
+
+</details>
 
 ## Inspiration & related projects
 

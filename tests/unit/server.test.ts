@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { Config } from '../../src/config';
+import { filterTools } from '../../src/routing/registry';
 import { buildOperationList, createMcpServer, summarizeDescription } from '../../src/server';
+import { createAllTools } from '../../src/tools/index';
 
 const baseConfig: Config = {
   subdomain: 'testsubdomain',
@@ -8,70 +10,100 @@ const baseConfig: Config = {
   logLevel: 'info',
   mode: 'all',
   readOnly: false,
+  transport: 'stdio',
+  host: '0.0.0.0',
+  port: 3000,
 };
 
 const getToken = () => 'test-token';
 
 describe('createMcpServer', () => {
   it('creates a server in all mode', () => {
-    const server = createMcpServer({ ...baseConfig, mode: 'all' }, getToken);
+    const { server, registeredToolNames } = createMcpServer(
+      { ...baseConfig, mode: 'all' },
+      getToken,
+    );
     expect(server).toBeDefined();
+    expect(registeredToolNames.length).toBeGreaterThan(0);
   });
 
   it('creates a server in namespace mode', () => {
-    const server = createMcpServer({ ...baseConfig, mode: 'namespace' }, getToken);
+    const { server, registeredToolNames } = createMcpServer(
+      { ...baseConfig, mode: 'namespace' },
+      getToken,
+    );
     expect(server).toBeDefined();
+    // namespace mode produces one proxy per surviving namespace
+    expect(registeredToolNames).toContain('zendesk_tickets');
+    expect(registeredToolNames).toContain('zendesk_help_center');
+    expect(registeredToolNames).toContain('zendesk_users');
   });
 
   it('creates a server in single mode', () => {
-    const server = createMcpServer({ ...baseConfig, mode: 'single' }, getToken);
+    const { server, registeredToolNames } = createMcpServer(
+      { ...baseConfig, mode: 'single' },
+      getToken,
+    );
     expect(server).toBeDefined();
+    expect(registeredToolNames).toEqual(['zendesk']);
   });
 
   it('creates a server with readOnly filter', () => {
-    const server = createMcpServer({ ...baseConfig, readOnly: true }, getToken);
+    const { server } = createMcpServer({ ...baseConfig, readOnly: true }, getToken);
     expect(server).toBeDefined();
   });
 
   it('creates a server with namespace filter', () => {
-    const server = createMcpServer({ ...baseConfig, namespaces: ['tickets'] }, getToken);
-    expect(server).toBeDefined();
+    const { registeredToolNames } = createMcpServer(
+      { ...baseConfig, namespaces: ['tickets'] },
+      getToken,
+    );
+    // mode=all + namespace=tickets → only tickets-namespace leaf tools
+    expect(registeredToolNames).toContain('get_ticket');
+    expect(registeredToolNames).not.toContain('get_article');
   });
 
   it('creates a server with tool filter', () => {
-    const server = createMcpServer(
+    const { registeredToolNames } = createMcpServer(
       { ...baseConfig, mode: 'all', tools: ['get_ticket', 'get_current_user'] },
       getToken,
     );
-    expect(server).toBeDefined();
+    expect(registeredToolNames.sort()).toEqual(['get_current_user', 'get_ticket']);
   });
 
   it('registers a single read-only proxy when namespace and read-only are combined', () => {
-    const server = createMcpServer(
-      {
-        ...baseConfig,
-        mode: 'namespace',
-        namespaces: ['help_center'],
-        readOnly: true,
-      },
-      getToken,
-    );
+    const config: Config = {
+      ...baseConfig,
+      mode: 'namespace',
+      namespaces: ['help_center'],
+      readOnly: true,
+    };
+    const { registeredToolNames } = createMcpServer(config, getToken);
+    expect(registeredToolNames).toEqual(['zendesk_help_center']);
 
-    const registered = (
-      server as unknown as {
-        _registeredTools: Record<string, { description?: string }>;
-      }
-    )._registeredTools;
-    const names = Object.keys(registered);
-
-    expect(names).toEqual(['zendesk_help_center']);
-
-    const description = registered['zendesk_help_center']?.description ?? '';
+    // The proxy's description is built deterministically from the same
+    // filtered tool list — verify via the exported helper rather than
+    // poking fastmcp internals.
+    const filtered = filterTools(createAllTools({ subdomain: 'x', getToken }), {
+      readOnly: config.readOnly,
+      namespaces: config.namespaces,
+    });
+    const description = buildOperationList(filtered);
     expect(description).not.toMatch(/\(write\)/);
     expect(description).toContain('search_articles');
     expect(description).toContain('get_article');
     expect(description).not.toContain('create_article');
     expect(description).not.toContain('update_article');
+  });
+
+  it('exposes the OAuth discovery config in HTTP mode', () => {
+    const { server } = createMcpServer({ ...baseConfig, transport: 'http' }, getToken);
+    const oauth = server.options.oauth;
+    expect(oauth?.enabled).toBe(true);
+    expect(oauth?.protectedResource?.authorizationServers).toContain(
+      `https://${baseConfig.subdomain}.zendesk.com`,
+    );
+    expect(oauth?.authorizationServer?.codeChallengeMethodsSupported).toContain('S256');
   });
 });
 

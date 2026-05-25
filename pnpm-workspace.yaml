@@ -1,6 +1,7 @@
 allowBuilds:
   esbuild: true
   msw: true
+  tldjs: false
 
 minimumReleaseAge: 10080
 

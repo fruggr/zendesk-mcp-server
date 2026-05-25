@@ -9,6 +9,9 @@ export type LogLevel = z.infer<typeof LogLevel>;
 export const Namespace = z.enum(['tickets', 'help_center', 'users']);
 export type Namespace = z.infer<typeof Namespace>;
 
+export const Transport = z.enum(['stdio', 'http']);
+export type Transport = z.infer<typeof Transport>;
+
 export const ConfigSchema = z.object({
   subdomain: z.string().min(1, 'ZENDESK_SUBDOMAIN is required'),
   oauthClientId: z.string().min(1),
@@ -19,6 +22,9 @@ export const ConfigSchema = z.object({
   readOnly: z.boolean(),
   namespaces: z.array(Namespace).optional(),
   tools: z.array(z.string()).optional(),
+  transport: Transport,
+  host: z.string().min(1),
+  port: z.number().int().min(0).max(65535),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -30,6 +36,9 @@ interface CliResult {
   namespaces?: string[];
   tools?: string[];
   logLevel?: string;
+  transport?: string;
+  host?: string;
+  port?: number;
 }
 
 const parseCliArgs = (args: string[]): CliResult => {
@@ -57,6 +66,15 @@ const parseCliArgs = (args: string[]): CliResult => {
     } else if (arg === '--log-level' && next) {
       result.logLevel = next;
       i++;
+    } else if (arg === '--transport' && next) {
+      result.transport = next;
+      i++;
+    } else if (arg === '--host' && next) {
+      result.host = next;
+      i++;
+    } else if (arg === '--port' && next) {
+      result.port = Number.parseInt(next, 10);
+      i++;
     } else if (!arg.startsWith('-') && positionalIndex === 0) {
       result.subdomain = arg;
       positionalIndex++;
@@ -64,6 +82,12 @@ const parseCliArgs = (args: string[]): CliResult => {
   }
 
   return result;
+};
+
+const parsePortEnv = (raw: string | undefined): number | undefined => {
+  if (raw === undefined) return undefined;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) ? parsed : undefined;
 };
 
 export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
@@ -75,15 +99,36 @@ export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
 
   const mode = cli.tools?.length ? 'all' : (cli.mode ?? 'namespace');
 
+  const transport = cli.transport ?? process.env['TRANSPORT'] ?? 'stdio';
+  const host = cli.host ?? process.env['HOST'] ?? '0.0.0.0';
+  const port = cli.port ?? parsePortEnv(process.env['PORT']) ?? 3000;
+
+  const zendeskEmail = process.env['ZENDESK_EMAIL'];
+  const zendeskApiToken = process.env['ZENDESK_API_TOKEN'];
+
+  // API token auth in HTTP mode would expose the issuing user's full rights to
+  // anyone reaching the server — that's the "public MCP with admin key"
+  // anti-pattern this server was built to avoid. Refuse it loudly.
+  if (transport === 'http' && (zendeskEmail || zendeskApiToken)) {
+    throw new Error(
+      'API token authentication (ZENDESK_EMAIL / ZENDESK_API_TOKEN) is not supported in HTTP mode. ' +
+        'HTTP mode requires per-user OAuth 2.1 PKCE — unset these variables and configure your ' +
+        'MCP client to perform the OAuth flow against Zendesk.',
+    );
+  }
+
   return ConfigSchema.parse({
     subdomain,
     oauthClientId,
-    zendeskEmail: process.env['ZENDESK_EMAIL'],
-    zendeskApiToken: process.env['ZENDESK_API_TOKEN'],
+    zendeskEmail,
+    zendeskApiToken,
     logLevel: cli.logLevel ?? process.env['LOG_LEVEL'] ?? 'info',
     mode,
     readOnly: cli.readOnly ?? false,
     namespaces: cli.namespaces,
     tools: cli.tools,
+    transport,
+    host,
+    port,
   });
 };

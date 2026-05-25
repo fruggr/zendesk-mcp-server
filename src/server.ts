@@ -1,6 +1,9 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { IncomingMessage } from 'node:http';
+import { type ContentResult, FastMCP } from 'fastmcp';
 import * as z from 'zod/v4';
+import { runWithSessionToken } from './auth/session-token';
 import type { Config } from './config';
+import { getOAuthUrls } from './constants';
 import { filterTools, groupByNamespace } from './routing/registry';
 import { createAllTools, type ToolDefinition } from './tools/index';
 
@@ -29,52 +32,189 @@ export const buildOperationList = (
     )
     .join('\n');
 
+// fastmcp constrains the auth type to `Record<string, unknown> | undefined`.
+// Extending the index signature lets us keep a typed accessToken field
+// while satisfying that constraint.
+interface SessionAuth extends Record<string, unknown> {
+  accessToken: string;
+}
+
+interface ExecuteCtx {
+  session?: SessionAuth | undefined;
+}
+
+type LeafExecute = (args: Record<string, unknown>) => Promise<ContentResult>;
+
+const extractBearer = (request: IncomingMessage): string => {
+  const header = request.headers['authorization'];
+  if (typeof header !== 'string' || !header.toLowerCase().startsWith('bearer ')) {
+    throw new Error(
+      'Missing Authorization: Bearer <zendesk-oauth-token> header. ' +
+        'HTTP mode requires per-user OAuth 2.1 PKCE — obtain a token from Zendesk via your MCP client.',
+    );
+  }
+  return header.slice('bearer '.length).trim();
+};
+
+// In stdio mode the token is captured in the tools' closures (getToken passed
+// to createAllTools), so execute just invokes the handler. In HTTP mode the
+// per-session bearer is in ctx.session.accessToken; we move it into
+// async-local storage so the same closure-based getToken keeps working
+// without threading a token argument through 37 tool handlers.
+const wrapLeafExecute = (
+  config: Config,
+  handler: ToolDefinition['handler'],
+): ((args: unknown, ctx: ExecuteCtx) => Promise<ContentResult>) => {
+  if (config.transport === 'stdio') {
+    return async (args) => handler(args as Record<string, unknown>) as Promise<ContentResult>;
+  }
+  return async (args, ctx) => {
+    const token = ctx.session?.accessToken;
+    if (!token) {
+      throw new Error('Session is missing accessToken — authenticate() did not populate it.');
+    }
+    return runWithSessionToken(
+      token,
+      () => handler(args as Record<string, unknown>) as Promise<ContentResult>,
+    );
+  };
+};
+
+const wrapProxyExecute = (
+  config: Config,
+  body: LeafExecute,
+): ((args: unknown, ctx: ExecuteCtx) => Promise<ContentResult>) => {
+  if (config.transport === 'stdio') {
+    return async (args) => body(args as Record<string, unknown>);
+  }
+  return async (args, ctx) => {
+    const token = ctx.session?.accessToken;
+    if (!token) {
+      throw new Error('Session is missing accessToken — authenticate() did not populate it.');
+    }
+    return runWithSessionToken(token, () => body(args as Record<string, unknown>));
+  };
+};
+
+const registerLeafTool = (
+  server: FastMCP<SessionAuth>,
+  def: ToolDefinition,
+  config: Config,
+): void => {
+  server.addTool({
+    name: def.name,
+    description: def.description,
+    parameters: def.inputSchema,
+    annotations: {
+      title: def.title,
+      readOnlyHint: def.annotations.readOnlyHint,
+      destructiveHint: def.annotations.destructiveHint,
+      idempotentHint: def.annotations.idempotentHint,
+      openWorldHint: def.annotations.openWorldHint,
+    },
+    execute: wrapLeafExecute(config, def.handler),
+  });
+};
+
 const registerProxyTool = (
-  server: McpServer,
+  server: FastMCP<SessionAuth>,
   toolName: string,
   title: string,
   tools: ToolDefinition[],
   handlerMap: Map<string, ToolDefinition>,
+  config: Config,
 ): void => {
   const operationNames = tools.map((t) => t.name);
   const operationList = buildOperationList(tools);
+  const allReadOnly = tools.every((t) => t.readOnly);
 
-  server.registerTool(
-    toolName,
-    {
+  const dispatch: LeafExecute = async (args) => {
+    const { operation, params } = args as {
+      operation: string;
+      params: Record<string, unknown>;
+    };
+    const def = handlerMap.get(operation);
+    if (!def) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `Unknown operation "${operation}". Available: ${operationNames.join(', ')}`,
+          },
+        ],
+      };
+    }
+    const validated = def.inputSchema.parse(params);
+    return def.handler(validated);
+  };
+
+  server.addTool({
+    name: toolName,
+    description: `${title}. Specify the operation and its parameters.\n\nAvailable operations:\n${operationList}`,
+    parameters: z.object({
+      operation: z.string().describe(`One of: ${operationNames.join(', ')}`),
+      params: z.record(z.string(), z.unknown()).default({}).describe('Operation parameters'),
+    }),
+    annotations: {
       title,
-      description: `${title}. Specify the operation and its parameters.\n\nAvailable operations:\n${operationList}`,
-      inputSchema: z.object({
-        operation: z.string().describe(`One of: ${operationNames.join(', ')}`),
-        params: z.record(z.string(), z.unknown()).default({}).describe('Operation parameters'),
-      }),
+      readOnlyHint: allReadOnly,
+      destructiveHint: !allReadOnly,
+      idempotentHint: false,
+      openWorldHint: true,
     },
-    async ({ operation, params }) => {
-      const def = handlerMap.get(operation);
-      if (!def) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Unknown operation "${operation}". Available: ${operationNames.join(', ')}`,
-            },
-          ],
-        };
-      }
-      // Validate params through the tool's own schema
-      const validated = def.inputSchema.parse(params);
-      return def.handler(validated);
-    },
-  );
+    execute: wrapProxyExecute(config, dispatch),
+  });
 };
+
+export interface CreatedServer {
+  server: FastMCP<SessionAuth>;
+  registeredToolNames: string[];
+}
 
 export const createMcpServer = (
   config: Config,
   getToken: () => string | Promise<string>,
-): McpServer => {
-  const server = new McpServer({
+): CreatedServer => {
+  const httpOptions = (() => {
+    if (config.transport !== 'http') return {};
+    const { authorizeUrl, tokenUrl } = getOAuthUrls(config.subdomain);
+    const issuer = `https://${config.subdomain}.zendesk.com`;
+    const resource = `http://${config.host}:${config.port}`;
+    return {
+      authenticate: async (request: IncomingMessage): Promise<SessionAuth> => ({
+        accessToken: extractBearer(request),
+      }),
+      // Advertise Zendesk as the upstream authorization server per MCP spec
+      // 2025-06-18 (RFC 9728 protected-resource + RFC 8414 auth-server
+      // metadata). MCP clients fetching /.well-known/oauth-protected-resource
+      // discover Zendesk and complete the PKCE flow there directly.
+      oauth: {
+        enabled: true,
+        protectedResource: {
+          authorizationServers: [issuer],
+          resource,
+          bearerMethodsSupported: ['header'],
+          scopesSupported: ['read', 'write'],
+        },
+        authorizationServer: {
+          issuer,
+          authorizationEndpoint: authorizeUrl,
+          tokenEndpoint: tokenUrl,
+          responseTypesSupported: ['code'],
+          grantTypesSupported: ['authorization_code', 'refresh_token'],
+          codeChallengeMethodsSupported: ['S256'],
+          tokenEndpointAuthMethodsSupported: ['none'],
+          scopesSupported: ['read', 'write'],
+        },
+      },
+    };
+  })();
+
+  const server = new FastMCP<SessionAuth>({
     name: '@digital4better/zendesk-mcp-server',
     version: '0.1.0',
+    health: { enabled: config.transport === 'http', path: '/healthz' },
+    ...httpOptions,
   });
 
   const allTools = createAllTools({ subdomain: config.subdomain, getToken });
@@ -86,26 +226,18 @@ export const createMcpServer = (
     tools: config.tools,
   });
 
-  // Build handler map for proxy dispatch
   const handlerMap = new Map<string, ToolDefinition>();
   for (const tool of filteredTools) {
     handlerMap.set(tool.name, tool);
   }
 
+  const registeredToolNames: string[] = [];
+
   switch (config.mode) {
     case 'all': {
-      // Register each tool individually
       for (const tool of filteredTools) {
-        server.registerTool(
-          tool.name,
-          {
-            title: tool.title,
-            description: tool.description,
-            inputSchema: tool.inputSchema,
-            annotations: tool.annotations,
-          },
-          async (params) => tool.handler(params as Record<string, unknown>),
-        );
+        registerLeafTool(server, tool, config);
+        registeredToolNames.push(tool.name);
       }
       break;
     }
@@ -114,17 +246,19 @@ export const createMcpServer = (
       for (const [namespace, tools] of grouped) {
         const label = NAMESPACE_LABELS[namespace];
         if (label) {
-          registerProxyTool(server, label.toolName, label.title, tools, handlerMap);
+          registerProxyTool(server, label.toolName, label.title, tools, handlerMap, config);
+          registeredToolNames.push(label.toolName);
         }
       }
       break;
     }
     case 'single': {
-      registerProxyTool(server, 'zendesk', 'Zendesk', filteredTools, handlerMap);
+      registerProxyTool(server, 'zendesk', 'Zendesk', filteredTools, handlerMap, config);
+      registeredToolNames.push('zendesk');
       break;
     }
   }
 
   console.error(`Registered ${filteredTools.length} tools in ${config.mode} mode`);
-  return server;
+  return { server, registeredToolNames };
 };

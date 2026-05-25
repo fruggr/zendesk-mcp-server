@@ -8,6 +8,9 @@ describe('loadConfig', () => {
     delete process.env['ZENDESK_EMAIL'];
     delete process.env['ZENDESK_API_TOKEN'];
     delete process.env['LOG_LEVEL'];
+    delete process.env['TRANSPORT'];
+    delete process.env['HOST'];
+    delete process.env['PORT'];
   });
 
   it('parses subdomain from CLI positional arg', () => {
@@ -73,5 +76,63 @@ describe('loadConfig', () => {
     const config = loadConfig(['mycompany']);
     expect(config.zendeskEmail).toBe('a@b.com');
     expect(config.zendeskApiToken).toBe('tok');
+  });
+
+  describe('transport', () => {
+    it('defaults to stdio', () => {
+      const config = loadConfig(['mycompany']);
+      expect(config.transport).toBe('stdio');
+      expect(config.host).toBe('0.0.0.0');
+      expect(config.port).toBe(3000);
+    });
+
+    it('parses --transport, --host, --port flags', () => {
+      const config = loadConfig([
+        'mycompany',
+        '--transport',
+        'http',
+        '--host',
+        '127.0.0.1',
+        '--port',
+        '8080',
+      ]);
+      expect(config.transport).toBe('http');
+      expect(config.host).toBe('127.0.0.1');
+      expect(config.port).toBe(8080);
+    });
+
+    it('reads TRANSPORT/HOST/PORT from env when CLI omits them', () => {
+      process.env['TRANSPORT'] = 'http';
+      process.env['HOST'] = '0.0.0.0';
+      process.env['PORT'] = '4000';
+      const config = loadConfig(['mycompany']);
+      expect(config.transport).toBe('http');
+      expect(config.host).toBe('0.0.0.0');
+      expect(config.port).toBe(4000);
+    });
+
+    it('CLI overrides env for transport flags', () => {
+      process.env['TRANSPORT'] = 'http';
+      process.env['PORT'] = '4000';
+      const config = loadConfig(['mycompany', '--transport', 'stdio', '--port', '5000']);
+      expect(config.transport).toBe('stdio');
+      expect(config.port).toBe(5000);
+    });
+
+    it('refuses API token credentials in HTTP mode', () => {
+      process.env['ZENDESK_EMAIL'] = 'a@b.com';
+      process.env['ZENDESK_API_TOKEN'] = 'tok';
+      expect(() => loadConfig(['mycompany', '--transport', 'http'])).toThrow(
+        /API token authentication.*not supported in HTTP mode/,
+      );
+    });
+
+    it('accepts API token credentials in stdio mode', () => {
+      process.env['ZENDESK_EMAIL'] = 'a@b.com';
+      process.env['ZENDESK_API_TOKEN'] = 'tok';
+      const config = loadConfig(['mycompany']);
+      expect(config.transport).toBe('stdio');
+      expect(config.zendeskApiToken).toBe('tok');
+    });
   });
 });
