@@ -19,6 +19,7 @@ export const ConfigSchema = z.object({
   readOnly: z.boolean(),
   namespaces: z.array(Namespace).optional(),
   tools: z.array(z.string()).optional(),
+  analysisFieldId: z.number().int().positive().optional(),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -75,6 +76,10 @@ export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
 
   const mode = cli.tools?.length ? 'all' : (cli.mode ?? 'namespace');
 
+  const rawAnalysisFieldId = process.env['ZENDESK_MCP_ANALYSIS_FIELD_ID'];
+  const analysisFieldId =
+    rawAnalysisFieldId && rawAnalysisFieldId.trim() !== '' ? Number(rawAnalysisFieldId) : undefined;
+
   return ConfigSchema.parse({
     subdomain,
     oauthClientId,
@@ -85,5 +90,6 @@ export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
     readOnly: cli.readOnly ?? false,
     namespaces: cli.namespaces,
     tools: cli.tools,
+    analysisFieldId,
   });
 };

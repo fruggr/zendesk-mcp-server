@@ -19,7 +19,13 @@ import type {
   ZendeskTicket,
   ZendeskTicketAttachment,
 } from '../types';
-import { formatComment, formatList, formatTicket, truncateIfNeeded } from '../utils/formatting';
+import {
+  ATTACHMENTS_LISTING_HINT,
+  formatComment,
+  formatList,
+  formatTicket,
+  truncateIfNeeded,
+} from '../utils/formatting';
 import {
   buildCursorParams,
   buildOffsetParams,
@@ -151,7 +157,10 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
             token,
             `/tickets/${ticket_id}/comments`,
           );
-          text += `\n\n---\n# Comments\n\n${comments.map(formatComment).join('\n\n')}`;
+          // formatComment receives the full comment list so it can resolve
+          // mcp:image-analysis markers attached to any sibling internal note
+          // and render the stored AI analysis inline next to each attachment.
+          text += `\n\n---\n# Comments\n\n${comments.map((c) => formatComment(c, comments)).join('\n\n')}`;
         }
         return { content: [{ type: 'text', text: truncateIfNeeded(text) }] };
       },
@@ -262,18 +271,14 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
             ...buildOffsetParams(per_page, page),
           },
         );
-        return {
-          content: [
-            {
-              type: 'text',
-              text: formatList(
-                response.results ?? [],
-                formatTicket,
-                extractSearchPaginationMeta(response, per_page, page),
-              ),
-            },
-          ],
-        };
+        const results = response.results ?? [];
+        const text = formatList(
+          results,
+          (t) => formatTicket(t),
+          extractSearchPaginationMeta(response, per_page, page),
+        );
+        const footer = results.length > 0 ? `\n\n${ATTACHMENTS_LISTING_HINT}` : '';
+        return { content: [{ type: 'text', text: truncateIfNeeded(`${text}${footer}`) }] };
       },
     },
     {
@@ -434,18 +439,10 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           '/tickets',
           buildCursorParams(page_size, cursor),
         );
-        return {
-          content: [
-            {
-              type: 'text',
-              text: formatList(
-                response.tickets ?? [],
-                formatTicket,
-                extractPaginationMeta(response),
-              ),
-            },
-          ],
-        };
+        const tickets = response.tickets ?? [];
+        const text = formatList(tickets, (t) => formatTicket(t), extractPaginationMeta(response));
+        const footer = tickets.length > 0 ? `\n\n${ATTACHMENTS_LISTING_HINT}` : '';
+        return { content: [{ type: 'text', text: truncateIfNeeded(`${text}${footer}`) }] };
       },
     },
     {
@@ -474,7 +471,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         const incidents = response.tickets ?? [];
         const text =
           incidents.length > 0
-            ? `# Incidents linked to problem #${problem_id}\n\n${incidents.map(formatTicket).join('\n\n')}`
+            ? `# Incidents linked to problem #${problem_id}\n\n${incidents.map((i) => formatTicket(i)).join('\n\n')}`
             : `No incidents linked to problem #${problem_id}.`;
         return { content: [{ type: 'text', text: truncateIfNeeded(text) }] };
       },

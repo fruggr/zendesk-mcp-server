@@ -9,7 +9,7 @@ A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that co
 Most Zendesk integrations use a shared admin API key, giving every user full access to every ticket. This server takes a different approach:
 
 - **Per-user authentication** — Each user authenticates with their own Zendesk credentials via OAuth 2.1 PKCE. No shared admin key, no elevated privileges. The LLM sees exactly what the user is allowed to see.
-- **Context-friendly tool modes** — Expose 37 individual tools, 3 namespace proxies, or a single unified tool. Choose the mode that fits your LLM's context budget.
+- **Context-friendly tool modes** — Expose 38 individual tools, 3 namespace proxies, or a single unified tool. Choose the mode that fits your LLM's context budget.
 - **Section-based article editing** — For large Help Center articles, read and rewrite one section at a time (parsed by h1/h2/h3 headings) instead of shuffling the full HTML body through the LLM. Reduces tokens by 10–100× on targeted edits.
 - **Read-only mode** — Restrict the server to read operations only, ideal for assistants that should never modify data.
 - **Zero runtime dependencies beyond the MCP SDK** — Built on `@modelcontextprotocol/sdk` and `zod`. No Express, no heavyweight frameworks.
@@ -22,13 +22,13 @@ The server registers tools in one of three modes, controlled by `--mode`:
 
 | Mode | Tools exposed | Best for |
 |------|--------------|----------|
-| **`all`** | 37 individual tools (`get_ticket`, `search_articles`, ...) | Clients with good tool selection, full granularity |
+| **`all`** | 38 individual tools (`get_ticket`, `search_articles`, ...) | Clients with good tool selection, full granularity |
 | **`namespace`** (default) | 3 proxy tools (`zendesk_tickets`, `zendesk_help_center`, `zendesk_users`) | Balanced context usage, grouped operations |
 | **`single`** | 1 proxy tool (`zendesk`) | Minimal context footprint, single entry point |
 
 In `namespace` and `single` modes, the proxy tool accepts `{ "operation": "<tool_name>", "params": { ... } }` and dispatches to the appropriate handler after validating params through the original Zod schema. Proxy descriptions include only the first sentence of each sub-operation to stay compact; the full schema is applied when the operation is actually called.
 
-> **Tip:** The `single` mode is particularly useful for models with limited tool slots — one tool handles all 36 operations.
+> **Tip:** The `single` mode is particularly useful for models with limited tool slots — one tool handles all 38 operations.
 
 ### Scoping the surface
 
@@ -47,12 +47,12 @@ zendesk-mcp-server acme --namespace tickets
 ## Available tools
 
 <details>
-<summary><strong>Tickets</strong> (10 tools)</summary>
+<summary><strong>Tickets</strong> (11 tools)</summary>
 
 | Tool | Description | Mode |
 |------|-------------|------|
 | `get_ticket` | Retrieve a ticket by ID with optional comments | read |
-| `get_ticket_attachments` | Download ticket attachments (images as base64, others as references) | read |
+| `get_ticket_attachments` | Download ticket attachments (images as base64 image blocks, others as references) | read |
 | `search_tickets` | Search tickets using Zendesk query syntax | read |
 | `list_tickets` | List tickets with cursor-based pagination | read |
 | `get_linked_incidents` | Get incidents linked to a problem ticket | read |
@@ -61,6 +61,7 @@ zendesk-mcp-server acme --namespace tickets
 | `add_private_note` | Add an internal note (not visible to requester) | write |
 | `add_public_comment` | Add a public comment (visible to requester) | write |
 | `manage_tags` | Add or remove tags on a ticket | write |
+| `record_attachment_analysis` | Persist an AI image analysis as an internal note with a versioned marker; subsequent reads render it inline | write |
 
 </details>
 
@@ -114,6 +115,19 @@ zendesk-mcp-server acme --namespace tickets
 | `search` | Unified search across tickets, users, and organizations | read |
 
 </details>
+
+## Image attachment analysis
+
+Tickets often have screenshots attached. This server lets the **calling LLM** describe those images and persists the description back to Zendesk so future reads include the analysis inline — no vision API key on the server, no double-LLM billing.
+
+The flow uses two tools (both in the `tickets` namespace):
+
+1. `get_ticket_attachments` — return image attachments as MCP `image` content blocks for the calling LLM to view natively (non-image attachments are returned as text references). Caps apply: 5 MB per image, 10 embedded images max.
+2. `record_attachment_analysis` — write the LLM's description back to the ticket as an internal note, tagged with a versioned `mcp:image-analysis` marker. Subsequent `get_ticket(include_comments=true)` calls render the analysis inline under the matching attachment.
+
+The marker is fingerprinted on `(size, content_type)`, so re-uploading the same name with new bytes invalidates the old analysis automatically.
+
+See [`docs/image-attachments.md`](docs/image-attachments.md) for the full design — marker schema, custom-field mirror configuration, current limits.
 
 ## Prerequisites
 
@@ -273,7 +287,7 @@ Options:
 **Examples:**
 
 ```bash
-# Single tool mode — minimal context, all 37 operations in one tool
+# Single tool mode — minimal context, all 38 operations in one tool
 zendesk-mcp-server acme --mode single
 
 # Read-only tickets only
@@ -292,6 +306,7 @@ zendesk-mcp-server acme --tool get_ticket --tool search_tickets --tool get_curre
 | `ZENDESK_EMAIL` | for API token auth | — | Agent email for Basic auth |
 | `ZENDESK_API_TOKEN` | for API token auth | — | Zendesk API token |
 | `LOG_LEVEL` | no | `info` | Log verbosity |
+| `ZENDESK_MCP_ANALYSIS_FIELD_ID` | no | — | Custom ticket field ID to mirror image analyses as JSON for O(1) lookup. The internal note remains the canonical source. |
 
 If both `ZENDESK_EMAIL` and `ZENDESK_API_TOKEN` are set, the server uses API token auth. Otherwise, it uses OAuth 2.1 PKCE.
 

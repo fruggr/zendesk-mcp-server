@@ -77,7 +77,11 @@ export const createMcpServer = (
     version: '0.1.0',
   });
 
-  const allTools = createAllTools({ subdomain: config.subdomain, getToken });
+  const allTools = createAllTools({
+    subdomain: config.subdomain,
+    getToken,
+    analysisFieldId: config.analysisFieldId,
+  });
 
   // Apply filters (--read-only, --namespace, --tool)
   const filteredTools = filterTools(allTools, {

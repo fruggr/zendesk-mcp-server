@@ -10,10 +10,11 @@ export interface ToolAnnotations {
 
 export type ToolTextContent = { type: 'text'; text: string };
 export type ToolImageContent = { type: 'image'; data: string; mimeType: string };
+export type ToolContentBlock = ToolTextContent | ToolImageContent;
 
 export interface ToolResult {
   [key: string]: unknown;
-  content: Array<ToolTextContent | ToolImageContent>;
+  content: ToolContentBlock[];
 }
 
 export interface ToolDefinition {

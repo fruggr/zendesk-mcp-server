@@ -22,6 +22,7 @@ export interface ZendeskTicketAttachment {
   content_type: string;
   size: number;
   inline?: boolean;
+  thumbnails?: Array<{ id: number; content_url: string; content_type: string }>;
 }
 
 export interface ZendeskComment {

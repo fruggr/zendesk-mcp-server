@@ -15,6 +15,7 @@ import type {
   ZendeskUser,
   ZendeskUserSegment,
 } from '../types.js';
+import { findLatestAnalysis } from './attachment-marker.js';
 
 export const truncateIfNeeded = (text: string): string => {
   if (text.length <= CHARACTER_LIMIT) return text;
@@ -29,6 +30,8 @@ const formatPagination = (meta: PaginationMeta): string => {
   return parts.join(' | ');
 };
 
+export const ATTACHMENTS_LISTING_HINT = '*See get_ticket for attachment details.*';
+
 export const formatTicket = (ticket: ZendeskTicket): string =>
   [
     `## Ticket #${ticket.id}: ${ticket.subject}`,
@@ -41,7 +44,7 @@ export const formatTicket = (ticket: ZendeskTicket): string =>
     .filter(Boolean)
     .join('\n');
 
-export const formatComment = (comment: ZendeskComment): string => {
+export const formatComment = (comment: ZendeskComment, allComments?: ZendeskComment[]): string => {
   const lines = [
     `### ${comment.public ? 'Public comment' : 'Internal note'} by ${comment.author_id}`,
     `*${comment.created_at}*`,
@@ -51,6 +54,24 @@ export const formatComment = (comment: ZendeskComment): string => {
     lines.push(`Attachments: ${summary}`);
   }
   lines.push('', comment.body);
+
+  // Append any stored mcp:image-analysis markers as inline blockquotes so the
+  // calling LLM sees prior descriptions on subsequent reads without
+  // re-downloading the image. Requires the full comments list to resolve
+  // markers that live on a sibling internal note (recorded via
+  // record_attachment_analysis).
+  if (Array.isArray(allComments) && comment.attachments?.length) {
+    for (const attachment of comment.attachments) {
+      if (!attachment.content_type.startsWith('image/')) continue;
+      const marker = findLatestAnalysis(allComments, attachment);
+      if (!marker) continue;
+      lines.push(
+        '',
+        `> *AI-inferred analysis of attachment #${attachment.id} (recorded ${marker.recorded_at}):*`,
+        ...marker.analysis.split('\n').map((line) => (line ? `> ${line}` : '>')),
+      );
+    }
+  }
   return lines.join('\n');
 };
 

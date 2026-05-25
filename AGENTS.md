@@ -16,38 +16,19 @@ pnpm install
 
 ```
 src/
-├── index.ts              # Entry point, CLI args, auth mode selection
-├── server.ts             # McpServer setup, tool registration per mode
-├── config.ts             # CLI + env vars parsing (Zod validated)
-├── constants.ts          # Zendesk API URLs, limits
-├── types.ts              # Zendesk API response interfaces
-├── auth/
-│   ├── browser-oauth.ts  # OAuth 2.1 PKCE browser flow (authorize/callback/token)
-│   ├── token-store.ts    # In-memory token cache, on-demand auth trigger
-│   └── api-token.ts      # Basic auth for stdio mode
-├── client/
-│   └── zendesk-api.ts    # HTTP client (fetch, error handling)
-├── routing/
-│   └── registry.ts       # Tool filtering (--read-only, --namespace, --tool)
-├── tools/
-│   ├── definitions.ts    # ToolDefinition type
-│   ├── index.ts          # Aggregates all tool factories
-│   ├── tickets.ts        # 10 ticket tools
-│   ├── help-center.ts    # 21 Help Center tools (articles, section editing, translations, taxonomy)
-│   ├── search.ts         # Unified search tool (namespace: tickets)
-│   └── users.ts          # 5 user/organization tools
-├── transports/
-│   └── stdio.ts          # Stdio transport
-└── utils/
-    ├── formatting.ts     # Markdown formatters per entity type
-    └── pagination.ts     # Cursor-based pagination helpers
+├── auth/         # OAuth 2.1 PKCE + API token auth
+├── client/       # Zendesk HTTP client
+├── routing/      # Tool filtering (--read-only, --namespace, --tool)
+├── tools/        # Per-namespace tool factories
+├── transports/   # Stdio transport
+└── utils/        # Formatters, pagination, marker helpers
 ```
 
 ### Tool modes (pattern Azure MCP Server)
 
 Tools are registered at startup based on `--mode`:
 
-- **`all`** (37 individual tools) — each tool registered separately
+- **`all`** (38 individual tools) — each tool registered separately
 - **`namespace`** (default, 3 proxy tools) — `zendesk_tickets`, `zendesk_help_center`, `zendesk_users`, each dispatching to sub-operations
 - **`single`** (1 proxy tool) — `zendesk` dispatches to all operations
 
@@ -210,8 +191,8 @@ README is what external users rely on — it drifts fast if ignored.
 
 When you add, remove, rename, or meaningfully re-describe a tool, update:
 
-- **`README.md`** — the matching row in the `Tickets` / `Help Center` / `Users & Organizations` / `Search` table, the `(N tools)` count in the `<summary>`, and the global tool count (currently **36**) wherever it appears ("Expose 36 individual tools", mode table, single-mode tip, CLI example).
-- **`AGENTS.md`** — the per-file tool counts in the Architecture section (`tickets.ts # 9 ticket tools`, `help-center.ts # 21 Help Center tools`, `users.ts # 5 user/organization tools`) and the `all` mode line in "Tool modes".
+- **`README.md`** — the matching row in the `Tickets` / `Help Center` / `Users & Organizations` / `Search` table, the `(N tools)` count in the `<summary>`, and the global tool count (currently **38**) wherever it appears ("Expose 38 individual tools", mode table, single-mode tip, CLI example).
+- **`AGENTS.md`** — the `all` mode total count line in "Tool modes" (currently 38).
 - Namespace counts in `tests/unit/routing/registry.test.ts` if you touch the `help_center`, `tickets`, or `users` namespace.
 - The `createHelpCenterTools` length assertion in `tests/unit/tools/help-center.test.ts` (and equivalents for other namespaces).
 
@@ -219,7 +200,7 @@ If you change a description in a way that alters its first sentence, remember th
 
 ## Release workflow
 
-Versions are **fully automated** via [semantic-release](https://github.com/semantic-release/semantic-release). Never bump the version manually, never run `npm version`, never touch the `version` field in `package.json` (kept at `0.0.0-semantic-release` as a placeholder).
+Versions are **fully automated** via [semantic-release](https://github.com/semantic-release/semantic-release). Never bump the version manually, never run `npm version`, never touch the `version` field in `package.json` (kept at `0.0.0-semantic-release` as a placeholder). **Do not edit `CHANGELOG.md`** either — it is rewritten by the release process from the Conventional Commit messages of the merged PRs.
 
 - **Trigger**: every push to `main` runs `.github/workflows/release.yml`, which rebuilds, retests, then calls `semantic-release`.
 - **Version calculation**: driven by [Conventional Commits](https://www.conventionalcommits.org/) since the previous tag.
