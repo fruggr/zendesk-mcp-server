@@ -26,6 +26,12 @@ const runCheck = (args, marker) =>
       if (!found) proc.kill('SIGKILL');
     }, TIMEOUT_MS);
 
+    proc.on('error', (err) => {
+      clearTimeout(timer);
+      console.error(`[smoke] spawn error: ${err.message}`);
+      reject(err);
+    });
+
     proc.on('close', () => {
       clearTimeout(timer);
       if (found) {

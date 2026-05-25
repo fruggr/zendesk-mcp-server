@@ -45,15 +45,46 @@ interface ExecuteCtx {
 
 type LeafExecute = (args: Record<string, unknown>) => Promise<ContentResult>;
 
+// Error message must stay ASCII-only: mcp-proxy interpolates it into the
+// WWW-Authenticate response header on 401, and node:http's setHeader rejects
+// non-ASCII bytes with ERR_INVALID_CHAR (which would surface as a 500 instead
+// of the spec-required 401).
 const extractBearer = (request: IncomingMessage): string => {
   const header = request.headers['authorization'];
   if (typeof header !== 'string' || !header.toLowerCase().startsWith('bearer ')) {
     throw new Error(
       'Missing Authorization: Bearer <zendesk-oauth-token> header. ' +
-        'HTTP mode requires per-user OAuth 2.1 PKCE — obtain a token from Zendesk via your MCP client.',
+        'HTTP mode requires per-user OAuth 2.1 PKCE - obtain a token from Zendesk via your MCP client.',
     );
   }
   return header.slice('bearer '.length).trim();
+};
+
+// Build the canonical `resource` URL we advertise in the OAuth metadata.
+// Precedence:
+//   1. Explicit --public-url / PUBLIC_URL (operators behind a reverse proxy
+//      must set this; Azure App Service: PUBLIC_URL="https://${WEBSITE_HOSTNAME}").
+//   2. host:port when host is a real, routable hostname or IP (not the bind
+//      wildcard 0.0.0.0 / :: / unspecified).
+//   3. Fallback to http://host:port + warning. Clients following RFC 8707
+//      strictly will reject this resource identifier, so log a clear warning
+//      so the operator knows to set PUBLIC_URL.
+const WILDCARD_HOSTS = new Set(['0.0.0.0', '::', '*']);
+
+const resolveResourceUrl = (config: Config): string => {
+  if (config.publicUrl) return config.publicUrl.replace(/\/+$/, '');
+  if (!WILDCARD_HOSTS.has(config.host)) {
+    return `http://${config.host}:${config.port}`;
+  }
+  console.error(
+    `[zendesk-mcp-server] WARNING: HOST=${config.host} but PUBLIC_URL is unset. ` +
+      `OAuth discovery will advertise http://${config.host}:${config.port} as the ` +
+      `resource identifier, which is not routable from external clients and may ` +
+      `cause spec-compliant MCP clients to refuse the connection. Set PUBLIC_URL ` +
+      `(or --public-url) to the URL clients use to reach this server (e.g. ` +
+      `https://your-host.example.com).`,
+  );
+  return `http://${config.host}:${config.port}`;
 };
 
 // In stdio mode the token is captured in the tools' closures (getToken passed
@@ -179,7 +210,7 @@ export const createMcpServer = (
     if (config.transport !== 'http') return {};
     const { authorizeUrl, tokenUrl } = getOAuthUrls(config.subdomain);
     const issuer = `https://${config.subdomain}.zendesk.com`;
-    const resource = `http://${config.host}:${config.port}`;
+    const resource = resolveResourceUrl(config);
     return {
       authenticate: async (request: IncomingMessage): Promise<SessionAuth> => ({
         accessToken: extractBearer(request),

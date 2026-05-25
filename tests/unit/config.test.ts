@@ -119,12 +119,22 @@ describe('loadConfig', () => {
       expect(config.port).toBe(5000);
     });
 
-    it('refuses API token credentials in HTTP mode', () => {
+    it('refuses API token credentials in HTTP mode when both are set', () => {
       process.env['ZENDESK_EMAIL'] = 'a@b.com';
       process.env['ZENDESK_API_TOKEN'] = 'tok';
       expect(() => loadConfig(['mycompany', '--transport', 'http'])).toThrow(
         /API token authentication.*not supported in HTTP mode/,
       );
+    });
+
+    it('allows ZENDESK_EMAIL alone in HTTP mode (no token actually configured)', () => {
+      process.env['ZENDESK_EMAIL'] = 'ops@example.com';
+      expect(() => loadConfig(['mycompany', '--transport', 'http'])).not.toThrow();
+    });
+
+    it('allows ZENDESK_API_TOKEN alone in HTTP mode', () => {
+      process.env['ZENDESK_API_TOKEN'] = 'tok';
+      expect(() => loadConfig(['mycompany', '--transport', 'http'])).not.toThrow();
     });
 
     it('accepts API token credentials in stdio mode', () => {
@@ -133,6 +143,39 @@ describe('loadConfig', () => {
       const config = loadConfig(['mycompany']);
       expect(config.transport).toBe('stdio');
       expect(config.zendeskApiToken).toBe('tok');
+    });
+  });
+
+  describe('publicUrl', () => {
+    beforeEach(() => {
+      delete process.env['PUBLIC_URL'];
+    });
+
+    it('parses --public-url CLI flag', () => {
+      const config = loadConfig([
+        'mycompany',
+        '--transport',
+        'http',
+        '--public-url',
+        'https://mcp.example.com',
+      ]);
+      expect(config.publicUrl).toBe('https://mcp.example.com');
+    });
+
+    it('reads PUBLIC_URL from env', () => {
+      process.env['PUBLIC_URL'] = 'https://mcp.example.com';
+      const config = loadConfig(['mycompany', '--transport', 'http']);
+      expect(config.publicUrl).toBe('https://mcp.example.com');
+    });
+
+    it('rejects a non-URL PUBLIC_URL', () => {
+      process.env['PUBLIC_URL'] = 'not-a-url';
+      expect(() => loadConfig(['mycompany', '--transport', 'http'])).toThrow();
+    });
+
+    it('defaults to undefined', () => {
+      const config = loadConfig(['mycompany']);
+      expect(config.publicUrl).toBeUndefined();
     });
   });
 });

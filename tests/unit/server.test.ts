@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Config } from '../../src/config';
 import { filterTools } from '../../src/routing/registry';
 import { buildOperationList, createMcpServer, summarizeDescription } from '../../src/server';
@@ -104,6 +104,55 @@ describe('createMcpServer', () => {
       `https://${baseConfig.subdomain}.zendesk.com`,
     );
     expect(oauth?.authorizationServer?.codeChallengeMethodsSupported).toContain('S256');
+  });
+
+  it('uses publicUrl as the OAuth resource identifier when set', () => {
+    const { server } = createMcpServer(
+      {
+        ...baseConfig,
+        transport: 'http',
+        host: '0.0.0.0',
+        port: 3000,
+        publicUrl: 'https://mcp.example.com',
+      },
+      getToken,
+    );
+    expect(server.options.oauth?.protectedResource?.resource).toBe('https://mcp.example.com');
+  });
+
+  it('strips trailing slashes from publicUrl', () => {
+    const { server } = createMcpServer(
+      {
+        ...baseConfig,
+        transport: 'http',
+        publicUrl: 'https://mcp.example.com/',
+      },
+      getToken,
+    );
+    expect(server.options.oauth?.protectedResource?.resource).toBe('https://mcp.example.com');
+  });
+
+  it('uses host:port when host is concrete and publicUrl is not set', () => {
+    const { server } = createMcpServer(
+      { ...baseConfig, transport: 'http', host: '127.0.0.1', port: 8080 },
+      getToken,
+    );
+    expect(server.options.oauth?.protectedResource?.resource).toBe('http://127.0.0.1:8080');
+  });
+
+  it('warns and falls back when host is the wildcard and publicUrl is not set', () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      createMcpServer({ ...baseConfig, transport: 'http', host: '0.0.0.0', port: 3000 }, getToken);
+      const warned = errSpy.mock.calls.some((args) =>
+        args.some(
+          (a) => typeof a === 'string' && a.includes('WARNING') && a.includes('PUBLIC_URL'),
+        ),
+      );
+      expect(warned).toBe(true);
+    } finally {
+      errSpy.mockRestore();
+    }
   });
 });
 

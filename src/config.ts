@@ -25,6 +25,7 @@ export const ConfigSchema = z.object({
   transport: Transport,
   host: z.string().min(1),
   port: z.number().int().min(0).max(65535),
+  publicUrl: z.string().url().optional(),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -39,6 +40,7 @@ interface CliResult {
   transport?: string;
   host?: string;
   port?: number;
+  publicUrl?: string;
 }
 
 const parseCliArgs = (args: string[]): CliResult => {
@@ -75,6 +77,9 @@ const parseCliArgs = (args: string[]): CliResult => {
     } else if (arg === '--port' && next) {
       result.port = Number.parseInt(next, 10);
       i++;
+    } else if (arg === '--public-url' && next) {
+      result.publicUrl = next;
+      i++;
     } else if (!arg.startsWith('-') && positionalIndex === 0) {
       result.subdomain = arg;
       positionalIndex++;
@@ -102,17 +107,19 @@ export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
   const transport = cli.transport ?? process.env['TRANSPORT'] ?? 'stdio';
   const host = cli.host ?? process.env['HOST'] ?? '0.0.0.0';
   const port = cli.port ?? parsePortEnv(process.env['PORT']) ?? 3000;
+  const publicUrl = cli.publicUrl ?? process.env['PUBLIC_URL'];
 
   const zendeskEmail = process.env['ZENDESK_EMAIL'];
   const zendeskApiToken = process.env['ZENDESK_API_TOKEN'];
 
   // API token auth in HTTP mode would expose the issuing user's full rights to
-  // anyone reaching the server — that's the "public MCP with admin key"
-  // anti-pattern this server was built to avoid. Refuse it loudly.
-  if (transport === 'http' && (zendeskEmail || zendeskApiToken)) {
+  // anyone reaching the server (shared static credential). Refuse only when
+  // BOTH are set — a stray ZENDESK_EMAIL in the shell environment is harmless
+  // by itself, and rejecting it would surprise operators who intended OAuth.
+  if (transport === 'http' && zendeskEmail && zendeskApiToken) {
     throw new Error(
-      'API token authentication (ZENDESK_EMAIL / ZENDESK_API_TOKEN) is not supported in HTTP mode. ' +
-        'HTTP mode requires per-user OAuth 2.1 PKCE — unset these variables and configure your ' +
+      'API token authentication (ZENDESK_EMAIL + ZENDESK_API_TOKEN) is not supported in HTTP mode. ' +
+        'HTTP mode requires per-user OAuth 2.1 PKCE - unset these variables and configure your ' +
         'MCP client to perform the OAuth flow against Zendesk.',
     );
   }
@@ -130,5 +137,6 @@ export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
     transport,
     host,
     port,
+    publicUrl,
   });
 };

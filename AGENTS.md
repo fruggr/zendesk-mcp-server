@@ -140,6 +140,7 @@ Options:
   --transport <t>         stdio (default) | http
   --host <host>           HTTP bind host (default: 0.0.0.0)
   --port <port>           HTTP bind port (default: 3000; 0 = OS-assigned)
+  --public-url <url>      Public URL clients use to reach the server (HTTP)
 ```
 
 ## Environment variables
@@ -153,6 +154,7 @@ Options:
 | `TRANSPORT` | no | `stdio` | `stdio` or `http` |
 | `HOST` | no | `0.0.0.0` | HTTP bind host |
 | `PORT` | no | `3000` | HTTP bind port (`0` to let the OS pick) |
+| `PUBLIC_URL` | recommended in HTTP behind a proxy | derived from host:port | Public URL advertised in OAuth discovery metadata (RFC 8707). Set this when the server is behind a TLS reverse proxy — e.g. Azure App Service: `PUBLIC_URL=https://${WEBSITE_HOSTNAME}`. |
 | `LOG_LEVEL` | no | `info` | Log verbosity |
 
 In stdio mode, if both `ZENDESK_EMAIL` and `ZENDESK_API_TOKEN` are set the server uses API token authentication; otherwise it uses OAuth 2.1 PKCE (browser opens on first tool call). In HTTP mode, API token credentials are refused at boot — only per-user OAuth 2.1 PKCE is accepted (each MCP session sends its own bearer token).

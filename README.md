@@ -222,9 +222,19 @@ Deploy a private MCP server for **one** Zendesk account. Every MCP client connec
 ### Run the server
 
 ```bash
-zendesk-mcp-server <your-subdomain> --transport http --port 3000
+zendesk-mcp-server <your-subdomain> --transport http --port 3000 \
+  --public-url https://mcp.example.com
 # stderr: Zendesk MCP server running via http on 0.0.0.0:3000
 ```
+
+`--public-url` (or `PUBLIC_URL=…`) is the URL **clients use to reach you**. It's what gets advertised in the OAuth discovery metadata as the canonical resource identifier (RFC 8707). When the server is behind a TLS reverse proxy — Azure App Service, Heroku, Fly.io, Cloudflare Tunnel, nginx, Caddy… — the bind host and the public URL differ, and spec-compliant MCP clients will refuse the connection if the metadata advertises the wrong resource. Without it the server boots in a degraded mode and prints a warning.
+
+| Platform | Recommended setup |
+|---|---|
+| **Azure App Service** | Startup command: `PUBLIC_URL="https://$WEBSITE_HOSTNAME" zendesk-mcp-server $ZENDESK_SUBDOMAIN --transport http --port $PORT` |
+| **Heroku / Fly / Cloud Run** | `PUBLIC_URL=https://<your-app>.<provider>.app` in the env / config |
+| **Caddy / nginx / Traefik in front of a VM** | `PUBLIC_URL=https://mcp.example.com` |
+| **Local dev (no proxy)** | `--host 127.0.0.1 --port 3000` — the resource URL is derived automatically (the wildcard `0.0.0.0` is what triggers the warning) |
 
 Verify the OAuth discovery endpoints (served automatically by fastmcp):
 
@@ -270,6 +280,8 @@ Options:
   --transport <t>         stdio (default) | http
   --host <host>           HTTP bind host (default: 0.0.0.0)
   --port <port>           HTTP bind port (default: 3000; 0 = OS-assigned)
+  --public-url <url>      Public URL clients use to reach the server (HTTP mode,
+                          required behind a TLS reverse proxy)
 ```
 
 `--namespace` and `--read-only` are applied before the proxies are registered, so they narrow the surface in every mode — in the default `namespace` mode, `--namespace help_center` registers a single proxy (`zendesk_help_center`) instead of three.
@@ -302,6 +314,7 @@ zendesk-mcp-server acme --transport http --port 8080 \
 | `TRANSPORT` | no | `stdio` | `stdio` or `http` |
 | `HOST` | no | `0.0.0.0` | HTTP bind host |
 | `PORT` | no | `3000` | HTTP bind port (`0` to let the OS pick) |
+| `PUBLIC_URL` | recommended in HTTP behind a proxy | derived from host:port | Public URL advertised in OAuth discovery metadata |
 | `LOG_LEVEL` | no | `info` | Log verbosity |
 
 In stdio, if both `ZENDESK_EMAIL` and `ZENDESK_API_TOKEN` are set, the server uses API token auth; otherwise it uses OAuth 2.1 PKCE. In HTTP mode, API token credentials are refused at boot — only per-user OAuth 2.1 PKCE is accepted.
