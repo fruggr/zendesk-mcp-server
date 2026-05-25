@@ -28,7 +28,7 @@ src/
 
 Tools are registered at startup based on `--mode`:
 
-- **`all`** (38 individual tools) — each tool registered separately
+- **`all`** — each tool registered separately
 - **`namespace`** (default, 3 proxy tools) — `zendesk_tickets`, `zendesk_help_center`, `zendesk_users`, each dispatching to sub-operations
 - **`single`** (1 proxy tool) — `zendesk` dispatches to all operations
 
@@ -191,8 +191,7 @@ README is what external users rely on — it drifts fast if ignored.
 
 When you add, remove, rename, or meaningfully re-describe a tool, update:
 
-- **`README.md`** — the matching row in the `Tickets` / `Help Center` / `Users & Organizations` / `Search` table, the `(N tools)` count in the `<summary>`, and the global tool count (currently **38**) wherever it appears ("Expose 38 individual tools", mode table, single-mode tip, CLI example).
-- **`AGENTS.md`** — the `all` mode total count line in "Tool modes" (currently 38).
+- **`README.md`** — the matching row in the per-namespace tool table, the `(N tools)` count in the `<summary>`, and the global tool count wherever it appears.
 - Namespace counts in `tests/unit/routing/registry.test.ts` if you touch the `help_center`, `tickets`, or `users` namespace.
 - The `createHelpCenterTools` length assertion in `tests/unit/tools/help-center.test.ts` (and equivalents for other namespaces).
 
