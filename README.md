@@ -254,12 +254,75 @@ curl -s -i http://localhost:3000/healthz   # → 200 OK
 
 ### MCP client wiring
 
-Remote MCP over Streamable HTTP is still a recent addition to the MCP spec (2025-06-18). At the time of writing, the only widely available clients that complete the OAuth 2.1 PKCE discovery flow against a remote server are **Claude Code (CLI)** and **claude.ai on the web**. Claude Desktop and the VS Code MCP integrations support stdio only for now and aren't yet remote-capable — for those clients, use the local (stdio) quick start above with a local `zendesk-mcp-server` process.
+Every major MCP client supports remote servers over Streamable HTTP and handles the OAuth 2.1 PKCE discovery flow natively — paste the URL, sign in once, you're connected. Replace `https://mcp.example.com` below with your deployed origin.
+
+<details>
+<summary><strong>Claude Code (CLI)</strong></summary>
 
 ```bash
-# Claude Code (CLI) — replace localhost with your deployed origin
-claude mcp add zendesk --transport http http://localhost:3000/mcp
+claude mcp add zendesk --transport http https://mcp.example.com/mcp
 ```
+
+</details>
+
+<details>
+<summary><strong>Claude Desktop</strong></summary>
+
+**Settings → Connectors → + Add custom connector**, paste `https://mcp.example.com/mcp`, click **Connect**. Claude Desktop drives the OAuth flow in your browser on first call.
+
+</details>
+
+<details>
+<summary><strong>claude.ai (web)</strong></summary>
+
+**Settings → Connectors → Add custom connector**, same URL. The OAuth flow runs in the same tab.
+
+</details>
+
+<details>
+<summary><strong>VS Code (GitHub Copilot / Continue / Cline)</strong></summary>
+
+Add to your `.vscode/mcp.json`:
+
+```json
+{
+  "servers": {
+    "zendesk": {
+      "type": "http",
+      "url": "https://mcp.example.com/mcp"
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><strong>Cursor, Windsurf</strong></summary>
+
+Both expose an MCP settings UI that accepts a remote URL. Paste `https://mcp.example.com/mcp` and sign in when prompted.
+
+</details>
+
+<details>
+<summary><strong>Zed</strong></summary>
+
+Zed's MCP UI does not yet handle the OAuth 2.1 discovery flow itself. Use [`mcp-remote`](https://github.com/geelen/mcp-remote) as a local shim:
+
+```json
+{
+  "context_servers": {
+    "zendesk": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://mcp.example.com/mcp"]
+    }
+  }
+}
+```
+
+`mcp-remote` handles the OAuth flow on your machine and proxies the session to the remote server.
+
+</details>
 
 On the first call the MCP client fetches the discovery metadata, performs the OAuth 2.1 PKCE flow against Zendesk on behalf of the **end user**, and sends the resulting access token as a `Bearer` to the server. Each subsequent tool call runs with that user's Zendesk permissions.
 
