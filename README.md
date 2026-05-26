@@ -227,6 +227,8 @@ zendesk-mcp-server <your-subdomain> --transport http --port 3000 \
 # stderr: Zendesk MCP server running via http on 0.0.0.0:3000
 ```
 
+### Public URL
+
 `--public-url` (or `PUBLIC_URL=…`) is the URL **clients use to reach you**. It's what gets advertised in the OAuth discovery metadata as the canonical resource identifier (RFC 8707). When the server is behind a TLS reverse proxy — Azure App Service, Heroku, Fly.io, Cloudflare Tunnel, nginx, Caddy… — the bind host and the public URL differ, and spec-compliant MCP clients will refuse the connection if the metadata advertises the wrong resource. Without it the server boots in a degraded mode and prints a warning.
 
 | Platform | Recommended setup |
@@ -236,7 +238,9 @@ zendesk-mcp-server <your-subdomain> --transport http --port 3000 \
 | **Caddy / nginx / Traefik in front of a VM** | `PUBLIC_URL=https://mcp.example.com` |
 | **Local dev (no proxy)** | `--host 127.0.0.1 --port 3000` — the resource URL is derived automatically (the wildcard `0.0.0.0` is what triggers the warning) |
 
-Verify the OAuth discovery endpoints (served automatically by fastmcp):
+### Verify discovery endpoints
+
+Served automatically by fastmcp in HTTP mode:
 
 ```bash
 curl -s http://localhost:3000/.well-known/oauth-protected-resource
@@ -249,6 +253,8 @@ curl -s -i http://localhost:3000/healthz   # → 200 OK
 ```
 
 ### MCP client wiring
+
+Remote MCP over Streamable HTTP is still a recent addition to the MCP spec (2025-06-18). At the time of writing, the only widely available clients that complete the OAuth 2.1 PKCE discovery flow against a remote server are **Claude Code (CLI)** and **claude.ai on the web**. Claude Desktop and the VS Code MCP integrations support stdio only for now and aren't yet remote-capable — for those clients, use the local (stdio) quick start above with a local `zendesk-mcp-server` process.
 
 ```bash
 # Claude Code (CLI) — replace localhost with your deployed origin
@@ -264,7 +270,6 @@ This server provides the MCP transport and the OAuth discovery metadata. The ope
 - **TLS termination** (put the server behind a reverse proxy like Caddy / nginx / Cloudflare Tunnel)
 - **Network exposure & firewall** (the server binds `0.0.0.0` by default — choose carefully)
 - **Process supervision** (systemd, Docker, fly.io, your hosting provider's runner — none is shipped here)
-- **API token credentials are refused at boot in HTTP mode** by design — see [API token authentication](#appendix-api-token-authentication-stdio-only).
 
 ## CLI reference
 
@@ -337,7 +342,16 @@ and runs the smoke test to keep that promise honest.
 # Install dependencies
 pnpm install
 
-# Dev mode (auto-reload)
+# Dev mode, OAuth (browser opens on first tool call)
+pnpm dev -- <your-subdomain> --mode all
+
+# Dev mode, HTTP transport (OAuth bearer from the MCP client)
+pnpm dev -- <your-subdomain> --transport http --port 3000 --public-url http://localhost:3000
+# In another shell:
+curl -s http://localhost:3000/.well-known/oauth-protected-resource
+curl -s http://localhost:3000/healthz
+
+# Dev mode, API token (stdio CI/headless escape hatch)
 ZENDESK_EMAIL=you@example.com ZENDESK_API_TOKEN=xxx \
   pnpm dev -- <your-subdomain> --mode all
 

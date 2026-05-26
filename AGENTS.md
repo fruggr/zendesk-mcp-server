@@ -1,16 +1,14 @@
 # Development Guide
 
-## Prerequisites
-
-- Node.js >= 20
-- pnpm (package manager)
-- A Zendesk instance with admin access
+This file is for contributors. End-user docs (install, configure, run, deploy) live in [`README.md`](README.md); refer to it for anything operational. Here we only cover what's needed to develop, test, review, and release the project.
 
 ## Setup
 
 ```bash
 pnpm install
 ```
+
+Toolchain (Node 24 + pnpm 11) is the dev floor; the published package still runs on Node 20+ (a CI job exercises the packed tarball on Node 20).
 
 ## Architecture
 
@@ -52,73 +50,51 @@ Tools are registered at startup based on `--mode`:
 - **`namespace`** (default, 3 proxy tools) — `zendesk_tickets`, `zendesk_help_center`, `zendesk_users`, each dispatching to sub-operations
 - **`single`** (1 proxy tool) — `zendesk` dispatches to all operations
 
-Proxy tools accept `{ operation, params }` and validate params through the original Zod schema before calling the handler.
+Proxy tools accept `{ operation, params }` and validate params through the original Zod schema before calling the handler. Each proxy carries its own scoped handler map — a namespace proxy cannot dispatch to operations outside its namespace.
 
-`--namespace` and `--read-only` are applied by `filterTools` (`src/routing/registry.ts`) *before* the mode switch in `src/server.ts`. They therefore narrow every mode, including the default `namespace` mode — e.g. `--namespace help_center --read-only` registers a single `zendesk_help_center` proxy whose description only lists read-only operations. `--tool <name>` is also filtered here but additionally forces `mode: 'all'` in `src/config.ts`.
+`--namespace` and `--read-only` are applied by `filterTools` (`src/routing/registry.ts`) *before* the mode switch in `src/server.ts`. They therefore narrow every mode, including the default `namespace` mode. `--tool <name>` is also filtered here but additionally forces `mode: 'all'` in `src/config.ts`.
 
 ### Token passing
 
 `createMcpServer(config, getToken)` injects a single `getToken: () => string | Promise<string>` closure into every tool handler. Where the closure pulls the token from depends on the transport:
 
 - **stdio + OAuth** (default): `getToken` is backed by `token-store.ts`, which lazily triggers the browser PKCE flow (`browser-oauth.ts`) and caches the access token in memory.
-- **stdio + API token** (CI/headless escape hatch): `getToken` returns a static Basic auth header built from `ZENDESK_EMAIL` + `ZENDESK_API_TOKEN`. **Refused at boot in HTTP mode** — see below.
+- **stdio + API token** (CI/headless escape hatch): `getToken` returns a static Basic auth header built from `ZENDESK_EMAIL` + `ZENDESK_API_TOKEN`. **Refused at boot in HTTP mode** — enforced in `loadConfig` (`src/config.ts`).
 - **HTTP + per-user OAuth**: `getToken` reads from `AsyncLocalStorage` (`session-token.ts`). fastmcp's `authenticate(request)` extracts the `Authorization: Bearer <token>` header on each new session; the per-tool `execute` wrapper in `server.ts` puts that token in async-local storage before calling the original handler, so the 37 handlers stay transport-agnostic.
-
-API token authentication is **explicitly refused in HTTP mode** because a shared static credential reachable over the network would expose every user to the same rights — the anti-pattern this server's per-user OAuth design was built to avoid. The refusal is enforced in `loadConfig` (`src/config.ts`).
 
 ## Build & run
 
 ```bash
-# Build (tsdown bundles to dist/index.js with shebang)
-pnpm build
-
-# Type-check without emitting
-pnpm typecheck
-
-# Lint
-pnpm check
+pnpm build       # tsdown → dist/index.js with shebang
+pnpm typecheck   # tsc --noEmit
+pnpm check       # Biome lint + format
+pnpm check:fix   # Biome auto-fix
 ```
 
-## Dev mode (auto-reload on file changes)
+## Dev mode (auto-reload)
 
-tsx watches `src/` and restarts the server automatically:
+`tsx` watches `src/` and restarts on save. Default is OAuth — no env vars needed.
 
 ```bash
-# API token mode
+# Stdio + OAuth (browser opens on first tool call)
+pnpm dev -- <your-subdomain> --mode all
+
+# HTTP transport, local discovery testable via curl
+pnpm dev -- <your-subdomain> --transport http --port 3000 \
+  --public-url http://localhost:3000
+curl -s http://localhost:3000/.well-known/oauth-protected-resource
+curl -s http://localhost:3000/healthz
+
+# Stdio + API token (only when a browser is not available)
 ZENDESK_EMAIL=you@example.com ZENDESK_API_TOKEN=xxx \
   pnpm dev -- <your-subdomain> --mode all
-
-# OAuth mode (browser opens on first tool call)
-pnpm dev -- <your-subdomain> --mode all
 ```
 
-## Zendesk setup
+Zendesk-side OAuth client setup (admin center, redirect URLs, tokens) is documented in [`README.md`](README.md#quick-start-local-stdio).
 
-### Option A: OAuth (browser PKCE)
+## Smoke-testing a tool manually
 
-1. Go to **Admin Center → Apps and integrations → APIs → OAuth Clients**
-2. Create a client:
-   - **Client kind**: Public
-   - **Identifier**: `<your-subdomain>_zendesk` (or any name, then set `ZENDESK_OAUTH_CLIENT_ID`)
-   - **Redirect URL**: `http://localhost:3000/callback`
-3. Start the server (without `ZENDESK_EMAIL`/`ZENDESK_API_TOKEN`):
-   ```bash
-   pnpm dev -- <your-subdomain> --mode all
-   ```
-4. On the first tool call, a browser window opens for authentication.
-
-### Option B: API token
-
-1. Go to **Admin Center → Apps and integrations → APIs → Zendesk API**
-2. Enable **Token Access** in Settings tab
-3. Create an API token
-4. Run:
-   ```bash
-   ZENDESK_EMAIL=you@example.com ZENDESK_API_TOKEN=xxx \
-     pnpm dev -- <your-subdomain> --mode all
-   ```
-
-## Testing a tool manually
+A one-shot JSON-RPC call over stdio (uses API token to skip the browser flow):
 
 ```bash
 echo '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_current_user","arguments":{}}}' | \
@@ -126,44 +102,14 @@ echo '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_curren
   node dist/index.js <your-subdomain> --mode all
 ```
 
-## CLI reference
-
-```
-zendesk-mcp-server <subdomain> [options]
-
-Options:
-  --mode <mode>           single | namespace (default) | all
-  --namespace <ns>        Filter by namespace (repeatable): tickets, help_center, users
-  --tool <name>           Filter by tool name (repeatable, forces mode all)
-  --read-only             Only expose read operations
-  --log-level <level>     debug | info (default) | warn | error
-  --transport <t>         stdio (default) | http
-  --host <host>           HTTP bind host (default: 0.0.0.0)
-  --port <port>           HTTP bind port (default: 3000; 0 = OS-assigned)
-  --public-url <url>      Public URL clients use to reach the server (HTTP)
-```
-
-## Environment variables
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `ZENDESK_SUBDOMAIN` | yes (or CLI arg) | — | Zendesk subdomain (e.g., `mycompany` for mycompany.zendesk.com) |
-| `ZENDESK_OAUTH_CLIENT_ID` | no | `${subdomain}_zendesk` | OAuth client identifier |
-| `ZENDESK_EMAIL` | stdio API-token mode only | — | Agent email for Basic auth (refused in HTTP) |
-| `ZENDESK_API_TOKEN` | stdio API-token mode only | — | Zendesk API token (refused in HTTP) |
-| `TRANSPORT` | no | `stdio` | `stdio` or `http` |
-| `HOST` | no | `0.0.0.0` | HTTP bind host |
-| `PORT` | no | `3000` | HTTP bind port (`0` to let the OS pick) |
-| `PUBLIC_URL` | recommended in HTTP behind a proxy | derived from host:port | Public URL advertised in OAuth discovery metadata (RFC 8707). Set this when the server is behind a TLS reverse proxy — e.g. Azure App Service: `PUBLIC_URL=https://${WEBSITE_HOSTNAME}`. |
-| `LOG_LEVEL` | no | `info` | Log verbosity |
-
-In stdio mode, if both `ZENDESK_EMAIL` and `ZENDESK_API_TOKEN` are set the server uses API token authentication; otherwise it uses OAuth 2.1 PKCE (browser opens on first tool call). In HTTP mode, API token credentials are refused at boot — only per-user OAuth 2.1 PKCE is accepted (each MCP session sends its own bearer token).
+For HTTP mode, use [MCP Inspector](https://modelcontextprotocol.io/docs/tools/inspector) (`npx @modelcontextprotocol/inspector …`) against the running server.
 
 ## Tests
 
 ```bash
 pnpm test          # Run once
 pnpm test:watch    # Watch mode
+pnpm test:smoke    # Build + spawn binary, assert stdio + http boot markers
 ```
 
 Tests use vitest + MSW for mocking the Zendesk API.
@@ -180,53 +126,33 @@ Tests use vitest + MSW for mocking the Zendesk API.
 - TypeScript strict (`@tsconfig/strictest` base)
 - Biome for linting and formatting (`pnpm check`, `pnpm check:fix`)
 - Functional style: pure functions, no classes (except `ZendeskApiError`), immutable data
-- Tool handlers are standalone functions in `ToolDefinition[]` arrays, not tied to `registerTool`
+- Tool handlers are standalone functions in `ToolDefinition[]` arrays, not tied to the MCP SDK's `registerTool`
+- ASCII-only error messages on auth paths — `node:http` rejects non-ASCII bytes in `WWW-Authenticate` and other headers (`ERR_INVALID_CHAR`), which surfaces as a 500 instead of the spec-required 401
 
 ## Submission quality bar
 
-This is the bar to clear before opening a PR or asking the maintainer to
-review. It applies the same way whether the code was written by a human or
-by an AI assistant — the goal is that the patch survives external scrutiny
-and that the human author can defend every line.
+This is the bar to clear before opening a PR or asking the maintainer to review. It applies the same way whether the code was written by a human or by an AI assistant — the goal is that the patch survives external scrutiny and that the human author can defend every line.
 
 Before you submit:
 
-1. **Re-read your own diff in full.** No skimming. If a hunk no longer makes
-   sense out of the context where you wrote it, rewrite it.
-2. **Justify each change.** For every non-trivial hunk, you should be able
-   to answer: why is this change here, what would break without it, and is
-   it the smallest version of the fix.
-3. **Look for what you didn't write.** Missing zod validation on an input,
-   missing test for an edge case, missing README/AGENTS update on a renamed
-   tool, missing error path. Reviewers find these — find them first.
-4. **Self-review prompt.** Run a Claude Code pass on the diff against
-   `main` using the prompt in the
-   [`CONTRIBUTING.md`](CONTRIBUTING.md#author-side-ai-review) "Author-side
-   AI review" section. Address findings or document why you're skipping
-   them in the PR description.
-5. **Run the full local gate**: `pnpm check`, `pnpm typecheck`, `pnpm test`,
-   `pnpm build`. A green CI on a non-green local run means a flaky check,
-   not a free pass.
-6. **Scope discipline.** Don't bundle unrelated cleanups into a feature PR.
-   If you spot something worth fixing along the way, note it and open a
-   separate PR.
-7. **No invented behavior.** If a Zendesk API field, an SDK option, or a
-   library API isn't confirmed by the docs, an existing test, or a typed
-   response, mark it `// TODO:` and surface the question in the PR
-   description rather than guessing.
+1. **Re-read your own diff in full.** No skimming. If a hunk no longer makes sense out of the context where you wrote it, rewrite it.
+2. **Justify each change.** For every non-trivial hunk, you should be able to answer: why is this change here, what would break without it, and is it the smallest version of the fix.
+3. **Look for what you didn't write.** Missing zod validation on an input, missing test for an edge case, missing README/AGENTS update on a renamed tool, missing error path. Reviewers find these — find them first.
+4. **Self-review prompt.** Run a Claude Code pass on the diff against `main` using the prompt in [`CONTRIBUTING.md`](CONTRIBUTING.md#author-side-ai-review) "Author-side AI review". Address findings or document why you're skipping them in the PR description.
+5. **Run the full local gate**: `pnpm check`, `pnpm typecheck`, `pnpm test`, `pnpm build`, `pnpm test:smoke`. A green CI on a non-green local run means a flaky check, not a free pass.
+6. **Scope discipline.** Don't bundle unrelated cleanups into a feature PR. If you spot something worth fixing along the way, note it and open a separate PR.
+7. **No invented behavior.** If a Zendesk API field, an SDK option, or a library API isn't confirmed by the docs, an existing test, or a typed response, mark it `// TODO:` and surface the question in the PR description rather than guessing.
 
-The maintainer's review starts from the assumption that everything above
-has already been done.
+The maintainer's review starts from the assumption that everything above has already been done.
 
 ## Documentation maintenance
 
-Any change to the tool surface requires a README sync in the same PR. The
-README is what external users rely on — it drifts fast if ignored.
+Any change to the tool surface requires a README sync in the same PR. The README is what external users rely on — it drifts fast if ignored.
 
 When you add, remove, rename, or meaningfully re-describe a tool, update:
 
-- **`README.md`** — the matching row in the `Tickets` / `Help Center` / `Users & Organizations` / `Search` table, the `(N tools)` count in the `<summary>`, and the global tool count (currently **36**) wherever it appears ("Expose 36 individual tools", mode table, single-mode tip, CLI example).
-- **`AGENTS.md`** — the per-file tool counts in the Architecture section (`tickets.ts # 9 ticket tools`, `help-center.ts # 21 Help Center tools`, `users.ts # 5 user/organization tools`) and the `all` mode line in "Tool modes".
+- **`README.md`** — the matching row in the `Tickets` / `Help Center` / `Users & Organizations` / `Search` table, the `(N tools)` count in the `<summary>`, and the global tool count (currently **37**) wherever it appears.
+- **`AGENTS.md`** — the per-file tool counts in the Architecture section above.
 - Namespace counts in `tests/unit/routing/registry.test.ts` if you touch the `help_center`, `tickets`, or `users` namespace.
 - The `createHelpCenterTools` length assertion in `tests/unit/tools/help-center.test.ts` (and equivalents for other namespaces).
 
@@ -247,5 +173,5 @@ Versions are **fully automated** via [semantic-release](https://github.com/seman
 | `docs:`, `chore:`, `refactor:`, `test:`, `ci:`, `style:`, `build:` | none (no release) |
 
 - **Side effects of a release**: new git tag `vX.Y.Z`, `CHANGELOG.md` and `package.json` committed back to `main` with message `chore(release): X.Y.Z [skip ci]`, new GitHub Release with generated notes, new npm version published to `@fruggr/zendesk-mcp-server`.
-- **npm auth**: publishing uses NPM Trusted Publishing (OIDC) — no `NPM_TOKEN` secret is stored in the repo (except during the initial bootstrap of v1.0.0, documented inline in `release.yml`).
+- **npm auth**: publishing uses NPM Trusted Publishing (OIDC) — no `NPM_TOKEN` secret is stored in the repo.
 - **If you want a release to happen**: land at least one `fix:` / `feat:` / breaking change commit in your PR. A PR made only of `chore:` / `docs:` will merge cleanly but produce no new version.
