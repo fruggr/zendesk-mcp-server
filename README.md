@@ -147,6 +147,16 @@ pnpm build
 node dist/index.js <your-subdomain>
 ```
 
+Or run a development branch directly from GitHub (handy for testing PRs without publishing to npm) — the `prepare` script builds the package automatically on install:
+
+```bash
+# Latest main
+npx -y github:fruggr/zendesk-mcp-server <your-subdomain>
+
+# A specific branch / tag / commit
+npx -y github:fruggr/zendesk-mcp-server#my-feature-branch <your-subdomain>
+```
+
 ## Authentication
 
 The server supports two authentication methods:
