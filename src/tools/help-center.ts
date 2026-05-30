@@ -436,7 +436,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       }),
       annotations: {
         readOnlyHint: false,
-        destructiveHint: false,
+        destructiveHint: true,
         idempotentHint: true,
         openWorldHint: true,
       },
@@ -584,7 +584,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       }),
       annotations: {
         readOnlyHint: false,
-        destructiveHint: false,
+        destructiveHint: true,
         idempotentHint: true,
         openWorldHint: true,
       },
@@ -901,7 +901,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       }),
       annotations: {
         readOnlyHint: false,
-        destructiveHint: false,
+        destructiveHint: true,
         idempotentHint: true,
         openWorldHint: true,
       },
