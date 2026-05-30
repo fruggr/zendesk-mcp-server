@@ -166,6 +166,7 @@ runs it on every PR.
 - **Bug fixes**: write or adapt an existing test to reproduce the bug first, then fix the code.
 - **Existing tests are sacred**: a failing existing test is a potential regression. Investigate and understand WHY it fails before changing it. Never modify an existing test just to make it pass without understanding the root cause.
 - **Zendesk API**: always use MSW handlers (`tests/msw-handlers.ts`) to mock Zendesk responses. Never call the real API in tests.
+- **Coverage follows the surface**: when you add or change a tool, mode, filter, or transport, extend the end-to-end tests in `tests/integration/` so the roundtrip stays covered — shared, transport-agnostic behaviour belongs in `registerCoreScenarios`.
 
 ## Code style
 

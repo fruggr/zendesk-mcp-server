@@ -172,6 +172,15 @@ export const MOCK_COMMENT = {
   ],
 };
 
+// Opt-in error handlers for tests that exercise failure paths. Kept here so all
+// Zendesk mocking stays centralized; activate one per test via mswServer.use().
+export const errorHandlers = {
+  usersMeUnauthorized: http.get(
+    `${BASE}/users/me`,
+    () => new HttpResponse('unauthorized', { status: 401 }),
+  ),
+};
+
 export const handlers = [
   // Tickets
   http.get(`${BASE}/tickets/:id`, ({ params }) => {

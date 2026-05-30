@@ -14,10 +14,10 @@ export default defineConfig({
       // Quality gate: fail the run if coverage drops below these baselines.
       // Ratchet these up as coverage improves; never lower them silently.
       thresholds: {
-        statements: 90,
-        branches: 75,
-        functions: 90,
-        lines: 90,
+        statements: 94,
+        branches: 77,
+        functions: 98,
+        lines: 95,
       },
     },
   },
