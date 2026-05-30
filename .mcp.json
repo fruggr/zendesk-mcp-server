@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "zendesk-local": {
+      "command": "pnpm",
+      "args": ["exec", "tsx", "src/index.ts", "--mode", "all"],
+      "env": {}
+    }
+  }
+}

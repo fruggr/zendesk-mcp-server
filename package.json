@@ -23,7 +23,8 @@
     "test": "vitest run",
     "test:watch": "vitest watch",
     "test:coverage": "vitest run --coverage",
-    "test:smoke": "pnpm build && node scripts/smoke-test.mjs"
+    "test:smoke": "pnpm build && node scripts/smoke-test.mjs",
+    "mcp:live": "tsx scripts/mcp-live.ts"
   },
   "keywords": [
     "mcp",
