@@ -101,50 +101,6 @@ describe('createMcpServer', () => {
     expect(description).not.toContain('update_article');
   });
 
-  it('exposes the OAuth discovery config in HTTP mode', () => {
-    const { server } = createMcpServer({ ...baseConfig, transport: 'http' }, getToken);
-    const oauth = server.options.oauth;
-    expect(oauth?.enabled).toBe(true);
-    expect(oauth?.protectedResource?.authorizationServers).toContain(
-      `https://${baseConfig.subdomain}.zendesk.com`,
-    );
-    expect(oauth?.authorizationServer?.codeChallengeMethodsSupported).toContain('S256');
-  });
-
-  it('uses publicUrl as the OAuth resource identifier when set', () => {
-    const { server } = createMcpServer(
-      {
-        ...baseConfig,
-        transport: 'http',
-        host: '0.0.0.0',
-        port: 3000,
-        publicUrl: 'https://mcp.example.com',
-      },
-      getToken,
-    );
-    expect(server.options.oauth?.protectedResource?.resource).toBe('https://mcp.example.com');
-  });
-
-  it('strips trailing slashes from publicUrl', () => {
-    const { server } = createMcpServer(
-      {
-        ...baseConfig,
-        transport: 'http',
-        publicUrl: 'https://mcp.example.com/',
-      },
-      getToken,
-    );
-    expect(server.options.oauth?.protectedResource?.resource).toBe('https://mcp.example.com');
-  });
-
-  it('uses host:port when host is concrete and publicUrl is not set', () => {
-    const { server } = createMcpServer(
-      { ...baseConfig, transport: 'http', host: '127.0.0.1', port: 8080 },
-      getToken,
-    );
-    expect(server.options.oauth?.protectedResource?.resource).toBe('http://127.0.0.1:8080');
-  });
-
   it('namespace proxy dispatch rejects operations outside its scoped tools', async () => {
     // Regression: previously, every proxy shared one global handlerMap, so a
     // caller could invoke `zendesk_tickets` with operation="get_article" and
@@ -167,21 +123,6 @@ describe('createMcpServer', () => {
     // The error message must list only the scoped operations, not the global set.
     expect(text).toContain('get_ticket');
     expect(text).not.toContain('search_articles');
-  });
-
-  it('warns and falls back when host is the wildcard and publicUrl is not set', () => {
-    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    try {
-      createMcpServer({ ...baseConfig, transport: 'http', host: '0.0.0.0', port: 3000 }, getToken);
-      const warned = errSpy.mock.calls.some((args) =>
-        args.some(
-          (a) => typeof a === 'string' && a.includes('WARNING') && a.includes('PUBLIC_URL'),
-        ),
-      );
-      expect(warned).toBe(true);
-    } finally {
-      errSpy.mockRestore();
-    }
   });
 });
 

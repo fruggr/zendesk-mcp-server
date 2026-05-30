@@ -13,7 +13,7 @@ Most Zendesk integrations use a shared admin API key, giving every user full acc
 - **Context-friendly tool modes** — Expose 37 individual tools, 3 namespace proxies, or a single unified tool. Choose the mode that fits your LLM's context budget.
 - **Section-based article editing** — For large Help Center articles, read and rewrite one section at a time (parsed by h1/h2/h3 headings) instead of shuffling the full HTML body through the LLM. Reduces tokens by 10–100× on targeted edits.
 - **Read-only mode** — Restrict the server to read operations only, ideal for assistants that should never modify data.
-- **Lean stack** — Built on `@modelcontextprotocol/sdk`, [`fastmcp`](https://github.com/punkpeye/fastmcp) and `zod`. No Express, no Hono — just the MCP-spec OAuth metadata fastmcp ships out of the box.
+- **Lean stack** — Built on the official `@modelcontextprotocol/sdk` plus `zod`. The HTTP layer is a thin `node:http` wrapper around the SDK's `StreamableHTTPServerTransport` — no Express, no Hono, no framework on top of the framework.
 
 > Built and maintained by [Digital4better](https://digital4better.com) for the [Fruggr](https://www.fruggr.io) project.
 
@@ -250,7 +250,7 @@ zendesk-mcp-server <your-subdomain> --transport http --port 3000 \
 
 ### Verify discovery endpoints
 
-Served automatically by fastmcp in HTTP mode:
+Served by the HTTP transport in `src/transports/http.ts`:
 
 ```bash
 curl -s http://localhost:3000/.well-known/oauth-protected-resource

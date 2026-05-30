@@ -1,9 +1,10 @@
 import { buildBasicAuthHeader } from './auth/api-token';
-import { getSessionToken } from './auth/session-token';
 import { createTokenStore } from './auth/token-store';
 import type { Config } from './config';
 import { loadConfig } from './config';
 import { createMcpServer } from './server';
+import { startHttpTransport } from './transports/http';
+import { startStdioTransport } from './transports/stdio';
 
 type GetToken = () => string | Promise<string>;
 
@@ -24,20 +25,13 @@ const main = async (): Promise<void> => {
 
   if (config.transport === 'stdio') {
     const { server } = createMcpServer(config, resolveStdioGetToken(config));
-    await server.start({ transportType: 'stdio' });
-    console.error('Zendesk MCP server running via stdio');
+    await startStdioTransport(server);
     return;
   }
 
-  // HTTP mode: the per-session bearer is delivered via fastmcp's
-  // `authenticate` callback (configured inside createMcpServer) and pulled
-  // from async-local storage by getSessionToken at handler call time.
-  const { server } = createMcpServer(config, getSessionToken);
-  await server.start({
-    transportType: 'httpStream',
-    httpStream: { host: config.host, port: config.port },
-  });
-  console.error(`Zendesk MCP server running via http on ${config.host}:${config.port}`);
+  // HTTP mode: the HTTP transport creates a per-session McpServer with the
+  // request's bearer captured in its tools' closure — no shared state.
+  await startHttpTransport(config);
 };
 
 main().catch((error) => {

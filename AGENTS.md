@@ -15,14 +15,13 @@ Toolchain (Node 24 + pnpm 11) is the dev floor; the published package still runs
 ```
 src/
 ├── index.ts              # Entry point, CLI args, transport + auth dispatch
-├── server.ts             # FastMCP setup, tool registration per mode, OAuth discovery
+├── server.ts             # McpServer factory: registers tools per mode
 ├── config.ts             # CLI + env vars parsing (Zod validated, transport-aware)
 ├── constants.ts          # Zendesk API URLs, OAuth URLs, limits
 ├── types.ts              # Zendesk API response interfaces
 ├── auth/
 │   ├── browser-oauth.ts  # OAuth 2.1 PKCE browser flow for stdio (authorize/callback/token)
 │   ├── token-store.ts    # In-memory token cache, on-demand auth trigger (stdio)
-│   ├── session-token.ts  # Per-request bearer token via AsyncLocalStorage (HTTP)
 │   └── api-token.ts      # Basic auth for stdio CI/headless escape hatch
 ├── client/
 │   └── zendesk-api.ts    # HTTP client (fetch, error handling)
@@ -35,12 +34,15 @@ src/
 │   ├── help-center.ts    # 21 Help Center tools (articles, section editing, translations, taxonomy)
 │   ├── search.ts         # Unified search tool (namespace: tickets)
 │   └── users.ts          # 5 user/organization tools
+├── transports/
+│   ├── stdio.ts          # SDK StdioServerTransport wrapper
+│   └── http.ts           # node:http server: /mcp (SDK StreamableHTTPServerTransport), /.well-known/oauth-*, /healthz, per-session McpServer
 └── utils/
     ├── formatting.ts     # Markdown formatters per entity type
     └── pagination.ts     # Cursor-based pagination helpers
 ```
 
-Transports are provided by [`fastmcp`](https://github.com/punkpeye/fastmcp) — `stdio` for local CLI use and `httpStream` (Streamable HTTP at `/mcp`) for remote deployment. fastmcp also serves `/.well-known/oauth-protected-resource` (RFC 9728) and `/.well-known/oauth-authorization-server` (RFC 8414) in HTTP mode, advertising Zendesk as the upstream authorization server per MCP Specification 2025-06-18.
+Transports use the official `@modelcontextprotocol/sdk` directly. Stdio is `StdioServerTransport`; HTTP is a thin `node:http` server wrapping `StreamableHTTPServerTransport` plus the OAuth discovery endpoints (RFC 9728 / RFC 8414) advertising Zendesk as the upstream authorization server per MCP Specification 2025-06-18. No third-party MCP framework on top.
 
 ### Tool modes (pattern Azure MCP Server)
 
@@ -60,7 +62,7 @@ Proxy tools accept `{ operation, params }` and validate params through the origi
 
 - **stdio + OAuth** (default): `getToken` is backed by `token-store.ts`, which lazily triggers the browser PKCE flow (`browser-oauth.ts`) and caches the access token in memory.
 - **stdio + API token** (CI/headless escape hatch): `getToken` returns a static Basic auth header built from `ZENDESK_EMAIL` + `ZENDESK_API_TOKEN`. **Refused at boot in HTTP mode** — enforced in `loadConfig` (`src/config.ts`).
-- **HTTP + per-user OAuth**: `getToken` reads from `AsyncLocalStorage` (`session-token.ts`). fastmcp's `authenticate(request)` extracts the `Authorization: Bearer <token>` header on each new session; the per-tool `execute` wrapper in `server.ts` puts that token in async-local storage before calling the original handler, so the 37 handlers stay transport-agnostic.
+- **HTTP + per-user OAuth**: `src/transports/http.ts` extracts the `Authorization: Bearer <token>` header on each new session and builds a **per-session `McpServer`** (`createMcpServer(config, () => bearer)`). The 37 tool handlers' `getToken` closure captures that session's bearer directly — no async-local storage, no shared state between sessions.
 
 ## Build & run
 

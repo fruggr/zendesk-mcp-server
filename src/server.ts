@@ -1,9 +1,6 @@
-import type { IncomingMessage } from 'node:http';
-import { type ContentResult, FastMCP } from 'fastmcp';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import * as z from 'zod/v4';
-import { runWithSessionToken } from './auth/session-token';
 import type { Config } from './config';
-import { getOAuthUrls } from './constants';
 import { filterTools, groupByNamespace } from './routing/registry';
 import { createAllTools, type ToolDefinition } from './tools/index';
 
@@ -32,127 +29,18 @@ export const buildOperationList = (
     )
     .join('\n');
 
-// fastmcp constrains the auth type to `Record<string, unknown> | undefined`.
-// Extending the index signature lets us keep a typed accessToken field
-// while satisfying that constraint.
-interface SessionAuth extends Record<string, unknown> {
-  accessToken: string;
-}
-
-interface ExecuteCtx {
-  session?: SessionAuth | undefined;
-}
-
-type LeafExecute = (args: Record<string, unknown>) => Promise<ContentResult>;
-
-// Error message must stay ASCII-only: mcp-proxy interpolates it into the
-// WWW-Authenticate response header on 401, and node:http's setHeader rejects
-// non-ASCII bytes with ERR_INVALID_CHAR (which would surface as a 500 instead
-// of the spec-required 401).
-export const extractBearer = (request: IncomingMessage): string => {
-  const header = request.headers['authorization'];
-  if (typeof header !== 'string' || !header.toLowerCase().startsWith('bearer ')) {
-    throw new Error(
-      'Missing Authorization: Bearer <zendesk-oauth-token> header. ' +
-        'HTTP mode requires per-user OAuth 2.1 PKCE - obtain a token from Zendesk via your MCP client.',
-    );
-  }
-  return header.slice('bearer '.length).trim();
-};
-
-// Build the canonical `resource` URL we advertise in the OAuth metadata.
-// Precedence:
-//   1. Explicit --public-url / PUBLIC_URL (operators behind a reverse proxy
-//      must set this; Azure App Service: PUBLIC_URL="https://${WEBSITE_HOSTNAME}").
-//   2. host:port when host is a real, routable hostname or IP (not the bind
-//      wildcard 0.0.0.0 / :: / unspecified).
-//   3. Fallback to http://host:port + warning. Clients following RFC 8707
-//      strictly will reject this resource identifier, so log a clear warning
-//      so the operator knows to set PUBLIC_URL.
-const WILDCARD_HOSTS = new Set(['0.0.0.0', '::', '*']);
-
-export const resolveResourceUrl = (config: Config): string => {
-  if (config.publicUrl) return config.publicUrl.replace(/\/+$/, '');
-  if (!WILDCARD_HOSTS.has(config.host)) {
-    return `http://${config.host}:${config.port}`;
-  }
-  console.error(
-    `[zendesk-mcp-server] WARNING: HOST=${config.host} but PUBLIC_URL is unset. ` +
-      `OAuth discovery will advertise http://${config.host}:${config.port} as the ` +
-      `resource identifier, which is not routable from external clients and may ` +
-      `cause spec-compliant MCP clients to refuse the connection. Set PUBLIC_URL ` +
-      `(or --public-url) to the URL clients use to reach this server (e.g. ` +
-      `https://your-host.example.com).`,
-  );
-  return `http://${config.host}:${config.port}`;
-};
-
-// In stdio mode the token is captured in the tools' closures (getToken passed
-// to createAllTools), so execute just invokes the handler. In HTTP mode the
-// per-session bearer is in ctx.session.accessToken; we move it into
-// async-local storage so the same closure-based getToken keeps working
-// without threading a token argument through 37 tool handlers.
-export const wrapLeafExecute = (
-  config: Config,
-  handler: ToolDefinition['handler'],
-): ((args: unknown, ctx: ExecuteCtx) => Promise<ContentResult>) => {
-  if (config.transport === 'stdio') {
-    return async (args) => handler(args as Record<string, unknown>) as Promise<ContentResult>;
-  }
-  return async (args, ctx) => {
-    const token = ctx.session?.accessToken;
-    if (!token) {
-      throw new Error('Session is missing accessToken — authenticate() did not populate it.');
-    }
-    return runWithSessionToken(
-      token,
-      () => handler(args as Record<string, unknown>) as Promise<ContentResult>,
-    );
-  };
-};
-
-export const wrapProxyExecute = (
-  config: Config,
-  body: LeafExecute,
-): ((args: unknown, ctx: ExecuteCtx) => Promise<ContentResult>) => {
-  if (config.transport === 'stdio') {
-    return async (args) => body(args as Record<string, unknown>);
-  }
-  return async (args, ctx) => {
-    const token = ctx.session?.accessToken;
-    if (!token) {
-      throw new Error('Session is missing accessToken — authenticate() did not populate it.');
-    }
-    return runWithSessionToken(token, () => body(args as Record<string, unknown>));
-  };
-};
-
-const registerLeafTool = (
-  server: FastMCP<SessionAuth>,
-  def: ToolDefinition,
-  config: Config,
-): void => {
-  server.addTool({
-    name: def.name,
-    description: def.description,
-    parameters: def.inputSchema,
-    annotations: {
-      title: def.title,
-      readOnlyHint: def.annotations.readOnlyHint,
-      destructiveHint: def.annotations.destructiveHint,
-      idempotentHint: def.annotations.idempotentHint,
-      openWorldHint: def.annotations.openWorldHint,
-    },
-    execute: wrapLeafExecute(config, def.handler),
-  });
-};
+type ProxyDispatch = (args: Record<string, unknown>) => Promise<{
+  content: Array<
+    { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }
+  >;
+}>;
 
 // Each proxy carries its OWN handler map, scoped to the operations it
 // advertises. In `namespace` mode this is essential: without it, a caller
 // could invoke `zendesk_tickets` with operation="get_article" and dispatch
 // a help-center handler via a shared global map. The description would lie
 // but the call would still succeed.
-export const buildProxyDispatch = (tools: ToolDefinition[]): LeafExecute => {
+export const buildProxyDispatch = (tools: ToolDefinition[]): ProxyDispatch => {
   const operationNames = tools.map((t) => t.name);
   const localHandlers = new Map<string, ToolDefinition>(tools.map((t) => [t.name, t]));
 
@@ -177,12 +65,24 @@ export const buildProxyDispatch = (tools: ToolDefinition[]): LeafExecute => {
   };
 };
 
+const registerLeafTool = (server: McpServer, def: ToolDefinition): void => {
+  server.registerTool(
+    def.name,
+    {
+      title: def.title,
+      description: def.description,
+      inputSchema: def.inputSchema.shape,
+      annotations: def.annotations,
+    },
+    async (params) => def.handler(params as Record<string, unknown>),
+  );
+};
+
 const registerProxyTool = (
-  server: FastMCP<SessionAuth>,
+  server: McpServer,
   toolName: string,
   title: string,
   tools: ToolDefinition[],
-  config: Config,
 ): void => {
   const operationNames = tools.map((t) => t.name);
   const operationList = buildOperationList(tools);
@@ -190,26 +90,29 @@ const registerProxyTool = (
 
   const dispatch = buildProxyDispatch(tools);
 
-  server.addTool({
-    name: toolName,
-    description: `${title}. Specify the operation and its parameters.\n\nAvailable operations:\n${operationList}`,
-    parameters: z.object({
-      operation: z.string().describe(`One of: ${operationNames.join(', ')}`),
-      params: z.record(z.string(), z.unknown()).default({}).describe('Operation parameters'),
-    }),
-    annotations: {
+  server.registerTool(
+    toolName,
+    {
       title,
-      readOnlyHint: allReadOnly,
-      destructiveHint: !allReadOnly,
-      idempotentHint: false,
-      openWorldHint: true,
+      description: `${title}. Specify the operation and its parameters.\n\nAvailable operations:\n${operationList}`,
+      inputSchema: {
+        operation: z.string().describe(`One of: ${operationNames.join(', ')}`),
+        params: z.record(z.string(), z.unknown()).default({}).describe('Operation parameters'),
+      },
+      annotations: {
+        title,
+        readOnlyHint: allReadOnly,
+        destructiveHint: !allReadOnly,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
     },
-    execute: wrapProxyExecute(config, dispatch),
-  });
+    async (args) => dispatch(args as Record<string, unknown>),
+  );
 };
 
 export interface CreatedServer {
-  server: FastMCP<SessionAuth>;
+  server: McpServer;
   registeredToolNames: string[];
 }
 
@@ -217,46 +120,9 @@ export const createMcpServer = (
   config: Config,
   getToken: () => string | Promise<string>,
 ): CreatedServer => {
-  const httpOptions = (() => {
-    if (config.transport !== 'http') return {};
-    const { authorizeUrl, tokenUrl } = getOAuthUrls(config.subdomain);
-    const issuer = `https://${config.subdomain}.zendesk.com`;
-    const resource = resolveResourceUrl(config);
-    return {
-      authenticate: async (request: IncomingMessage): Promise<SessionAuth> => ({
-        accessToken: extractBearer(request),
-      }),
-      // Advertise Zendesk as the upstream authorization server per MCP spec
-      // 2025-06-18 (RFC 9728 protected-resource + RFC 8414 auth-server
-      // metadata). MCP clients fetching /.well-known/oauth-protected-resource
-      // discover Zendesk and complete the PKCE flow there directly.
-      oauth: {
-        enabled: true,
-        protectedResource: {
-          authorizationServers: [issuer],
-          resource,
-          bearerMethodsSupported: ['header'],
-          scopesSupported: ['read', 'write'],
-        },
-        authorizationServer: {
-          issuer,
-          authorizationEndpoint: authorizeUrl,
-          tokenEndpoint: tokenUrl,
-          responseTypesSupported: ['code'],
-          grantTypesSupported: ['authorization_code', 'refresh_token'],
-          codeChallengeMethodsSupported: ['S256'],
-          tokenEndpointAuthMethodsSupported: ['none'],
-          scopesSupported: ['read', 'write'],
-        },
-      },
-    };
-  })();
-
-  const server = new FastMCP<SessionAuth>({
+  const server = new McpServer({
     name: '@digital4better/zendesk-mcp-server',
     version: '0.1.0',
-    health: { enabled: config.transport === 'http', path: '/healthz' },
-    ...httpOptions,
   });
 
   const allTools = createAllTools({ subdomain: config.subdomain, getToken });
@@ -273,7 +139,7 @@ export const createMcpServer = (
   switch (config.mode) {
     case 'all': {
       for (const tool of filteredTools) {
-        registerLeafTool(server, tool, config);
+        registerLeafTool(server, tool);
         registeredToolNames.push(tool.name);
       }
       break;
@@ -283,14 +149,14 @@ export const createMcpServer = (
       for (const [namespace, tools] of grouped) {
         const label = NAMESPACE_LABELS[namespace];
         if (label) {
-          registerProxyTool(server, label.toolName, label.title, tools, config);
+          registerProxyTool(server, label.toolName, label.title, tools);
           registeredToolNames.push(label.toolName);
         }
       }
       break;
     }
     case 'single': {
-      registerProxyTool(server, 'zendesk', 'Zendesk', filteredTools, config);
+      registerProxyTool(server, 'zendesk', 'Zendesk', filteredTools);
       registeredToolNames.push('zendesk');
       break;
     }
