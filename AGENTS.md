@@ -210,6 +210,11 @@ Before you submit:
    library API isn't confirmed by the docs, an existing test, or a typed
    response, mark it `// TODO:` and surface the question in the PR
    description rather than guessing.
+8. **Mark the PR ready for review.** A PR opened as a draft must be flipped
+   to "ready for review" once development is done and the local gate is
+   green — every finished PR ends in review, never left sitting as a draft.
+   Flipping it out of draft is what triggers CodeRabbit and the maintainer's
+   pass.
 
 The maintainer's review starts from the assumption that everything above
 has already been done.
