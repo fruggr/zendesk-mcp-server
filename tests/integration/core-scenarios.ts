@@ -1,10 +1,7 @@
-import { HttpResponse, http } from 'msw';
 import { afterEach, describe, expect, it } from 'vitest';
-import { getBaseUrl } from '../../src/constants';
+import { errorHandlers } from '../msw-handlers';
 import { mswServer } from '../setup';
 import { type ConnectedClient, type IntegrationHarness, makeConfig } from './harness';
-
-const BASE = getBaseUrl('testsubdomain');
 
 /** Names of the text blocks returned by a tool call, joined for easy asserts. */
 const textOf = (result: { content?: Array<{ type: string; text?: string }> }): string =>
@@ -101,9 +98,7 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
       });
 
       it('surfaces a Zendesk API error as an MCP tool error', async () => {
-        mswServer.use(
-          http.get(`${BASE}/users/me`, () => new HttpResponse('unauthorized', { status: 401 })),
-        );
+        mswServer.use(errorHandlers.usersMeUnauthorized);
 
         connected = await harness.connect(makeConfig({ mode: 'all' }));
         const result = await connected.client.callTool({
