@@ -149,9 +149,16 @@ If both `ZENDESK_EMAIL` and `ZENDESK_API_TOKEN` are set, the server uses API tok
 ```bash
 pnpm test          # Run once
 pnpm test:watch    # Watch mode
+pnpm test:coverage # Run with v8 coverage + enforce thresholds
 ```
 
 Tests use vitest + MSW for mocking the Zendesk API.
+
+### Coverage
+
+`pnpm test:coverage` enforces the global thresholds in `vitest.config.ts`
+(treat them as a ratchet) and writes `coverage/index.html` + `lcov.info`. CI
+runs it on every PR.
 
 ### Testing rules
 
@@ -166,6 +173,11 @@ Tests use vitest + MSW for mocking the Zendesk API.
 - Biome for linting and formatting (`pnpm check`, `pnpm check:fix`)
 - Functional style: pure functions, no classes (except `ZendeskApiError`), immutable data
 - Tool handlers are standalone functions in `ToolDefinition[]` arrays, not tied to `registerTool`
+
+## Communication language
+
+Everything on GitHub is in **English** (PRs, commits, code comments, review
+replies). Direct chat with the user follows their language.
 
 ## Submission quality bar
 
@@ -199,6 +211,8 @@ Before you submit:
    library API isn't confirmed by the docs, an existing test, or a typed
    response, mark it `// TODO:` and surface the question in the PR
    description rather than guessing.
+8. **Mark the PR ready for review.** Flip a draft PR to "ready for review"
+   once dev is done and the local gate is green — never leave it as a draft.
 
 The maintainer's review starts from the assumption that everything above
 has already been done.
