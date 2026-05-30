@@ -65,7 +65,7 @@ pnpm mcp:live list -- --mode namespace        # forward server flags after `--`
 
 # Call a tool (needs creds for a real Zendesk response)
 pnpm mcp:live call get_current_user '{}'
-pnpm mcp:live call get_ticket '{"ticketId": 123}' -- --mode all
+pnpm mcp:live call get_ticket '{"ticket_id": 123}' -- --mode all
 ```
 
 It links a real MCP `Client` to the server over an in-memory transport

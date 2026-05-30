@@ -38,19 +38,30 @@ const fail = (message: string): never => {
   process.exit(1);
 };
 
+// `subdomain` is required by the config schema, but `list` and arg validation
+// never touch Zendesk — so when no subdomain is provided (env or positional
+// arg), fall back to a placeholder. This keeps credential-free inspection
+// working; a real `call` still needs a real subdomain + token.
+if (!process.env['ZENDESK_SUBDOMAIN'] && !configArgs.some((a) => !a.startsWith('-'))) {
+  process.env['ZENDESK_SUBDOMAIN'] = 'mcp-live-placeholder';
+}
+
 const config = loadConfig(configArgs);
 
 // Mirror src/index.ts: prefer API-token auth. OAuth is unusable headless, so a
 // missing token only errors when a tool actually tries to reach Zendesk —
-// `list` and arg validation still work without credentials.
+// `list` and arg validation still work without credentials. Throwing (rather
+// than exiting) lets the MCP layer surface a clean tool error instead of
+// killing the process.
 const getToken =
   config.zendeskEmail && config.zendeskApiToken
     ? () => buildBasicAuthHeader(config.zendeskEmail as string, config.zendeskApiToken as string)
-    : () =>
-        fail(
+    : (): string => {
+        throw new Error(
           'Live calls need ZENDESK_EMAIL + ZENDESK_API_TOKEN (OAuth needs a browser). ' +
             'Set them in the environment, or use `list` which requires no token.',
         );
+      };
 
 const main = async (): Promise<void> => {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
