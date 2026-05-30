@@ -178,6 +178,17 @@ bootstraps / type-only).
 - Functional style: pure functions, no classes (except `ZendeskApiError`), immutable data
 - Tool handlers are standalone functions in `ToolDefinition[]` arrays, not tied to `registerTool`
 
+## Communication language
+
+All written output that lands on GitHub must be in **English**, without
+exception: PR titles and descriptions, commit messages, code comments, issue
+and review comments, and replies to reviewers. English is the shared language
+of the repository — it keeps the history readable for every contributor.
+
+This rule covers GitHub only. When talking directly with the user (chat, CLI),
+follow their local language configuration and answer in whatever language they
+are using.
+
 ## Submission quality bar
 
 This is the bar to clear before opening a PR or asking the maintainer to
