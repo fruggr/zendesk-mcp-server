@@ -13,7 +13,7 @@ Most Zendesk integrations use a shared admin API key, giving every user full acc
 - **Context-friendly tool modes** — Expose 37 individual tools, 3 namespace proxies, or a single unified tool. Choose the mode that fits your LLM's context budget.
 - **Section-based article editing** — For large Help Center articles, read and rewrite one section at a time (parsed by h1/h2/h3 headings) instead of shuffling the full HTML body through the LLM. Reduces tokens by 10–100× on targeted edits.
 - **Read-only mode** — Restrict the server to read operations only, ideal for assistants that should never modify data.
-- **Lean stack** — Built on the official `@modelcontextprotocol/sdk` plus `zod`. The HTTP layer is a thin `node:http` wrapper around the SDK's `StreamableHTTPServerTransport` — no Express, no Hono, no framework on top of the framework.
+- **Lean stack** — Built on the official `@modelcontextprotocol/sdk` plus `zod`.
 
 > Built and maintained by [Digital4better](https://digital4better.com) for the [Fruggr](https://www.fruggr.io) project.
 
@@ -144,22 +144,9 @@ npx -y @fruggr/zendesk-mcp-server <your-subdomain>
 # Or install globally
 npm install -g @fruggr/zendesk-mcp-server
 zendesk-mcp-server <your-subdomain>
-
-# Or clone and run from source
-git clone https://github.com/fruggr/zendesk-mcp-server.git
-cd zendesk-mcp-server && pnpm install && pnpm build
-node dist/index.js <your-subdomain>
 ```
 
-Or run a development branch directly from GitHub (handy for testing PRs without publishing to npm) — the `prepare` script builds the package automatically on install:
-
-```bash
-# Latest main
-npx -y github:fruggr/zendesk-mcp-server <your-subdomain>
-
-# A specific branch / tag / commit
-npx -y github:fruggr/zendesk-mcp-server#my-feature-branch <your-subdomain>
-```
+> Cloning from source and running a development branch is covered in the [Development](#development) section.
 
 ### Zendesk OAuth setup
 
@@ -223,11 +210,7 @@ Deploy a private MCP server for **one** Zendesk account. Every MCP client connec
 
 ### Zendesk OAuth setup
 
-1. Go to **Admin Center → Apps and integrations → APIs → OAuth Clients**
-2. Create a **public** client:
-   - **Client kind**: Public
-   - **Identifier**: `<your-subdomain>_zendesk` (or set `ZENDESK_OAUTH_CLIENT_ID`)
-   - **Redirect URL**: the callback your MCP client uses (provided by the client itself — for Claude Code on the web this is `https://claude.ai/oauth/callback`, etc.)
+Same procedure as the [local quick start](#zendesk-oauth-setup), with one difference: the **Redirect URL** must match the callback your MCP client uses — provided by the client itself, e.g. `https://claude.ai/oauth/callback` for claude.ai on the web. Check your client's docs.
 
 ### Run the server
 
@@ -415,7 +398,7 @@ zendesk-mcp-server acme --transport http --port 8080 \
 | `CORS_ORIGIN` | no | — | Comma-separated browser origins added to the default CORS allowlist |
 | `LOG_LEVEL` | no | `info` | Log verbosity |
 
-In stdio, if both `ZENDESK_EMAIL` and `ZENDESK_API_TOKEN` are set, the server uses API token auth; otherwise it uses OAuth 2.1 PKCE. In HTTP mode, API token credentials are refused at boot — only per-user OAuth 2.1 PKCE is accepted.
+In stdio, if both `ZENDESK_EMAIL` and `ZENDESK_API_TOKEN` are set, the server uses API token auth; otherwise it uses OAuth 2.1 PKCE. In HTTP mode, API token credentials are refused at boot — only per-user OAuth 2.1 PKCE is accepted. Full API-token setup is documented in [`docs/api-token-stdio.md`](docs/api-token-stdio.md).
 
 ## Development
 
@@ -432,55 +415,29 @@ test the project. The **published package** still runs on Node 20+ (see
 and runs the smoke test to keep that promise honest.
 
 ```bash
-# Install dependencies
-pnpm install
+# Clone, install, build
+git clone https://github.com/fruggr/zendesk-mcp-server.git
+cd zendesk-mcp-server && pnpm install && pnpm build
+node dist/index.js <your-subdomain>
 
 # Dev mode, OAuth (browser opens on first tool call)
 pnpm dev -- <your-subdomain> --mode all
 
 # Dev mode, HTTP transport (OAuth bearer from the MCP client)
 pnpm dev -- <your-subdomain> --transport http --port 3000 --public-url http://localhost:3000
-# In another shell:
-curl -s http://localhost:3000/.well-known/oauth-protected-resource
-curl -s http://localhost:3000/healthz
 
-# Dev mode, API token (stdio CI/headless escape hatch)
-ZENDESK_EMAIL=you@example.com ZENDESK_API_TOKEN=xxx \
-  pnpm dev -- <your-subdomain> --mode all
-
-# Build
-pnpm build
-
-# Type-check
-pnpm typecheck
-
-# Lint
-pnpm check
-
-# Tests
-pnpm test
+# Build / typecheck / lint / test
+pnpm build && pnpm typecheck && pnpm check && pnpm test
 ```
 
-## Appendix: API token authentication (stdio only)
+To test a PR branch without publishing to npm — the `prepare` script builds on install:
 
-<details>
-<summary>Reveal the escape hatch for CI / headless contexts where a browser OAuth flow is impossible.</summary>
+```bash
+npx -y github:fruggr/zendesk-mcp-server <your-subdomain>
+npx -y github:fruggr/zendesk-mcp-server#my-feature-branch <your-subdomain>
+```
 
-A Zendesk API token grants the **issuing user's full rights** to anyone holding it. In HTTP mode this would expose every caller to the same permissions, which is exactly the anti-pattern the per-user OAuth design was built to avoid — the server refuses API-token credentials at boot in HTTP mode.
-
-In stdio mode, however, the credentials never leave the local machine, so an API token is a reasonable escape hatch for CI or headless contexts where no browser is available:
-
-1. **Admin Center → Apps and integrations → APIs → Zendesk API** → enable **Token Access** and create a token.
-2. Invoke the binary with the credentials in the environment:
-
-   ```bash
-   ZENDESK_EMAIL=you@example.com ZENDESK_API_TOKEN=dneib123... \
-     zendesk-mcp-server <your-subdomain> --mode single
-   ```
-
-For every other context — laptops, desktops, remote servers — prefer the OAuth flows documented in the local and remote quick-start sections above.
-
-</details>
+Contributor conventions (architecture, code style, submission bar, release workflow) live in [`AGENTS.md`](AGENTS.md).
 
 ## Inspiration & related projects
 

@@ -14,55 +14,38 @@ Toolchain (Node 24 + pnpm 11) is the dev floor; the published package still runs
 
 ```
 src/
-├── index.ts              # Entry point, CLI args, transport + auth dispatch
-├── server.ts             # McpServer factory: registers tools per mode
-├── config.ts             # CLI + env vars parsing (Zod validated, transport-aware)
-├── constants.ts          # Zendesk API URLs, OAuth URLs, limits
-├── types.ts              # Zendesk API response interfaces
-├── auth/
-│   ├── browser-oauth.ts  # OAuth 2.1 PKCE browser flow for stdio (authorize/callback/token)
-│   ├── token-store.ts    # In-memory token cache, on-demand auth trigger (stdio)
-│   └── api-token.ts      # Basic auth for stdio CI/headless escape hatch
-├── client/
-│   └── zendesk-api.ts    # HTTP client (fetch, error handling)
-├── routing/
-│   └── registry.ts       # Tool filtering (--read-only, --namespace, --tool)
-├── tools/
-│   ├── definitions.ts    # ToolDefinition type
-│   ├── index.ts          # Aggregates all tool factories
-│   ├── tickets.ts        # 10 ticket tools
-│   ├── help-center.ts    # 21 Help Center tools (articles, section editing, translations, taxonomy)
-│   ├── search.ts         # Unified search tool (namespace: tickets)
-│   └── users.ts          # 5 user/organization tools
-├── transports/
-│   ├── stdio.ts          # SDK StdioServerTransport wrapper
-│   └── http.ts           # node:http server: /mcp (SDK StreamableHTTPServerTransport), /.well-known/oauth-*, /healthz, per-session McpServer
-└── utils/
-    ├── formatting.ts     # Markdown formatters per entity type
-    └── pagination.ts     # Cursor-based pagination helpers
+├── index.ts        # Entry point, CLI args, transport + auth dispatch
+├── server.ts       # McpServer factory: registers tools per mode
+├── config.ts       # CLI + env vars parsing (Zod validated)
+├── constants.ts    # Zendesk API + OAuth URLs, limits
+├── types.ts        # Zendesk API response interfaces
+├── auth/           # OAuth 2.1 PKCE flow + token store + API-token basic auth
+├── client/         # Zendesk HTTP client (fetch wrapper, ZendeskApiError)
+├── routing/        # filterTools / groupByNamespace
+├── tools/          # 37 tool definitions across tickets / help_center / users / search
+├── transports/     # stdio (SDK) + http (node:http + SDK StreamableHTTPServerTransport)
+└── utils/          # Markdown formatting, cursor pagination
 ```
 
-Transports use the official `@modelcontextprotocol/sdk` directly. Stdio is `StdioServerTransport`; HTTP is a thin `node:http` server wrapping `StreamableHTTPServerTransport` plus the OAuth discovery endpoints (RFC 9728 / RFC 8414) advertising Zendesk as the upstream authorization server per MCP Specification 2025-06-18. No third-party MCP framework on top.
+Transports use the official `@modelcontextprotocol/sdk` directly. HTTP is a thin `node:http` server wrapping `StreamableHTTPServerTransport` plus the OAuth discovery endpoints (RFC 9728 / RFC 8414) advertising Zendesk as the upstream authorization server.
 
-### Tool modes (pattern Azure MCP Server)
+### Tool modes
 
-Tools are registered at startup based on `--mode`:
+Three registration shapes, selected by `--mode` (default `namespace`):
 
-- **`all`** (37 individual tools) — each tool registered separately
-- **`namespace`** (default, 3 proxy tools) — `zendesk_tickets`, `zendesk_help_center`, `zendesk_users`, each dispatching to sub-operations
-- **`single`** (1 proxy tool) — `zendesk` dispatches to all operations
+- **`all`** — 37 individual tools
+- **`namespace`** — 3 proxies (`zendesk_tickets`, `zendesk_help_center`, `zendesk_users`); each scoped to its own operations
+- **`single`** — one `zendesk` proxy
 
-Proxy tools accept `{ operation, params }` and validate params through the original Zod schema before calling the handler. Each proxy carries its own scoped handler map — a namespace proxy cannot dispatch to operations outside its namespace.
-
-`--namespace` and `--read-only` are applied by `filterTools` (`src/routing/registry.ts`) *before* the mode switch in `src/server.ts`. They therefore narrow every mode, including the default `namespace` mode. `--tool <name>` is also filtered here but additionally forces `mode: 'all'` in `src/config.ts`.
+`filterTools` (`src/routing/registry.ts`) applies `--read-only` / `--namespace` / `--tool` **before** the mode switch, so filters narrow every mode.
 
 ### Token passing
 
-`createMcpServer(config, getToken)` injects a single `getToken: () => string | Promise<string>` closure into every tool handler. Where the closure pulls the token from depends on the transport:
+`createMcpServer(config, getToken)` injects one closure per server instance. Three flavors:
 
-- **stdio + OAuth** (default): `getToken` is backed by `token-store.ts`, which lazily triggers the browser PKCE flow (`browser-oauth.ts`) and caches the access token in memory.
-- **stdio + API token** (CI/headless escape hatch): `getToken` returns a static Basic auth header built from `ZENDESK_EMAIL` + `ZENDESK_API_TOKEN`. **Refused at boot in HTTP mode** — enforced in `loadConfig` (`src/config.ts`).
-- **HTTP + per-user OAuth**: `src/transports/http.ts` extracts the `Authorization: Bearer <token>` header on each new session and builds a **per-session `McpServer`** (`createMcpServer(config, () => bearer)`). The 37 tool handlers' `getToken` closure captures that session's bearer directly — no async-local storage, no shared state between sessions.
+- **stdio + OAuth** — `getToken` resolves through `token-store.ts` (lazy browser PKCE).
+- **stdio + API token** — static Basic auth header. Refused at boot in HTTP.
+- **HTTP** — `src/transports/http.ts` builds a **per-session `McpServer`** with the request's bearer captured in the closure. No shared state, no async-local storage.
 
 ## Build & run
 
@@ -92,19 +75,7 @@ ZENDESK_EMAIL=you@example.com ZENDESK_API_TOKEN=xxx \
   pnpm dev -- <your-subdomain> --mode all
 ```
 
-Zendesk-side OAuth client setup (admin center, redirect URLs, tokens) is documented in [`README.md`](README.md#quick-start-local-stdio).
-
-## Smoke-testing a tool manually
-
-A one-shot JSON-RPC call over stdio (uses API token to skip the browser flow):
-
-```bash
-echo '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_current_user","arguments":{}}}' | \
-  ZENDESK_EMAIL=you@example.com ZENDESK_API_TOKEN=xxx \
-  node dist/index.js <your-subdomain> --mode all
-```
-
-For HTTP mode, use [MCP Inspector](https://modelcontextprotocol.io/docs/tools/inspector) (`npx @modelcontextprotocol/inspector …`) against the running server.
+Zendesk-side OAuth client setup (admin center, redirect URLs, tokens) is documented in [`README.md`](README.md#quick-start-local-stdio). For interactive debugging against a running server, use the [MCP Inspector](https://modelcontextprotocol.io/docs/tools/inspector) (`npx @modelcontextprotocol/inspector …`).
 
 ## Tests
 
@@ -154,7 +125,7 @@ Before you submit:
 2. **Justify each change.** For every non-trivial hunk, you should be able to answer: why is this change here, what would break without it, and is it the smallest version of the fix.
 3. **Look for what you didn't write.** Missing zod validation on an input, missing test for an edge case, missing README/AGENTS update on a renamed tool, missing error path. Reviewers find these — find them first.
 4. **Self-review prompt.** Run a Claude Code pass on the diff against `main` using the prompt in [`CONTRIBUTING.md`](CONTRIBUTING.md#author-side-ai-review) "Author-side AI review". Address findings or document why you're skipping them in the PR description.
-5. **Run the full local gate**: `pnpm check`, `pnpm typecheck`, `pnpm test`, `pnpm test:coverage`, `pnpm build`, `pnpm test:smoke`. A green CI on a non-green local run means a flaky check, not a free pass.
+5. **Run the full local gate** (the scripts listed in "Build & run" and "Tests" above, ending with `pnpm test:smoke`). A green CI on a non-green local run means a flaky check, not a free pass.
 6. **Scope discipline.** Don't bundle unrelated cleanups into a feature PR. If you spot something worth fixing along the way, note it and open a separate PR.
 7. **No invented behavior.** If a Zendesk API field, an SDK option, or a library API isn't confirmed by the docs, an existing test, or a typed response, mark it `// TODO:` and surface the question in the PR description rather than guessing.
 8. **Mark the PR ready for review.** Flip a draft PR to "ready for review" once dev is done and the local gate is green — never leave it as a draft.
@@ -163,16 +134,9 @@ The maintainer's review starts from the assumption that everything above has alr
 
 ## Documentation maintenance
 
-Any change to the tool surface requires a README sync in the same PR. The README is what external users rely on — it drifts fast if ignored.
+Any change to the tool surface requires a README sync (the per-namespace tables, the tool counts) in the same PR. Test fixtures that assert namespace counts also need to follow — grep for the namespace/tool name to find them.
 
-When you add, remove, rename, or meaningfully re-describe a tool, update:
-
-- **`README.md`** — the matching row in the `Tickets` / `Help Center` / `Users & Organizations` / `Search` table, the `(N tools)` count in the `<summary>`, and the global tool count (currently **37**) wherever it appears.
-- **`AGENTS.md`** — the per-file tool counts in the Architecture section above.
-- Namespace counts in `tests/unit/routing/registry.test.ts` if you touch the `help_center`, `tickets`, or `users` namespace.
-- The `createHelpCenterTools` length assertion in `tests/unit/tools/help-center.test.ts` (and equivalents for other namespaces).
-
-If you change a description in a way that alters its first sentence, remember that proxy tool descriptions (`namespace` / `single` modes) only surface that first sentence — verify it still makes sense standalone.
+If you change a tool description in a way that alters its **first sentence**, remember that proxy tool descriptions (`namespace` / `single` modes) only surface that first sentence — verify it still makes sense standalone.
 
 ## Release workflow
 
