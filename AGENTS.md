@@ -149,9 +149,20 @@ If both `ZENDESK_EMAIL` and `ZENDESK_API_TOKEN` are set, the server uses API tok
 ```bash
 pnpm test          # Run once
 pnpm test:watch    # Watch mode
+pnpm test:coverage # Run with v8 coverage + enforce thresholds
 ```
 
 Tests use vitest + MSW for mocking the Zendesk API.
+
+### Coverage
+
+`pnpm test:coverage` runs the v8 coverage provider and fails if any global
+threshold (configured in `vitest.config.ts`) is not met. It also writes an
+HTML report to `coverage/index.html` and an `lcov.info` for editors/CI. CI runs
+this on every PR and uploads the report as the `coverage-report` artifact.
+Thresholds are a ratchet — raise them as coverage improves, never lower them
+silently. `index.ts`, `transports/stdio.ts`, and `types.ts` are excluded (thin
+bootstraps / type-only).
 
 ### Testing rules
 

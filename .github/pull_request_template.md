@@ -10,6 +10,7 @@
 
 ## Author checklist
 - [ ] `pnpm test` passes locally
+- [ ] `pnpm test:coverage` meets the thresholds
 - [ ] `pnpm check` is clean (lint + format)
 - [ ] `pnpm typecheck` passes
 - [ ] I have read the diff myself, line by line

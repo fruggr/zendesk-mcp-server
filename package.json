@@ -22,6 +22,7 @@
     "check:fix": "biome check --write src/",
     "test": "vitest run",
     "test:watch": "vitest watch",
+    "test:coverage": "vitest run --coverage",
     "test:smoke": "pnpm build && node scripts/smoke-test.mjs"
   },
   "keywords": [
