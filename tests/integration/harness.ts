@@ -46,5 +46,6 @@ export const makeConfig = (overrides: Partial<Config> = {}): Config =>
     transport: 'stdio',
     host: '127.0.0.1',
     port: 0,
+    corsOrigins: [],
     ...overrides,
   });

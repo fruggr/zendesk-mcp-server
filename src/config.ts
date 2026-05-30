@@ -26,6 +26,14 @@ export const ConfigSchema = z.object({
   host: z.string().min(1),
   port: z.number().int().min(0).max(65535),
   publicUrl: z.string().url().optional(),
+  /**
+   * Additional browser origins allowed by CORS in HTTP mode. The default
+   * allowlist (the major web MCP clients + localhost-any-port for dev) is
+   * always applied; this list extends it. Native MCP clients (Claude
+   * Desktop, Claude Code CLI, Cursor, VS Code, Zed…) are unaffected
+   * because they send no Origin header.
+   */
+  corsOrigins: z.array(z.string().url()).default([]),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -41,6 +49,7 @@ interface CliResult {
   host?: string;
   port?: number;
   publicUrl?: string;
+  corsOrigins?: string[];
 }
 
 const parseCliArgs = (args: string[]): CliResult => {
@@ -85,6 +94,10 @@ const parseCliArgs = (args: string[]): CliResult => {
     } else if (arg === '--public-url' && next) {
       result.publicUrl = next;
       i++;
+    } else if (arg === '--cors-origin' && next) {
+      result.corsOrigins = result.corsOrigins ?? [];
+      result.corsOrigins.push(next);
+      i++;
     } else if (!arg.startsWith('-') && positionalIndex === 0) {
       result.subdomain = arg;
       positionalIndex++;
@@ -116,6 +129,15 @@ export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
   const port = cli.port ?? parsePortEnv(process.env['PORT']) ?? 3000;
   const publicUrl = cli.publicUrl ?? process.env['PUBLIC_URL'];
 
+  // CORS allowlist extension: CLI flags first, then comma-separated env var.
+  // The defaults (major web MCP clients + localhost-any-port) are baked into
+  // the HTTP transport — this list ADDS to them, never replaces them.
+  const corsFromEnv = (process.env['CORS_ORIGIN'] ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  const corsOrigins = [...(cli.corsOrigins ?? []), ...corsFromEnv];
+
   const zendeskEmail = process.env['ZENDESK_EMAIL'];
   const zendeskApiToken = process.env['ZENDESK_API_TOKEN'];
 
@@ -145,5 +167,6 @@ export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
     host,
     port,
     publicUrl,
+    corsOrigins,
   });
 };

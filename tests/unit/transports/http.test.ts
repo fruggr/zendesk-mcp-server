@@ -3,7 +3,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Config } from '../../../src/config';
 import {
   buildOAuthMetadata,
+  DEFAULT_BROWSER_MCP_CLIENT_ORIGINS,
   extractBearer,
+  isOriginAllowed,
   resolveResourceUrl,
   startHttpTransport,
 } from '../../../src/transports/http';
@@ -17,6 +19,7 @@ const baseConfig: Config = {
   transport: 'http',
   host: '127.0.0.1',
   port: 0,
+  corsOrigins: [],
 };
 
 const mockRequest = (headers: Record<string, string | string[] | undefined>): IncomingMessage =>
@@ -229,5 +232,113 @@ describe('startHttpTransport (HTTP roundtrip)', () => {
     expect(handle.port).toBeGreaterThan(0);
     const res = await fetch(`http://127.0.0.1:${handle.port}/healthz`);
     expect(res.status).toBe(200);
+  });
+});
+
+describe('isOriginAllowed', () => {
+  it('always allows the default browser MCP client origins', () => {
+    for (const origin of DEFAULT_BROWSER_MCP_CLIENT_ORIGINS) {
+      expect(isOriginAllowed(origin, [])).toBe(true);
+    }
+  });
+
+  it('always allows localhost on any port (dev tooling)', () => {
+    expect(isOriginAllowed('http://localhost:6274', [])).toBe(true);
+    expect(isOriginAllowed('http://127.0.0.1:9999', [])).toBe(true);
+    expect(isOriginAllowed('http://[::1]:3000', [])).toBe(true);
+  });
+
+  it('rejects an unknown origin not in defaults nor extras', () => {
+    expect(isOriginAllowed('https://evil.example.com', [])).toBe(false);
+  });
+
+  it('accepts an extra origin passed by the operator', () => {
+    expect(isOriginAllowed('https://my-app.example.com', ['https://my-app.example.com'])).toBe(
+      true,
+    );
+  });
+
+  it('rejects malformed origin strings without throwing', () => {
+    expect(isOriginAllowed('not-a-url', [])).toBe(false);
+  });
+
+  it('lists ChatGPT first in the default allowlist (largest user base)', () => {
+    expect(DEFAULT_BROWSER_MCP_CLIENT_ORIGINS[0]).toBe('https://chatgpt.com');
+  });
+});
+
+describe('CORS (HTTP roundtrip)', () => {
+  let handle: Awaited<ReturnType<typeof startHttpTransport>> | undefined;
+
+  afterEach(async () => {
+    await handle?.close();
+    handle = undefined;
+  });
+
+  it('responds 204 to an OPTIONS preflight from an allowed origin', async () => {
+    handle = await startHttpTransport(baseConfig);
+    const res = await fetch(`http://127.0.0.1:${handle.port}/mcp`, {
+      method: 'OPTIONS',
+      headers: {
+        Origin: 'https://chatgpt.com',
+        'Access-Control-Request-Method': 'POST',
+        'Access-Control-Request-Headers': 'Authorization, Content-Type',
+      },
+    });
+    expect(res.status).toBe(204);
+    expect(res.headers.get('access-control-allow-origin')).toBe('https://chatgpt.com');
+    expect(res.headers.get('access-control-allow-credentials')).toBe('true');
+    expect(res.headers.get('access-control-allow-methods')).toMatch(/POST/);
+    expect(res.headers.get('access-control-allow-headers')?.toLowerCase()).toContain(
+      'authorization',
+    );
+    expect(res.headers.get('access-control-expose-headers')).toContain('mcp-session-id');
+    expect(res.headers.get('vary')).toBe('Origin');
+  });
+
+  it('OPTIONS from an unknown origin returns 204 but without ACAO (browser blocks)', async () => {
+    handle = await startHttpTransport(baseConfig);
+    const res = await fetch(`http://127.0.0.1:${handle.port}/mcp`, {
+      method: 'OPTIONS',
+      headers: {
+        Origin: 'https://evil.example.com',
+        'Access-Control-Request-Method': 'POST',
+        'Access-Control-Request-Headers': 'Authorization',
+      },
+    });
+    expect(res.status).toBe(204);
+    expect(res.headers.get('access-control-allow-origin')).toBeNull();
+  });
+
+  it('attaches CORS headers on a real GET when the origin is allowed', async () => {
+    handle = await startHttpTransport(baseConfig);
+    const res = await fetch(`http://127.0.0.1:${handle.port}/healthz`, {
+      headers: { Origin: 'https://claude.ai' },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('access-control-allow-origin')).toBe('https://claude.ai');
+  });
+
+  it('omits CORS headers when no Origin is sent (native MCP client case)', async () => {
+    handle = await startHttpTransport(baseConfig);
+    const res = await fetch(`http://127.0.0.1:${handle.port}/healthz`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('access-control-allow-origin')).toBeNull();
+  });
+
+  it('accepts an operator-provided extra origin', async () => {
+    handle = await startHttpTransport({
+      ...baseConfig,
+      corsOrigins: ['https://custom-ui.example.com'],
+    });
+    const res = await fetch(`http://127.0.0.1:${handle.port}/mcp`, {
+      method: 'OPTIONS',
+      headers: {
+        Origin: 'https://custom-ui.example.com',
+        'Access-Control-Request-Method': 'POST',
+      },
+    });
+    expect(res.status).toBe(204);
+    expect(res.headers.get('access-control-allow-origin')).toBe('https://custom-ui.example.com');
   });
 });

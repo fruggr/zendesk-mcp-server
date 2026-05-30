@@ -7,6 +7,93 @@ import { createMcpServer } from '../server';
 
 const WILDCARD_HOSTS = new Set(['0.0.0.0', '::', '*']);
 
+// Default CORS allowlist: the major web MCP clients that work today via
+// Custom Connector UIs. Native clients (Claude Desktop, Claude Code CLI,
+// Cursor, VS Code, Zed) send no Origin header — they're unaffected. Extend
+// the list with --cors-origin / CORS_ORIGIN per deployment.
+//
+// Ordered by current usage share (ChatGPT first). Update over time as the
+// MCP client landscape evolves.
+export const DEFAULT_BROWSER_MCP_CLIENT_ORIGINS: ReadonlyArray<string> = [
+  'https://chatgpt.com',
+  'https://chat.openai.com',
+  'https://claude.ai',
+  'https://gemini.google.com',
+  'https://copilot.microsoft.com',
+  'https://www.perplexity.ai',
+  'https://chat.mistral.ai',
+  'https://grok.com',
+];
+
+// Methods + headers exposed across CORS for the /mcp endpoint. Headers list
+// covers what the SDK's StreamableHTTPClientTransport sets plus the bearer.
+const CORS_ALLOWED_METHODS = 'GET, POST, DELETE, OPTIONS';
+const CORS_ALLOWED_HEADERS =
+  'Authorization, Content-Type, Accept, mcp-session-id, mcp-protocol-version, last-event-id';
+// Clients need to read the session ID from the response to send it on
+// subsequent requests; without this header they can't.
+const CORS_EXPOSE_HEADERS = 'mcp-session-id';
+const CORS_MAX_AGE = '600';
+
+const isLocalhostOrigin = (origin: string): boolean => {
+  // Always allow localhost/127.0.0.1/::1 on any port — covers MCP Inspector,
+  // ad-hoc test pages, and any dev tooling without forcing the operator to
+  // remember to add it.
+  try {
+    const { hostname } = new URL(origin);
+    return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]';
+  } catch {
+    return false;
+  }
+};
+
+export const isOriginAllowed = (
+  origin: string,
+  extraOrigins: ReadonlyArray<string> | undefined,
+): boolean => {
+  if (isLocalhostOrigin(origin)) return true;
+  if (DEFAULT_BROWSER_MCP_CLIENT_ORIGINS.includes(origin)) return true;
+  return extraOrigins?.includes(origin) ?? false;
+};
+
+const applyCorsHeaders = (
+  req: IncomingMessage,
+  res: ServerResponse,
+  extraOrigins: ReadonlyArray<string>,
+): void => {
+  const origin = req.headers['origin'];
+  if (typeof origin !== 'string' || origin.length === 0) return;
+  if (!isOriginAllowed(origin, extraOrigins)) return;
+
+  // Reflect the (allowlisted) origin rather than sending `*` — credentials
+  // mode requires a specific origin. The Vary header tells caches that the
+  // response depends on the request's Origin header.
+  res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Vary', 'Origin');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Expose-Headers', CORS_EXPOSE_HEADERS);
+};
+
+const handleCorsPreflight = (
+  req: IncomingMessage,
+  res: ServerResponse,
+  extraOrigins: ReadonlyArray<string>,
+): boolean => {
+  if (req.method !== 'OPTIONS') return false;
+  applyCorsHeaders(req, res, extraOrigins);
+  // Preflight needs Allow-Methods and Allow-Headers in addition to the basic
+  // CORS headers; if the origin isn't allowlisted, applyCorsHeaders is a
+  // no-op and we still 204 (the browser blocks based on missing ACAO).
+  if (res.getHeader('Access-Control-Allow-Origin')) {
+    res.setHeader('Access-Control-Allow-Methods', CORS_ALLOWED_METHODS);
+    res.setHeader('Access-Control-Allow-Headers', CORS_ALLOWED_HEADERS);
+    res.setHeader('Access-Control-Max-Age', CORS_MAX_AGE);
+  }
+  res.writeHead(204);
+  res.end();
+  return true;
+};
+
 // Build the canonical `resource` URL we advertise in the OAuth metadata.
 // Precedence:
 //   1. Explicit --public-url / PUBLIC_URL (operators behind a reverse proxy
@@ -204,6 +291,12 @@ export const startHttpTransport = async (config: Config): Promise<HttpServerHand
 
   const requestListener = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     try {
+      // CORS preflight is short-circuited before routing; for actual requests
+      // we attach the allow-headers BEFORE we dispatch so they ride along
+      // with the response regardless of which handler ends it.
+      if (handleCorsPreflight(req, res, config.corsOrigins)) return;
+      applyCorsHeaders(req, res, config.corsOrigins);
+
       const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
 
       if (url.pathname === '/.well-known/oauth-protected-resource' && req.method === 'GET') {

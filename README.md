@@ -336,6 +336,22 @@ If you're on an older Zed build that predates that change, fall back to [`mcp-re
 
 On the first call the MCP client fetches the discovery metadata, performs the OAuth 2.1 PKCE flow against Zendesk on behalf of the **end user**, and sends the resulting access token as a `Bearer` to the server. Each subsequent tool call runs with that user's Zendesk permissions.
 
+### CORS
+
+The HTTP transport ships a default CORS allowlist that covers today's major **browser-based** MCP clients out of the box (ordered by user base): `chatgpt.com`, `claude.ai`, `gemini.google.com`, `copilot.microsoft.com`, `perplexity.ai`, `chat.mistral.ai`, `grok.com`, plus `chat.openai.com`. Localhost on any port (MCP Inspector, dev pages) is also always allowed.
+
+**Native MCP clients** (Claude Desktop / Claude Code CLI / Cursor / VS Code / Zed) send no `Origin` header — CORS doesn't apply to them, they work regardless.
+
+To allow an additional browser origin (custom dashboard, internal portal), pass `--cors-origin` (repeatable) or set `CORS_ORIGIN` as a comma-separated list:
+
+```bash
+zendesk-mcp-server acme --transport http --port 3000 \
+  --cors-origin https://internal-dashboard.example.com \
+  --cors-origin https://team-portal.example.com
+```
+
+The defaults are always applied — your additions extend them, they don't replace them.
+
 ### Operator responsibilities
 
 This server provides the MCP transport and the OAuth discovery metadata. The operator is still responsible for:
@@ -360,6 +376,9 @@ Options:
   --port <port>           HTTP bind port (default: 3000; 0 = OS-assigned)
   --public-url <url>      Public URL clients use to reach the server (HTTP mode,
                           required behind a TLS reverse proxy)
+  --cors-origin <url>     Extra browser origin allowed by CORS (repeatable;
+                          adds to the default allowlist of major web MCP
+                          clients + localhost-any-port)
 ```
 
 `--namespace` and `--read-only` are applied before the proxies are registered, so they narrow the surface in every mode — in the default `namespace` mode, `--namespace help_center` registers a single proxy (`zendesk_help_center`) instead of three.
@@ -393,6 +412,7 @@ zendesk-mcp-server acme --transport http --port 8080 \
 | `HOST` | no | `0.0.0.0` | HTTP bind host |
 | `PORT` | no | `3000` | HTTP bind port (`0` to let the OS pick) |
 | `PUBLIC_URL` | recommended in HTTP behind a proxy | derived from host:port | Public URL advertised in OAuth discovery metadata |
+| `CORS_ORIGIN` | no | — | Comma-separated browser origins added to the default CORS allowlist |
 | `LOG_LEVEL` | no | `info` | Log verbosity |
 
 In stdio, if both `ZENDESK_EMAIL` and `ZENDESK_API_TOKEN` are set, the server uses API token auth; otherwise it uses OAuth 2.1 PKCE. In HTTP mode, API token credentials are refused at boot — only per-user OAuth 2.1 PKCE is accepted.
