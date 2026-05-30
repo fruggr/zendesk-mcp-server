@@ -30,6 +30,8 @@ testing in `docs/live-testing.md`.
 
 ## Testing
 
+## Testing
+
 - New features: TDD — failing test first. Bug fixes: reproduce with a test first.
 - Existing tests are sacred: a failure is a potential regression — find the root
   cause before touching the test.
@@ -37,6 +39,9 @@ testing in `docs/live-testing.md`.
 - Extend `tests/integration/` when you add/change a tool, mode, filter or
   transport; shared behaviour goes in `registerCoreScenarios`. Coverage
   thresholds in `vitest.config.ts` are a ratchet.
+- Inter-LLM functional tests (proxy annotations, `[RO]` prefix on `tools/list`)
+  live in `tests/functional/`; invoke via `/functional-testing`. Details in
+  `tests/functional/README.md`.
 
 ## Code style
 
