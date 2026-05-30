@@ -180,6 +180,14 @@ runs it on every PR.
 Everything on GitHub is in **English** (PRs, commits, code comments, review
 replies). Direct chat with the user follows their language.
 
+## Multi-agent compatibility — absolute rule
+
+Compatible with every mainstream MCP agent. No PR may degrade a supported agent; any new tool must follow `docs/mcp-metadata.md`.
+
+## AGENTS.md upkeep
+
+Keep each section to 2–3 lines max. Detail belongs in `docs/`.
+
 ## Submission quality bar
 
 This is the bar to clear before opening a PR or asking the maintainer to
