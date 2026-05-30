@@ -47,6 +47,7 @@ describe('createTokenStore', () => {
     authenticateViaBrowserMock.mockResolvedValue({ access_token: 'fresh-token' });
 
     const store = createTokenStore(CONFIG);
+    // First call authenticates and caches; the second must reuse the cache.
     await store.getToken();
     await store.getToken();
 
