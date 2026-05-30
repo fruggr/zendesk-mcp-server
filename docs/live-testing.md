@@ -47,8 +47,9 @@ A project-scoped `.mcp.json` is committed at the repo root:
 - `--mode all` exposes the 37 individual tools so you can call any operation
   directly. Drop it for the default `namespace` mode, or pass
   `--read-only` / `--namespace <ns>` to scope the surface.
-- Credentials come from the environment (see auth note above) — none are stored
-  in the file.
+- `ZENDESK_SUBDOMAIN` is set in the file (`fruggr`) since it is not a secret;
+  the actual credentials (`ZENDESK_EMAIL` + `ZENDESK_API_TOKEN`) still come from
+  the environment (see auth note above) and are never stored in the file.
 
 MCP servers are connected at **session startup**, not hot-reloaded. So: commit
 `.mcp.json` to the branch, then open a **new** Claude Code session on that
