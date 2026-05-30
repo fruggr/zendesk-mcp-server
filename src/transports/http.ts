@@ -35,40 +35,72 @@ const CORS_ALLOWED_HEADERS =
 const CORS_EXPOSE_HEADERS = 'mcp-session-id';
 const CORS_MAX_AGE = '600';
 
-const isLocalhostOrigin = (origin: string): boolean => {
-  // Always allow localhost/127.0.0.1/::1 on any port — covers MCP Inspector,
-  // ad-hoc test pages, and any dev tooling without forcing the operator to
-  // remember to add it.
+const LOCALHOST_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
+const ALLOWED_PROTOCOLS = new Set(['http:', 'https:']);
+
+/**
+ * Returns the origin string to reflect in `Access-Control-Allow-Origin`, or
+ * `undefined` if the origin is not allowed.
+ *
+ * The returned value is **never the raw `Origin` request header**. It comes
+ * from one of three sanitization points:
+ *
+ *   1. An entry of the hardcoded `DEFAULT_BROWSER_MCP_CLIENT_ORIGINS` array.
+ *   2. An entry of the operator-configured `extraOrigins` array.
+ *   3. A loopback origin rebuilt from validated URL components after the
+ *      hostname has been allowlisted against `LOCALHOST_HOSTNAMES`.
+ *
+ * This shape keeps the dataflow from request header to response header
+ * gated by a constant allowlist, which is the pattern CodeQL's
+ * `js/cors-misconfiguration-for-credentials` rule recognises as safe when
+ * combined with `Access-Control-Allow-Credentials: true`.
+ */
+export const resolveAllowedOrigin = (
+  origin: string,
+  extraOrigins: ReadonlyArray<string> | undefined,
+): string | undefined => {
+  const defaultMatch = DEFAULT_BROWSER_MCP_CLIENT_ORIGINS.find((entry) => entry === origin);
+  if (defaultMatch) return defaultMatch;
+
+  const extraMatch = extraOrigins?.find((entry) => entry === origin);
+  if (extraMatch) return extraMatch;
+
+  // Loopback on any port: parse, allowlist the hostname, then rebuild from
+  // the validated parts. The output never includes raw header bytes.
   try {
-    const { hostname } = new URL(origin);
-    return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]';
+    const url = new URL(origin);
+    if (!ALLOWED_PROTOCOLS.has(url.protocol)) return undefined;
+    if (!LOCALHOST_HOSTNAMES.has(url.hostname)) return undefined;
+    const port = url.port || (url.protocol === 'https:' ? '443' : '80');
+    return `${url.protocol}//${url.hostname}:${port}`;
   } catch {
-    return false;
+    return undefined;
   }
 };
 
+/** Boolean view of `resolveAllowedOrigin`, kept for the existing tests. */
 export const isOriginAllowed = (
   origin: string,
   extraOrigins: ReadonlyArray<string> | undefined,
-): boolean => {
-  if (isLocalhostOrigin(origin)) return true;
-  if (DEFAULT_BROWSER_MCP_CLIENT_ORIGINS.includes(origin)) return true;
-  return extraOrigins?.includes(origin) ?? false;
-};
+): boolean => resolveAllowedOrigin(origin, extraOrigins) !== undefined;
 
 const applyCorsHeaders = (
   req: IncomingMessage,
   res: ServerResponse,
   extraOrigins: ReadonlyArray<string>,
 ): void => {
-  const origin = req.headers['origin'];
-  if (typeof origin !== 'string' || origin.length === 0) return;
-  if (!isOriginAllowed(origin, extraOrigins)) return;
+  const requestOrigin = req.headers['origin'];
+  if (typeof requestOrigin !== 'string' || requestOrigin.length === 0) return;
 
-  // Reflect the (allowlisted) origin rather than sending `*` — credentials
-  // mode requires a specific origin. The Vary header tells caches that the
-  // response depends on the request's Origin header.
-  res.setHeader('Access-Control-Allow-Origin', origin);
+  // The value passed to setHeader is the matched entry from the constant
+  // allowlist (or a loopback origin rebuilt from validated URL parts) —
+  // never the raw request header. This satisfies CodeQL's
+  // `js/cors-misconfiguration-for-credentials` rule when combined with
+  // Access-Control-Allow-Credentials: true.
+  const allowedOrigin = resolveAllowedOrigin(requestOrigin, extraOrigins);
+  if (!allowedOrigin) return;
+
+  res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
   res.setHeader('Vary', 'Origin');
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Expose-Headers', CORS_EXPOSE_HEADERS);
