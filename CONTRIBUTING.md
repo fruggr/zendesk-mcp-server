@@ -40,6 +40,7 @@ The same checklist appears on the
 [PR template](.github/pull_request_template.md):
 
 - [ ] `pnpm test` passes locally.
+- [ ] `pnpm test:coverage` meets the thresholds.
 - [ ] `pnpm check` is clean (Biome lint + format).
 - [ ] `pnpm typecheck` passes.
 - [ ] `pnpm build` produces a clean bundle.
@@ -56,6 +57,7 @@ The same checklist appears on the
   explaining why.
 - Biome must be clean: `pnpm check` (and `pnpm check:fix` to auto-format).
 - All `vitest` tests must pass: `pnpm test`.
+- Coverage thresholds must hold: `pnpm test:coverage` (enforced in CI).
 - Test-Driven Development is the default workflow:
   - **New features**: write a failing test first, then implement.
   - **Bug fixes**: write or adapt a test that reproduces the bug first, then
@@ -84,8 +86,8 @@ you're not addressing it.
 
 ## What happens after you open the PR
 
-1. CI runs lint, typecheck, tests, build, and a smoke test (single
-   `build-and-test` job in `.github/workflows/ci.yml`).
+1. CI runs lint, typecheck, tests with coverage thresholds, build, and a smoke
+   test (single `build-and-test` job in `.github/workflows/ci.yml`).
 2. CodeRabbit posts a high-level summary and review comments on the diff.
 3. The maintainer reviews everything.
 4. You address review findings.

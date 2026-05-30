@@ -7,8 +7,18 @@ export default defineConfig({
     setupFiles: ['./tests/setup.ts'],
     coverage: {
       provider: 'v8',
+      reporter: ['text', 'text-summary', 'html', 'lcov', 'json-summary'],
       include: ['src/**/*.ts'],
-      exclude: ['src/index.ts'],
+      // index.ts/stdio.ts are thin runtime bootstraps; types.ts is type-only.
+      exclude: ['src/index.ts', 'src/transports/stdio.ts', 'src/types.ts'],
+      // Quality gate: fail the run if coverage drops below these baselines.
+      // Ratchet these up as coverage improves; never lower them silently.
+      thresholds: {
+        statements: 94,
+        branches: 77,
+        functions: 98,
+        lines: 95,
+      },
     },
   },
 });

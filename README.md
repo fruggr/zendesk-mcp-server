@@ -151,6 +151,16 @@ cd zendesk-mcp-server && pnpm install && pnpm build
 node dist/index.js <your-subdomain>
 ```
 
+Or run a development branch directly from GitHub (handy for testing PRs without publishing to npm) — the `prepare` script builds the package automatically on install:
+
+```bash
+# Latest main
+npx -y github:fruggr/zendesk-mcp-server <your-subdomain>
+
+# A specific branch / tag / commit
+npx -y github:fruggr/zendesk-mcp-server#my-feature-branch <your-subdomain>
+```
+
 ### Zendesk OAuth setup
 
 1. Go to **Admin Center → Apps and integrations → APIs → OAuth Clients**
@@ -307,7 +317,9 @@ Both expose an MCP settings UI that accepts a remote URL. Paste `https://mcp.exa
 <details>
 <summary><strong>Zed</strong></summary>
 
-Zed's MCP UI does not yet handle the OAuth 2.1 discovery flow itself. Use [`mcp-remote`](https://github.com/geelen/mcp-remote) as a local shim:
+Zed added native OAuth 2.0 + PKCE for Streamable HTTP MCP servers in 2026 ([zed-industries/zed#51768](https://github.com/zed-industries/zed/pull/51768)). Configure the remote server in your Zed settings; on first use Zed opens a loopback browser callback to complete the flow.
+
+If you're on an older Zed build that predates that change, fall back to [`mcp-remote`](https://github.com/geelen/mcp-remote) as a local shim that does the OAuth flow on your machine and proxies the session:
 
 ```json
 {
@@ -319,8 +331,6 @@ Zed's MCP UI does not yet handle the OAuth 2.1 discovery flow itself. Use [`mcp-
   }
 }
 ```
-
-`mcp-remote` handles the OAuth flow on your machine and proxies the session to the remote server.
 
 </details>
 

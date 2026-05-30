@@ -110,9 +110,16 @@ For HTTP mode, use [MCP Inspector](https://modelcontextprotocol.io/docs/tools/in
 pnpm test          # Run once
 pnpm test:watch    # Watch mode
 pnpm test:smoke    # Build + spawn binary, assert stdio + http boot markers
+pnpm test:coverage # Run with v8 coverage + enforce thresholds
 ```
 
 Tests use vitest + MSW for mocking the Zendesk API.
+
+### Coverage
+
+`pnpm test:coverage` enforces the global thresholds in `vitest.config.ts`
+(treat them as a ratchet) and writes `coverage/index.html` + `lcov.info`. CI
+runs it on every PR.
 
 ### Testing rules
 
@@ -120,6 +127,7 @@ Tests use vitest + MSW for mocking the Zendesk API.
 - **Bug fixes**: write or adapt an existing test to reproduce the bug first, then fix the code.
 - **Existing tests are sacred**: a failing existing test is a potential regression. Investigate and understand WHY it fails before changing it. Never modify an existing test just to make it pass without understanding the root cause.
 - **Zendesk API**: always use MSW handlers (`tests/msw-handlers.ts`) to mock Zendesk responses. Never call the real API in tests.
+- **Coverage follows the surface**: when you add or change a tool, mode, filter, or transport, extend the end-to-end tests in `tests/integration/` so the roundtrip stays covered — shared, transport-agnostic behaviour belongs in `registerCoreScenarios`.
 
 ## Code style
 
@@ -128,6 +136,11 @@ Tests use vitest + MSW for mocking the Zendesk API.
 - Functional style: pure functions, no classes (except `ZendeskApiError`), immutable data
 - Tool handlers are standalone functions in `ToolDefinition[]` arrays, not tied to the MCP SDK's `registerTool`
 - ASCII-only error messages on auth paths — `node:http` rejects non-ASCII bytes in `WWW-Authenticate` and other headers (`ERR_INVALID_CHAR`), which surfaces as a 500 instead of the spec-required 401
+
+## Communication language
+
+Everything on GitHub is in **English** (PRs, commits, code comments, review
+replies). Direct chat with the user follows their language.
 
 ## Submission quality bar
 
@@ -139,9 +152,10 @@ Before you submit:
 2. **Justify each change.** For every non-trivial hunk, you should be able to answer: why is this change here, what would break without it, and is it the smallest version of the fix.
 3. **Look for what you didn't write.** Missing zod validation on an input, missing test for an edge case, missing README/AGENTS update on a renamed tool, missing error path. Reviewers find these — find them first.
 4. **Self-review prompt.** Run a Claude Code pass on the diff against `main` using the prompt in [`CONTRIBUTING.md`](CONTRIBUTING.md#author-side-ai-review) "Author-side AI review". Address findings or document why you're skipping them in the PR description.
-5. **Run the full local gate**: `pnpm check`, `pnpm typecheck`, `pnpm test`, `pnpm build`, `pnpm test:smoke`. A green CI on a non-green local run means a flaky check, not a free pass.
+5. **Run the full local gate**: `pnpm check`, `pnpm typecheck`, `pnpm test`, `pnpm test:coverage`, `pnpm build`, `pnpm test:smoke`. A green CI on a non-green local run means a flaky check, not a free pass.
 6. **Scope discipline.** Don't bundle unrelated cleanups into a feature PR. If you spot something worth fixing along the way, note it and open a separate PR.
 7. **No invented behavior.** If a Zendesk API field, an SDK option, or a library API isn't confirmed by the docs, an existing test, or a typed response, mark it `// TODO:` and surface the question in the PR description rather than guessing.
+8. **Mark the PR ready for review.** Flip a draft PR to "ready for review" once dev is done and the local gate is green — never leave it as a draft.
 
 The maintainer's review starts from the assumption that everything above has already been done.
 

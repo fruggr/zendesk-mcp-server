@@ -49,7 +49,7 @@ type LeafExecute = (args: Record<string, unknown>) => Promise<ContentResult>;
 // WWW-Authenticate response header on 401, and node:http's setHeader rejects
 // non-ASCII bytes with ERR_INVALID_CHAR (which would surface as a 500 instead
 // of the spec-required 401).
-const extractBearer = (request: IncomingMessage): string => {
+export const extractBearer = (request: IncomingMessage): string => {
   const header = request.headers['authorization'];
   if (typeof header !== 'string' || !header.toLowerCase().startsWith('bearer ')) {
     throw new Error(
@@ -71,7 +71,7 @@ const extractBearer = (request: IncomingMessage): string => {
 //      so the operator knows to set PUBLIC_URL.
 const WILDCARD_HOSTS = new Set(['0.0.0.0', '::', '*']);
 
-const resolveResourceUrl = (config: Config): string => {
+export const resolveResourceUrl = (config: Config): string => {
   if (config.publicUrl) return config.publicUrl.replace(/\/+$/, '');
   if (!WILDCARD_HOSTS.has(config.host)) {
     return `http://${config.host}:${config.port}`;
@@ -92,7 +92,7 @@ const resolveResourceUrl = (config: Config): string => {
 // per-session bearer is in ctx.session.accessToken; we move it into
 // async-local storage so the same closure-based getToken keeps working
 // without threading a token argument through 37 tool handlers.
-const wrapLeafExecute = (
+export const wrapLeafExecute = (
   config: Config,
   handler: ToolDefinition['handler'],
 ): ((args: unknown, ctx: ExecuteCtx) => Promise<ContentResult>) => {
@@ -111,7 +111,7 @@ const wrapLeafExecute = (
   };
 };
 
-const wrapProxyExecute = (
+export const wrapProxyExecute = (
   config: Config,
   body: LeafExecute,
 ): ((args: unknown, ctx: ExecuteCtx) => Promise<ContentResult>) => {
