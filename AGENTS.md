@@ -257,3 +257,4 @@ Versions are **fully automated** via [semantic-release](https://github.com/seman
 - **Side effects of a release**: new git tag `vX.Y.Z`, `CHANGELOG.md` and `package.json` committed back to `main` with message `chore(release): X.Y.Z [skip ci]`, new GitHub Release with generated notes, new npm version published to `@fruggr/zendesk-mcp-server`.
 - **npm auth**: publishing uses NPM Trusted Publishing (OIDC) — no `NPM_TOKEN` secret is stored in the repo (except during the initial bootstrap of v1.0.0, documented inline in `release.yml`).
 - **If you want a release to happen**: land at least one `fix:` / `feat:` / breaking change commit in your PR. A PR made only of `chore:` / `docs:` will merge cleanly but produce no new version.
+- **Release notes**: a local wrapper (`scripts/release-notes-collapsed.js`) keeps non-triggering commits (`chore`, `ci`, `docs`…) in the notes but folds them into a collapsed `<details>` block. See `docs/release-automation.md`.
