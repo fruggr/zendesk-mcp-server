@@ -8,7 +8,7 @@
       }
     ],
     [
-      "@semantic-release/release-notes-generator",
+      "./scripts/release-notes-collapsed.js",
       {
         "preset": "conventionalcommits",
         "presetConfig": {
@@ -25,7 +25,17 @@
             { "type": "build", "section": "Build System", "hidden": false },
             { "type": "ci", "section": "Continuous Integration", "hidden": false }
           ]
-        }
+        },
+        "collapsedSections": [
+          "Documentation",
+          "Styles",
+          "Chores",
+          "Code Refactoring",
+          "Tests",
+          "Build System",
+          "Continuous Integration"
+        ],
+        "collapsedSummary": "🔧 Internal changes (chore, ci, build, refactor, tests, docs…)"
       }
     ],
     [
