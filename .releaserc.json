@@ -8,9 +8,34 @@
       }
     ],
     [
-      "@semantic-release/release-notes-generator",
+      "./scripts/release-notes-collapsed.js",
       {
-        "preset": "conventionalcommits"
+        "preset": "conventionalcommits",
+        "presetConfig": {
+          "types": [
+            { "type": "feat", "section": "Features" },
+            { "type": "fix", "section": "Bug Fixes" },
+            { "type": "perf", "section": "Performance Improvements" },
+            { "type": "revert", "section": "Reverts" },
+            { "type": "docs", "section": "Documentation", "hidden": false },
+            { "type": "style", "section": "Styles", "hidden": false },
+            { "type": "chore", "section": "Chores", "hidden": false },
+            { "type": "refactor", "section": "Code Refactoring", "hidden": false },
+            { "type": "test", "section": "Tests", "hidden": false },
+            { "type": "build", "section": "Build System", "hidden": false },
+            { "type": "ci", "section": "Continuous Integration", "hidden": false }
+          ]
+        },
+        "collapsedSections": [
+          "Documentation",
+          "Styles",
+          "Chores",
+          "Code Refactoring",
+          "Tests",
+          "Build System",
+          "Continuous Integration"
+        ],
+        "collapsedSummary": "🔧 Internal changes (chore, ci, build, refactor, tests, docs…)"
       }
     ],
     [

@@ -34,6 +34,30 @@ semantic-release scans commits since the last release
 
 The commit-type → release-level mapping lives in `.releaserc.json` (preset `conventionalcommits`).
 
+## Release notes content
+
+semantic-release generates the notes from **every** commit between the previous
+tag and the release commit — including the non-triggering ones (`chore`, `ci`,
+`build`, `test`, `refactor`, `docs`, `style`). By default the `conventionalcommits`
+preset hides those types, so they never surfaced in any changelog even though they
+belong to a release range.
+
+To keep them visible without drowning the consumer-facing notes (especially the
+Renovate `chore(deps)` churn), the `release-notes-generator` step is replaced by a
+thin local wrapper, [`scripts/release-notes-collapsed.js`](../scripts/release-notes-collapsed.js).
+It calls the official generator, then post-processes the markdown:
+
+- **Public sections** — Features, Bug Fixes, Performance Improvements, Reverts,
+  `⚠ BREAKING CHANGES` — stay at the top.
+- **Internal sections** — the non-triggering types above — are grouped into a single
+  collapsed `<details>` block placed underneath.
+
+No Handlebars template is reimplemented, so the wrapper survives preset version
+bumps. The collapsed section titles and the `<summary>` label are configurable via
+the `collapsedSections` / `collapsedSummary` plugin options in `.releaserc.json`.
+The wrapper requires `@semantic-release/release-notes-generator` as an explicit
+devDependency (kept on the same major as the one `semantic-release` bundles).
+
 ## Auto-merge policy
 
 | Update kind                                       | Vulnerability (security) | Non-vulnerability        |
