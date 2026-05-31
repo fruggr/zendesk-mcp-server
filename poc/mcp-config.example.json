@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "sut-hotreload": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcpmon",
+        "--watch",
+        "poc/sut",
+        "--ext",
+        "ts",
+        "--",
+        "npx",
+        "tsx",
+        "poc/sut/server.ts"
+      ],
+      "cwd": "/home/user/zendesk-mcp-server"
+    }
+  }
+}
