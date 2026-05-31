@@ -1,0 +1,97 @@
+{
+  "generatedAt": "2026-05-31T05:33:00.526Z",
+  "node": "v22.22.2",
+  "verdicts": [
+    {
+      "id": "AC-1",
+      "title": "Initial load",
+      "status": "PASS",
+      "detail": "handshake ok=true, running=true, pid=5146, serverInfo={\"name\":\"demo-sut\",\"version\":\"1.0.0-A\"}",
+      "evidence": [
+        "sut_start ok=true",
+        "sut_status running=true pid=5146"
+      ]
+    },
+    {
+      "id": "AC-2",
+      "title": "Proxied listing",
+      "status": "PASS",
+      "detail": "1 tool(s): echo; echo desc=\"Echo back the provided text unchanged.\"; annotations={\"readOnlyHint\":true,\"openWorldHint\":false}",
+      "evidence": [
+        "tools=[\"echo\"]"
+      ]
+    },
+    {
+      "id": "AC-3",
+      "title": "Proxied call",
+      "status": "PASS",
+      "detail": "echo(\"hi\") → \"hi\"",
+      "evidence": [
+        "echo result text=\"hi\""
+      ]
+    },
+    {
+      "id": "AC-4",
+      "title": "Hot reload (CORE)",
+      "status": "PASS",
+      "detail": "reload diff={\"added\":[\"reverse\"],\"removed\":[],\"changed\":[\"echo\"],\"before\":[\"echo\"],\"after\":[\"echo\",\"reverse\"]}; tools now=[echo, reverse]; reverse(\"abc\")→\"cba\". Meta-MCP NOT restarted (same stdio session, same transport pid).",
+      "evidence": [
+        "reload.diff={\"added\":[\"reverse\"],\"removed\":[],\"changed\":[\"echo\"],\"before\":[\"echo\"],\"after\":[\"echo\",\"reverse\"]}",
+        "tools=[\"echo\",\"reverse\"]",
+        "reverse=\"cba\""
+      ]
+    },
+    {
+      "id": "AC-5",
+      "title": "Meta surface persistence",
+      "status": "PASS",
+      "detail": "The client-visible meta-tool list is byte-identical before/after the SUT mutated A→B. The SUT's 1→2 tool change happened entirely behind the fixed meta surface, so no client-side list_changed handling was required.",
+      "evidence": [
+        "before=[\"sut_call_tool\",\"sut_list_tools\",\"sut_logs\",\"sut_reload\",\"sut_start\",\"sut_status\",\"sut_stop\"]",
+        "after=[\"sut_call_tool\",\"sut_list_tools\",\"sut_logs\",\"sut_reload\",\"sut_start\",\"sut_status\",\"sut_stop\"]"
+      ]
+    },
+    {
+      "id": "AC-6",
+      "title": "Crash robustness",
+      "status": "PASS",
+      "detail": "sut_start(broken) returned structured error (isError=true: \"MCP error -32000: Connection closed\"). Meta-MCP still answers sut_status (state=error) and sut_logs (10 lines).",
+      "evidence": [
+        "error=\"MCP error -32000: Connection closed\"",
+        "logs=[\"[demo-sut broken] about to crash on purpose…\",\"/home/user/zendesk-mcp-server/poc/sut/broken.ts:7\",\"throw new Error('demo-sut-broken: intentional startup crash for robustness testing');\",\"      ^\",\"Error: demo-sut-broken: intentional startup crash for robustness testing\",\"    at <anonymous> (/home/user/zendesk-mcp-server/poc/sut/broken.ts:7:7)\",\"    at ModuleJob.run (node:internal/modules/esm/module_job:343:25)\",\"    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:665:26)\",\"    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5)\",\"Node.js v22.22.2\"]"
+      ]
+    },
+    {
+      "id": "AC-7",
+      "title": "stdout/stderr isolation",
+      "status": "PASS",
+      "detail": "SUT printed garbage to stdout; handshake still succeeded (ok=true). Malformed lines were captured as parse errors (parseErrorCount=2, last=\"Unexpected token 'j', ...\"\"almost\": json, but \"... is not valid JSON\") and did NOT break the protocol: echo→\"still-works\".",
+      "evidence": [
+        "parseErrorCount=2",
+        "lastParseError=\"Unexpected token 'j', ...\\\"\\\"almost\\\": json, but \\\"... is not valid JSON\"",
+        "echo=\"still-works\""
+      ]
+    },
+    {
+      "id": "AC-8",
+      "title": "Clean stop / no orphans",
+      "status": "PASS",
+      "detail": "pids across 1 start + 2 reloads: [5244,5267,5290]. After stop, all are dead (orphans alive=[], finalPid 5290 alive=false).",
+      "evidence": [
+        "seenPids=[5244,5267,5290]",
+        "orphansAlive=[]"
+      ]
+    },
+    {
+      "id": "AC-9",
+      "title": "Single-session executability",
+      "status": "PASS",
+      "detail": "Every step above ran against ONE meta-MCP process connected once over stdio (single client session). No reconnect/initialize was issued to the meta-MCP between AC-1 and AC-8; only the SUT subprocess was spawned/killed. The same is true when the meta-MCP is configured in Claude Code web — see poc/README.md.",
+      "evidence": [
+        "single meta-MCP connect()",
+        "AC-4 PASS within it",
+        "AC-5 meta surface stable"
+      ]
+    }
+  ]
+}
