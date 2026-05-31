@@ -15,7 +15,8 @@
     "enabled": true,
     "automerge": true,
     "schedule": ["before 8am on friday"],
-    "timezone": "Europe/Paris"
+    "timezone": "Europe/Paris",
+    "minimumReleaseAgeBehaviour": "timestamp-optional"
   },
   "vulnerabilityAlerts": {
     "enabled": true,
