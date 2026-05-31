@@ -1,3 +1,9 @@
+## [1.1.3](https://github.com/fruggr/zendesk-mcp-server/compare/v1.1.2...v1.1.3) (2026-05-31)
+
+### Bug Fixes
+
+* **renovate:** make the supply-chain delay policy coherent (lockfile + security) ([#55](https://github.com/fruggr/zendesk-mcp-server/issues/55)) ([f54d7b2](https://github.com/fruggr/zendesk-mcp-server/commit/f54d7b2847439851deb32e354a7a0f00caca1a36))
+
 ## [1.1.2](https://github.com/fruggr/zendesk-mcp-server/compare/v1.1.1...v1.1.2) (2026-05-24)
 
 ### Bug Fixes
