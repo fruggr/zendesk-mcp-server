@@ -3,6 +3,7 @@ import * as z from 'zod/v4';
 import type { Config } from './config';
 import { filterTools, groupByNamespace } from './routing/registry';
 import { createAllTools, type ToolDefinition } from './tools/index';
+import { type Logger, silentLogger } from './utils/logger';
 
 const NAMESPACE_LABELS: Record<string, { toolName: string; title: string }> = {
   tickets: { toolName: 'zendesk_tickets', title: 'Zendesk Tickets' },
@@ -71,11 +72,22 @@ const registerProxyTool = (
 export const createMcpServer = (
   config: Config,
   getToken: () => string | Promise<string>,
+  logger: Logger = silentLogger,
 ): McpServer => {
-  const server = new McpServer({
-    name: '@digital4better/zendesk-mcp-server',
-    version: '0.1.0',
-  });
+  const server = new McpServer(
+    {
+      name: '@digital4better/zendesk-mcp-server',
+      version: '0.1.0',
+    },
+    // Advertise the logging capability so structured diagnostics (notably the
+    // OAuth browser flow) reach clients that support it. Clients that don't
+    // simply ignore the notifications.
+    { capabilities: { logging: {} } },
+  );
+
+  // Route the logger's MCP sink through this server. Auth runs lazily on the
+  // first tool call (after connect), so notifications can flow by then.
+  logger.attachServer(server);
 
   const allTools = createAllTools({ subdomain: config.subdomain, getToken });
 
@@ -125,6 +137,6 @@ export const createMcpServer = (
     }
   }
 
-  console.error(`Registered ${filteredTools.length} tools in ${config.mode} mode`);
+  logger.info('tools_registered', { count: filteredTools.length, mode: config.mode });
   return server;
 };
