@@ -1,3 +1,9 @@
+## [1.4.0](https://github.com/fruggr/zendesk-mcp-server/compare/v1.3.0...v1.4.0) (2026-06-04)
+
+### Features
+
+* **auth:** add structured logging to diagnose the OAuth browser flow ([#62](https://github.com/fruggr/zendesk-mcp-server/issues/62)) ([797292c](https://github.com/fruggr/zendesk-mcp-server/commit/797292cc0a33705ea1fd6636ccf68e68c3b6e8e6))
+
 ## [1.3.0](https://github.com/fruggr/zendesk-mcp-server/compare/v1.2.0...v1.3.0) (2026-06-04)
 
 ### Features
