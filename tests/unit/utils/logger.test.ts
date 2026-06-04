@@ -62,6 +62,31 @@ describe('createLogger', () => {
     expect(line).toContain('status=401');
   });
 
+  it('redacts sensitive values nested in objects and arrays', () => {
+    const log = createLogger('debug');
+    log.error('nested', {
+      oauth: { access_token: 'deep-secret' },
+      items: [{ token: 'arr-secret', label: 'keep-me' }],
+    });
+
+    const line = errSpy.mock.calls[0]?.[0] as string;
+    expect(line).not.toContain('deep-secret');
+    expect(line).not.toContain('arr-secret');
+    expect(line).toContain('[REDACTED]');
+    expect(line).toContain('keep-me');
+  });
+
+  it('keeps the canonical event name even if a field named "event" is passed', () => {
+    const send = vi.fn().mockResolvedValue(undefined);
+    const log = createLogger('debug');
+    log.attachServer({ sendLoggingMessage: send } as never);
+
+    log.info('real_event', { event: 'spoofed' });
+
+    const arg = send.mock.calls[0]?.[0] as { data: { event: string } };
+    expect(arg.data.event).toBe('real_event');
+  });
+
   it('forwards to the MCP server when attached, mapping warn -> warning', () => {
     const send = vi.fn().mockResolvedValue(undefined);
     const log = createLogger('debug');

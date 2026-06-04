@@ -1,5 +1,6 @@
 import { HttpResponse, http } from 'msw';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { oauthTokenHandler } from '../../msw-handlers';
 import { mswServer } from '../../setup';
 
 const openMock = vi.fn<(url: string) => Promise<unknown>>();
@@ -74,11 +75,7 @@ describe('authenticateViaBrowser', () => {
   });
 
   it('logs the failure (with platform diagnostics) instead of swallowing it when open rejects', async () => {
-    mswServer.use(
-      http.post(`https://${SUB}.zendesk.com/oauth/tokens`, async () =>
-        HttpResponse.json({ access_token: 'token-abc', token_type: 'bearer', scope: 'read' }),
-      ),
-    );
+    mswServer.use(oauthTokenHandler);
 
     const errorEvents: Array<{ event: string; fields?: Record<string, unknown> }> = [];
     const logger = {

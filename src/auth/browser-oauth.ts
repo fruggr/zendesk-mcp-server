@@ -52,6 +52,7 @@ export const authenticateViaBrowser = (
 
   return new Promise((resolve, reject) => {
     let callbackServer: Server;
+    let authTimeout: ReturnType<typeof setTimeout> | undefined;
 
     callbackServer = createServer(async (req, res) => {
       const url = new URL(req.url ?? '/', `http://localhost`);
@@ -74,6 +75,7 @@ export const authenticateViaBrowser = (
         const desc = url.searchParams.get('error_description') ?? error;
         res.writeHead(400, { 'Content-Type': 'text/html' });
         res.end(`<html><body><h1>Authentication failed</h1><p>${desc}</p></body></html>`);
+        clearTimeout(authTimeout);
         callbackServer.close();
         reject(new Error(`OAuth error: ${desc}`));
         return;
@@ -82,6 +84,7 @@ export const authenticateViaBrowser = (
       if (!code) {
         res.writeHead(400, { 'Content-Type': 'text/html' });
         res.end('<html><body><h1>Missing authorization code</h1></body></html>');
+        clearTimeout(authTimeout);
         callbackServer.close();
         reject(new Error('Missing authorization code in callback'));
         return;
@@ -121,6 +124,7 @@ export const authenticateViaBrowser = (
             '<script>window.close()</script></body></html>',
         );
 
+        clearTimeout(authTimeout);
         callbackServer.close();
         resolve(tokenData);
       } catch (err) {
@@ -128,6 +132,7 @@ export const authenticateViaBrowser = (
         res.end(
           `<html><body><h1>Token exchange failed</h1><p>${err instanceof Error ? err.message : String(err)}</p></body></html>`,
         );
+        clearTimeout(authTimeout);
         callbackServer.close();
         reject(err);
       }
@@ -178,14 +183,16 @@ export const authenticateViaBrowser = (
         });
     });
 
-    // Timeout after 5 minutes
-    setTimeout(
+    // Timeout after 5 minutes. Cleared on every completion path above so a
+    // successful auth can't emit a spurious `oauth_timeout` error later.
+    authTimeout = setTimeout(
       () => {
         logger.error('oauth_timeout', { timeoutMs: 5 * 60 * 1000 });
         callbackServer.close();
         reject(new Error('OAuth authentication timed out (5 min). Please try again.'));
       },
       5 * 60 * 1000,
-    ).unref();
+    );
+    authTimeout.unref();
   });
 };

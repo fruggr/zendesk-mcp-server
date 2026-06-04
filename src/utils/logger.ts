@@ -53,10 +53,25 @@ const REDACTED_KEYS = new Set([
 const isSensitive = (key: string): boolean =>
   REDACTED_KEYS.has(key.toLowerCase().replace(/[_-]/g, ''));
 
+// Recursively redact: a sensitive *key* anywhere in the tree (top-level or
+// nested in objects/arrays) has its value replaced, so `{ oauth: { token } }`
+// can't leak. Primitives are returned as-is.
+const redactValue = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(redactValue);
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
+      out[key] = isSensitive(key) ? '[REDACTED]' : redactValue(val);
+    }
+    return out;
+  }
+  return value;
+};
+
 const redact = (fields: Fields): Fields => {
   const out: Fields = {};
   for (const [key, value] of Object.entries(fields)) {
-    out[key] = isSensitive(key) ? '[REDACTED]' : value;
+    out[key] = isSensitive(key) ? '[REDACTED]' : redactValue(value);
   }
   return out;
 };
@@ -104,7 +119,9 @@ export const createLogger = (level: LogLevel): Logger => {
           .sendLoggingMessage({
             level: MCP_LEVEL[lvl],
             logger: 'zendesk-mcp-server',
-            data: { event, ...safe },
+            // `event` last so a caller-supplied `fields.event` can't shadow the
+            // canonical event name.
+            data: { ...safe, event },
           })
           .catch(noop);
       } catch {
