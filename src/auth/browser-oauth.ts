@@ -159,6 +159,9 @@ export const authenticateViaBrowser = (
       // Full authorize URL is debug-only: it carries the (public) client_id and
       // PKCE challenge — no secret — but stays out of default-level logs.
       logger.debug('oauth_authorize_url', { url: authUrl });
+      // Always-on, ungated user-facing fallback: if the browser can't open, the
+      // user must see this URL regardless of LOG_LEVEL — do NOT route it through
+      // the (level-gated) logger.
       console.error(`Opening browser for Zendesk authentication...`);
       console.error(`If the browser doesn't open, visit: ${authUrl}`);
 

@@ -28,28 +28,26 @@ let cached: PackageInfo | undefined;
 
 export const readPackageInfo = (): PackageInfo => {
   if (cached) return cached;
-  try {
-    let dir = dirname(fileURLToPath(import.meta.url));
-    for (let depth = 0; depth < 8; depth++) {
-      try {
-        // JSON.parse yields `unknown`; validate at runtime rather than asserting.
-        const raw: unknown = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
-        if (raw && typeof raw === 'object') {
-          const pkg = raw as Partial<PackageInfo>;
-          if (typeof pkg.name === 'string' && typeof pkg.version === 'string') {
-            cached = { name: pkg.name, version: pkg.version };
-            return cached;
-          }
+  // Only readFileSync/JSON.parse can throw here (caught per-iteration below);
+  // fileURLToPath/dirname/join don't, so no outer guard is needed.
+  let dir = dirname(fileURLToPath(import.meta.url));
+  for (let depth = 0; depth < 8; depth++) {
+    try {
+      // JSON.parse yields `unknown`; validate at runtime rather than asserting.
+      const raw: unknown = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
+      if (raw && typeof raw === 'object') {
+        const pkg = raw as Partial<PackageInfo>;
+        if (typeof pkg.name === 'string' && typeof pkg.version === 'string') {
+          cached = { name: pkg.name, version: pkg.version };
+          return cached;
         }
-      } catch {
-        // No readable/valid package.json here — keep walking up.
       }
-      const parent = dirname(dir);
-      if (parent === dir) break;
-      dir = parent;
+    } catch {
+      // No readable/valid package.json here — keep walking up.
     }
-  } catch {
-    // import.meta / fs unavailable — fall back below.
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
   }
   cached = FALLBACK;
   return cached;
