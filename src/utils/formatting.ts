@@ -81,6 +81,7 @@ export const formatArticleSummary = (article: ZendeskArticle): string =>
     `## ${article.title} (${article.id})`,
     `- **Locale**: ${article.locale} | **Source locale**: ${article.source_locale}`,
     `- **Section**: ${article.section_id} | **Draft**: ${article.draft}`,
+    typeof article.position === 'number' ? `- **Position**: ${article.position}` : '',
     article.label_names.length > 0 ? `- **Labels**: ${article.label_names.join(', ')}` : '',
     `- **Created**: ${article.created_at} | **Updated**: ${article.updated_at}`,
   ]

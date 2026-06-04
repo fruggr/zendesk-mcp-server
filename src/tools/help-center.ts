@@ -562,7 +562,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: false,
       title: 'Update Help Center Article',
       description:
-        'Update article metadata only (draft, promoted, labels, tags, visibility, section, etc.). Does NOT update content (title, body) — use update_article_translation for that.',
+        'Update article metadata only (draft, promoted, labels, tags, visibility, section, sort position, etc.). Does NOT update content (title, body) — use update_article_translation for that.',
       inputSchema: z.object({
         article_id: z.number().int(),
         draft: z.boolean().optional(),
@@ -573,6 +573,14 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         author_id: z.number().int().optional().describe('Author user ID'),
         permission_group_id: z.number().int().optional().describe('Permission group ID'),
         section_id: z.number().int().optional(),
+        position: z
+          .number()
+          .int()
+          .min(0)
+          .optional()
+          .describe(
+            'Sort position within the section (manual ordering only; 0 = first/top). New articles default to position 0. To move an article to the END of its section, set this to one more than the highest current position: read the highest position P from list_articles with sort_by="position", sort_order="desc", then set position = P + 1.',
+          ),
       }),
       annotations: {
         readOnlyHint: false,

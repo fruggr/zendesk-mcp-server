@@ -339,7 +339,13 @@ export const handlers = [
   http.post(`${HC_BASE}/sections/:sid/articles`, () =>
     HttpResponse.json({ article: MOCK_ARTICLE }),
   ),
-  http.put(`${HC_BASE}/articles/:id`, () => HttpResponse.json({ article: MOCK_ARTICLE })),
+  http.put(`${HC_BASE}/articles/:id`, async ({ request, params }) => {
+    const reqBody = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const update = (reqBody['article'] as Record<string, unknown> | undefined) ?? {};
+    return HttpResponse.json({
+      article: { ...MOCK_ARTICLE, id: Number(params['id']), ...update },
+    });
+  }),
 
   // Guide - Permission Groups
   http.get(`${BASE}/guide/permission_groups`, () =>
