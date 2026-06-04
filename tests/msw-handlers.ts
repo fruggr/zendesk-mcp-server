@@ -172,6 +172,12 @@ export const MOCK_COMMENT = {
   ],
 };
 
+// OAuth token endpoint used by the browser PKCE flow. Opt-in per test via
+// mswServer.use() so the OAuth roundtrip mock stays centralized here too.
+export const oauthTokenHandler = http.post('https://testsubdomain.zendesk.com/oauth/tokens', () =>
+  HttpResponse.json({ access_token: 'token-abc', token_type: 'bearer', scope: 'read write' }),
+);
+
 // Opt-in error handlers for tests that exercise failure paths. Kept here so all
 // Zendesk mocking stays centralized; activate one per test via mswServer.use().
 export const errorHandlers = {

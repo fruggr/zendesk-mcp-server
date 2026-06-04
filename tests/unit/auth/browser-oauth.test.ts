@@ -1,5 +1,6 @@
 import { HttpResponse, http } from 'msw';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { oauthTokenHandler } from '../../msw-handlers';
 import { mswServer } from '../../setup';
 
 const openMock = vi.fn<(url: string) => Promise<unknown>>();
@@ -71,5 +72,45 @@ describe('authenticateViaBrowser', () => {
     expect(openedUrl.searchParams.get('redirect_uri')).toMatch(
       /^http:\/\/localhost:\d+\/callback$/,
     );
+  });
+
+  it('logs the failure (with platform diagnostics) instead of swallowing it when open rejects', async () => {
+    mswServer.use(oauthTokenHandler);
+
+    const errorEvents: Array<{ event: string; fields?: Record<string, unknown> }> = [];
+    const logger = {
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn((event: string, fields?: Record<string, unknown>) => {
+        errorEvents.push({ event, fields });
+      }),
+      attachServer: vi.fn(),
+    };
+
+    // The browser fails to open (the #60 symptom). The flow must NOT crash: the
+    // user can still complete auth by visiting the URL, so we drive the callback
+    // ourselves to let the promise resolve.
+    openMock.mockImplementation(async (url: string) => {
+      const redirectUri = new URL(url).searchParams.get('redirect_uri');
+      setImmediate(() => {
+        fetch(`${redirectUri}?code=the-auth-code`).catch(() => {});
+      });
+      throw Object.assign(new Error('spawn failed'), { code: 'ENOENT' });
+    });
+
+    const result = await authenticateViaBrowser(
+      { subdomain: SUB, oauthClientId: CLIENT_ID, callbackPort: 0 },
+      logger,
+    );
+
+    expect(result.access_token).toBe('token-abc');
+    const failure = errorEvents.find((e) => e.event === 'oauth_browser_open_failed');
+    expect(failure).toBeDefined();
+    expect(failure?.fields?.['error']).toBe('spawn failed');
+    expect(failure?.fields?.['errorCode']).toBe('ENOENT');
+    expect(failure?.fields?.['platform']).toBe(process.platform);
+    // Environment presence is reported as booleans (never values).
+    expect(typeof failure?.fields?.['hasSystemRoot']).toBe('boolean');
   });
 });

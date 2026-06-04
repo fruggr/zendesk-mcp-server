@@ -40,6 +40,7 @@ src/
 │   └── stdio.ts          # Stdio transport
 └── utils/
     ├── formatting.ts     # Markdown formatters per entity type
+    ├── logger.ts         # Structured logger (stderr + MCP logging notifications)
     └── pagination.ts     # Cursor-based pagination helpers
 ```
 

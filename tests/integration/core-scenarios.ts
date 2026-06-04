@@ -27,6 +27,13 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
       connected = undefined;
     });
 
+    describe('capabilities', () => {
+      it('advertises the logging capability over the wire', async () => {
+        connected = await harness.connect(makeConfig());
+        expect(connected.client.getServerCapabilities()?.logging).toBeDefined();
+      });
+    });
+
     describe('tools/list', () => {
       it('exposes individual tools in "all" mode', async () => {
         connected = await harness.connect(makeConfig({ mode: 'all' }));

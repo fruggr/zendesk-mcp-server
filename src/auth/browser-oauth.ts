@@ -1,9 +1,23 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
+import { release } from 'node:os';
 import open from 'open';
 import { getOAuthUrls } from '../constants';
+import { type Logger, silentLogger } from '../utils/logger';
 
 const DEFAULT_CALLBACK_PORT = 3000;
+const AUTH_TIMEOUT_MS = 5 * 60 * 1000;
+
+/** Best-effort WSL detection: WSL kernels carry "microsoft" in /proc/version. */
+const detectWsl = (): boolean => {
+  if (process.platform !== 'linux') return false;
+  try {
+    return readFileSync('/proc/version', 'utf8').toLowerCase().includes('microsoft');
+  } catch {
+    return false;
+  }
+};
 
 interface BrowserOAuthConfig {
   subdomain: string;
@@ -28,7 +42,10 @@ const generateCodeChallenge = (verifier: string): string =>
  * Starts a temporary HTTP server to receive the callback.
  * Returns the access token on success.
  */
-export const authenticateViaBrowser = (config: BrowserOAuthConfig): Promise<TokenResult> => {
+export const authenticateViaBrowser = (
+  config: BrowserOAuthConfig,
+  logger: Logger = silentLogger,
+): Promise<TokenResult> => {
   const { subdomain, oauthClientId } = config;
   const { authorizeUrl, tokenUrl } = getOAuthUrls(subdomain);
   const codeVerifier = generateCodeVerifier();
@@ -36,6 +53,7 @@ export const authenticateViaBrowser = (config: BrowserOAuthConfig): Promise<Toke
 
   return new Promise((resolve, reject) => {
     let callbackServer: Server;
+    let authTimeout: ReturnType<typeof setTimeout> | undefined;
 
     callbackServer = createServer(async (req, res) => {
       const url = new URL(req.url ?? '/', `http://localhost`);
@@ -49,10 +67,16 @@ export const authenticateViaBrowser = (config: BrowserOAuthConfig): Promise<Toke
       const code = url.searchParams.get('code');
       const error = url.searchParams.get('error');
 
+      logger.debug('oauth_callback_received', {
+        hasCode: Boolean(code),
+        hasError: Boolean(error),
+      });
+
       if (error) {
         const desc = url.searchParams.get('error_description') ?? error;
         res.writeHead(400, { 'Content-Type': 'text/html' });
         res.end(`<html><body><h1>Authentication failed</h1><p>${desc}</p></body></html>`);
+        clearTimeout(authTimeout);
         callbackServer.close();
         reject(new Error(`OAuth error: ${desc}`));
         return;
@@ -61,6 +85,7 @@ export const authenticateViaBrowser = (config: BrowserOAuthConfig): Promise<Toke
       if (!code) {
         res.writeHead(400, { 'Content-Type': 'text/html' });
         res.end('<html><body><h1>Missing authorization code</h1></body></html>');
+        clearTimeout(authTimeout);
         callbackServer.close();
         reject(new Error('Missing authorization code in callback'));
         return;
@@ -83,12 +108,15 @@ export const authenticateViaBrowser = (config: BrowserOAuthConfig): Promise<Toke
           body: tokenBody.toString(),
         });
 
+        logger.debug('oauth_token_exchange', { status: tokenResponse.status });
+
         if (!tokenResponse.ok) {
           const errorBody = await tokenResponse.text();
           throw new Error(`Token exchange failed (${tokenResponse.status}): ${errorBody}`);
         }
 
         const tokenData = (await tokenResponse.json()) as TokenResult;
+        logger.info('oauth_authenticated');
 
         res.writeHead(200, { 'Content-Type': 'text/html' });
         res.end(
@@ -97,6 +125,7 @@ export const authenticateViaBrowser = (config: BrowserOAuthConfig): Promise<Toke
             '<script>window.close()</script></body></html>',
         );
 
+        clearTimeout(authTimeout);
         callbackServer.close();
         resolve(tokenData);
       } catch (err) {
@@ -104,6 +133,7 @@ export const authenticateViaBrowser = (config: BrowserOAuthConfig): Promise<Toke
         res.end(
           `<html><body><h1>Token exchange failed</h1><p>${err instanceof Error ? err.message : String(err)}</p></body></html>`,
         );
+        clearTimeout(authTimeout);
         callbackServer.close();
         reject(err);
       }
@@ -124,21 +154,46 @@ export const authenticateViaBrowser = (config: BrowserOAuthConfig): Promise<Toke
       });
 
       const authUrl = `${authorizeUrl}?${params.toString()}`;
+      logger.debug('oauth_callback_listening', { port, redirectUri });
+      logger.info('oauth_browser_opening');
+      // Full authorize URL is debug-only: it carries the (public) client_id and
+      // PKCE challenge — no secret — but stays out of default-level logs.
+      logger.debug('oauth_authorize_url', { url: authUrl });
+      // Always-on, ungated user-facing fallback: if the browser can't open, the
+      // user must see this URL regardless of LOG_LEVEL — do NOT route it through
+      // the (level-gated) logger.
       console.error(`Opening browser for Zendesk authentication...`);
       console.error(`If the browser doesn't open, visit: ${authUrl}`);
 
-      open(authUrl).catch(() => {
-        // Browser open failed — the URL is already logged
-      });
+      open(authUrl)
+        .then(() => {
+          logger.debug('oauth_browser_opened');
+        })
+        .catch((err: unknown) => {
+          // Do NOT swallow: this is the #60 signal. Capture why `open` failed
+          // plus environment markers (presence only, never values).
+          logger.error('oauth_browser_open_failed', {
+            error: err instanceof Error ? err.message : String(err),
+            errorCode: (err as NodeJS.ErrnoException | undefined)?.code,
+            platform: process.platform,
+            release: release(),
+            isWsl: detectWsl(),
+            hasSystemRoot: Boolean(process.env['SYSTEMROOT']),
+            hasWindir: Boolean(process.env['WINDIR']),
+            hasComSpec: Boolean(process.env['ComSpec']),
+            hasPath: Boolean(process.env['PATH']),
+            hasDisplay: Boolean(process.env['DISPLAY']),
+          });
+        });
     });
 
-    // Timeout after 5 minutes
-    setTimeout(
-      () => {
-        callbackServer.close();
-        reject(new Error('OAuth authentication timed out (5 min). Please try again.'));
-      },
-      5 * 60 * 1000,
-    ).unref();
+    // Timeout after 5 minutes. Cleared on every completion path above so a
+    // successful auth can't emit a spurious `oauth_timeout` error later.
+    authTimeout = setTimeout(() => {
+      logger.error('oauth_timeout', { timeoutMs: AUTH_TIMEOUT_MS });
+      callbackServer.close();
+      reject(new Error('OAuth authentication timed out (5 min). Please try again.'));
+    }, AUTH_TIMEOUT_MS);
+    authTimeout.unref();
   });
 };

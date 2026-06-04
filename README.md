@@ -291,9 +291,37 @@ zendesk-mcp-server acme --tool get_ticket --tool search_tickets --tool get_curre
 | `ZENDESK_OAUTH_CLIENT_ID` | no | `<subdomain>_zendesk` | OAuth client identifier |
 | `ZENDESK_EMAIL` | for API token auth | — | Agent email for Basic auth |
 | `ZENDESK_API_TOKEN` | for API token auth | — | Zendesk API token |
-| `LOG_LEVEL` | no | `info` | Log verbosity |
+| `LOG_LEVEL` | no | `info` | Log verbosity (`debug` surfaces the full OAuth flow trace) |
 
 If both `ZENDESK_EMAIL` and `ZENDESK_API_TOKEN` are set, the server uses API token auth. Otherwise, it uses OAuth 2.1 PKCE.
+
+## Troubleshooting
+
+### The browser doesn't open during OAuth login
+
+The OAuth flow opens your default browser on the first tool call. If it doesn't
+open (common in sandboxed or remote desktop environments), the authorization URL
+is still printed to the server's stderr — open it manually.
+
+To collect diagnostics, restart with `LOG_LEVEL=debug`. The server then emits
+structured logs through **two channels**, so they're reachable on any MCP client:
+
+- **stderr** — captured to a log file by every mainstream client.
+- **MCP logging notifications** (`notifications/message`) — surfaced by clients
+  that support the `logging` capability.
+
+When the browser fails to open, look for the `oauth_browser_open_failed` event:
+it reports the underlying error, the platform, and which environment markers are
+present (no secrets, tokens, or env values are ever logged).
+
+Where each client writes the server's stderr:
+
+| Client | Log location |
+|--------|--------------|
+| Claude Desktop (macOS) | `~/Library/Logs/Claude/mcp-server-*.log` |
+| Claude Desktop (Windows) | `%APPDATA%\Claude\logs\mcp-server-*.log` |
+| Claude Code | `claude --debug`, or the session logs |
+| Cursor / VS Code / Cline | the extension's MCP output/log panel |
 
 ## Development
 
