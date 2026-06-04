@@ -46,28 +46,51 @@ const escapeHtml = (value: string): string =>
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 
+/**
+ * A started OAuth flow: the local callback server is already listening and the
+ * browser-open attempt has been made. `authorizeUrl` is available immediately
+ * (so callers can surface it to the user without blocking), while `tokenPromise`
+ * resolves later, when the user completes the browser flow — or rejects on
+ * error/timeout.
+ */
+export interface StartedBrowserAuth {
+  authorizeUrl: string;
+  tokenPromise: Promise<TokenResult>;
+}
+
 const generateCodeVerifier = (): string => randomBytes(32).toString('base64url');
 
 const generateCodeChallenge = (verifier: string): string =>
   createHash('sha256').update(verifier).digest('base64url');
 
 /**
- * Performs OAuth 2.1 PKCE flow by opening the user's browser.
- * Starts a temporary HTTP server to receive the callback.
- * Returns the access token on success.
+ * Begin the OAuth 2.1 PKCE flow: start the local callback server, attempt to
+ * open the browser, and return as soon as the server is listening with the
+ * authorize URL plus a promise that settles when the callback arrives.
+ *
+ * Splitting "start" from "await the token" lets callers stay non-blocking: they
+ * can hand the URL back to the user immediately instead of holding a request
+ * open for up to the 5-minute timeout.
  */
-export const authenticateViaBrowser = (
+export const startBrowserAuth = (
   config: BrowserOAuthConfig,
   logger: Logger = silentLogger,
-): Promise<TokenResult> => {
+): Promise<StartedBrowserAuth> => {
   const { subdomain, oauthClientId } = config;
-  const { authorizeUrl, tokenUrl } = getOAuthUrls(subdomain);
+  const { authorizeUrl: authorizeBase, tokenUrl } = getOAuthUrls(subdomain);
   const codeVerifier = generateCodeVerifier();
   const codeChallenge = generateCodeChallenge(codeVerifier);
 
-  return new Promise((resolve, reject) => {
-    let callbackServer: Server;
+  return new Promise<StartedBrowserAuth>((resolveStarted, rejectStarted) => {
+    let resolveToken!: (token: TokenResult) => void;
+    let rejectToken!: (err: unknown) => void;
+    const tokenPromise = new Promise<TokenResult>((resolve, reject) => {
+      resolveToken = resolve;
+      rejectToken = reject;
+    });
+
     let authTimeout: ReturnType<typeof setTimeout> | undefined;
+    let callbackServer: Server;
 
     callbackServer = createServer(async (req, res) => {
       const url = new URL(req.url ?? '/', `http://localhost`);
@@ -94,7 +117,7 @@ export const authenticateViaBrowser = (
         );
         clearTimeout(authTimeout);
         callbackServer.close();
-        reject(new Error(`OAuth error: ${desc}`));
+        rejectToken(new Error(`OAuth error: ${desc}`));
         return;
       }
 
@@ -103,7 +126,7 @@ export const authenticateViaBrowser = (
         res.end('<html><body><h1>Missing authorization code</h1></body></html>');
         clearTimeout(authTimeout);
         callbackServer.close();
-        reject(new Error('Missing authorization code in callback'));
+        rejectToken(new Error('Missing authorization code in callback'));
         return;
       }
 
@@ -143,7 +166,7 @@ export const authenticateViaBrowser = (
 
         clearTimeout(authTimeout);
         callbackServer.close();
-        resolve(tokenData);
+        resolveToken(tokenData);
       } catch (err) {
         res.writeHead(500, { 'Content-Type': 'text/html' });
         res.end(
@@ -151,8 +174,15 @@ export const authenticateViaBrowser = (
         );
         clearTimeout(authTimeout);
         callbackServer.close();
-        reject(err);
+        rejectToken(err);
       }
+    });
+
+    // Listen failure (e.g. port already in use) before we ever get a URL: the
+    // whole start fails so the caller can surface/retry.
+    callbackServer.once('error', (err) => {
+      clearTimeout(authTimeout);
+      rejectStarted(err);
     });
 
     // Start on fixed port (must match redirect_uri registered in Zendesk OAuth client)
@@ -169,7 +199,7 @@ export const authenticateViaBrowser = (
         code_challenge_method: 'S256',
       });
 
-      const authUrl = `${authorizeUrl}?${params.toString()}`;
+      const authUrl = `${authorizeBase}?${params.toString()}`;
       logger.debug('oauth_callback_listening', { port, redirectUri });
       logger.info('oauth_browser_opening');
       // Full authorize URL is debug-only: it carries the (public) client_id and
@@ -201,15 +231,30 @@ export const authenticateViaBrowser = (
             hasDisplay: Boolean(process.env['DISPLAY']),
           });
         });
-    });
 
-    // Timeout after 5 minutes. Cleared on every completion path above so a
-    // successful auth can't emit a spurious `oauth_timeout` error later.
-    authTimeout = setTimeout(() => {
-      logger.error('oauth_timeout', { timeoutMs: AUTH_TIMEOUT_MS });
-      callbackServer.close();
-      reject(new Error('OAuth authentication timed out (5 min). Please try again.'));
-    }, AUTH_TIMEOUT_MS);
-    authTimeout.unref();
+      // Timeout after 5 minutes. Cleared on every completion path above so a
+      // successful auth can't emit a spurious `oauth_timeout` error later.
+      authTimeout = setTimeout(() => {
+        logger.error('oauth_timeout', { timeoutMs: AUTH_TIMEOUT_MS });
+        callbackServer.close();
+        rejectToken(new Error('OAuth authentication timed out (5 min). Please try again.'));
+      }, AUTH_TIMEOUT_MS);
+      authTimeout.unref();
+
+      resolveStarted({ authorizeUrl: authUrl, tokenPromise });
+    });
   });
+};
+
+/**
+ * Convenience wrapper that performs the full PKCE flow and resolves with the
+ * token once the browser flow completes (blocking until then). Retained for
+ * callers/tests that want the original "await the token" semantics.
+ */
+export const authenticateViaBrowser = async (
+  config: BrowserOAuthConfig,
+  logger: Logger = silentLogger,
+): Promise<TokenResult> => {
+  const { tokenPromise } = await startBrowserAuth(config, logger);
+  return tokenPromise;
 };

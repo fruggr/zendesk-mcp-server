@@ -1,26 +1,43 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const authenticateViaBrowserMock =
+type TokenResult = { access_token: string; refresh_token?: string };
+
+const startBrowserAuthMock =
   vi.fn<
-    (config: {
-      subdomain: string;
-      oauthClientId: string;
-    }) => Promise<{ access_token: string; refresh_token?: string }>
+    (config: { subdomain: string; oauthClientId: string }) => Promise<{
+      authorizeUrl: string;
+      tokenPromise: Promise<TokenResult>;
+    }>
   >();
 
 vi.mock('../../../src/auth/browser-oauth', () => ({
-  authenticateViaBrowser: (config: { subdomain: string; oauthClientId: string }) =>
-    authenticateViaBrowserMock(config),
+  startBrowserAuth: (config: { subdomain: string; oauthClientId: string }) =>
+    startBrowserAuthMock(config),
 }));
 
 // Imported after vi.mock so the mocked browser flow is bound.
-const { createTokenStore } = await import('../../../src/auth/token-store');
+const { createTokenStore, AuthRequiredError } = await import('../../../src/auth/token-store');
 
 const CONFIG = { subdomain: 'testsubdomain', oauthClientId: 'test_client' };
+const AUTH_URL = 'https://testsubdomain.zendesk.com/oauth/authorizations/new?client_id=test_client';
+
+// A started-auth result whose token promise the test controls.
+const deferredStarted = () => {
+  let resolveToken!: (t: TokenResult) => void;
+  let rejectToken!: (e: unknown) => void;
+  const tokenPromise = new Promise<TokenResult>((res, rej) => {
+    resolveToken = res;
+    rejectToken = rej;
+  });
+  return { started: { authorizeUrl: AUTH_URL, tokenPromise }, resolveToken, rejectToken };
+};
+
+// Flush the microtask + immediate queue so the store's token-promise handlers run.
+const flush = () => new Promise((resolve) => setImmediate(resolve));
 
 describe('createTokenStore', () => {
   beforeEach(() => {
-    authenticateViaBrowserMock.mockReset();
+    startBrowserAuthMock.mockReset();
   });
 
   it('returns a token set via setToken without triggering the browser flow', async () => {
@@ -28,58 +45,70 @@ describe('createTokenStore', () => {
     store.setToken('preset-token');
 
     await expect(store.getToken()).resolves.toBe('preset-token');
-    expect(authenticateViaBrowserMock).not.toHaveBeenCalled();
+    expect(startBrowserAuthMock).not.toHaveBeenCalled();
   });
 
-  it('authenticates via the browser when no token is present', async () => {
-    authenticateViaBrowserMock.mockResolvedValue({
-      access_token: 'fresh-token',
-      refresh_token: 'refresh-abc',
-    });
-
+  it('fails fast with the authorize URL when no token is present', async () => {
+    startBrowserAuthMock.mockResolvedValue(deferredStarted().started);
     const store = createTokenStore(CONFIG);
+
+    const err = await store.getToken().catch((e) => e);
+    expect(err).toBeInstanceOf(AuthRequiredError);
+    expect((err as AuthRequiredError).authorizeUrl).toBe(AUTH_URL);
+    expect((err as Error).message).toContain(AUTH_URL);
+    expect(startBrowserAuthMock).toHaveBeenCalledWith(CONFIG);
+  });
+
+  it('returns the cached token once the background flow completes, then retry succeeds', async () => {
+    const { started, resolveToken } = deferredStarted();
+    startBrowserAuthMock.mockResolvedValue(started);
+    const store = createTokenStore(CONFIG);
+
+    await expect(store.getToken()).rejects.toBeInstanceOf(AuthRequiredError);
+
+    resolveToken({ access_token: 'fresh-token', refresh_token: 'refresh-abc' });
+    await flush();
 
     await expect(store.getToken()).resolves.toBe('fresh-token');
-    expect(authenticateViaBrowserMock).toHaveBeenCalledWith(CONFIG);
+    expect(startBrowserAuthMock).toHaveBeenCalledTimes(1);
   });
 
-  it('caches the token so the browser flow runs only once across calls', async () => {
-    authenticateViaBrowserMock.mockResolvedValue({ access_token: 'fresh-token' });
-
+  it('starts only one browser flow for concurrent first calls', async () => {
+    startBrowserAuthMock.mockResolvedValue(deferredStarted().started);
     const store = createTokenStore(CONFIG);
-    // First call authenticates and caches; the second must reuse the cache.
-    await store.getToken();
-    await store.getToken();
 
-    expect(authenticateViaBrowserMock).toHaveBeenCalledTimes(1);
+    const results = await Promise.allSettled([store.getToken(), store.getToken()]);
+
+    expect(results.map((r) => r.status)).toEqual(['rejected', 'rejected']);
+    for (const r of results) {
+      expect((r as PromiseRejectedResult).reason).toBeInstanceOf(AuthRequiredError);
+    }
+    expect(startBrowserAuthMock).toHaveBeenCalledTimes(1);
   });
 
-  it('shares a single in-flight auth promise for concurrent callers', async () => {
-    let resolveAuth!: (value: { access_token: string }) => void;
-    authenticateViaBrowserMock.mockReturnValue(
-      new Promise((resolve) => {
-        resolveAuth = resolve;
-      }),
-    );
-
+  it('restarts the flow after a failed/timed-out attempt', async () => {
+    const first = deferredStarted();
+    startBrowserAuthMock
+      .mockResolvedValueOnce(first.started)
+      .mockResolvedValueOnce(deferredStarted().started);
     const store = createTokenStore(CONFIG);
-    const first = store.getToken();
-    const second = store.getToken();
-    resolveAuth({ access_token: 'shared-token' });
 
-    await expect(Promise.all([first, second])).resolves.toEqual(['shared-token', 'shared-token']);
-    expect(authenticateViaBrowserMock).toHaveBeenCalledTimes(1);
+    await expect(store.getToken()).rejects.toBeInstanceOf(AuthRequiredError);
+    first.rejectToken(new Error('user closed browser'));
+    await flush();
+
+    await expect(store.getToken()).rejects.toBeInstanceOf(AuthRequiredError);
+    expect(startBrowserAuthMock).toHaveBeenCalledTimes(2);
   });
 
-  it('clears the in-flight promise on failure so a retry re-authenticates', async () => {
-    authenticateViaBrowserMock
-      .mockRejectedValueOnce(new Error('user closed browser'))
-      .mockResolvedValueOnce({ access_token: 'retry-token' });
-
+  it('surfaces a start failure (e.g. port in use) and allows a later retry', async () => {
+    startBrowserAuthMock
+      .mockRejectedValueOnce(new Error('listen EADDRINUSE'))
+      .mockResolvedValueOnce(deferredStarted().started);
     const store = createTokenStore(CONFIG);
 
-    await expect(store.getToken()).rejects.toThrow('user closed browser');
-    await expect(store.getToken()).resolves.toBe('retry-token');
-    expect(authenticateViaBrowserMock).toHaveBeenCalledTimes(2);
+    await expect(store.getToken()).rejects.toThrow('EADDRINUSE');
+    await expect(store.getToken()).rejects.toBeInstanceOf(AuthRequiredError);
+    expect(startBrowserAuthMock).toHaveBeenCalledTimes(2);
   });
 });

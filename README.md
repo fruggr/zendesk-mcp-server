@@ -198,7 +198,11 @@ No API key needed. Each user authenticates via their browser on the first tool c
 zendesk-mcp-server <your-subdomain>
 ```
 
-On the first tool call, a browser window opens for the user to authenticate. The token is cached in memory for the session.
+On the first tool call, the server starts the sign-in flow: it opens a browser
+window **and** returns a tool message containing the authorize URL. The call
+does not block waiting for sign-in — authenticate in the browser (or open the
+URL manually if it didn't open), then retry the request. Once authenticated, the
+token is cached in memory and subsequent calls succeed for the session.
 
 ### Option B: API token
 
@@ -319,9 +323,11 @@ If both `ZENDESK_EMAIL` and `ZENDESK_API_TOKEN` are set, the server uses API tok
 
 ### The browser doesn't open during OAuth login
 
-The OAuth flow opens your default browser on the first tool call. If it doesn't
-open (common in sandboxed or remote desktop environments), the authorization URL
-is still printed to the server's stderr — open it manually.
+The OAuth flow opens your default browser on the first tool call. The first call
+fails fast with a message that includes the authorize URL, so even if the
+browser can't open (common in sandboxed or remote desktop environments) you can
+open that URL manually — it's also printed to the server's stderr. Sign in, then
+retry the request.
 
 To collect diagnostics, restart with `LOG_LEVEL=debug`. The server then emits
 structured logs through **two channels**, so they're reachable on any MCP client:
