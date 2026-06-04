@@ -22,17 +22,27 @@ const FALLBACK: PackageInfo = {
  * at runtime (not inlining at build) matters because semantic-release bumps the
  * version into package.json before publishing, after the build step.
  */
+// package.json can't change during the process lifetime, and createMcpServer
+// (hence this) may run several times (notably across tests) — cache the result.
+let cached: PackageInfo | undefined;
+
 export const readPackageInfo = (): PackageInfo => {
+  if (cached) return cached;
   try {
     let dir = dirname(fileURLToPath(import.meta.url));
     for (let depth = 0; depth < 8; depth++) {
       try {
-        const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as
-          | Partial<PackageInfo>
-          | undefined;
-        if (pkg?.name && pkg.version) return { name: pkg.name, version: pkg.version };
+        // JSON.parse yields `unknown`; validate at runtime rather than asserting.
+        const raw: unknown = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
+        if (raw && typeof raw === 'object') {
+          const pkg = raw as Partial<PackageInfo>;
+          if (typeof pkg.name === 'string' && typeof pkg.version === 'string') {
+            cached = { name: pkg.name, version: pkg.version };
+            return cached;
+          }
+        }
       } catch {
-        // No readable package.json here — keep walking up.
+        // No readable/valid package.json here — keep walking up.
       }
       const parent = dirname(dir);
       if (parent === dir) break;
@@ -41,5 +51,6 @@ export const readPackageInfo = (): PackageInfo => {
   } catch {
     // import.meta / fs unavailable — fall back below.
   }
-  return FALLBACK;
+  cached = FALLBACK;
+  return cached;
 };
