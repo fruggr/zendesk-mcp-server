@@ -238,6 +238,20 @@ describe('help center tools', () => {
       const result = await tool.handler({ article_id: 5000, draft: false });
       expect(result.content[0]?.text).toContain('Article #5000 updated');
     });
+
+    it('forwards position to reposition the article within its section', async () => {
+      const tool = findTool('update_article');
+      const result = await tool.handler({ article_id: 5000, position: 7 });
+      expect(result.content[0]?.text).toContain('**Position**: 7');
+    });
+
+    it('documents how to move an article to the end of its section', () => {
+      const tool = findTool('update_article');
+      expect(tool.description.toLowerCase()).toContain('position');
+      expect(tool.inputSchema.parse({ article_id: 5000, position: 3 })).toMatchObject({
+        position: 3,
+      });
+    });
   });
 
   describe('list_content_tags', () => {

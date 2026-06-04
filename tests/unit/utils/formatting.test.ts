@@ -164,6 +164,19 @@ describe('formatArticleSummary', () => {
     const result = formatArticleSummary({ ...MOCK_ARTICLE, label_names: [] });
     expect(result).not.toContain('Labels');
   });
+
+  it('includes the sort position', () => {
+    const result = formatArticleSummary({ ...MOCK_ARTICLE, position: 7 });
+    expect(result).toContain('**Position**: 7');
+  });
+
+  it('omits position when not a number', () => {
+    const result = formatArticleSummary({
+      ...MOCK_ARTICLE,
+      position: undefined as unknown as number,
+    });
+    expect(result).not.toContain('Position');
+  });
 });
 
 describe('formatTranslation', () => {
