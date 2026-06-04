@@ -4,6 +4,7 @@ import type { Config } from './config';
 import { filterTools, groupByNamespace } from './routing/registry';
 import { createAllTools, type ToolDefinition } from './tools/index';
 import { type Logger, silentLogger } from './utils/logger';
+import { readPackageInfo } from './utils/package-info';
 
 const NAMESPACE_LABELS: Record<string, { toolName: string; title: string }> = {
   tickets: { toolName: 'zendesk_tickets', title: 'Zendesk Tickets' },
@@ -74,10 +75,13 @@ export const createMcpServer = (
   getToken: () => string | Promise<string>,
   logger: Logger = silentLogger,
 ): McpServer => {
+  // Read name/version from package.json at runtime rather than hardcoding them
+  // (the old literals were stale and even carried the wrong package name).
+  const pkg = readPackageInfo();
   const server = new McpServer(
     {
-      name: '@digital4better/zendesk-mcp-server',
-      version: '0.1.0',
+      name: pkg.name,
+      version: pkg.version,
     },
     // Advertise the logging capability so structured diagnostics (notably the
     // OAuth browser flow) reach clients that support it. Clients that don't
