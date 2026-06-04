@@ -36,7 +36,9 @@ A project-scoped `.mcp.json` is committed at the repo root:
     "zendesk-local": {
       "command": "pnpm",
       "args": ["exec", "tsx", "src/index.ts", "--mode", "all"],
-      "env": {}
+      "env": {
+        "ZENDESK_SUBDOMAIN": "fruggr"
+      }
     }
   }
 }
