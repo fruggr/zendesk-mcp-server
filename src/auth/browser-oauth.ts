@@ -7,6 +7,7 @@ import { getOAuthUrls } from '../constants';
 import { type Logger, silentLogger } from '../utils/logger';
 
 const DEFAULT_CALLBACK_PORT = 3000;
+const AUTH_TIMEOUT_MS = 5 * 60 * 1000;
 
 /** Best-effort WSL detection: WSL kernels carry "microsoft" in /proc/version. */
 const detectWsl = (): boolean => {
@@ -185,14 +186,11 @@ export const authenticateViaBrowser = (
 
     // Timeout after 5 minutes. Cleared on every completion path above so a
     // successful auth can't emit a spurious `oauth_timeout` error later.
-    authTimeout = setTimeout(
-      () => {
-        logger.error('oauth_timeout', { timeoutMs: 5 * 60 * 1000 });
-        callbackServer.close();
-        reject(new Error('OAuth authentication timed out (5 min). Please try again.'));
-      },
-      5 * 60 * 1000,
-    );
+    authTimeout = setTimeout(() => {
+      logger.error('oauth_timeout', { timeoutMs: AUTH_TIMEOUT_MS });
+      callbackServer.close();
+      reject(new Error('OAuth authentication timed out (5 min). Please try again.'));
+    }, AUTH_TIMEOUT_MS);
     authTimeout.unref();
   });
 };

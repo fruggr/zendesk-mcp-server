@@ -68,14 +68,6 @@ const redactValue = (value: unknown): unknown => {
   return value;
 };
 
-const redact = (fields: Fields): Fields => {
-  const out: Fields = {};
-  for (const [key, value] of Object.entries(fields)) {
-    out[key] = isSensitive(key) ? '[REDACTED]' : redactValue(value);
-  }
-  return out;
-};
-
 const renderValue = (value: unknown): string => {
   if (typeof value === 'string') return value;
   if (typeof value === 'number' || typeof value === 'boolean' || value === null) {
@@ -110,7 +102,7 @@ export const createLogger = (level: LogLevel): Logger => {
   const emit = (lvl: LogLevel, event: string, fields?: Fields): void => {
     if (SEVERITY[lvl] < min) return;
 
-    const safe = fields ? redact(fields) : {};
+    const safe = fields ? (redactValue(fields) as Fields) : {};
     console.error(formatLine(lvl, event, safe));
 
     if (server) {
