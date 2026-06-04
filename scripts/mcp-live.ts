@@ -42,7 +42,16 @@ const fail = (message: string): never => {
 // never touch Zendesk — so when no subdomain is provided (env or positional
 // arg), fall back to a placeholder. This keeps credential-free inspection
 // working; a real `call` still needs a real subdomain + token.
-if (!process.env['ZENDESK_SUBDOMAIN'] && !configArgs.some((a) => !a.startsWith('-'))) {
+// Skip values that follow a value-taking flag (e.g. `all` in `--mode all`),
+// otherwise the placeholder is wrongly skipped. Keep in sync with the
+// value-taking flags in `src/config.ts` `parseCliArgs`.
+const VALUE_FLAGS = new Set(['--mode', '--namespace', '--tool', '--log-level']);
+const hasPositionalSubdomain = configArgs.some((arg, i) => {
+  if (arg.startsWith('-')) return false;
+  const prev = configArgs[i - 1];
+  return !(prev && VALUE_FLAGS.has(prev));
+});
+if (!process.env['ZENDESK_SUBDOMAIN'] && !hasPositionalSubdomain) {
   process.env['ZENDESK_SUBDOMAIN'] = 'mcp-live-placeholder';
 }
 
