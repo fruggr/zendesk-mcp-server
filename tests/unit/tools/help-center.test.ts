@@ -247,7 +247,9 @@ describe('help center tools', () => {
 
     it('documents how to move an article to the end of its section', () => {
       const tool = findTool('update_article');
-      expect(tool.description.toLowerCase()).toContain('position');
+      const field = (tool.inputSchema as { shape: { position: { description?: string } } }).shape
+        .position;
+      expect(field.description).toContain('P + 1');
       expect(tool.inputSchema.parse({ article_id: 5000, position: 3 })).toMatchObject({
         position: 3,
       });

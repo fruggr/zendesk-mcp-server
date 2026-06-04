@@ -579,7 +579,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           .min(0)
           .optional()
           .describe(
-            'Sort position within the section (manual ordering only; 0 = first/top). New articles default to position 0. To move an article to the END of its section, set this to the highest current position in the section — read it from list_articles with sort_by="position", sort_order="desc".',
+            'Sort position within the section (manual ordering only; 0 = first/top). New articles default to position 0. To move an article to the END of its section, set this to one more than the highest current position: read the highest position P from list_articles with sort_by="position", sort_order="desc", then set position = P + 1.',
           ),
       }),
       annotations: {
