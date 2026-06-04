@@ -9,14 +9,23 @@ const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '..', '..', '..');
 const serverEntry = resolve(repoRoot, 'dist', 'index.js');
 
+const MODES = new Set(['single', 'namespace', 'all']);
+
 const parseArgs = (argv) => {
   const out = { mode: undefined, readOnly: false, namespaces: [], tools: [] };
+  const requireValue = (flag, value) => {
+    if (value === undefined) {
+      console.error(`Missing value for ${flag}`);
+      process.exit(2);
+    }
+    return value;
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === '--mode') out.mode = argv[++i];
+    if (a === '--mode') out.mode = requireValue('--mode', argv[++i]);
     else if (a === '--read-only') out.readOnly = true;
-    else if (a === '--namespace') out.namespaces.push(argv[++i]);
-    else if (a === '--tool') out.tools.push(argv[++i]);
+    else if (a === '--namespace') out.namespaces.push(requireValue('--namespace', argv[++i]));
+    else if (a === '--tool') out.tools.push(requireValue('--tool', argv[++i]));
     else {
       console.error(`Unknown argument: ${a}`);
       process.exit(2);
@@ -24,6 +33,10 @@ const parseArgs = (argv) => {
   }
   if (!out.mode) {
     console.error('Missing --mode <single|namespace|all>');
+    process.exit(2);
+  }
+  if (!MODES.has(out.mode)) {
+    console.error(`Invalid --mode "${out.mode}". Expected one of: single, namespace, all.`);
     process.exit(2);
   }
   return out;

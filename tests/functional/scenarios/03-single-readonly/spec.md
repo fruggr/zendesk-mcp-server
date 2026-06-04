@@ -9,7 +9,7 @@ channels: [A]
 # 03 — single + read-only
 
 Verify the single-proxy mode in read-only: one tool, aggregated annotations
-across all read ops, `[RO] ` prefix.
+across all read ops, `[RO]` prefix.
 
 ## Steps
 

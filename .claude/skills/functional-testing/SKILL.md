@@ -30,14 +30,14 @@ loop without ever running the server yourself.
 4. **Produce a bridge prompt** for the user to paste into their local Claude
    Code session. Template:
 
-   ```
+   ```text
    Tu es dans le repo zendesk-mcp-server, branche locale doit être à jour
    avec origin/<branch-from-STATE>.
    Lis tests/functional/scenarios/<slug>/spec.md et applique strictement
    ses instructions.
    Ne lis PAS expected.md — c'est le critère de verdict, le voir biaiserait
    ton rapport.
-   Écris reports/<slug>.raw.json + reports/<slug>.report.md.
+   Écris tests/functional/reports/<slug>.raw.json + tests/functional/reports/<slug>.report.md.
    Quand fini, mets à jour tests/functional/STATE.md (status=done,
    holder=leading), commit et push.
    Préviens-moi.
@@ -48,8 +48,9 @@ loop without ever running the server yourself.
 5. **Wait for the user to confirm the push.** No polling. The user signals
    you in chat.
 6. **Pull and read.** `git pull origin <branch>`. Open the executor's
-   artifacts: `reports/<slug>.raw.json` (canonical, ground truth) and
-   `reports/<slug>.report.md` (executor's narrative + assertion fence).
+   artifacts: `tests/functional/reports/<slug>.raw.json` (canonical, ground
+   truth) and `tests/functional/reports/<slug>.report.md` (executor's
+   narrative + assertion fence).
 7. **Now read `expected.md`.** Open
    `tests/functional/scenarios/<slug>/expected.md`. Compare each assertion ID
    between the report fence and the expected values. Re-verify each against

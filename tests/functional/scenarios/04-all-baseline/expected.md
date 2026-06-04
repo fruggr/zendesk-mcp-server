@@ -15,7 +15,7 @@
 - **A4.** `get_current_user`: read-only and non-destructive (sanity sample).
 - **A5.** `manage_tags.destructiveHint=true` — verified by the previous PR
   (commit `10d846b`). Guards against a regression of that fix.
-- **A6.** `[RO] ` prefix is a proxy-mode-only feature; in `--mode all` no
+- **A6.** `[RO]` prefix is a proxy-mode-only feature; in `--mode all` no
   description should carry it.
 
 ## Failure diagnostics
@@ -25,4 +25,4 @@
 | A1         | Tool added/removed without doc sync, or registry drift                    | `AGENTS.md` "Documentation maintenance", `src/tools/index.ts` |
 | A2, A3     | `createAllTools` skipped annotations on a new tool                        | per-namespace `src/tools/*.ts`      |
 | A4, A5     | Annotation regression on a specific tool                                  | `src/tools/users.ts`, `src/tools/tickets.ts` (search `manage_tags`) |
-| A6         | `[RO] ` prefix leaked into individual tool descriptions                   | `src/server.ts` `case 'all'`        |
+| A6         | `[RO]` prefix leaked into individual tool descriptions                   | `src/server.ts` `case 'all'`        |

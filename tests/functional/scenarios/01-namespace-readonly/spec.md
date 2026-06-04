@@ -9,7 +9,7 @@ channels: [A]
 # 01 — namespace + read-only
 
 Verify that proxy tools in `--mode namespace --read-only` expose correct
-aggregated annotations and a `[RO] ` description prefix.
+aggregated annotations and a `[RO]` description prefix.
 
 ## Steps
 

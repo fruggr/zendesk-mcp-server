@@ -9,7 +9,7 @@ channels: [A]
 # 02 — namespace, mixed (no read-only)
 
 Verify that proxy tools in `--mode namespace` (without `--read-only`) expose
-correct aggregated annotations and **no** `[RO] ` prefix. Proxies that
+correct aggregated annotations and **no** `[RO]` prefix. Proxies that
 aggregate at least one write op must report `destructiveHint: true`. Proxies
 whose sub-tools are all read-only (e.g. `zendesk_users`) must keep
 `readOnlyHint: true`.

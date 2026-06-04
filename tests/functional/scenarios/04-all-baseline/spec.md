@@ -23,7 +23,7 @@ own `annotations` object intact (PR #53 must not regress flat mode).
    ```
 
 4. Inspect the raw JSON. Confirm the tool count, sample a few entries (one
-   read, one write, `manage_tags`), and verify no `[RO] ` prefix anywhere.
+   read, one write, `manage_tags`), and verify no `[RO]` prefix anywhere.
 5. Write the report at `tests/functional/reports/04-all-baseline.report.md`.
 
 ## Assertions to record
