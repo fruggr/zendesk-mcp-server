@@ -1,3 +1,9 @@
+## [1.3.0](https://github.com/fruggr/zendesk-mcp-server/compare/v1.2.0...v1.3.0) (2026-06-04)
+
+### Features
+
+* **dev:** enable live testing of the MCP server on a branch ([#54](https://github.com/fruggr/zendesk-mcp-server/issues/54)) ([a19a531](https://github.com/fruggr/zendesk-mcp-server/commit/a19a53162da359a769bab6dc8f34951ac59588e0))
+
 ## [1.2.0](https://github.com/fruggr/zendesk-mcp-server/compare/v1.1.3...v1.2.0) (2026-06-04)
 
 ### Features
