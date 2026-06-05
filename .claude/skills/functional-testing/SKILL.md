@@ -13,14 +13,27 @@ loop without ever running the server yourself.
 ## Invocation forms
 
 - `/functional-testing <NN-slug>` — drive a single scenario.
-- `/functional-testing all` — drive every scenario in `STATE.md` not yet
-  `done`, in order.
+- `/functional-testing all` — drive every scenario in `STATE.md` whose
+  status is not yet final (i.e. not `OK` and not `FAIL`), in order.
+
+## Scenario status lifecycle
+
+`STATE.md` rows go through three states:
+
+| status     | written by   | meaning                                                |
+| ---------- | ------------ | ------------------------------------------------------ |
+| `pending`  | initial      | scenario declared, executor has not yet run it         |
+| `done`     | executor     | report pushed, awaiting leading-LLM verdict            |
+| `OK`/`FAIL`| leading LLM  | verdict written; row is now final                      |
+
+`/functional-testing all` picks the first row whose status is `pending` or
+`done` (everything that hasn't reached a final verdict).
 
 ## Loop per scenario
 
 1. **Read state.** Open `tests/functional/STATE.md`. Confirm the scenario
-   exists and its status. If the user passed `all`, pick the first non-`done`
-   row.
+   exists and its status. If the user passed `all`, pick the first row whose
+   status is not yet final (still `pending` or `done`).
 2. **Refuse if not your turn.** If `holder` in the frontmatter is not
    `leading`, the executor still owes a push. Tell the user, stop.
 3. **Read the spec, NOT the expected.** Open
@@ -75,10 +88,11 @@ loop without ever running the server yourself.
    - <if any FAIL: pointer to the code fix, file:line>
    ```
 
-9. **Update `STATE.md`.** Set the scenario row to `OK` or `FAIL`. Bump
-   `holder` back to `executor` only if you need them to re-run (e.g. report
-   was incomplete). Otherwise leave `holder: leading` and consider the
-   scenario closed.
+9. **Update `STATE.md`.** Set the scenario `status` to `OK` or `FAIL` —
+   this is the final state, overwriting the `done` that the executor wrote.
+   Bump `holder` back to `executor` only if you need them to re-run (e.g.
+   report was incomplete); in that case revert `status` to `pending`.
+   Otherwise leave `holder: leading` and consider the scenario closed.
 10. **Commit and push** the verdict and STATE update.
 11. **If FAIL with a clear root cause:** propose the code fix on the branch
     in a **separate commit** (don't conflate harness output with code
