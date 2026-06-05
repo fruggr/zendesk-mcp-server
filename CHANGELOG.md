@@ -1,3 +1,40 @@
+## [1.4.0](https://github.com/fruggr/zendesk-mcp-server/compare/v1.3.0...v1.4.0) (2026-06-04)
+
+### Features
+
+* **auth:** add structured logging to diagnose the OAuth browser flow ([#62](https://github.com/fruggr/zendesk-mcp-server/issues/62)) ([797292c](https://github.com/fruggr/zendesk-mcp-server/commit/797292cc0a33705ea1fd6636ccf68e68c3b6e8e6))
+
+## [1.3.0](https://github.com/fruggr/zendesk-mcp-server/compare/v1.2.0...v1.3.0) (2026-06-04)
+
+### Features
+
+* **dev:** enable live testing of the MCP server on a branch ([#54](https://github.com/fruggr/zendesk-mcp-server/issues/54)) ([a19a531](https://github.com/fruggr/zendesk-mcp-server/commit/a19a53162da359a769bab6dc8f34951ac59588e0))
+
+## [1.2.0](https://github.com/fruggr/zendesk-mcp-server/compare/v1.1.3...v1.2.0) (2026-06-04)
+
+### Features
+
+* **help-center:** expose article sort position on update_article ([#61](https://github.com/fruggr/zendesk-mcp-server/issues/61)) ([04f899c](https://github.com/fruggr/zendesk-mcp-server/commit/04f899cbb4cbb78ba7f8139f5abcc1ef607a02b5))
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Chores
+
+* **deps:** lock file maintenance ([#49](https://github.com/fruggr/zendesk-mcp-server/issues/49)) ([c5145d0](https://github.com/fruggr/zendesk-mcp-server/commit/c5145d02332c315a9f4a222f7fd72251dcd30ed9))
+* **deps:** update pnpm to v11.4.0 ([#59](https://github.com/fruggr/zendesk-mcp-server/issues/59)) ([138d8eb](https://github.com/fruggr/zendesk-mcp-server/commit/138d8ebbe01b32ea89f18fff53f3537be9ca61d6))
+
+### Continuous Integration
+
+* **release:** fold non-triggering commit types into a collapsed notes section ([#58](https://github.com/fruggr/zendesk-mcp-server/issues/58)) ([5050510](https://github.com/fruggr/zendesk-mcp-server/commit/5050510b6c7ec83e98b3e5bab8aba43934682d38))
+</details>
+
+## [1.1.3](https://github.com/fruggr/zendesk-mcp-server/compare/v1.1.2...v1.1.3) (2026-05-31)
+
+### Bug Fixes
+
+* **renovate:** make the supply-chain delay policy coherent (lockfile + security) ([#55](https://github.com/fruggr/zendesk-mcp-server/issues/55)) ([f54d7b2](https://github.com/fruggr/zendesk-mcp-server/commit/f54d7b2847439851deb32e354a7a0f00caca1a36))
+
 ## [1.1.2](https://github.com/fruggr/zendesk-mcp-server/compare/v1.1.1...v1.1.2) (2026-05-24)
 
 ### Bug Fixes

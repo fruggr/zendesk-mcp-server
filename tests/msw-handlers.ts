@@ -172,6 +172,12 @@ export const MOCK_COMMENT = {
   ],
 };
 
+// OAuth token endpoint used by the browser PKCE flow. Opt-in per test via
+// mswServer.use() so the OAuth roundtrip mock stays centralized here too.
+export const oauthTokenHandler = http.post('https://testsubdomain.zendesk.com/oauth/tokens', () =>
+  HttpResponse.json({ access_token: 'token-abc', token_type: 'bearer', scope: 'read write' }),
+);
+
 // Opt-in error handlers for tests that exercise failure paths. Kept here so all
 // Zendesk mocking stays centralized; activate one per test via mswServer.use().
 export const errorHandlers = {
@@ -339,7 +345,13 @@ export const handlers = [
   http.post(`${HC_BASE}/sections/:sid/articles`, () =>
     HttpResponse.json({ article: MOCK_ARTICLE }),
   ),
-  http.put(`${HC_BASE}/articles/:id`, () => HttpResponse.json({ article: MOCK_ARTICLE })),
+  http.put(`${HC_BASE}/articles/:id`, async ({ request, params }) => {
+    const reqBody = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const update = (reqBody['article'] as Record<string, unknown> | undefined) ?? {};
+    return HttpResponse.json({
+      article: { ...MOCK_ARTICLE, id: Number(params['id']), ...update },
+    });
+  }),
 
   // Guide - Permission Groups
   http.get(`${BASE}/guide/permission_groups`, () =>

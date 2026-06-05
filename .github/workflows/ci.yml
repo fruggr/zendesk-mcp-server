@@ -79,6 +79,6 @@ jobs:
       - name: Verify tarball runs on Node 20
         run: |
           set -euo pipefail
-          OUT=$(timeout 5 zendesk-mcp-server smoke-test 2>&1 || true)
+          OUT=$(env LOG_LEVEL=info timeout 5 zendesk-mcp-server smoke-test 2>&1 || true)
           echo "$OUT"
-          echo "$OUT" | grep -q "running via stdio"
+          echo "$OUT" | grep -q "stdio_transport_ready"

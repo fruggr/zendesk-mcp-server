@@ -24,7 +24,7 @@ src/
 ├── routing/        # filterTools / groupByNamespace
 ├── tools/          # 37 tool definitions across tickets / help_center / users / search
 ├── transports/     # stdio (SDK) + http (node:http + SDK StreamableHTTPServerTransport)
-└── utils/          # Markdown formatting, cursor pagination
+└── utils/          # Markdown formatting, cursor pagination, structured logger (stderr + MCP logging), runtime package info
 ```
 
 Transports use the official `@modelcontextprotocol/sdk` directly. HTTP is a thin `node:http` server wrapping `StreamableHTTPServerTransport` plus the OAuth discovery endpoints (RFC 9728 / RFC 8414) advertising Zendesk as the upstream authorization server.
@@ -115,6 +115,14 @@ runs it on every PR.
 Everything on GitHub is in **English** (PRs, commits, code comments, review
 replies). Direct chat with the user follows their language.
 
+## Multi-agent compatibility — absolute rule
+
+Compatible with every mainstream MCP agent. No PR may degrade a supported agent; any new tool must follow `docs/mcp-metadata.md`.
+
+## AGENTS.md upkeep
+
+Keep each section to 2–3 lines max. Detail belongs in `docs/`.
+
 ## Submission quality bar
 
 This is the bar to clear before opening a PR or asking the maintainer to review. It applies the same way whether the code was written by a human or by an AI assistant — the goal is that the patch survives external scrutiny and that the human author can defend every line.
@@ -155,3 +163,4 @@ Versions are **fully automated** via [semantic-release](https://github.com/seman
 - **Side effects of a release**: new git tag `vX.Y.Z`, `CHANGELOG.md` and `package.json` committed back to `main` with message `chore(release): X.Y.Z [skip ci]`, new GitHub Release with generated notes, new npm version published to `@fruggr/zendesk-mcp-server`.
 - **npm auth**: publishing uses NPM Trusted Publishing (OIDC) — no `NPM_TOKEN` secret is stored in the repo.
 - **If you want a release to happen**: land at least one `fix:` / `feat:` / breaking change commit in your PR. A PR made only of `chore:` / `docs:` will merge cleanly but produce no new version.
+- **Release notes**: a local wrapper (`scripts/release-notes-collapsed.js`) keeps non-triggering commits (`chore`, `ci`, `docs`…) in the notes but folds them into a collapsed `<details>` block. See `docs/release-automation.md`.

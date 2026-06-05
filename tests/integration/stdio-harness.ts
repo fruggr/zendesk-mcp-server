@@ -18,7 +18,7 @@ export const stdioHarness: IntegrationHarness = {
 
     // The token is opaque to the transport: MSW intercepts the Zendesk calls
     // regardless of its value.
-    const { server } = createMcpServer(config, () => 'test-token');
+    const server = createMcpServer(config, () => 'test-token');
     await server.connect(serverTransport);
 
     const client = new Client({ name: 'integration-test', version: '0.0.0' });

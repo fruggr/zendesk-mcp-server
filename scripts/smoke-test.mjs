@@ -3,10 +3,13 @@ import { spawn } from 'node:child_process';
 const TIMEOUT_MS = 5000;
 const KILL_GRACE_MS = 1000;
 
+// Markers are structured logger events. Force LOG_LEVEL=info so an inherited
+// LOG_LEVEL=warn/error can't suppress the marker and false-fail the smoke test.
 const runCheck = (args, marker) =>
   new Promise((resolve, reject) => {
     const proc = spawn('node', ['dist/index.js', ...args], {
       stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, LOG_LEVEL: 'info' },
     });
 
     let output = '';
@@ -57,8 +60,8 @@ const runCheck = (args, marker) =>
   });
 
 try {
-  await runCheck(['smoke-test'], 'running via stdio');
-  await runCheck(['smoke-test', '--transport', 'http', '--port', '0'], 'running via http');
+  await runCheck(['smoke-test'], 'stdio_transport_ready');
+  await runCheck(['smoke-test', '--transport', 'http', '--port', '0'], 'http_transport_ready');
   process.exit(0);
 } catch {
   process.exit(1);

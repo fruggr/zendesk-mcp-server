@@ -4,6 +4,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import type { Config } from '../config';
 import { getOAuthUrls } from '../constants';
 import { createMcpServer } from '../server';
+import { type Logger, silentLogger } from '../utils/logger';
 
 const WILDCARD_HOSTS = new Set(['0.0.0.0', '::', '*']);
 
@@ -254,7 +255,10 @@ export interface HttpServerHandle {
   close(): Promise<void>;
 }
 
-export const startHttpTransport = async (config: Config): Promise<HttpServerHandle> => {
+export const startHttpTransport = async (
+  config: Config,
+  logger: Logger = silentLogger,
+): Promise<HttpServerHandle> => {
   const metadata = buildOAuthMetadata(config);
   const sessions = new Map<string, Session>();
 
@@ -296,7 +300,7 @@ export const startHttpTransport = async (config: Config): Promise<HttpServerHand
     const body = await readBody(req);
     const parsed = body ? JSON.parse(body) : undefined;
 
-    const { server } = createMcpServer(config, () => bearer);
+    const server = createMcpServer(config, () => bearer, logger);
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
       onsessioninitialized: (newId) => {
@@ -383,7 +387,7 @@ export const startHttpTransport = async (config: Config): Promise<HttpServerHand
 
   const addr = httpServer.address();
   const boundPort = typeof addr === 'object' && addr !== null ? addr.port : config.port;
-  console.error(`Zendesk MCP server running via http on ${config.host}:${boundPort}`);
+  logger.info('http_transport_ready', { host: config.host, port: boundPort });
 
   return {
     port: boundPort,

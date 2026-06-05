@@ -92,7 +92,7 @@ zendesk-mcp-server acme --namespace tickets
 | `list_user_segments` | List user segments (article visibility) | read |
 | `compare_translations` | Section-level diff between two locales of an article | read |
 | `create_article` | Create a new article in a section | write |
-| `update_article` | Update article metadata (draft, labels, tags, visibility, section) | write |
+| `update_article` | Update article metadata (draft, labels, tags, visibility, section, sort position) | write |
 | `create_article_translation` | Create a translation for an article | write |
 | `update_article_translation` | Update an article's translation (full body) | write |
 | `update_article_section` | Replace a single section of an article | write |
@@ -396,9 +396,37 @@ zendesk-mcp-server acme --transport http --port 8080 \
 | `PORT` | no | `3000` | HTTP bind port (`0` to let the OS pick) |
 | `PUBLIC_URL` | recommended in HTTP behind a proxy | derived from host:port | Public URL advertised in OAuth discovery metadata |
 | `CORS_ORIGIN` | no | — | Comma-separated browser origins added to the default CORS allowlist |
-| `LOG_LEVEL` | no | `info` | Log verbosity |
+| `LOG_LEVEL` | no | `info` | Log verbosity (`debug` surfaces the full OAuth flow trace) |
 
 In stdio, if both `ZENDESK_EMAIL` and `ZENDESK_API_TOKEN` are set, the server uses API token auth; otherwise it uses OAuth 2.1 PKCE. In HTTP mode, API token credentials are refused at boot — only per-user OAuth 2.1 PKCE is accepted. Full API-token setup is documented in [`docs/api-token-stdio.md`](docs/api-token-stdio.md).
+
+## Troubleshooting
+
+### The browser doesn't open during OAuth login
+
+The OAuth flow opens your default browser on the first tool call. If it doesn't
+open (common in sandboxed or remote desktop environments), the authorization URL
+is still printed to the server's stderr — open it manually.
+
+To collect diagnostics, restart with `LOG_LEVEL=debug`. The server then emits
+structured logs through **two channels**, so they're reachable on any MCP client:
+
+- **stderr** — captured to a log file by every mainstream client.
+- **MCP logging notifications** (`notifications/message`) — surfaced by clients
+  that support the `logging` capability.
+
+When the browser fails to open, look for the `oauth_browser_open_failed` event:
+it reports the underlying error, the platform, and which environment markers are
+present (no secrets, tokens, or env values are ever logged).
+
+Where each client writes the server's stderr:
+
+| Client | Log location |
+|--------|--------------|
+| Claude Desktop (macOS) | `~/Library/Logs/Claude/mcp-server-*.log` |
+| Claude Desktop (Windows) | `%APPDATA%\Claude\logs\mcp-server-*.log` |
+| Claude Code | `claude --debug`, or the session logs |
+| Cursor / VS Code / Cline | the extension's MCP output/log panel |
 
 ## Development
 

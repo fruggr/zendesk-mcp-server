@@ -3,6 +3,8 @@ import * as z from 'zod/v4';
 import type { Config } from './config';
 import { filterTools, groupByNamespace } from './routing/registry';
 import { createAllTools, type ToolDefinition } from './tools/index';
+import { type Logger, silentLogger } from './utils/logger';
+import { readPackageInfo } from './utils/package-info';
 
 const NAMESPACE_LABELS: Record<string, { toolName: string; title: string }> = {
   tickets: { toolName: 'zendesk_tickets', title: 'Zendesk Tickets' },
@@ -111,19 +113,28 @@ const registerProxyTool = (
   );
 };
 
-export interface CreatedServer {
-  server: McpServer;
-  registeredToolNames: string[];
-}
-
 export const createMcpServer = (
   config: Config,
   getToken: () => string | Promise<string>,
-): CreatedServer => {
-  const server = new McpServer({
-    name: '@digital4better/zendesk-mcp-server',
-    version: '0.1.0',
-  });
+  logger: Logger = silentLogger,
+): McpServer => {
+  // Read name/version from package.json at runtime rather than hardcoding them
+  // (the old literals were stale and even carried the wrong package name).
+  const pkg = readPackageInfo();
+  const server = new McpServer(
+    {
+      name: pkg.name,
+      version: pkg.version,
+    },
+    // Advertise the logging capability so structured diagnostics (notably the
+    // OAuth browser flow) reach clients that support it. Clients that don't
+    // simply ignore the notifications.
+    { capabilities: { logging: {} } },
+  );
+
+  // Route the logger's MCP sink through this server. Auth runs lazily on the
+  // first tool call (after connect), so notifications can flow by then.
+  logger.attachServer(server);
 
   const allTools = createAllTools({ subdomain: config.subdomain, getToken });
 
@@ -134,13 +145,10 @@ export const createMcpServer = (
     tools: config.tools,
   });
 
-  const registeredToolNames: string[] = [];
-
   switch (config.mode) {
     case 'all': {
       for (const tool of filteredTools) {
         registerLeafTool(server, tool);
-        registeredToolNames.push(tool.name);
       }
       break;
     }
@@ -150,18 +158,16 @@ export const createMcpServer = (
         const label = NAMESPACE_LABELS[namespace];
         if (label) {
           registerProxyTool(server, label.toolName, label.title, tools);
-          registeredToolNames.push(label.toolName);
         }
       }
       break;
     }
     case 'single': {
       registerProxyTool(server, 'zendesk', 'Zendesk', filteredTools);
-      registeredToolNames.push('zendesk');
       break;
     }
   }
 
-  console.error(`Registered ${filteredTools.length} tools in ${config.mode} mode`);
-  return { server, registeredToolNames };
+  logger.info('tools_registered', { count: filteredTools.length, mode: config.mode });
+  return server;
 };

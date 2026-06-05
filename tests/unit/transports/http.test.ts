@@ -212,6 +212,49 @@ describe('startHttpTransport (HTTP roundtrip)', () => {
     await res.text();
   });
 
+  it('routes a follow-up request to its existing session via mcp-session-id', async () => {
+    // Regression coverage for the existing-session branch in handleMcpRequest:
+    // initialize once → capture the session id → POST again with that id and
+    // assert the request is routed to the same session (no re-init, no 401).
+    handle = await startHttpTransport(baseConfig);
+    const init = await fetch(`http://127.0.0.1:${handle.port}/mcp`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer test-token',
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'initialize',
+        id: 1,
+        params: {
+          protocolVersion: '2025-06-18',
+          capabilities: {},
+          clientInfo: { name: 'test', version: '0.0.0' },
+        },
+      }),
+    });
+    const sessionId = init.headers.get('mcp-session-id');
+    expect(sessionId).toBeTruthy();
+    await init.text();
+
+    // Follow-up: tools/list on the same session. The handler should route via
+    // sessions.get(sessionId).transport.handleRequest — no bearer needed at
+    // this point because the session is already authenticated.
+    const followUp = await fetch(`http://127.0.0.1:${handle.port}/mcp`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream',
+        'mcp-session-id': sessionId!,
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', method: 'tools/list', id: 2 }),
+    });
+    expect(followUp.status).toBe(200);
+    await followUp.text();
+  });
+
   it('returns 400 when a non-POST /mcp request has no session and no bearer combo', async () => {
     handle = await startHttpTransport(baseConfig);
     // PUT is neither POST (initialize path) nor GET (SSE stream path) — and
