@@ -169,6 +169,24 @@ describe('aggregateAnnotations', () => {
     const result = aggregateAnnotations([{ annotations: ann({ openWorldHint: false }) }]);
     expect(result.openWorldHint).toBe(true);
   });
+
+  it('drops idempotentHint as soon as one op is non-idempotent', () => {
+    const result = aggregateAnnotations([
+      { annotations: ann({ readOnlyHint: true, idempotentHint: true }) },
+      { annotations: ann({ readOnlyHint: false, idempotentHint: false }) },
+    ]);
+    expect(result.idempotentHint).toBe(false);
+  });
+
+  it('handles an empty tool list with the every/some vacuous defaults', () => {
+    const result = aggregateAnnotations([]);
+    expect(result).toEqual({
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    });
+  });
 });
 
 describe('summarizeDescription', () => {
