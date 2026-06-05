@@ -15,6 +15,7 @@ describe('loadConfig', () => {
     expect(config.subdomain).toBe('mycompany');
   });
 
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: documents the literal default value ${subdomain}_zendesk
   it('defaults oauthClientId to ${subdomain}_zendesk', () => {
     const config = loadConfig(['mycompany']);
     expect(config.oauthClientId).toBe('mycompany_zendesk');

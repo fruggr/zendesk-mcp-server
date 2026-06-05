@@ -36,7 +36,7 @@ const textOf = (html: string): string => {
 };
 
 export const parseSections = (html: string): Section[] => {
-  if (!html || !html.trim()) return [];
+  if (!html?.trim()) return [];
 
   const $ = cheerio.load(html, null, false);
   const children = $.root().contents().toArray();

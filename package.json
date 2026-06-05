@@ -18,8 +18,8 @@
     "dev": "tsx watch src/index.ts",
     "prepare": "npm run build",
     "prepublishOnly": "npm run build",
-    "check": "biome check src/",
-    "check:fix": "biome check --write src/",
+    "check": "biome check --error-on-warnings src/ tests/ scripts/",
+    "check:fix": "biome check --write src/ tests/ scripts/",
     "test": "vitest run",
     "test:watch": "vitest watch",
     "test:coverage": "vitest run --coverage",
@@ -69,7 +69,7 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.7",
+    "@biomejs/biome": "2.4.16",
     "@semantic-release/changelog": "^6.0.3",
     "@semantic-release/git": "^10.0.1",
     "@semantic-release/github": "^12.0.6",
