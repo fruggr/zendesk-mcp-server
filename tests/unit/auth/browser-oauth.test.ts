@@ -193,7 +193,7 @@ describe('startBrowserAuth', () => {
     try {
       await expect(
         startBrowserAuth({ subdomain: SUB, oauthClientId: CLIENT_ID, callbackPort: port }),
-      ).rejects.toBeDefined();
+      ).rejects.toThrow(/EADDRINUSE/);
       expect(openMock).not.toHaveBeenCalled();
     } finally {
       await new Promise<void>((resolve) => blocker.close(() => resolve()));
