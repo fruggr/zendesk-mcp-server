@@ -10,8 +10,10 @@ describe('search tools', () => {
   });
 
   describe('search', () => {
+    const [tool] = createSearchTools(ctx);
+    if (!tool) throw new Error('search tool not registered');
+
     it('performs unified search with total count', async () => {
-      const tool = createSearchTools(ctx)[0]!;
       const result = await tool.handler({ query: 'test', per_page: 100, page: 1 });
       expect(result.content[0]?.text).toContain('Total: 2');
       expect(result.content[0]?.text).toContain('ticket');
@@ -19,7 +21,6 @@ describe('search tools', () => {
     });
 
     it('is readOnly', () => {
-      const tool = createSearchTools(ctx)[0]!;
       expect(tool.readOnly).toBe(true);
       expect(tool.annotations.readOnlyHint).toBe(true);
     });
