@@ -236,7 +236,7 @@ describe('startHttpTransport (HTTP roundtrip)', () => {
       }),
     });
     const sessionId = init.headers.get('mcp-session-id');
-    expect(sessionId).toBeTruthy();
+    if (!sessionId) throw new Error('initialize did not return a session id');
     await init.text();
 
     // Follow-up: tools/list on the same session. The handler should route via
@@ -247,7 +247,7 @@ describe('startHttpTransport (HTTP roundtrip)', () => {
       headers: {
         'Content-Type': 'application/json',
         Accept: 'application/json, text/event-stream',
-        'mcp-session-id': sessionId!,
+        'mcp-session-id': sessionId,
       },
       body: JSON.stringify({ jsonrpc: '2.0', method: 'tools/list', id: 2 }),
     });

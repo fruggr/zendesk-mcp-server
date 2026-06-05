@@ -267,13 +267,14 @@ export const startHttpTransport = async (
       typeof req.headers['mcp-session-id'] === 'string' ? req.headers['mcp-session-id'] : undefined;
 
     // Existing session: route the request to its transport.
-    if (sessionId && sessions.has(sessionId)) {
+    if (sessionId) {
       const session = sessions.get(sessionId);
-      // biome-ignore lint/style/noNonNullAssertion: just checked has() above
-      const body = req.method === 'POST' ? await readBody(req) : undefined;
-      const parsed = body ? JSON.parse(body) : undefined;
-      await session!.transport.handleRequest(req, res, parsed);
-      return;
+      if (session) {
+        const body = req.method === 'POST' ? await readBody(req) : undefined;
+        const parsed = body ? JSON.parse(body) : undefined;
+        await session.transport.handleRequest(req, res, parsed);
+        return;
+      }
     }
 
     // New session: an unauthenticated request gets a 401 + WWW-Authenticate
