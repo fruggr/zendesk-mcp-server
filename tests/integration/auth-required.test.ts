@@ -1,7 +1,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { afterEach, describe, expect, it } from 'vitest';
-import { AuthRequiredError } from '../../src/auth/token-store';
+import { createAuthRequiredError } from '../../src/auth/token-store';
 import { createMcpServer } from '../../src/server';
 import { makeConfig } from './harness';
 
@@ -27,7 +27,7 @@ describe('[stdio] authentication-required tool error', () => {
   it('surfaces the authorize URL as the tool error text', async () => {
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     const getToken = () => {
-      throw new AuthRequiredError(AUTH_URL);
+      throw createAuthRequiredError(AUTH_URL);
     };
     const server = createMcpServer(makeConfig({ mode: 'all' }), getToken);
     await server.connect(serverTransport);

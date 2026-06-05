@@ -7,20 +7,27 @@ interface StoredToken {
 }
 
 /**
- * Thrown by `getToken` when interactive sign-in is needed. The message is
- * user-facing: MCP surfaces it as the tool-call error text, so it carries the
- * authorize URL and tells the user to authenticate and retry.
+ * Signals that interactive sign-in is required. The message is user-facing: MCP
+ * surfaces it as the tool-call error text, so it carries the authorize URL and
+ * tells the user to authenticate and retry. Kept as an Error factory (not a
+ * class) to match the repo's functional style.
  */
-export class AuthRequiredError extends Error {
-  constructor(public readonly authorizeUrl: string) {
-    super(
+export type AuthRequiredError = Error & { readonly authorizeUrl: string };
+
+export const createAuthRequiredError = (authorizeUrl: string): AuthRequiredError =>
+  Object.assign(
+    new Error(
       'Zendesk authentication required. A browser window should have opened for you to sign in. ' +
         'If it did not, open this URL in your browser, then retry your request:\n' +
         authorizeUrl,
-    );
-    this.name = 'AuthRequiredError';
-  }
-}
+    ),
+    { name: 'AuthRequiredError', authorizeUrl } as const,
+  );
+
+export const isAuthRequiredError = (err: unknown): err is AuthRequiredError =>
+  err instanceof Error &&
+  err.name === 'AuthRequiredError' &&
+  typeof (err as AuthRequiredError).authorizeUrl === 'string';
 
 export const createTokenStore = (
   config: { subdomain: string; oauthClientId: string },
@@ -87,7 +94,7 @@ export const createTokenStore = (
     // callback server keeps running in the background and caches the token,
     // so the next call succeeds.
     const url = authorizeUrl ?? (await starting);
-    throw new AuthRequiredError(url);
+    throw createAuthRequiredError(url);
   };
 
   return { getToken, setToken };

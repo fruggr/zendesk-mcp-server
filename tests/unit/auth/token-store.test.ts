@@ -16,7 +16,7 @@ vi.mock('../../../src/auth/browser-oauth', () => ({
 }));
 
 // Imported after vi.mock so the mocked browser flow is bound.
-const { createTokenStore, AuthRequiredError } = await import('../../../src/auth/token-store');
+const { createTokenStore, isAuthRequiredError } = await import('../../../src/auth/token-store');
 
 const CONFIG = { subdomain: 'testsubdomain', oauthClientId: 'test_client' };
 const AUTH_URL = 'https://testsubdomain.zendesk.com/oauth/authorizations/new?client_id=test_client';
@@ -53,8 +53,8 @@ describe('createTokenStore', () => {
     const store = createTokenStore(CONFIG);
 
     const err = await store.getToken().catch((e) => e);
-    expect(err).toBeInstanceOf(AuthRequiredError);
-    expect((err as AuthRequiredError).authorizeUrl).toBe(AUTH_URL);
+    expect(isAuthRequiredError(err)).toBe(true);
+    expect((err as { authorizeUrl: string }).authorizeUrl).toBe(AUTH_URL);
     expect((err as Error).message).toContain(AUTH_URL);
     expect(startBrowserAuthMock).toHaveBeenCalledWith(CONFIG);
   });
@@ -64,7 +64,7 @@ describe('createTokenStore', () => {
     startBrowserAuthMock.mockResolvedValue(started);
     const store = createTokenStore(CONFIG);
 
-    await expect(store.getToken()).rejects.toBeInstanceOf(AuthRequiredError);
+    await expect(store.getToken()).rejects.toThrow('authentication required');
 
     resolveToken({ access_token: 'fresh-token', refresh_token: 'refresh-abc' });
     await flush();
@@ -81,7 +81,7 @@ describe('createTokenStore', () => {
 
     expect(results.map((r) => r.status)).toEqual(['rejected', 'rejected']);
     for (const r of results) {
-      expect((r as PromiseRejectedResult).reason).toBeInstanceOf(AuthRequiredError);
+      expect(isAuthRequiredError((r as PromiseRejectedResult).reason)).toBe(true);
     }
     expect(startBrowserAuthMock).toHaveBeenCalledTimes(1);
   });
@@ -93,11 +93,11 @@ describe('createTokenStore', () => {
       .mockResolvedValueOnce(deferredStarted().started);
     const store = createTokenStore(CONFIG);
 
-    await expect(store.getToken()).rejects.toBeInstanceOf(AuthRequiredError);
+    await expect(store.getToken()).rejects.toThrow('authentication required');
     first.rejectToken(new Error('user closed browser'));
     await flush();
 
-    await expect(store.getToken()).rejects.toBeInstanceOf(AuthRequiredError);
+    await expect(store.getToken()).rejects.toThrow('authentication required');
     expect(startBrowserAuthMock).toHaveBeenCalledTimes(2);
   });
 
@@ -108,7 +108,7 @@ describe('createTokenStore', () => {
     const store = createTokenStore(CONFIG);
 
     await expect(store.getToken()).rejects.toThrow('EADDRINUSE');
-    await expect(store.getToken()).rejects.toBeInstanceOf(AuthRequiredError);
+    await expect(store.getToken()).rejects.toThrow('authentication required');
     expect(startBrowserAuthMock).toHaveBeenCalledTimes(2);
   });
 });

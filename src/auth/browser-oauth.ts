@@ -180,13 +180,24 @@ export const startBrowserAuth = (
 
     // Listen failure (e.g. port already in use) before we ever get a URL: the
     // whole start fails so the caller can surface/retry.
-    callbackServer.once('error', (err) => {
+    const onStartError = (err: Error) => {
       clearTimeout(authTimeout);
       rejectStarted(err);
-    });
+    };
+    callbackServer.once('error', onStartError);
 
     // Start on fixed port (must match redirect_uri registered in Zendesk OAuth client)
     callbackServer.listen(config.callbackPort ?? DEFAULT_CALLBACK_PORT, () => {
+      // Now that we're listening, a later server error must settle the *token*
+      // flow (the started promise is already resolved) and tear the server down,
+      // so the token store doesn't wedge waiting on a promise that never settles.
+      callbackServer.off('error', onStartError);
+      callbackServer.once('error', (err) => {
+        clearTimeout(authTimeout);
+        callbackServer.close();
+        rejectToken(err);
+      });
+
       const port = (callbackServer.address() as { port: number }).port;
       const redirectUri = `http://localhost:${port}/callback`;
 

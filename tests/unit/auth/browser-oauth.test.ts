@@ -1,3 +1,4 @@
+import { createServer } from 'node:http';
 import { HttpResponse, http } from 'msw';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { oauthTokenHandler } from '../../msw-handlers';
@@ -10,7 +11,9 @@ vi.mock('open', () => ({
 }));
 
 // Imported after vi.mock so the mocked `open` is bound.
-const { authenticateViaBrowser } = await import('../../../src/auth/browser-oauth');
+const { authenticateViaBrowser, startBrowserAuth } = await import(
+  '../../../src/auth/browser-oauth'
+);
 
 const SUB = 'testsubdomain';
 const CLIENT_ID = 'test_client';
@@ -174,5 +177,52 @@ describe('authenticateViaBrowser', () => {
     expect(failure?.fields?.['platform']).toBe(process.platform);
     // Environment presence is reported as booleans (never values).
     expect(typeof failure?.fields?.['hasSystemRoot']).toBe('boolean');
+  });
+});
+
+describe('startBrowserAuth', () => {
+  beforeEach(() => {
+    openMock.mockReset();
+  });
+
+  it('rejects the start (without opening a browser) when the callback port is in use', async () => {
+    const blocker = createServer();
+    await new Promise<void>((resolve) => blocker.listen(0, resolve));
+    const port = (blocker.address() as { port: number }).port;
+
+    try {
+      await expect(
+        startBrowserAuth({ subdomain: SUB, oauthClientId: CLIENT_ID, callbackPort: port }),
+      ).rejects.toBeDefined();
+      expect(openMock).not.toHaveBeenCalled();
+    } finally {
+      await new Promise<void>((resolve) => blocker.close(() => resolve()));
+    }
+  });
+
+  it('rejects the token promise after the auth timeout elapses', async () => {
+    vi.useFakeTimers();
+    try {
+      openMock.mockResolvedValue({});
+      const logger = {
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        attachServer: vi.fn(),
+      };
+      const started = await startBrowserAuth(
+        { subdomain: SUB, oauthClientId: CLIENT_ID, callbackPort: 0 },
+        logger,
+      );
+      const rejection = expect(started.tokenPromise).rejects.toThrow('timed out');
+
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+      await rejection;
+
+      expect(logger.error).toHaveBeenCalledWith('oauth_timeout', expect.anything());
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
