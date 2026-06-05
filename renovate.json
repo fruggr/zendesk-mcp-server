@@ -15,8 +15,7 @@
     "enabled": true,
     "automerge": true,
     "schedule": ["before 8am on friday"],
-    "timezone": "Europe/Paris",
-    "minimumReleaseAgeBehaviour": "timestamp-optional"
+    "timezone": "Europe/Paris"
   },
   "vulnerabilityAlerts": {
     "description": "Security fixes surface immediately (a PR is opened as soon as the alert is detected) but are held by the same inherited 7-day minimumReleaseAge as every other update. internalChecksFilter 'flexible' keeps that PR visible with a pending renovate/stability-days check instead of suppressing it, so a freshly published fix is not auto-merged until it has aged past the supply-chain delay. A critical, actively-exploited CVE landing inside that window is merged manually.",
@@ -36,6 +35,11 @@
     ]
   },
   "packageRules": [
+    {
+      "description": "lockFileMaintenance updates are synthetic lockfile refreshes with no releaseTimestamp, so the inherited 7-day minimumReleaseAge can never be evaluated and Renovate raises a dashboard warning (and, from Renovate 42 on, would stop running lockfile maintenance entirely). Opt them out of the age gate, mirroring Renovate's own security:minimumReleaseAgeNpm preset. The supply-chain delay for the packages bumped here is still enforced natively by pnpm via minimumReleaseAge in pnpm-workspace.yaml.",
+      "matchUpdateTypes": ["lockFileMaintenance"],
+      "minimumReleaseAge": null
+    },
     {
       "matchUpdateTypes": ["major"],
       "dependencyDashboardApproval": true
