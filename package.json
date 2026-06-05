@@ -18,7 +18,7 @@
     "dev": "tsx watch src/index.ts",
     "prepare": "npm run build",
     "prepublishOnly": "npm run build",
-    "check": "biome check src/ tests/ scripts/",
+    "check": "biome check --error-on-warnings src/ tests/ scripts/",
     "check:fix": "biome check --write src/ tests/ scripts/",
     "test": "vitest run",
     "test:watch": "vitest watch",
