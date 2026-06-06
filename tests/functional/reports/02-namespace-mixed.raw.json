@@ -1,0 +1,106 @@
+{
+  "tools": [
+    {
+      "name": "zendesk_tickets",
+      "title": "Zendesk Tickets",
+      "description": "Zendesk Tickets. Specify the operation and its parameters.\n\nAvailable operations:\n- **get_ticket**: Retrieve a Zendesk ticket by ID, including its comments if requested.\n- **get_ticket_attachments**: Retrieve ticket attachments.\n- **search_tickets**: Search tickets using Zendesk query syntax (e.g., \"status:open assignee:me\", \"priority:urgent type:incident\").\n- **create_ticket**: Create a new Zendesk support ticket with subject, description, and optional priority/type/assignee/tags. (write)\n- **update_ticket**: Update an existing ticket (status, priority, type, assignee, group, subject, tags, custom fields). (write)\n- **add_private_note**: Add an internal note (not visible to requester) to a ticket. (write)\n- **add_public_comment**: Add a public comment (visible to requester) to a ticket. (write)\n- **list_tickets**: List tickets with cursor-based pagination, sorted by most recently updated.\n- **get_linked_incidents**: Get all incident tickets linked to a problem ticket.\n- **manage_tags**: Add or remove tags on a ticket. (write)\n- **search**: Search across tickets, users, and organizations.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "operation": {
+            "type": "string",
+            "description": "One of: get_ticket, get_ticket_attachments, search_tickets, create_ticket, update_ticket, add_private_note, add_public_comment, list_tickets, get_linked_incidents, manage_tags, search"
+          },
+          "params": {
+            "default": {},
+            "description": "Operation parameters",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": ["operation"],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "zendesk_help_center",
+      "title": "Zendesk Help Center",
+      "description": "Zendesk Help Center. Specify the operation and its parameters.\n\nAvailable operations:\n- **search_articles**: Full-text search across Help Center articles (metadata only, no body).\n- **get_article**: Retrieve an article by ID with full body content.\n- **list_categories**: List all Help Center categories.\n- **list_sections**: List sections, optionally filtered by category ID and locale.\n- **list_articles**: List articles (metadata only, no body).\n- **list_article_translations**: List all available translations for an article (metadata only, no body: locale, title, draft, updated_at).\n- **create_article_translation**: Create a translation for an existing article in a specific locale. (write)\n- **update_article_translation**: Update article content (title, body) in a specific locale. (write)\n- **list_permission_groups**: List all Guide permission groups.\n- **create_article**: Create a new article in a section. (write)\n- **update_article**: Update article metadata only (draft, promoted, labels, tags, visibility, section, sort position, etc.). (write)\n- **list_content_tags**: List all Guide content tags.\n- **create_content_tag**: Create a new content tag for Guide articles. (write)\n- **list_labels**: List all article labels.\n- **list_user_segments**: List all user segments.\n- **list_article_attachments**: List all attachments for an article.\n- **get_article_outline**: Return a compact outline of an article (list of sections delimited by h1/h2/h3, with word counts) for the given locale (defaults to source_locale).\n- **get_article_section**: Retrieve the content of a single section of an article in a given locale.\n- **update_article_section**: Replace the content of a single section of an article in a given locale, keeping the rest of the body intact. (write)\n- **compare_translations**: Compare section structure between two locales of the same article, matched by index.\n- **create_article_attachment**: Upload an attachment to an article. (write)",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "operation": {
+            "type": "string",
+            "description": "One of: search_articles, get_article, list_categories, list_sections, list_articles, list_article_translations, create_article_translation, update_article_translation, list_permission_groups, create_article, update_article, list_content_tags, create_content_tag, list_labels, list_user_segments, list_article_attachments, get_article_outline, get_article_section, update_article_section, compare_translations, create_article_attachment"
+          },
+          "params": {
+            "default": {},
+            "description": "Operation parameters",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": ["operation"],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "zendesk_users",
+      "title": "Zendesk Users",
+      "description": "Zendesk Users. Specify the operation and its parameters.\n\nAvailable operations:\n- **get_current_user**: Get the currently authenticated Zendesk user.\n- **search_users**: Search for users by name, email, or other criteria using Zendesk search query syntax.\n- **get_user**: Retrieve a user by ID.\n- **get_organization**: Retrieve an organization by ID.\n- **list_organizations**: List all organizations with pagination.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "operation": {
+            "type": "string",
+            "description": "One of: get_current_user, search_users, get_user, get_organization, list_organizations"
+          },
+          "params": {
+            "default": {},
+            "description": "Operation parameters",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": ["operation"],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    }
+  ]
+}
