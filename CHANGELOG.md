@@ -1,3 +1,9 @@
+## [1.5.0](https://github.com/fruggr/zendesk-mcp-server/compare/v1.4.1...v1.5.0) (2026-06-06)
+
+### Features
+
+* **auth:** non-blocking OAuth with the sign-in URL surfaced in the tool response ([#63](https://github.com/fruggr/zendesk-mcp-server/issues/63)) ([2b9ea03](https://github.com/fruggr/zendesk-mcp-server/commit/2b9ea0351d60af41ab15e08a6fce36f3c7bb2d69))
+
 ## [1.4.1](https://github.com/fruggr/zendesk-mcp-server/compare/v1.4.0...v1.4.1) (2026-06-06)
 
 ### Bug Fixes

@@ -1,6 +1,6 @@
 {
   "name": "@fruggr/zendesk-mcp-server",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "description": "Model Context Protocol (MCP) server for the Zendesk Support & Help Center APIs — per-user OAuth 2.1 PKCE authentication, read-only mode, and token-efficient section-based article editing.",
   "type": "module",
   "main": "dist/index.js",
