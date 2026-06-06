@@ -32,6 +32,20 @@ interface TokenResult {
   scope: string;
 }
 
+/**
+ * Escape a string for safe interpolation into HTML text/attribute context.
+ * The local callback server echoes attacker-controllable values (the OAuth
+ * `error_description` query param, token-exchange error bodies) back into the
+ * browser response; without escaping these are a reflected-XSS sink.
+ */
+const escapeHtml = (value: string): string =>
+  value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
 const generateCodeVerifier = (): string => randomBytes(32).toString('base64url');
 
 const generateCodeChallenge = (verifier: string): string =>
@@ -75,7 +89,9 @@ export const authenticateViaBrowser = (
       if (error) {
         const desc = url.searchParams.get('error_description') ?? error;
         res.writeHead(400, { 'Content-Type': 'text/html' });
-        res.end(`<html><body><h1>Authentication failed</h1><p>${desc}</p></body></html>`);
+        res.end(
+          `<html><body><h1>Authentication failed</h1><p>${escapeHtml(desc)}</p></body></html>`,
+        );
         clearTimeout(authTimeout);
         callbackServer.close();
         reject(new Error(`OAuth error: ${desc}`));
@@ -131,7 +147,7 @@ export const authenticateViaBrowser = (
       } catch (err) {
         res.writeHead(500, { 'Content-Type': 'text/html' });
         res.end(
-          `<html><body><h1>Token exchange failed</h1><p>${err instanceof Error ? err.message : String(err)}</p></body></html>`,
+          `<html><body><h1>Token exchange failed</h1><p>${escapeHtml(err instanceof Error ? err.message : String(err))}</p></body></html>`,
         );
         clearTimeout(authTimeout);
         callbackServer.close();

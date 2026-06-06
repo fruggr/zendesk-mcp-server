@@ -74,6 +74,33 @@ describe('authenticateViaBrowser', () => {
     );
   });
 
+  it('HTML-escapes the OAuth error_description in the callback response (no reflected XSS)', async () => {
+    const xss = '<script>alert(1)</script>';
+    let resolveBody: (body: string) => void;
+    const bodyPromise = new Promise<string>((r) => {
+      resolveBody = r;
+    });
+
+    openMock.mockImplementation(async (url: string) => {
+      const redirectUri = new URL(url).searchParams.get('redirect_uri');
+      setImmediate(() => {
+        fetch(`${redirectUri}?error=access_denied&error_description=${encodeURIComponent(xss)}`)
+          .then((res) => res.text())
+          .then((text) => resolveBody(text))
+          .catch(() => resolveBody(''));
+      });
+      return {};
+    });
+
+    await expect(
+      authenticateViaBrowser({ subdomain: SUB, oauthClientId: CLIENT_ID, callbackPort: 0 }),
+    ).rejects.toThrow(/OAuth error/);
+
+    const body = await bodyPromise;
+    expect(body).not.toContain(xss);
+    expect(body).toContain('&lt;script&gt;');
+  });
+
   it('logs the failure (with platform diagnostics) instead of swallowing it when open rejects', async () => {
     mswServer.use(oauthTokenHandler);
 
