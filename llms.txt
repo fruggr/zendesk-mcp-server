@@ -1,0 +1,32 @@
+# Zendesk MCP Server
+
+> A Model Context Protocol (MCP) server that connects LLMs to the Zendesk Support & Help Center APIs. Its distinguishing trait is per-user OAuth 2.1 PKCE authentication — each user acts with their own Zendesk permissions instead of a shared admin key — plus fine-grained tool-visibility controls and token-efficient, section-based article editing.
+
+Published on npm as `@fruggr/zendesk-mcp-server`. Runs over stdio. Requires Node.js >= 20. Built and maintained by Digital4better for the Fruggr project. MIT licensed.
+
+## Authentication
+
+- OAuth 2.1 PKCE (default): no shared key; each user authenticates in the browser on the first tool call and acts with their own Zendesk permissions.
+- API token (Basic): set `ZENDESK_EMAIL` + `ZENDESK_API_TOKEN` for headless/CI use.
+
+## Tool modes (`--mode`)
+
+- `all`: 37 individual tools, full granularity.
+- `namespace` (default): 3 proxy tools (`zendesk_tickets`, `zendesk_help_center`, `zendesk_users`).
+- `single`: 1 unified `zendesk` proxy, minimal context footprint.
+
+`--namespace`, `--read-only`, and `--tool` filter the surface before the proxies are built. `--read-only` exposes read operations only.
+
+## Capabilities
+
+- Tickets: read, search, list, create, update, comment, notes, tags, linked incidents.
+- Help Center: search/read/list articles, categories, sections, translations, labels, content tags, user segments, attachments; create/update articles; section-level read and rewrite to cut tokens on large articles.
+- Users & Organizations: current user, user/org lookup, search, list.
+- Unified search across tickets, users, and organizations.
+
+## Docs
+
+- README: https://github.com/fruggr/zendesk-mcp-server#readme
+- Source: https://github.com/fruggr/zendesk-mcp-server
+- npm: https://www.npmjs.com/package/@fruggr/zendesk-mcp-server
+- Model Context Protocol: https://modelcontextprotocol.io

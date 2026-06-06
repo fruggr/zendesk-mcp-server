@@ -21,6 +21,21 @@ Most Zendesk integrations use a shared admin API key, giving every user full acc
 
 > Built and maintained by [Digital4better](https://digital4better.com) for the [Fruggr](https://www.fruggr.io) project.
 
+## When to use this server
+
+**Reach for it when:**
+
+- You want an LLM to read or triage **Zendesk tickets** and **Help Center articles** on behalf of a real user, with that user's own permissions — not a shared admin key.
+- You're editing **large Help Center articles** and want section-scoped reads/rewrites instead of round-tripping the full HTML body through the model.
+- You need to **cap the tool surface** — read-only assistants, a single namespace, or one unified tool to fit a tight context budget.
+- You run a **stdio MCP client** (Claude Desktop, Claude Code, Cursor, VS Code, Cline, …) and want a `npx`-installable server with no extra infrastructure.
+
+**Look elsewhere when:**
+
+- You need Zendesk products outside Support & Guide (e.g. Talk, Explore analytics, Sell) — those endpoints aren't covered.
+- You want a hosted/remote HTTP server: this one speaks stdio and runs next to the client.
+- You need a single shared service account for all users — that's the opposite of this server's per-user OAuth model (use API-token auth if you must, but one identity then applies to everyone).
+
 ## Tool modes
 
 The server registers tools in one of three modes, controlled by `--mode`:
@@ -380,6 +395,43 @@ Versions follow [SemVer](https://semver.org/) and are calculated **automatically
 | `feat:` | minor |
 | `feat!:`, `fix!:`, or a `BREAKING CHANGE:` footer | major |
 | `docs:`, `chore:`, `refactor:`, `test:`, `ci:`, `style:`, `build:` | no release |
+
+## FAQ
+
+**Do I need a Zendesk admin API key?**
+No. The default OAuth 2.1 PKCE flow means each user authenticates with their own
+credentials and the server acts with exactly their permissions. API-token auth is
+available for headless/CI use (see [Authentication](#authentication)).
+
+**Which Zendesk products are supported?**
+Zendesk Support (tickets, users, organizations) and the Help Center / Guide
+(articles, sections, categories, translations, labels, content tags, segments,
+attachments). Talk, Explore, and Sell are out of scope.
+
+**How do I keep the model's context small?**
+Use `--mode single` (one `zendesk` tool) or `--mode namespace` (three proxies),
+and `--read-only` to drop write operations. For big articles, the section-based
+tools (`get_article_outline`, `get_article_section`, `update_article_section`)
+let the model touch one section at a time instead of the whole HTML body.
+
+**Can I restrict it to read-only?**
+Yes — pass `--read-only` and every write tool is filtered out before the proxies
+are built, in any mode.
+
+**Which Node.js version do I need?**
+Node.js >= 20 to run the published package (`engines.node`). The dev toolchain
+uses a newer Node — see [Development](#development).
+
+**The OAuth browser window didn't open. What now?**
+The authorization URL is also printed to stderr — open it manually. Restart with
+`LOG_LEVEL=debug` for the full flow trace. See
+[Troubleshooting](#troubleshooting).
+
+**Is it safe to run via `npx`?**
+Releases are published from CI via npm Trusted Publishing (OIDC), so each version
+carries a build provenance attestation you can verify on its
+[npm page](https://www.npmjs.com/package/@fruggr/zendesk-mcp-server). No secrets
+are ever logged by the server.
 
 ## Contributing
 

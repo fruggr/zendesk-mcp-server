@@ -1,0 +1,55 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.fruggr/zendesk-mcp-server",
+  "title": "Zendesk MCP Server",
+  "description": "Model Context Protocol (MCP) server for the Zendesk Support & Help Center APIs — per-user OAuth 2.1 PKCE authentication, read-only mode, and token-efficient section-based article editing.",
+  "version": "1.4.0",
+  "websiteUrl": "https://github.com/fruggr/zendesk-mcp-server#readme",
+  "repository": {
+    "url": "https://github.com/fruggr/zendesk-mcp-server",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "@fruggr/zendesk-mcp-server",
+      "version": "1.4.0",
+      "runtimeHint": "npx",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "valueHint": "subdomain",
+          "description": "Your Zendesk subdomain (e.g. `acme` for acme.zendesk.com). May be supplied via ZENDESK_SUBDOMAIN instead.",
+          "isRequired": true
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "ZENDESK_SUBDOMAIN",
+          "description": "Zendesk subdomain, if not passed as a positional argument.",
+          "isRequired": false
+        },
+        {
+          "name": "ZENDESK_OAUTH_CLIENT_ID",
+          "description": "OAuth client identifier. Defaults to `<subdomain>_zendesk`.",
+          "isRequired": false
+        },
+        {
+          "name": "ZENDESK_EMAIL",
+          "description": "Agent email for API-token (Basic) auth. Set together with ZENDESK_API_TOKEN to bypass OAuth.",
+          "isRequired": false
+        },
+        {
+          "name": "ZENDESK_API_TOKEN",
+          "description": "Zendesk API token for API-token auth.",
+          "isRequired": false,
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}
