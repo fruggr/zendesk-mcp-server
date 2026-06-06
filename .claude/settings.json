@@ -1,5 +1,16 @@
 {
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "mcp__github__create_pull_request|mcp__github__update_pull_request|mcp__github__add_issue_comment|mcp__github__add_comment_to_pending_review|mcp__github__add_reply_to_pull_request_comment|mcp__github__pull_request_review_write|mcp__github__issue_write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '[.tool_input.title, .tool_input.body] | map(select(type==\"string\")) | join(\" \")' | grep -qiE '\\b(avec|sans|donc|nous|vous|votre|notre|cette|dans|leur|une|aux|qui|que|mais|ses|alors|ainsi|aussi|chez|vers|selon|comme|cela)\\b|[éèêàâçùûüôîïœ]' && printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"GitHub content appears to be in French. Project rule (CLAUDE.md): all GitHub PRs, comments and reviews must be in English. Rewrite the text in English and retry.\"}}' || true"
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Edit|Write",
