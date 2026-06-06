@@ -84,6 +84,37 @@ this into your `claude` CLI from the branch:
 Address everything Claude flags, or document in the PR description why
 you're not addressing it.
 
+## Submission quality bar
+
+The bar to clear before opening a PR or asking the maintainer to review. It
+applies the same way whether the code was written by a human or by an AI
+assistant — the goal is that the patch survives external scrutiny and that the
+human author can defend every line. The maintainer's review starts from the
+assumption that everything below has already been done.
+
+1. **Re-read your own diff in full.** No skimming. If a hunk no longer makes
+   sense out of the context where you wrote it, rewrite it.
+2. **Justify each change.** For every non-trivial hunk, you should be able to
+   answer: why is this change here, what would break without it, and is it the
+   smallest version of the fix.
+3. **Look for what you didn't write.** Missing zod validation on an input,
+   missing test for an edge case, missing README/AGENTS update on a renamed
+   tool, missing error path. Reviewers find these — find them first.
+4. **Self-review prompt.** Run the [Author-side AI review](#author-side-ai-review)
+   pass on the diff against `main`. Address findings or document why you're
+   skipping them in the PR description.
+5. **Run the full local gate**: `pnpm check`, `pnpm typecheck`, `pnpm test`,
+   `pnpm build`. A green CI on a non-green local run means a flaky check, not a
+   free pass.
+6. **Scope discipline.** Don't bundle unrelated cleanups into a feature PR. If
+   you spot something worth fixing along the way, note it and open a separate PR.
+7. **No invented behavior.** If a Zendesk API field, an SDK option, or a library
+   API isn't confirmed by the docs, an existing test, or a typed response, mark
+   it `// TODO:` and surface the question in the PR description rather than
+   guessing.
+8. **Mark the PR ready for review.** Flip a draft PR to "ready for review" once
+   dev is done and the local gate is green — never leave it as a draft.
+
 ## What happens after you open the PR
 
 1. CI runs lint, typecheck, tests with coverage thresholds, build, and a smoke
