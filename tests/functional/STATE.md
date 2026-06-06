@@ -1,7 +1,7 @@
 ---
 branch: claude/laughing-lovelace-HmZOn
 current_run: 2026-05-30-pr53
-holder: executor
+holder: leading
 ---
 
 # Functional test run state
@@ -13,7 +13,7 @@ raw + report artifacts.
 
 | Scenario               | Status  | Last update |
 | ---------------------- | ------- | ----------- |
-| 01-namespace-readonly  | pending | -           |
-| 02-namespace-mixed     | pending | -           |
-| 03-single-readonly     | pending | -           |
-| 04-all-baseline        | pending | -           |
+| 01-namespace-readonly  | OK      | 2026-06-06  |
+| 02-namespace-mixed     | OK      | 2026-06-06  |
+| 03-single-readonly     | OK      | 2026-06-06  |
+| 04-all-baseline        | OK      | 2026-06-06  |
