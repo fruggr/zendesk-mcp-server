@@ -159,9 +159,16 @@ export const startBrowserAuth = (
 
         res.writeHead(200, { 'Content-Type': 'text/html' });
         res.end(
-          '<html><body><h1>Authentication successful!</h1>' +
+          '<html><body>' +
+            '<h1>Authentication successful!</h1>' +
             '<p>You can close this tab and return to Claude Code.</p>' +
-            '<script>window.close()</script></body></html>',
+            '<p>This tab will auto-close in <span id="t">10</span>s.</p>' +
+            '<script>' +
+            'let n=10;' +
+            'const el=document.getElementById("t");' +
+            'const i=setInterval(()=>{n--;el.textContent=n;if(n<=0){clearInterval(i);window.close();}},1000);' +
+            '</script>' +
+            '</body></html>',
         );
 
         clearTimeout(authTimeout);
