@@ -1,3 +1,9 @@
+## [1.7.0](https://github.com/fruggr/zendesk-mcp-server/compare/v1.6.0...v1.7.0) (2026-06-07)
+
+### Features
+
+* **auth:** show countdown on OAuth success page before auto-close ([#74](https://github.com/fruggr/zendesk-mcp-server/issues/74)) ([f3caf03](https://github.com/fruggr/zendesk-mcp-server/commit/f3caf034e715ebd86a9a1878475fd1dc374fb977))
+
 ## [1.6.0](https://github.com/fruggr/zendesk-mcp-server/compare/v1.5.0...v1.6.0) (2026-06-07)
 
 ### Features
