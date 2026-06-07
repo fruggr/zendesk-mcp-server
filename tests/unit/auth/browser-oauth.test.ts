@@ -77,6 +77,32 @@ describe('authenticateViaBrowser', () => {
     );
   });
 
+  it('the success page tells the user the tab will auto-close', async () => {
+    mswServer.use(oauthTokenHandler);
+
+    let resolveBody: (body: string) => void;
+    const bodyPromise = new Promise<string>((r) => {
+      resolveBody = r;
+    });
+
+    openMock.mockImplementation(async (url: string) => {
+      const redirectUri = new URL(url).searchParams.get('redirect_uri');
+      setImmediate(() => {
+        fetch(`${redirectUri}?code=the-auth-code`)
+          .then((res) => res.text())
+          .then((text) => resolveBody(text))
+          .catch(() => resolveBody(''));
+      });
+      return {};
+    });
+
+    await authenticateViaBrowser({ subdomain: SUB, oauthClientId: CLIENT_ID, callbackPort: 0 });
+
+    const body = await bodyPromise;
+    expect(body).toContain('Authentication successful!');
+    expect(body).toContain('auto-close');
+  });
+
   it('HTML-escapes the OAuth error_description in the callback response (no reflected XSS)', async () => {
     const xss = '<script>alert(1)</script>';
     let resolveBody: (body: string) => void;
