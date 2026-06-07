@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import * as z from 'zod/v4';
 import type { Config } from './config';
 import { filterTools, groupByNamespace } from './routing/registry';
+import type { ToolAnnotations } from './tools/definitions';
 import { createAllTools, type ToolDefinition } from './tools/index';
 import { type Logger, silentLogger } from './utils/logger';
 import { readPackageInfo } from './utils/package-info';
@@ -31,25 +32,42 @@ export const buildOperationList = (
     )
     .join('\n');
 
+// A proxy aggregates N sub-operations. Hints follow the safest plausible
+// reading: readOnly/idempotent only if EVERY op is, destructive as soon as
+// ANY op is. openWorld is always true (we always hit Zendesk).
+// Mistral/Vibe ignore annotations entirely, hence the `[RO]` prefix below.
+export const aggregateAnnotations = (
+  tools: ReadonlyArray<Pick<ToolDefinition, 'annotations'>>,
+): ToolAnnotations => ({
+  readOnlyHint: tools.every((t) => t.annotations.readOnlyHint),
+  destructiveHint: tools.some((t) => t.annotations.destructiveHint),
+  idempotentHint: tools.every((t) => t.annotations.idempotentHint),
+  openWorldHint: true,
+});
+
 const registerProxyTool = (
   server: McpServer,
   toolName: string,
   title: string,
   tools: ToolDefinition[],
   handlerMap: Map<string, ToolDefinition>,
+  readOnlyMode: boolean,
 ): void => {
   const operationNames = tools.map((t) => t.name);
   const operationList = buildOperationList(tools);
+  const annotations = aggregateAnnotations(tools);
+  const prefix = readOnlyMode ? '[RO] ' : '';
 
   server.registerTool(
     toolName,
     {
       title,
-      description: `${title}. Specify the operation and its parameters.\n\nAvailable operations:\n${operationList}`,
+      description: `${prefix}${title}. Specify the operation and its parameters.\n\nAvailable operations:\n${operationList}`,
       inputSchema: z.object({
         operation: z.string().describe(`One of: ${operationNames.join(', ')}`),
         params: z.record(z.string(), z.unknown()).default({}).describe('Operation parameters'),
       }),
+      annotations,
     },
     async ({ operation, params }) => {
       const def = handlerMap.get(operation);
@@ -130,13 +148,20 @@ export const createMcpServer = (
       for (const [namespace, tools] of grouped) {
         const label = NAMESPACE_LABELS[namespace];
         if (label) {
-          registerProxyTool(server, label.toolName, label.title, tools, handlerMap);
+          registerProxyTool(
+            server,
+            label.toolName,
+            label.title,
+            tools,
+            handlerMap,
+            config.readOnly,
+          );
         }
       }
       break;
     }
     case 'single': {
-      registerProxyTool(server, 'zendesk', 'Zendesk', filteredTools, handlerMap);
+      registerProxyTool(server, 'zendesk', 'Zendesk', filteredTools, handlerMap, config.readOnly);
       break;
     }
   }

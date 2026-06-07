@@ -1,0 +1,106 @@
+{
+  "tools": [
+    {
+      "name": "zendesk_tickets",
+      "title": "Zendesk Tickets",
+      "description": "[RO] Zendesk Tickets. Specify the operation and its parameters.\n\nAvailable operations:\n- **get_ticket**: Retrieve a Zendesk ticket by ID, including its comments if requested.\n- **get_ticket_attachments**: Retrieve ticket attachments.\n- **search_tickets**: Search tickets using Zendesk query syntax (e.g., \"status:open assignee:me\", \"priority:urgent type:incident\").\n- **list_tickets**: List tickets with cursor-based pagination, sorted by most recently updated.\n- **get_linked_incidents**: Get all incident tickets linked to a problem ticket.\n- **search**: Search across tickets, users, and organizations.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "operation": {
+            "type": "string",
+            "description": "One of: get_ticket, get_ticket_attachments, search_tickets, list_tickets, get_linked_incidents, search"
+          },
+          "params": {
+            "default": {},
+            "description": "Operation parameters",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": ["operation"],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "zendesk_help_center",
+      "title": "Zendesk Help Center",
+      "description": "[RO] Zendesk Help Center. Specify the operation and its parameters.\n\nAvailable operations:\n- **search_articles**: Full-text search across Help Center articles (metadata only, no body).\n- **get_article**: Retrieve an article by ID with full body content.\n- **list_categories**: List all Help Center categories.\n- **list_sections**: List sections, optionally filtered by category ID and locale.\n- **list_articles**: List articles (metadata only, no body).\n- **list_article_translations**: List all available translations for an article (metadata only, no body: locale, title, draft, updated_at).\n- **list_permission_groups**: List all Guide permission groups.\n- **list_content_tags**: List all Guide content tags.\n- **list_labels**: List all article labels.\n- **list_user_segments**: List all user segments.\n- **list_article_attachments**: List all attachments for an article.\n- **get_article_outline**: Return a compact outline of an article (list of sections delimited by h1/h2/h3, with word counts) for the given locale (defaults to source_locale).\n- **get_article_section**: Retrieve the content of a single section of an article in a given locale.\n- **compare_translations**: Compare section structure between two locales of the same article, matched by index.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "operation": {
+            "type": "string",
+            "description": "One of: search_articles, get_article, list_categories, list_sections, list_articles, list_article_translations, list_permission_groups, list_content_tags, list_labels, list_user_segments, list_article_attachments, get_article_outline, get_article_section, compare_translations"
+          },
+          "params": {
+            "default": {},
+            "description": "Operation parameters",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": ["operation"],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "zendesk_users",
+      "title": "Zendesk Users",
+      "description": "[RO] Zendesk Users. Specify the operation and its parameters.\n\nAvailable operations:\n- **get_current_user**: Get the currently authenticated Zendesk user.\n- **search_users**: Search for users by name, email, or other criteria using Zendesk search query syntax.\n- **get_user**: Retrieve a user by ID.\n- **get_organization**: Retrieve an organization by ID.\n- **list_organizations**: List all organizations with pagination.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "operation": {
+            "type": "string",
+            "description": "One of: get_current_user, search_users, get_user, get_organization, list_organizations"
+          },
+          "params": {
+            "default": {},
+            "description": "Operation parameters",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": ["operation"],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    }
+  ]
+}

@@ -1,6 +1,24 @@
 import { describe, expect, it } from 'vitest';
 import type { Config } from '../../src/config';
-import { buildOperationList, createMcpServer, summarizeDescription } from '../../src/server';
+import {
+  aggregateAnnotations,
+  buildOperationList,
+  createMcpServer,
+  summarizeDescription,
+} from '../../src/server';
+import type { ToolAnnotations } from '../../src/tools/definitions';
+
+const ann = (overrides: Partial<ToolAnnotations> = {}): ToolAnnotations => ({
+  readOnlyHint: false,
+  destructiveHint: false,
+  idempotentHint: false,
+  openWorldHint: true,
+  ...overrides,
+});
+
+type RegisteredTool = { description?: string; annotations?: ToolAnnotations };
+const introspect = (server: ReturnType<typeof createMcpServer>): Record<string, RegisteredTool> =>
+  (server as unknown as { _registeredTools: Record<string, RegisteredTool> })._registeredTools;
 
 const baseConfig: Config = {
   subdomain: 'testsubdomain',
@@ -57,11 +75,7 @@ describe('createMcpServer', () => {
       getToken,
     );
 
-    const registered = (
-      server as unknown as {
-        _registeredTools: Record<string, { description?: string }>;
-      }
-    )._registeredTools;
+    const registered = introspect(server);
     const names = Object.keys(registered);
 
     expect(names).toEqual(['zendesk_help_center']);
@@ -72,6 +86,106 @@ describe('createMcpServer', () => {
     expect(description).toContain('get_article');
     expect(description).not.toContain('create_article');
     expect(description).not.toContain('update_article');
+  });
+
+  it('marks read-only proxies with readOnlyHint=true and a [RO] description prefix', () => {
+    const server = createMcpServer(
+      {
+        ...baseConfig,
+        mode: 'namespace',
+        namespaces: ['help_center'],
+        readOnly: true,
+      },
+      getToken,
+    );
+
+    const proxy = introspect(server)['zendesk_help_center'];
+    expect(proxy?.annotations).toMatchObject({
+      readOnlyHint: true,
+      destructiveHint: false,
+      openWorldHint: true,
+    });
+    expect(proxy?.description ?? '').toMatch(/^\[RO\] /);
+  });
+
+  it('flags a mixed namespace proxy as destructive but not read-only', () => {
+    const server = createMcpServer(
+      { ...baseConfig, mode: 'namespace', namespaces: ['tickets'] },
+      getToken,
+    );
+
+    const proxy = introspect(server)['zendesk_tickets'];
+    expect(proxy?.annotations).toMatchObject({
+      readOnlyHint: false,
+      destructiveHint: true,
+      openWorldHint: true,
+    });
+    expect(proxy?.description ?? '').not.toMatch(/^\[RO\] /);
+  });
+
+  it('aggregates the single-proxy annotations across every namespace', () => {
+    const server = createMcpServer({ ...baseConfig, mode: 'single' }, getToken);
+
+    const proxy = introspect(server)['zendesk'];
+    expect(proxy?.annotations).toMatchObject({
+      readOnlyHint: false,
+      destructiveHint: true,
+      openWorldHint: true,
+    });
+  });
+});
+
+describe('aggregateAnnotations', () => {
+  it('returns readOnly + idempotent when every op is read-only and idempotent', () => {
+    const result = aggregateAnnotations([
+      { annotations: ann({ readOnlyHint: true, idempotentHint: true }) },
+      { annotations: ann({ readOnlyHint: true, idempotentHint: true }) },
+    ]);
+    expect(result).toEqual({
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    });
+  });
+
+  it('drops readOnly as soon as one op is write', () => {
+    const result = aggregateAnnotations([
+      { annotations: ann({ readOnlyHint: true, idempotentHint: true }) },
+      { annotations: ann({ readOnlyHint: false, idempotentHint: false }) },
+    ]);
+    expect(result.readOnlyHint).toBe(false);
+  });
+
+  it('raises destructive as soon as one op is destructive', () => {
+    const result = aggregateAnnotations([
+      { annotations: ann({ readOnlyHint: true }) },
+      { annotations: ann({ destructiveHint: true }) },
+    ]);
+    expect(result.destructiveHint).toBe(true);
+  });
+
+  it('always reports openWorldHint=true (this server always hits Zendesk)', () => {
+    const result = aggregateAnnotations([{ annotations: ann({ openWorldHint: false }) }]);
+    expect(result.openWorldHint).toBe(true);
+  });
+
+  it('drops idempotentHint as soon as one op is non-idempotent', () => {
+    const result = aggregateAnnotations([
+      { annotations: ann({ readOnlyHint: true, idempotentHint: true }) },
+      { annotations: ann({ readOnlyHint: false, idempotentHint: false }) },
+    ]);
+    expect(result.idempotentHint).toBe(false);
+  });
+
+  it('handles an empty tool list with the every/some vacuous defaults', () => {
+    const result = aggregateAnnotations([]);
+    expect(result).toEqual({
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    });
   });
 });
 
