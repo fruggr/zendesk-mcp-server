@@ -1,3 +1,9 @@
+## [1.6.0](https://github.com/fruggr/zendesk-mcp-server/compare/v1.5.0...v1.6.0) (2026-06-07)
+
+### Features
+
+* **annotations:** expose accurate hints to MCP clients ([#53](https://github.com/fruggr/zendesk-mcp-server/issues/53)) ([566d6af](https://github.com/fruggr/zendesk-mcp-server/commit/566d6afc1237999d125b14e7f61674b2de87bf3b))
+
 ## [1.5.0](https://github.com/fruggr/zendesk-mcp-server/compare/v1.4.1...v1.5.0) (2026-06-06)
 
 ### Features
