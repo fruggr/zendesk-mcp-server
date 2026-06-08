@@ -190,7 +190,9 @@ No API key needed. Each user authenticates via their browser on the first tool c
 1. Go to **Admin Center > Apps and integrations > APIs > OAuth Clients**
 2. Create a public client:
    - **Identifier**: `<your-subdomain>_zendesk` (or set `ZENDESK_OAUTH_CLIENT_ID`)
-   - **Redirect URL**: `http://localhost:3000/callback`
+   - **Redirect URL**: `http://localhost:27439/callback` (change the port to match
+     `ZENDESK_OAUTH_CALLBACK_PORT` / `--callback-port` if you override it; Zendesk
+     accepts several redirect URLs, one per line)
 
 **Run:**
 
@@ -201,8 +203,22 @@ zendesk-mcp-server <your-subdomain>
 On the first tool call, the server starts the sign-in flow: it opens a browser
 window **and** returns a tool message containing the authorize URL. The call
 does not block waiting for sign-in — authenticate in the browser (or open the
-URL manually if it didn't open), then retry the request. Once authenticated, the
-token is cached in memory and subsequent calls succeed for the session.
+URL manually if it didn't open), then retry the request.
+
+Once authenticated, the token is **persisted to disk** (one owner-only `0600`
+file per subdomain in your OS config dir —
+`%APPDATA%\fruggr\zendesk-mcp-server\<subdomain>.json` on Windows,
+`${XDG_CONFIG_HOME:-~/.config}/fruggr/zendesk-mcp-server/<subdomain>.json`
+elsewhere; override the path with `ZENDESK_TOKEN_FILE`). It is reused across restarts, so you don't
+re-authenticate every time the MCP client respawns the server. If the Zendesk
+OAuth client has token expiration enabled, the stored refresh token is used to
+renew access silently; only an expired/invalid refresh token triggers a new
+browser sign-in.
+
+> **Port conflict?** If port `27439` is already in use the first tool call returns
+> a clear error telling you to set `ZENDESK_OAUTH_CALLBACK_PORT` (or
+> `--callback-port`) to a free port — remember to register the matching
+> `http://localhost:<port>/callback` redirect URL in your Zendesk OAuth client.
 
 ### Option B: API token
 
@@ -290,6 +306,7 @@ Options:
   --tool <name>           Filter by tool name (repeatable, forces --mode all)
   --read-only             Only expose read operations
   --log-level <level>     debug | info (default) | warn | error
+  --callback-port <port>  Local OAuth callback port (default 27439)
 ```
 
 `--namespace` and `--read-only` are applied before the proxies are registered, so they narrow the surface in every mode — in the default `namespace` mode, `--namespace help_center` registers a single proxy (`zendesk_help_center`) instead of three.
@@ -313,6 +330,8 @@ zendesk-mcp-server acme --tool get_ticket --tool search_tickets --tool get_curre
 |----------|----------|---------|-------------|
 | `ZENDESK_SUBDOMAIN` | yes (or CLI arg) | — | Zendesk subdomain (e.g., `acme` for acme.zendesk.com) |
 | `ZENDESK_OAUTH_CLIENT_ID` | no | `<subdomain>_zendesk` | OAuth client identifier |
+| `ZENDESK_OAUTH_CALLBACK_PORT` | no | `27439` | Local port for the OAuth browser callback (also `--callback-port`). Must match the redirect URL registered in Zendesk. |
+| `ZENDESK_TOKEN_FILE` | no | OS config dir | Path to the persisted OAuth token file (`0600`). |
 | `ZENDESK_EMAIL` | for API token auth | — | Agent email for Basic auth |
 | `ZENDESK_API_TOKEN` | for API token auth | — | Zendesk API token |
 | `LOG_LEVEL` | no | `info` | Log verbosity (`debug` surfaces the full OAuth flow trace) |
@@ -339,6 +358,22 @@ structured logs through **two channels**, so they're reachable on any MCP client
 When the browser fails to open, look for the `oauth_browser_open_failed` event:
 it reports the underlying error, the platform, and which environment markers are
 present (no secrets, tokens, or env values are ever logged).
+
+### The OAuth callback port is already in use
+
+The sign-in flow runs a short-lived local server on port `27439` to receive the
+callback. If that port is taken, the first tool call fails with a message saying
+so (and logs `oauth_callback_listen_failed`). Pick a free port with
+`ZENDESK_OAUTH_CALLBACK_PORT=<port>` (or `--callback-port <port>`), and register
+the matching `http://localhost:<port>/callback` redirect URL in your Zendesk
+OAuth client.
+
+### I have to re-authenticate every time
+
+The OAuth token is persisted to an owner-only file in your OS config dir and
+reused across restarts, so this shouldn't happen. If it does, check that the file
+is writable (`ZENDESK_TOKEN_FILE` to relocate it) and look for
+`token_persist_failed` in the logs.
 
 Where each client writes the server's stderr:
 

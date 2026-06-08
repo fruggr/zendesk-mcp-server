@@ -1,11 +1,33 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import * as z from 'zod/v4';
+import { ZendeskApiError } from './client/zendesk-api';
 import type { Config } from './config';
 import { filterTools, groupByNamespace } from './routing/registry';
-import type { ToolAnnotations } from './tools/definitions';
+import type { ToolAnnotations, ToolResult } from './tools/definitions';
 import { createAllTools, type ToolDefinition } from './tools/index';
 import { type Logger, silentLogger } from './utils/logger';
 import { readPackageInfo } from './utils/package-info';
+
+/**
+ * Invoke a tool handler, notifying `onUnauthorized` when Zendesk rejects the
+ * token (401). This lets the OAuth store drop the dead token so the next call
+ * refreshes/re-authenticates instead of replaying a revoked token. A no-op
+ * callback (API-token mode) leaves behavior unchanged.
+ */
+const runHandler = async (
+  def: ToolDefinition,
+  params: Record<string, unknown>,
+  onUnauthorized: (() => void) | undefined,
+): Promise<ToolResult> => {
+  try {
+    return await def.handler(params);
+  } catch (err) {
+    if (onUnauthorized && err instanceof ZendeskApiError && err.status === 401) {
+      onUnauthorized();
+    }
+    throw err;
+  }
+};
 
 const NAMESPACE_LABELS: Record<string, { toolName: string; title: string }> = {
   tickets: { toolName: 'zendesk_tickets', title: 'Zendesk Tickets' },
@@ -52,6 +74,7 @@ const registerProxyTool = (
   tools: ToolDefinition[],
   handlerMap: Map<string, ToolDefinition>,
   readOnlyMode: boolean,
+  onUnauthorized: (() => void) | undefined,
 ): void => {
   const operationNames = tools.map((t) => t.name);
   const operationList = buildOperationList(tools);
@@ -83,7 +106,7 @@ const registerProxyTool = (
       }
       // Validate params through the tool's own schema
       const validated = def.inputSchema.parse(params);
-      return def.handler(validated);
+      return runHandler(def, validated, onUnauthorized);
     },
   );
 };
@@ -92,6 +115,9 @@ export const createMcpServer = (
   config: Config,
   getToken: () => string | Promise<string>,
   logger: Logger = silentLogger,
+  // Called when a tool handler hits a 401 from Zendesk (OAuth mode only). Lets
+  // the token store invalidate the rejected token. Omitted in API-token mode.
+  onUnauthorized?: () => void,
 ): McpServer => {
   // Read name/version from package.json at runtime rather than hardcoding them
   // (the old literals were stale and even carried the wrong package name).
@@ -138,7 +164,7 @@ export const createMcpServer = (
             inputSchema: tool.inputSchema,
             annotations: tool.annotations,
           },
-          async (params) => tool.handler(params as Record<string, unknown>),
+          async (params) => runHandler(tool, params as Record<string, unknown>, onUnauthorized),
         );
       }
       break;
@@ -155,13 +181,22 @@ export const createMcpServer = (
             tools,
             handlerMap,
             config.readOnly,
+            onUnauthorized,
           );
         }
       }
       break;
     }
     case 'single': {
-      registerProxyTool(server, 'zendesk', 'Zendesk', filteredTools, handlerMap, config.readOnly);
+      registerProxyTool(
+        server,
+        'zendesk',
+        'Zendesk',
+        filteredTools,
+        handlerMap,
+        config.readOnly,
+        onUnauthorized,
+      );
       break;
     }
   }

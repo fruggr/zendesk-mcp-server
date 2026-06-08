@@ -3,6 +3,14 @@ export const DEFAULT_PAGE_SIZE = 100;
 export const MAX_PAGE_SIZE = 100;
 export const TOKEN_CACHE_TTL_MS = 5 * 60 * 1000;
 
+// Local port the OAuth PKCE flow listens on for the browser callback. Must match
+// the redirect URL registered in the Zendesk OAuth client. Deliberately picked
+// outside the usual dev range (3000/5000/8080…) and below the OS ephemeral
+// ranges (Linux ≥ 32768, Windows ≥ 49152) so it is neither commonly taken nor
+// grabbed by a transient socket. Override via ZENDESK_OAUTH_CALLBACK_PORT /
+// --callback-port (and register the matching redirect URL in Zendesk).
+export const DEFAULT_CALLBACK_PORT = 27439;
+
 // Per-attachment cap for inline image content. Images larger than this are
 // returned as text references instead of base64 image content blocks.
 // Aligned with the Anthropic vision API per-image limit.

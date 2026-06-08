@@ -19,6 +19,7 @@ export const ConfigSchema = z.object({
   readOnly: z.boolean(),
   namespaces: z.array(Namespace).optional(),
   tools: z.array(z.string()).optional(),
+  callbackPort: z.number().int().min(1).max(65535).optional(),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -30,6 +31,7 @@ interface CliResult {
   namespaces?: string[];
   tools?: string[];
   logLevel?: string;
+  callbackPort?: number;
 }
 
 const parseCliArgs = (args: string[]): CliResult => {
@@ -57,6 +59,9 @@ const parseCliArgs = (args: string[]): CliResult => {
     } else if (arg === '--log-level' && next) {
       result.logLevel = next;
       i++;
+    } else if (arg === '--callback-port' && next) {
+      result.callbackPort = Number(next);
+      i++;
     } else if (!arg.startsWith('-') && positionalIndex === 0) {
       result.subdomain = arg;
       positionalIndex++;
@@ -75,6 +80,9 @@ export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
 
   const mode = cli.tools?.length ? 'all' : (cli.mode ?? 'namespace');
 
+  const envCallbackPort = process.env['ZENDESK_OAUTH_CALLBACK_PORT'];
+  const callbackPort = cli.callbackPort ?? (envCallbackPort ? Number(envCallbackPort) : undefined);
+
   return ConfigSchema.parse({
     subdomain,
     oauthClientId,
@@ -85,5 +93,6 @@ export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
     readOnly: cli.readOnly ?? false,
     namespaces: cli.namespaces,
     tools: cli.tools,
+    callbackPort,
   });
 };
