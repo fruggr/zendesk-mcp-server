@@ -3,10 +3,9 @@ import { readFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { release } from 'node:os';
 import open from 'open';
-import { getOAuthUrls } from '../constants';
+import { DEFAULT_CALLBACK_PORT, getOAuthUrls } from '../constants';
 import { type Logger, silentLogger } from '../utils/logger';
 
-const DEFAULT_CALLBACK_PORT = 3000;
 const AUTH_TIMEOUT_MS = 5 * 60 * 1000;
 
 /** Best-effort WSL detection: WSL kernels carry "microsoft" in /proc/version. */
@@ -30,7 +29,28 @@ interface TokenResult {
   refresh_token?: string;
   token_type: string;
   scope: string;
+  // Present only when the Zendesk OAuth client has token expiration enabled.
+  // Seconds until the access/refresh token expires.
+  expires_in?: number;
+  refresh_token_expires_in?: number;
 }
+
+/**
+ * Build an actionable error for a callback port that's already taken. The raw
+ * Node `EADDRINUSE` is opaque to both the user and the LLM; this spells out the
+ * fix (set a free port + register the matching redirect URL in Zendesk). The
+ * `(EADDRINUSE)` marker and `code` are kept for diagnostics/tests.
+ */
+const callbackPortInUseError = (port: number, cause: Error): Error =>
+  Object.assign(
+    new Error(
+      `Cannot start the Zendesk OAuth sign-in: local callback port ${port} is already in use ` +
+        `by another process. Set ZENDESK_OAUTH_CALLBACK_PORT (or --callback-port) to a free port, ` +
+        `then register http://localhost:<port>/callback as a redirect URL in your Zendesk OAuth ` +
+        `client. (EADDRINUSE)`,
+    ),
+    { code: 'EADDRINUSE', cause },
+  );
 
 /**
  * Escape a string for safe interpolation into HTML text/attribute context.
@@ -185,16 +205,21 @@ export const startBrowserAuth = (
       }
     });
 
+    const requestedPort = config.callbackPort ?? DEFAULT_CALLBACK_PORT;
+
     // Listen failure (e.g. port already in use) before we ever get a URL: the
-    // whole start fails so the caller can surface/retry.
+    // whole start fails so the caller can surface/retry. EADDRINUSE is rewrapped
+    // into an actionable message (user *and* LLM can act on it).
     const onStartError = (err: Error) => {
       clearTimeout(authTimeout);
-      rejectStarted(err);
+      const code = (err as NodeJS.ErrnoException).code;
+      logger.error('oauth_callback_listen_failed', { port: requestedPort, errorCode: code });
+      rejectStarted(code === 'EADDRINUSE' ? callbackPortInUseError(requestedPort, err) : err);
     };
     callbackServer.once('error', onStartError);
 
     // Start on fixed port (must match redirect_uri registered in Zendesk OAuth client)
-    callbackServer.listen(config.callbackPort ?? DEFAULT_CALLBACK_PORT, () => {
+    callbackServer.listen(requestedPort, () => {
       // Now that we're listening, a later server error must settle the *token*
       // flow (the started promise is already resolved) and tear the server down,
       // so the token store doesn't wedge waiting on a promise that never settles.
@@ -275,4 +300,41 @@ export const authenticateViaBrowser = async (
 ): Promise<TokenResult> => {
   const { tokenPromise } = await startBrowserAuth(config, logger);
   return tokenPromise;
+};
+
+/**
+ * Exchange a refresh token for a fresh access token (and a rotated refresh token)
+ * without any browser interaction. Public PKCE clients send no `client_secret`.
+ * Zendesk refresh tokens are single-use: the caller MUST persist the new
+ * `refresh_token` from the response. Throws on a non-2xx (expired/invalid
+ * refresh token) so the caller can fall back to the full browser flow.
+ */
+export const refreshAccessToken = async (
+  config: { subdomain: string; oauthClientId: string; refreshToken: string },
+  logger: Logger = silentLogger,
+): Promise<TokenResult> => {
+  const { tokenUrl } = getOAuthUrls(config.subdomain);
+
+  const body = new URLSearchParams({
+    grant_type: 'refresh_token',
+    refresh_token: config.refreshToken,
+    client_id: config.oauthClientId,
+  });
+
+  const response = await fetch(tokenUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body.toString(),
+  });
+
+  logger.debug('oauth_token_refresh', { status: response.status });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`Token refresh failed (${response.status}): ${errorBody}`);
+  }
+
+  const tokenData = (await response.json()) as TokenResult;
+  logger.info('oauth_token_refreshed');
+  return tokenData;
 };

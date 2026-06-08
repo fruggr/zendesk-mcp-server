@@ -8,6 +8,7 @@ describe('loadConfig', () => {
     delete process.env['ZENDESK_EMAIL'];
     delete process.env['ZENDESK_API_TOKEN'];
     delete process.env['LOG_LEVEL'];
+    delete process.env['ZENDESK_OAUTH_CALLBACK_PORT'];
   });
 
   it('parses subdomain from CLI positional arg', () => {
@@ -74,5 +75,31 @@ describe('loadConfig', () => {
     const config = loadConfig(['mycompany']);
     expect(config.zendeskEmail).toBe('a@b.com');
     expect(config.zendeskApiToken).toBe('tok');
+  });
+
+  it('leaves callbackPort undefined by default', () => {
+    const config = loadConfig(['mycompany']);
+    expect(config.callbackPort).toBeUndefined();
+  });
+
+  it('parses --callback-port flag', () => {
+    const config = loadConfig(['mycompany', '--callback-port', '51000']);
+    expect(config.callbackPort).toBe(51000);
+  });
+
+  it('reads ZENDESK_OAUTH_CALLBACK_PORT from env', () => {
+    process.env['ZENDESK_OAUTH_CALLBACK_PORT'] = '52000';
+    const config = loadConfig(['mycompany']);
+    expect(config.callbackPort).toBe(52000);
+  });
+
+  it('prefers --callback-port over the env var', () => {
+    process.env['ZENDESK_OAUTH_CALLBACK_PORT'] = '52000';
+    const config = loadConfig(['mycompany', '--callback-port', '51000']);
+    expect(config.callbackPort).toBe(51000);
+  });
+
+  it('rejects a callback port outside the TCP range', () => {
+    expect(() => loadConfig(['mycompany', '--callback-port', '70000'])).toThrow();
   });
 });

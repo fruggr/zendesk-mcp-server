@@ -11,9 +11,17 @@ vi.mock('open', () => ({
 }));
 
 // Imported after vi.mock so the mocked `open` is bound.
-const { authenticateViaBrowser, startBrowserAuth } = await import(
+const { authenticateViaBrowser, refreshAccessToken, startBrowserAuth } = await import(
   '../../../src/auth/browser-oauth'
 );
+
+const makeLogger = () => ({
+  debug: vi.fn(),
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  attachServer: vi.fn(),
+});
 
 const SUB = 'testsubdomain';
 const CLIENT_ID = 'test_client';
@@ -211,15 +219,28 @@ describe('startBrowserAuth', () => {
     openMock.mockReset();
   });
 
-  it('rejects the start (without opening a browser) when the callback port is in use', async () => {
+  it('rejects with an actionable message (and logs it) when the callback port is in use', async () => {
     const blocker = createServer();
     await new Promise<void>((resolve) => blocker.listen(0, resolve));
     const port = (blocker.address() as { port: number }).port;
+    const logger = makeLogger();
 
     try {
-      await expect(
-        startBrowserAuth({ subdomain: SUB, oauthClientId: CLIENT_ID, callbackPort: port }),
-      ).rejects.toThrow(/EADDRINUSE/);
+      const err = await startBrowserAuth(
+        { subdomain: SUB, oauthClientId: CLIENT_ID, callbackPort: port },
+        logger,
+      ).catch((e) => e as Error);
+
+      // The raw EADDRINUSE is rewrapped into guidance both the user and the LLM
+      // can act on: which port, which env var, and the Zendesk redirect URL.
+      expect(err.message).toMatch(/EADDRINUSE/);
+      expect(err.message).toContain(String(port));
+      expect(err.message).toContain('ZENDESK_OAUTH_CALLBACK_PORT');
+      expect(err.message).toContain('/callback');
+      expect(logger.error).toHaveBeenCalledWith(
+        'oauth_callback_listen_failed',
+        expect.objectContaining({ port, errorCode: 'EADDRINUSE' }),
+      );
       expect(openMock).not.toHaveBeenCalled();
     } finally {
       await new Promise<void>((resolve) => blocker.close(() => resolve()));
@@ -250,5 +271,49 @@ describe('startBrowserAuth', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('refreshAccessToken', () => {
+  it('exchanges a refresh token for a rotated access/refresh token pair', async () => {
+    mswServer.use(
+      http.post(`https://${SUB}.zendesk.com/oauth/tokens`, async ({ request }) => {
+        const params = new URLSearchParams(await request.text());
+        expect(params.get('grant_type')).toBe('refresh_token');
+        expect(params.get('refresh_token')).toBe('old-refresh');
+        expect(params.get('client_id')).toBe(CLIENT_ID);
+        // Public PKCE client → no client secret.
+        expect(params.get('client_secret')).toBeNull();
+        return HttpResponse.json({
+          access_token: 'new-access',
+          refresh_token: 'new-refresh',
+          token_type: 'bearer',
+          scope: 'read write',
+          expires_in: 3600,
+        });
+      }),
+    );
+
+    const result = await refreshAccessToken({
+      subdomain: SUB,
+      oauthClientId: CLIENT_ID,
+      refreshToken: 'old-refresh',
+    });
+
+    expect(result.access_token).toBe('new-access');
+    expect(result.refresh_token).toBe('new-refresh');
+    expect(result.expires_in).toBe(3600);
+  });
+
+  it('throws when the refresh token is rejected', async () => {
+    mswServer.use(
+      http.post(`https://${SUB}.zendesk.com/oauth/tokens`, () =>
+        HttpResponse.text('invalid_grant', { status: 400 }),
+      ),
+    );
+
+    await expect(
+      refreshAccessToken({ subdomain: SUB, oauthClientId: CLIENT_ID, refreshToken: 'dead' }),
+    ).rejects.toThrow(/Token refresh failed \(400\)/);
   });
 });

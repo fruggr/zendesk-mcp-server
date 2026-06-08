@@ -21,10 +21,11 @@ const main = async (): Promise<void> => {
       {
         subdomain: config.subdomain,
         oauthClientId: config.oauthClientId,
+        callbackPort: config.callbackPort,
       },
       logger,
     );
-    const server = createMcpServer(config, tokenStore.getToken, logger);
+    const server = createMcpServer(config, tokenStore.getToken, logger, tokenStore.invalidate);
     await startStdioTransport(server, logger);
   }
 };
