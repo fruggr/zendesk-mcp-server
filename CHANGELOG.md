@@ -1,3 +1,17 @@
+## [1.8.0](https://github.com/fruggr/zendesk-mcp-server/compare/v1.7.0...v1.8.0) (2026-06-08)
+
+### Features
+
+* **auth:** persist OAuth token to disk, refresh, and make callback port configurable ([#75](https://github.com/fruggr/zendesk-mcp-server/issues/75)) ([0c2ca18](https://github.com/fruggr/zendesk-mcp-server/commit/0c2ca18b021146df9ac945281a2ec41b97475daf))
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Chores
+
+* add worktrunk hook to pull and install deps on worktree switch ([6a207b8](https://github.com/fruggr/zendesk-mcp-server/commit/6a207b87be631b51b67f4609408314e86ebdb397))
+</details>
+
 ## [1.7.0](https://github.com/fruggr/zendesk-mcp-server/compare/v1.6.0...v1.7.0) (2026-06-07)
 
 ### Features
