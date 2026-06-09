@@ -26,10 +26,20 @@ jobs:
       - run: pnpm typecheck
 
       # TEMPORARY DIAGNOSTIC (revert before merge): the test step hangs on CI
-      # but not locally. Bound it so the job completes and logs become
-      # readable; `hanging-process` dumps the open handles keeping the worker
-      # alive, `--reporter=verbose` shows the last test that ran.
-      - run: timeout -k 15 300 pnpm test:coverage --reporter=verbose --reporter=hanging-process
+      # but not locally. Bound it and write output to a FILE: orphaned vitest
+      # workers survive `timeout` (it only signals the direct child) and would
+      # hold the runner's stdout pipe open forever — a file redirect lets the
+      # step exit anyway. The tail shows the last running test; `ps` shows the
+      # survivors.
+      - run: |
+          set +e
+          timeout -k 15 240 pnpm test:coverage --reporter=verbose --reporter=hanging-process > vitest-diag.log 2>&1 < /dev/null
+          code=$?
+          echo "=== exit code: $code ==="
+          tail -n 150 vitest-diag.log
+          echo "=== surviving node processes ==="
+          ps -ef | grep -E "node|vitest" | grep -v grep || true
+          exit $code
 
       - name: Coverage summary
         if: always()
