@@ -1,4 +1,4 @@
-import type { IncomingMessage } from 'node:http';
+import { request as httpRequest, type IncomingMessage } from 'node:http';
 import { HttpResponse, http } from 'msw';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Config } from '../../../src/config';
@@ -325,6 +325,40 @@ describe('startHttpTransport (HTTP roundtrip)', () => {
     });
     expect(res.status).toBe(413);
     await res.text();
+  });
+
+  it('responds 413 mid-upload and drops the connection (no deadlock on slow clients)', async () => {
+    // Regression for a CI-only deadlock: when the cap is hit while the client
+    // is still uploading, the request stream is paused; unless the server
+    // destroys the socket after the 413, the connection wedges and
+    // handle.close() (in afterEach) hangs forever. Reproduced here with a
+    // request that announces more than it ever sends.
+    handle = await startHttpTransport(baseConfig);
+    const status = await new Promise<number>((resolve, reject) => {
+      const req = httpRequest({
+        host: '127.0.0.1',
+        port: handle?.port,
+        path: '/mcp',
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer test-token',
+          'Content-Type': 'application/json',
+          'Content-Length': String(MAX_BODY_BYTES * 2),
+        },
+      });
+      req.on('response', (res) => {
+        res.resume();
+        resolve(res.statusCode ?? 0);
+      });
+      // The server destroys the socket right after the 413 — an ECONNRESET
+      // here is the expected teardown, not a failure, unless no response
+      // ever arrived.
+      req.on('error', (err) => reject(err));
+      // Send just past the cap, then keep the request open forever.
+      req.write(Buffer.alloc(MAX_BODY_BYTES + 1024, 120));
+    });
+    expect(status).toBe(413);
+    // afterEach's handle.close() locks the "shutdown never hangs" half.
   });
 
   it('rejects malformed JSON with 400 and JSON-RPC -32700 Parse Error', async () => {

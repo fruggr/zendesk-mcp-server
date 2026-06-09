@@ -309,6 +309,24 @@ const readJsonBody = (req: IncomingMessage): Promise<BodyResult> =>
     );
   });
 
+const respondBodyError = (
+  req: IncomingMessage,
+  res: ServerResponse,
+  failure: Extract<BodyResult, { ok: false }>,
+): void => {
+  const headers = failure.status === 413 ? { Connection: 'close' } : {};
+  sendJsonRpcError(res, failure.status, failure.rpcCode, failure.message, headers);
+  if (failure.status === 413) {
+    // The client may still be mid-upload with the request stream paused
+    // (readJsonBody dropped its listeners at the cap). Left alone, the
+    // connection wedges: the client blocks on backpressure and
+    // httpServer.close() waits on the socket forever. Drop it as soon as the
+    // 413 has flushed.
+    if (res.writableFinished) req.destroy();
+    else res.once('finish', () => req.destroy());
+  }
+};
+
 // A client that vanishes without DELETEing its session would otherwise leak a
 // McpServer + bearer forever (the SDK only fires onclose on an explicit
 // DELETE). A periodic sweep closes sessions with no traffic for this long;
@@ -366,7 +384,7 @@ export const startHttpTransport = async (
             ? await readJsonBody(req)
             : ({ ok: true, value: undefined } as const);
         if (!body.ok) {
-          sendJsonRpcError(res, body.status, body.rpcCode, body.message);
+          respondBodyError(req, res, body);
           return;
         }
         await session.transport.handleRequest(req, res, body.value);
@@ -382,7 +400,7 @@ export const startHttpTransport = async (
 
     const body = await readJsonBody(req);
     if (!body.ok) {
-      sendJsonRpcError(res, body.status, body.rpcCode, body.message);
+      respondBodyError(req, res, body);
       return;
     }
 
@@ -502,6 +520,10 @@ export const startHttpTransport = async (
       clearInterval(sweeper);
       await Promise.all([...sessions.values()].map((session) => session.close()));
       sessions.clear();
+      // server.close() waits for every connection to drain; a wedged or
+      // keep-alive socket would stall shutdown forever. Sessions are already
+      // closed at this point, so dropping the remaining sockets is safe.
+      httpServer.closeAllConnections();
       await new Promise<void>((resolve, reject) => {
         httpServer.close((err) => (err ? reject(err) : resolve()));
       });
