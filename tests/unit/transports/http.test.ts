@@ -9,6 +9,8 @@ import {
   resolveResourceUrl,
   startHttpTransport,
 } from '../../../src/transports/http';
+import { errorHandlers } from '../../msw-handlers';
+import { mswServer } from '../../setup';
 
 const baseConfig: Config = {
   subdomain: 'testsubdomain',
@@ -383,5 +385,117 @@ describe('CORS (HTTP roundtrip)', () => {
     });
     expect(res.status).toBe(204);
     expect(res.headers.get('access-control-allow-origin')).toBe('https://custom-ui.example.com');
+  });
+});
+
+// Extract the first JSON-RPC payload from a Streamable HTTP response. The SDK
+// transport may answer with a one-shot `application/json` body or with an SSE
+// stream (`event: message\ndata: {...}\n\n`); accept both by scanning for the
+// first JSON object the body contains.
+const parseFirstRpcPayload = (raw: string): { result?: unknown; error?: unknown } => {
+  const trimmed = raw.trim();
+  if (trimmed.startsWith('{')) return JSON.parse(trimmed);
+  const match = raw.match(/data:\s*(\{[\s\S]*?\})\s*(?:\n|$)/);
+  if (!match?.[1]) throw new Error(`No JSON-RPC payload in body: ${raw.slice(0, 200)}`);
+  return JSON.parse(match[1]);
+};
+
+describe('startHttpTransport (Zendesk 401 backstop)', () => {
+  let handle: Awaited<ReturnType<typeof startHttpTransport>> | undefined;
+
+  afterEach(async () => {
+    await handle?.close();
+    handle = undefined;
+  });
+
+  // Spec under test (locked here so a future refactor can't quietly change it):
+  //
+  // In HTTP mode the bearer is the OAuth access token the MCP client just sent;
+  // there is no server-side token store. When Zendesk rejects it (401) we want:
+  //   1. the tool call to come back to the client as a tool result with
+  //      `isError: true` (NOT a transport-level 500, NOT a session crash);
+  //   2. the HTTP session to remain usable for further requests so the client
+  //      can either re-authenticate via the discovery metadata or try a
+  //      different tool;
+  //   3. NO `onUnauthorized` callback to be invoked server-side — there is
+  //      nothing to invalidate (this is asserted indirectly by point 2 and
+  //      explicitly in the http.ts construction `createMcpServer(config, () =>
+  //      bearer, logger)` which omits the fourth argument).
+  it('surfaces a Zendesk 401 as an MCP tool error and keeps the session open', async () => {
+    mswServer.use(errorHandlers.usersMeUnauthorized);
+    handle = await startHttpTransport(baseConfig);
+
+    const initRes = await fetch(`http://127.0.0.1:${handle.port}/mcp`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer client-issued-bearer',
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'initialize',
+        id: 1,
+        params: {
+          protocolVersion: '2025-06-18',
+          capabilities: {},
+          clientInfo: { name: 'test', version: '0.0.0' },
+        },
+      }),
+    });
+    expect(initRes.status).toBe(200);
+    const sessionId = initRes.headers.get('mcp-session-id');
+    if (!sessionId) throw new Error('initialize did not return a session id');
+    await initRes.text();
+
+    const callRes = await fetch(`http://127.0.0.1:${handle.port}/mcp`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream',
+        'mcp-session-id': sessionId,
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'tools/call',
+        id: 2,
+        params: { name: 'get_current_user', arguments: {} },
+      }),
+    });
+    // Claim 1: transport remains a healthy 200; the failure lives inside the
+    // JSON-RPC payload as a tool result with isError=true.
+    expect(callRes.status).toBe(200);
+    const payload = parseFirstRpcPayload(await callRes.text()) as {
+      result?: {
+        isError?: boolean;
+        content?: Array<{ type: string; text?: string }>;
+      };
+    };
+    expect(payload.result?.isError).toBe(true);
+    // The error must convey "your bearer is no good, re-do OAuth" so the MCP
+    // client knows to restart the discovery flow against Zendesk. We match the
+    // semantic intent (re-authenticate) rather than the literal string — the
+    // wrapping in `ZendeskApiError.buildMessage` (`src/client/zendesk-api.ts`)
+    // is keyed strictly on `status === 401`, so this pattern is a tight proxy
+    // for "a 401 reached the user-visible payload".
+    const text = (payload.result?.content ?? []).map((c) => c.text ?? '').join(' ');
+    expect(text).toMatch(/re-?authenticate/i);
+
+    // Claim 2: the session must still be alive — a follow-up tools/list on the
+    // same mcp-session-id has to come back 200, not a freshly minted 401 or a
+    // dead session. (We can't fully assert claim 3 — that onUnauthorized was
+    // not wired — without spying on createMcpServer; the wiring is enforced by
+    // http.ts:304 and the survival of this call is a behavioral proxy.)
+    const followUp = await fetch(`http://127.0.0.1:${handle.port}/mcp`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream',
+        'mcp-session-id': sessionId,
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', method: 'tools/list', id: 3 }),
+    });
+    expect(followUp.status).toBe(200);
+    await followUp.text();
   });
 });
