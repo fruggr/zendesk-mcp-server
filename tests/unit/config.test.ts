@@ -191,6 +191,32 @@ describe('loadConfig', () => {
     });
   });
 
+  describe('corsOrigins', () => {
+    beforeEach(() => {
+      delete process.env['CORS_ORIGIN'];
+    });
+
+    it('normalizes a trailing slash to the bare origin (browsers send no slash in Origin)', () => {
+      const config = loadConfig(['mycompany', '--cors-origin', 'https://my-app.example.com/']);
+      expect(config.corsOrigins).toEqual(['https://my-app.example.com']);
+    });
+
+    it('normalizes a URL with a path down to its origin', () => {
+      process.env['CORS_ORIGIN'] = 'https://my-app.example.com/some/page';
+      const config = loadConfig(['mycompany']);
+      expect(config.corsOrigins).toEqual(['https://my-app.example.com']);
+    });
+
+    it('keeps an already-normalized origin untouched', () => {
+      const config = loadConfig(['mycompany', '--cors-origin', 'https://my-app.example.com']);
+      expect(config.corsOrigins).toEqual(['https://my-app.example.com']);
+    });
+
+    it('rejects values that are not URLs', () => {
+      expect(() => loadConfig(['mycompany', '--cors-origin', 'not-a-url'])).toThrow();
+    });
+  });
+
   describe('callbackPort', () => {
     it('leaves callbackPort undefined by default', () => {
       const config = loadConfig(['mycompany']);
@@ -216,6 +242,18 @@ describe('loadConfig', () => {
 
     it('rejects a callback port outside the TCP range', () => {
       expect(() => loadConfig(['mycompany', '--callback-port', '70000'])).toThrow();
+    });
+
+    it('rejects --callback-port values that are not strictly numeric', () => {
+      // Same strictness as --port: Number.parseInt would accept '51000abc'.
+      expect(() => loadConfig(['mycompany', '--callback-port', '51000abc'])).toThrow(
+        /Invalid --callback-port value/,
+      );
+    });
+
+    it('rejects ZENDESK_OAUTH_CALLBACK_PORT env values that are not strictly numeric', () => {
+      process.env['ZENDESK_OAUTH_CALLBACK_PORT'] = '52000abc';
+      expect(() => loadConfig(['mycompany'])).toThrow(/Invalid ZENDESK_OAUTH_CALLBACK_PORT value/);
     });
   });
 });
