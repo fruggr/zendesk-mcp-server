@@ -1,0 +1,32 @@
+# Worktrunk (wt) project hooks — shared with the team, checked into git.
+#
+# Goal: on every worktree switch *and* creation, bring the branch up to date
+# and (re)install dependencies.
+#
+# About node_modules: git worktrees never share or copy untracked/ignored
+# files, and `node_modules` is gitignored — so it is never copied between
+# worktrees. Each worktree gets a clean `pnpm install` instead. Do NOT add
+# `wt step copy-ignored` for node_modules; a fresh install is the intended
+# behaviour here.
+#
+# Why post-switch: it fires on all switch results — creating a new worktree,
+# switching to an existing one, and staying on the current branch — so a single
+# hook covers both "changement" and "création". It runs in the background;
+# follow progress with `wt config state logs`.
+#
+# The two [[post-switch]] blocks form a pipeline: step 1 runs, then step 2.
+# This guarantees the install always reflects the freshly pulled lockfile
+# (a single [post-switch] table would run both steps concurrently).
+
+# Step 1 — sync the branch with its remote.
+# Brand-new branches have no upstream yet, so guard the pull to avoid an error
+# (the command renders empty and is skipped when {{ upstream }} is unset).
+# --ff-only keeps it safe: it never creates a surprise merge commit during an
+# automated switch — it just no-ops if the branch has diverged. Swap for
+# `git pull --rebase` or a plain `git pull` if you want different behaviour.
+[[post-switch]]
+sync = "{% if upstream %}git pull --ff-only{% endif %}"
+
+# Step 2 — install dependencies in the destination worktree.
+[[post-switch]]
+deps = "pnpm install"

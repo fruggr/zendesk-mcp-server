@@ -1,3 +1,59 @@
+## [1.8.0](https://github.com/fruggr/zendesk-mcp-server/compare/v1.7.0...v1.8.0) (2026-06-08)
+
+### Features
+
+* **auth:** persist OAuth token to disk, refresh, and make callback port configurable ([#75](https://github.com/fruggr/zendesk-mcp-server/issues/75)) ([0c2ca18](https://github.com/fruggr/zendesk-mcp-server/commit/0c2ca18b021146df9ac945281a2ec41b97475daf))
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Chores
+
+* add worktrunk hook to pull and install deps on worktree switch ([6a207b8](https://github.com/fruggr/zendesk-mcp-server/commit/6a207b87be631b51b67f4609408314e86ebdb397))
+</details>
+
+## [1.7.0](https://github.com/fruggr/zendesk-mcp-server/compare/v1.6.0...v1.7.0) (2026-06-07)
+
+### Features
+
+* **auth:** show countdown on OAuth success page before auto-close ([#74](https://github.com/fruggr/zendesk-mcp-server/issues/74)) ([f3caf03](https://github.com/fruggr/zendesk-mcp-server/commit/f3caf034e715ebd86a9a1878475fd1dc374fb977))
+
+## [1.6.0](https://github.com/fruggr/zendesk-mcp-server/compare/v1.5.0...v1.6.0) (2026-06-07)
+
+### Features
+
+* **annotations:** expose accurate hints to MCP clients ([#53](https://github.com/fruggr/zendesk-mcp-server/issues/53)) ([566d6af](https://github.com/fruggr/zendesk-mcp-server/commit/566d6afc1237999d125b14e7f61674b2de87bf3b))
+
+## [1.5.0](https://github.com/fruggr/zendesk-mcp-server/compare/v1.4.1...v1.5.0) (2026-06-06)
+
+### Features
+
+* **auth:** non-blocking OAuth with the sign-in URL surfaced in the tool response ([#63](https://github.com/fruggr/zendesk-mcp-server/issues/63)) ([2b9ea03](https://github.com/fruggr/zendesk-mcp-server/commit/2b9ea0351d60af41ab15e08a6fce36f3c7bb2d69))
+
+## [1.4.1](https://github.com/fruggr/zendesk-mcp-server/compare/v1.4.0...v1.4.1) (2026-06-06)
+
+### Bug Fixes
+
+* **auth:** escape reflected values in OAuth callback HTML responses ([#73](https://github.com/fruggr/zendesk-mcp-server/issues/73)) ([6432d8f](https://github.com/fruggr/zendesk-mcp-server/commit/6432d8fe40414ec344804fb13390dc217dc68fec))
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Documentation
+
+* add trust badges to README ([#70](https://github.com/fruggr/zendesk-mcp-server/issues/70)) ([73e859f](https://github.com/fruggr/zendesk-mcp-server/commit/73e859f7e08a2fd587426dc1e5120eb042135e3d))
+* harden marketing & discoverability surface ([#71](https://github.com/fruggr/zendesk-mcp-server/issues/71)) ([8009392](https://github.com/fruggr/zendesk-mcp-server/commit/800939216922f868de71bf642fde387f09df5c91))
+* slim AGENTS.md down to an agent-focused guide ([#68](https://github.com/fruggr/zendesk-mcp-server/issues/68)) ([29064f8](https://github.com/fruggr/zendesk-mcp-server/commit/29064f82c40298f827586908bbf4071805ae7585))
+
+### Chores
+
+* add glama.json to claim MCP server maintainership ([#69](https://github.com/fruggr/zendesk-mcp-server/issues/69)) ([c47ab27](https://github.com/fruggr/zendesk-mcp-server/commit/c47ab273e546634f6f38b8885cf726bd12b1bd89))
+* **deps:** lock file maintenance ([#64](https://github.com/fruggr/zendesk-mcp-server/issues/64)) ([5bfb1d3](https://github.com/fruggr/zendesk-mcp-server/commit/5bfb1d3f7bdde885f772ca6a0a9769d631af83e1))
+* **deps:** update pnpm to v11.5.0 ([#67](https://github.com/fruggr/zendesk-mcp-server/issues/67)) ([637c90b](https://github.com/fruggr/zendesk-mcp-server/commit/637c90b4d95476e287b03a0219bcc53e6b740bc2))
+* **renovate:** clear lockFileMaintenance minimumReleaseAge dashboard warning ([#65](https://github.com/fruggr/zendesk-mcp-server/issues/65)) ([3b42309](https://github.com/fruggr/zendesk-mcp-server/commit/3b42309e543625204886756504fad9dc26eb9894))
+* resolve Biome warnings and harden lint setup ([#66](https://github.com/fruggr/zendesk-mcp-server/issues/66)) ([c0612c3](https://github.com/fruggr/zendesk-mcp-server/commit/c0612c3f41513446a3150f2b7e32dfb2edf0cfc8))
+</details>
+
 ## [1.4.0](https://github.com/fruggr/zendesk-mcp-server/compare/v1.3.0...v1.4.0) (2026-06-04)
 
 ### Features

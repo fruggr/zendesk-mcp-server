@@ -1,6 +1,11 @@
 # Zendesk MCP Server
 
-[![npm](https://img.shields.io/npm/v/@fruggr/zendesk-mcp-server)](https://www.npmjs.com/package/@fruggr/zendesk-mcp-server)
+[![Glama score](https://glama.ai/mcp/servers/fruggr/zendesk-mcp-server/badges/score.svg)](https://glama.ai/mcp/servers/fruggr/zendesk-mcp-server)
+[![npm version](https://img.shields.io/npm/v/@fruggr/zendesk-mcp-server?logo=npm&color=cb3837)](https://www.npmjs.com/package/@fruggr/zendesk-mcp-server)
+[![License: MIT](https://img.shields.io/npm/l/@fruggr/zendesk-mcp-server?color=blue)](LICENSE)
+[![Node.js](https://img.shields.io/node/v/@fruggr/zendesk-mcp-server?logo=nodedotjs&logoColor=white&color=339933)](https://nodejs.org)
+[![Renovate enabled](https://img.shields.io/badge/renovate-enabled-brightgreen?logo=renovatebot&logoColor=white)](https://renovatebot.com)
+[![semantic-release](https://img.shields.io/badge/semantic--release-e10079?logo=semantic-release&logoColor=white)](https://github.com/semantic-release/semantic-release)
 
 A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that connects LLMs to the **Zendesk Support & Help Center APIs** — with per-user OAuth 2.1 PKCE authentication and fine-grained tool visibility controls. Runs locally over **stdio** or as a private **remote MCP server** over HTTP.
 
@@ -16,6 +21,20 @@ Most Zendesk integrations use a shared admin API key, giving every user full acc
 - **Lean stack** — Built on the official `@modelcontextprotocol/sdk` plus `zod`.
 
 > Built and maintained by [Digital4better](https://digital4better.com) for the [Fruggr](https://www.fruggr.io) project.
+
+## When to use this server
+
+**Reach for it when:**
+
+- You want an LLM to read or triage **Zendesk tickets** and **Help Center articles** on behalf of a real user, with that user's own permissions — not a shared admin key.
+- You're editing **large Help Center articles** and want section-scoped reads/rewrites instead of round-tripping the full HTML body through the model.
+- You need to **cap the tool surface** — read-only assistants, a single namespace, or one unified tool to fit a tight context budget.
+- You run a **stdio MCP client** (Claude Desktop, Claude Code, Cursor, VS Code, Cline, …) and want a `npx`-installable server with no extra infrastructure, **or** you want to **deploy it as a private remote MCP server** that web/native clients reach over HTTP — each MCP client still carries its own user's OAuth token.
+
+**Look elsewhere when:**
+
+- You need Zendesk products outside Support & Guide (e.g. Talk, Explore analytics, Sell) — those endpoints aren't covered.
+- You need a single shared service account for all users — that's the opposite of this server's per-user OAuth model (the API-token escape hatch exists for stdio CI only, and is refused at boot in HTTP).
 
 ## Use cases
 
@@ -153,9 +172,39 @@ zendesk-mcp-server <your-subdomain>
 1. Go to **Admin Center → Apps and integrations → APIs → OAuth Clients**
 2. Create a **public** client:
    - **Identifier**: `<your-subdomain>_zendesk` (or set `ZENDESK_OAUTH_CLIENT_ID`)
-   - **Redirect URL**: `http://localhost:3000/callback`
+   - **Redirect URL**: `http://localhost:27439/callback` (change the port to match
+     `ZENDESK_OAUTH_CALLBACK_PORT` / `--callback-port` if you override it; Zendesk
+     accepts several redirect URLs, one per line)
 
 On the first tool call, a browser window opens for OAuth login. The token is cached in memory for the session.
+
+### Run
+
+```bash
+zendesk-mcp-server <your-subdomain>
+```
+
+On the first tool call, the server starts the sign-in flow: it opens a browser
+window **and** returns a tool message containing the authorize URL. The call
+does not block waiting for sign-in — authenticate in the browser (or open the
+URL manually if it didn't open), then retry the request.
+
+Once authenticated, the token is **persisted to disk** (one owner-only `0600`
+file per subdomain in your OS config dir —
+`%APPDATA%\fruggr\zendesk-mcp-server\<subdomain>.json` on Windows,
+`${XDG_CONFIG_HOME:-~/.config}/fruggr/zendesk-mcp-server/<subdomain>.json`
+elsewhere; override the path with `ZENDESK_TOKEN_FILE`). It is reused across restarts, so you don't
+re-authenticate every time the MCP client respawns the server. If the Zendesk
+OAuth client has token expiration enabled, the stored refresh token is used to
+renew access silently; only an expired/invalid refresh token triggers a new
+browser sign-in.
+
+> **Port conflict?** If port `27439` is already in use the first tool call returns
+> a clear error telling you to set `ZENDESK_OAUTH_CALLBACK_PORT` (or
+> `--callback-port`) to a free port — remember to register the matching
+> `http://localhost:<port>/callback` redirect URL in your Zendesk OAuth client.
+
+> **API token escape hatch (stdio only).** For headless/CI environments where a browser is unavailable, set `ZENDESK_EMAIL` + `ZENDESK_API_TOKEN` (generate the token in **Admin Center → Apps and integrations → APIs → Zendesk API → Token Access**). The MCP server then uses Basic auth instead of starting the OAuth flow. This mode is **refused at boot in HTTP** because a shared static credential would expose every caller to the issuing user's rights.
 
 ### MCP client wiring
 
@@ -362,6 +411,7 @@ Options:
   --cors-origin <url>     Extra browser origin allowed by CORS (repeatable;
                           adds to the default allowlist of major web MCP
                           clients + localhost-any-port)
+  --callback-port <port>  Local OAuth callback port for stdio (default 27439)
 ```
 
 `--namespace` and `--read-only` are applied before the proxies are registered, so they narrow the surface in every mode — in the default `namespace` mode, `--namespace help_center` registers a single proxy (`zendesk_help_center`) instead of three.
@@ -389,6 +439,8 @@ zendesk-mcp-server acme --transport http --port 8080 \
 |----------|----------|---------|-------------|
 | `ZENDESK_SUBDOMAIN` | yes (or CLI arg) | — | Zendesk subdomain (e.g., `acme` for acme.zendesk.com) |
 | `ZENDESK_OAUTH_CLIENT_ID` | no | `<subdomain>_zendesk` | OAuth client identifier |
+| `ZENDESK_OAUTH_CALLBACK_PORT` | no | `27439` | Local port for the OAuth browser callback (also `--callback-port`). Must match the redirect URL registered in Zendesk. **stdio only**. |
+| `ZENDESK_TOKEN_FILE` | no | OS config dir | Path to the persisted OAuth token file (`0600`). |
 | `ZENDESK_EMAIL` | stdio API-token only | — | Agent email for Basic auth — **refused in HTTP** |
 | `ZENDESK_API_TOKEN` | stdio API-token only | — | Zendesk API token — **refused in HTTP** |
 | `TRANSPORT` | no | `stdio` | `stdio` or `http` |
@@ -404,9 +456,11 @@ In stdio, if both `ZENDESK_EMAIL` and `ZENDESK_API_TOKEN` are set, the server us
 
 ### The browser doesn't open during OAuth login
 
-The OAuth flow opens your default browser on the first tool call. If it doesn't
-open (common in sandboxed or remote desktop environments), the authorization URL
-is still printed to the server's stderr — open it manually.
+The OAuth flow opens your default browser on the first tool call. The first call
+fails fast with a message that includes the authorize URL, so even if the
+browser can't open (common in sandboxed or remote desktop environments) you can
+open that URL manually — it's also printed to the server's stderr. Sign in, then
+retry the request.
 
 To collect diagnostics, restart with `LOG_LEVEL=debug`. The server then emits
 structured logs through **two channels**, so they're reachable on any MCP client:
@@ -418,6 +472,22 @@ structured logs through **two channels**, so they're reachable on any MCP client
 When the browser fails to open, look for the `oauth_browser_open_failed` event:
 it reports the underlying error, the platform, and which environment markers are
 present (no secrets, tokens, or env values are ever logged).
+
+### The OAuth callback port is already in use
+
+The sign-in flow runs a short-lived local server on port `27439` to receive the
+callback. If that port is taken, the first tool call fails with a message saying
+so (and logs `oauth_callback_listen_failed`). Pick a free port with
+`ZENDESK_OAUTH_CALLBACK_PORT=<port>` (or `--callback-port <port>`), and register
+the matching `http://localhost:<port>/callback` redirect URL in your Zendesk
+OAuth client.
+
+### I have to re-authenticate every time
+
+The OAuth token is persisted to an owner-only file in your OS config dir and
+reused across restarts, so this shouldn't happen. If it does, check that the file
+is writable (`ZENDESK_TOKEN_FILE` to relocate it) and look for
+`token_persist_failed` in the logs.
 
 Where each client writes the server's stderr:
 
@@ -484,6 +554,43 @@ Versions follow [SemVer](https://semver.org/) and are calculated **automatically
 | `feat:` | minor |
 | `feat!:`, `fix!:`, or a `BREAKING CHANGE:` footer | major |
 | `docs:`, `chore:`, `refactor:`, `test:`, `ci:`, `style:`, `build:` | no release |
+
+## FAQ
+
+**Do I need a Zendesk admin API key?**
+No. The default OAuth 2.1 PKCE flow means each user authenticates with their own
+credentials and the server acts with exactly their permissions. API-token auth is
+available for headless/CI use (see [Authentication](#authentication)).
+
+**Which Zendesk products are supported?**
+Zendesk Support (tickets, users, organizations) and the Help Center / Guide
+(articles, sections, categories, translations, labels, content tags, segments,
+attachments). Talk, Explore, and Sell are out of scope.
+
+**How do I keep the model's context small?**
+Use `--mode single` (one `zendesk` tool) or `--mode namespace` (three proxies),
+and `--read-only` to drop write operations. For big articles, the section-based
+tools (`get_article_outline`, `get_article_section`, `update_article_section`)
+let the model touch one section at a time instead of the whole HTML body.
+
+**Can I restrict it to read-only?**
+Yes — pass `--read-only` and every write tool is filtered out before the proxies
+are built, in any mode.
+
+**Which Node.js version do I need?**
+Node.js >= 20 to run the published package (`engines.node`). The dev toolchain
+uses a newer Node — see [Development](#development).
+
+**The OAuth browser window didn't open. What now?**
+The authorization URL is also printed to stderr — open it manually. Restart with
+`LOG_LEVEL=debug` for the full flow trace. See
+[Troubleshooting](#troubleshooting).
+
+**Is it safe to run via `npx`?**
+Releases are published from CI via npm Trusted Publishing (OIDC), so each version
+carries a build provenance attestation you can verify on its
+[npm page](https://www.npmjs.com/package/@fruggr/zendesk-mcp-server). No secrets
+are ever logged by the server.
 
 ## Contributing
 

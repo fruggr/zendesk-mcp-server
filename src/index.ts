@@ -7,21 +7,25 @@ import { startHttpTransport } from './transports/http';
 import { startStdioTransport } from './transports/stdio';
 import { createLogger, type Logger } from './utils/logger';
 
-type GetToken = () => string | Promise<string>;
-
-const resolveStdioGetToken = (config: Config, logger: Logger): GetToken => {
+const buildStdioServer = (config: Config, logger: Logger) => {
   if (config.zendeskEmail && config.zendeskApiToken) {
+    // API token mode — static Basic auth. No onUnauthorized callback: a stale
+    // API token is a credential rotation problem, not something the server
+    // can recover from at runtime.
     const staticToken = buildBasicAuthHeader(config.zendeskEmail, config.zendeskApiToken);
-    return () => staticToken;
+    return createMcpServer(config, () => staticToken, logger);
   }
+  // OAuth mode — browser-based auth on first tool call. `invalidate` drops the
+  // dead access token on a 401 so the next call refreshes/re-authenticates.
   const tokenStore = createTokenStore(
     {
       subdomain: config.subdomain,
       oauthClientId: config.oauthClientId,
+      callbackPort: config.callbackPort,
     },
     logger,
   );
-  return tokenStore.getToken;
+  return createMcpServer(config, tokenStore.getToken, logger, tokenStore.invalidate);
 };
 
 const main = async (): Promise<void> => {
@@ -29,7 +33,7 @@ const main = async (): Promise<void> => {
   const logger = createLogger(config.logLevel);
 
   if (config.transport === 'stdio') {
-    const server = createMcpServer(config, resolveStdioGetToken(config, logger), logger);
+    const server = buildStdioServer(config, logger);
     await startStdioTransport(server, logger);
     return;
   }

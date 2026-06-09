@@ -337,7 +337,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       }),
       annotations: {
         readOnlyHint: false,
-        destructiveHint: false,
+        destructiveHint: true,
         idempotentHint: true,
         openWorldHint: true,
       },
@@ -492,7 +492,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       }),
       annotations: {
         readOnlyHint: false,
-        destructiveHint: false,
+        destructiveHint: true,
         idempotentHint: true,
         openWorldHint: true,
       },

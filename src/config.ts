@@ -34,6 +34,7 @@ export const ConfigSchema = z.object({
    * because they send no Origin header.
    */
   corsOrigins: z.array(z.string().url()).default([]),
+  callbackPort: z.number().int().min(1).max(65535).optional(),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -50,6 +51,7 @@ interface CliResult {
   port?: number;
   publicUrl?: string;
   corsOrigins?: string[];
+  callbackPort?: number;
 }
 
 const parseCliArgs = (args: string[]): CliResult => {
@@ -98,6 +100,9 @@ const parseCliArgs = (args: string[]): CliResult => {
       result.corsOrigins = result.corsOrigins ?? [];
       result.corsOrigins.push(next);
       i++;
+    } else if (arg === '--callback-port' && next) {
+      result.callbackPort = Number(next);
+      i++;
     } else if (!arg.startsWith('-') && positionalIndex === 0) {
       result.subdomain = arg;
       positionalIndex++;
@@ -138,6 +143,9 @@ export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
     .filter((s) => s.length > 0);
   const corsOrigins = [...(cli.corsOrigins ?? []), ...corsFromEnv];
 
+  const envCallbackPort = process.env['ZENDESK_OAUTH_CALLBACK_PORT'];
+  const callbackPort = cli.callbackPort ?? (envCallbackPort ? Number(envCallbackPort) : undefined);
+
   const zendeskEmail = process.env['ZENDESK_EMAIL'];
   const zendeskApiToken = process.env['ZENDESK_API_TOKEN'];
 
@@ -168,5 +176,6 @@ export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
     port,
     publicUrl,
     corsOrigins,
+    callbackPort,
   });
 };

@@ -1,10 +1,33 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import * as z from 'zod/v4';
+import { ZendeskApiError } from './client/zendesk-api';
 import type { Config } from './config';
 import { filterTools, groupByNamespace } from './routing/registry';
+import type { ToolAnnotations, ToolResult } from './tools/definitions';
 import { createAllTools, type ToolDefinition } from './tools/index';
 import { type Logger, silentLogger } from './utils/logger';
 import { readPackageInfo } from './utils/package-info';
+
+/**
+ * Invoke a tool handler, notifying `onUnauthorized` when Zendesk rejects the
+ * token (401). This lets the OAuth store drop the dead token so the next call
+ * refreshes/re-authenticates instead of replaying a revoked token. A no-op
+ * callback (API-token mode) leaves behavior unchanged.
+ */
+const runHandler = async (
+  def: ToolDefinition,
+  params: Record<string, unknown>,
+  onUnauthorized: (() => void) | undefined,
+): Promise<ToolResult> => {
+  try {
+    return await def.handler(params);
+  } catch (err) {
+    if (onUnauthorized && err instanceof ZendeskApiError && err.status === 401) {
+      onUnauthorized();
+    }
+    throw err;
+  }
+};
 
 const NAMESPACE_LABELS: Record<string, { toolName: string; title: string }> = {
   tickets: { toolName: 'zendesk_tickets', title: 'Zendesk Tickets' },
@@ -31,18 +54,30 @@ export const buildOperationList = (
     )
     .join('\n');
 
-type ProxyDispatch = (args: Record<string, unknown>) => Promise<{
-  content: Array<
-    { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }
-  >;
-}>;
+// A proxy aggregates N sub-operations. Hints follow the safest plausible
+// reading: readOnly/idempotent only if EVERY op is, destructive as soon as
+// ANY op is. openWorld is always true (we always hit Zendesk).
+// Mistral/Vibe ignore annotations entirely, hence the `[RO]` prefix below.
+export const aggregateAnnotations = (
+  tools: ReadonlyArray<Pick<ToolDefinition, 'annotations'>>,
+): ToolAnnotations => ({
+  readOnlyHint: tools.every((t) => t.annotations.readOnlyHint),
+  destructiveHint: tools.some((t) => t.annotations.destructiveHint),
+  idempotentHint: tools.every((t) => t.annotations.idempotentHint),
+  openWorldHint: true,
+});
+
+type ProxyDispatch = (args: Record<string, unknown>) => Promise<ToolResult>;
 
 // Each proxy carries its OWN handler map, scoped to the operations it
 // advertises. In `namespace` mode this is essential: without it, a caller
 // could invoke `zendesk_tickets` with operation="get_article" and dispatch
 // a help-center handler via a shared global map. The description would lie
 // but the call would still succeed.
-export const buildProxyDispatch = (tools: ToolDefinition[]): ProxyDispatch => {
+export const buildProxyDispatch = (
+  tools: ToolDefinition[],
+  onUnauthorized: (() => void) | undefined,
+): ProxyDispatch => {
   const operationNames = tools.map((t) => t.name);
   const localHandlers = new Map<string, ToolDefinition>(tools.map((t) => [t.name, t]));
 
@@ -63,21 +98,8 @@ export const buildProxyDispatch = (tools: ToolDefinition[]): ProxyDispatch => {
       };
     }
     const validated = def.inputSchema.parse(params);
-    return def.handler(validated);
+    return runHandler(def, validated, onUnauthorized);
   };
-};
-
-const registerLeafTool = (server: McpServer, def: ToolDefinition): void => {
-  server.registerTool(
-    def.name,
-    {
-      title: def.title,
-      description: def.description,
-      inputSchema: def.inputSchema.shape,
-      annotations: def.annotations,
-    },
-    async (params) => def.handler(params as Record<string, unknown>),
-  );
 };
 
 const registerProxyTool = (
@@ -85,29 +107,26 @@ const registerProxyTool = (
   toolName: string,
   title: string,
   tools: ToolDefinition[],
+  readOnlyMode: boolean,
+  onUnauthorized: (() => void) | undefined,
 ): void => {
   const operationNames = tools.map((t) => t.name);
   const operationList = buildOperationList(tools);
-  const allReadOnly = tools.every((t) => t.readOnly);
+  const annotations = aggregateAnnotations(tools);
+  const prefix = readOnlyMode ? '[RO] ' : '';
 
-  const dispatch = buildProxyDispatch(tools);
+  const dispatch = buildProxyDispatch(tools, onUnauthorized);
 
   server.registerTool(
     toolName,
     {
       title,
-      description: `${title}. Specify the operation and its parameters.\n\nAvailable operations:\n${operationList}`,
+      description: `${prefix}${title}. Specify the operation and its parameters.\n\nAvailable operations:\n${operationList}`,
       inputSchema: {
         operation: z.string().describe(`One of: ${operationNames.join(', ')}`),
         params: z.record(z.string(), z.unknown()).default({}).describe('Operation parameters'),
       },
-      annotations: {
-        title,
-        readOnlyHint: allReadOnly,
-        destructiveHint: !allReadOnly,
-        idempotentHint: false,
-        openWorldHint: true,
-      },
+      annotations,
     },
     async (args) => dispatch(args as Record<string, unknown>),
   );
@@ -117,6 +136,9 @@ export const createMcpServer = (
   config: Config,
   getToken: () => string | Promise<string>,
   logger: Logger = silentLogger,
+  // Called when a tool handler hits a 401 from Zendesk (OAuth mode only). Lets
+  // the token store invalidate the rejected token. Omitted in API-token mode.
+  onUnauthorized?: () => void,
 ): McpServer => {
   // Read name/version from package.json at runtime rather than hardcoding them
   // (the old literals were stale and even carried the wrong package name).
@@ -148,7 +170,16 @@ export const createMcpServer = (
   switch (config.mode) {
     case 'all': {
       for (const tool of filteredTools) {
-        registerLeafTool(server, tool);
+        server.registerTool(
+          tool.name,
+          {
+            title: tool.title,
+            description: tool.description,
+            inputSchema: tool.inputSchema.shape,
+            annotations: tool.annotations,
+          },
+          async (params) => runHandler(tool, params as Record<string, unknown>, onUnauthorized),
+        );
       }
       break;
     }
@@ -157,13 +188,27 @@ export const createMcpServer = (
       for (const [namespace, tools] of grouped) {
         const label = NAMESPACE_LABELS[namespace];
         if (label) {
-          registerProxyTool(server, label.toolName, label.title, tools);
+          registerProxyTool(
+            server,
+            label.toolName,
+            label.title,
+            tools,
+            config.readOnly,
+            onUnauthorized,
+          );
         }
       }
       break;
     }
     case 'single': {
-      registerProxyTool(server, 'zendesk', 'Zendesk', filteredTools);
+      registerProxyTool(
+        server,
+        'zendesk',
+        'Zendesk',
+        filteredTools,
+        config.readOnly,
+        onUnauthorized,
+      );
       break;
     }
   }

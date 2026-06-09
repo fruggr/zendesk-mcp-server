@@ -1,3 +1,4 @@
+import { createServer } from 'node:http';
 import { HttpResponse, http } from 'msw';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { oauthTokenHandler } from '../../msw-handlers';
@@ -10,7 +11,17 @@ vi.mock('open', () => ({
 }));
 
 // Imported after vi.mock so the mocked `open` is bound.
-const { authenticateViaBrowser } = await import('../../../src/auth/browser-oauth');
+const { authenticateViaBrowser, refreshAccessToken, startBrowserAuth } = await import(
+  '../../../src/auth/browser-oauth'
+);
+
+const makeLogger = () => ({
+  debug: vi.fn(),
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  attachServer: vi.fn(),
+});
 
 const SUB = 'testsubdomain';
 const CLIENT_ID = 'test_client';
@@ -74,6 +85,94 @@ describe('authenticateViaBrowser', () => {
     );
   });
 
+  it('the success page tells the user the tab will auto-close', async () => {
+    mswServer.use(oauthTokenHandler);
+
+    let resolveBody: (body: string) => void;
+    const bodyPromise = new Promise<string>((r) => {
+      resolveBody = r;
+    });
+
+    openMock.mockImplementation(async (url: string) => {
+      const redirectUri = new URL(url).searchParams.get('redirect_uri');
+      setImmediate(() => {
+        fetch(`${redirectUri}?code=the-auth-code`)
+          .then((res) => res.text())
+          .then((text) => resolveBody(text))
+          .catch(() => resolveBody(''));
+      });
+      return {};
+    });
+
+    await authenticateViaBrowser({ subdomain: SUB, oauthClientId: CLIENT_ID, callbackPort: 0 });
+
+    const body = await bodyPromise;
+    expect(body).toContain('Authentication successful!');
+    expect(body).toContain('auto-close');
+  });
+
+  it('HTML-escapes the OAuth error_description in the callback response (no reflected XSS)', async () => {
+    const xss = '<script>alert(1)</script>';
+    let resolveBody: (body: string) => void;
+    const bodyPromise = new Promise<string>((r) => {
+      resolveBody = r;
+    });
+
+    openMock.mockImplementation(async (url: string) => {
+      const redirectUri = new URL(url).searchParams.get('redirect_uri');
+      setImmediate(() => {
+        fetch(`${redirectUri}?error=access_denied&error_description=${encodeURIComponent(xss)}`)
+          .then((res) => res.text())
+          .then((text) => resolveBody(text))
+          .catch(() => resolveBody(''));
+      });
+      return {};
+    });
+
+    await expect(
+      authenticateViaBrowser({ subdomain: SUB, oauthClientId: CLIENT_ID, callbackPort: 0 }),
+    ).rejects.toThrow(/OAuth error/);
+
+    const body = await bodyPromise;
+    expect(body).not.toContain(xss);
+    expect(body).toContain('&lt;script&gt;');
+  });
+
+  it('HTML-escapes the token-exchange error body in the callback response (no reflected XSS)', async () => {
+    const xss = '<script>alert(1)</script>';
+    // The token endpoint fails with an attacker-controllable body, which the
+    // error message echoes back into the "Token exchange failed" HTML response.
+    mswServer.use(
+      http.post(`https://${SUB}.zendesk.com/oauth/tokens`, () =>
+        HttpResponse.text(xss, { status: 500 }),
+      ),
+    );
+
+    let resolveBody: (body: string) => void;
+    const bodyPromise = new Promise<string>((r) => {
+      resolveBody = r;
+    });
+
+    openMock.mockImplementation(async (url: string) => {
+      const redirectUri = new URL(url).searchParams.get('redirect_uri');
+      setImmediate(() => {
+        fetch(`${redirectUri}?code=the-auth-code`)
+          .then((res) => res.text())
+          .then((text) => resolveBody(text))
+          .catch(() => resolveBody(''));
+      });
+      return {};
+    });
+
+    await expect(
+      authenticateViaBrowser({ subdomain: SUB, oauthClientId: CLIENT_ID, callbackPort: 0 }),
+    ).rejects.toThrow(/Token exchange failed/);
+
+    const body = await bodyPromise;
+    expect(body).not.toContain(xss);
+    expect(body).toContain('&lt;script&gt;');
+  });
+
   it('logs the failure (with platform diagnostics) instead of swallowing it when open rejects', async () => {
     mswServer.use(oauthTokenHandler);
 
@@ -112,5 +211,109 @@ describe('authenticateViaBrowser', () => {
     expect(failure?.fields?.['platform']).toBe(process.platform);
     // Environment presence is reported as booleans (never values).
     expect(typeof failure?.fields?.['hasSystemRoot']).toBe('boolean');
+  });
+});
+
+describe('startBrowserAuth', () => {
+  beforeEach(() => {
+    openMock.mockReset();
+  });
+
+  it('rejects with an actionable message (and logs it) when the callback port is in use', async () => {
+    const blocker = createServer();
+    await new Promise<void>((resolve) => blocker.listen(0, resolve));
+    const port = (blocker.address() as { port: number }).port;
+    const logger = makeLogger();
+
+    try {
+      const err = await startBrowserAuth(
+        { subdomain: SUB, oauthClientId: CLIENT_ID, callbackPort: port },
+        logger,
+      ).catch((e) => e as Error);
+
+      // The raw EADDRINUSE is rewrapped into guidance both the user and the LLM
+      // can act on: which port, which env var, and the Zendesk redirect URL.
+      expect(err.message).toMatch(/EADDRINUSE/);
+      expect(err.message).toContain(String(port));
+      expect(err.message).toContain('ZENDESK_OAUTH_CALLBACK_PORT');
+      expect(err.message).toContain('/callback');
+      expect(logger.error).toHaveBeenCalledWith(
+        'oauth_callback_listen_failed',
+        expect.objectContaining({ port, errorCode: 'EADDRINUSE' }),
+      );
+      expect(openMock).not.toHaveBeenCalled();
+    } finally {
+      await new Promise<void>((resolve) => blocker.close(() => resolve()));
+    }
+  });
+
+  it('rejects the token promise after the auth timeout elapses', async () => {
+    vi.useFakeTimers();
+    try {
+      openMock.mockResolvedValue({});
+      const logger = {
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        attachServer: vi.fn(),
+      };
+      const started = await startBrowserAuth(
+        { subdomain: SUB, oauthClientId: CLIENT_ID, callbackPort: 0 },
+        logger,
+      );
+      const rejection = expect(started.tokenPromise).rejects.toThrow('timed out');
+
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+      await rejection;
+
+      expect(logger.error).toHaveBeenCalledWith('oauth_timeout', expect.anything());
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('refreshAccessToken', () => {
+  it('exchanges a refresh token for a rotated access/refresh token pair', async () => {
+    mswServer.use(
+      http.post(`https://${SUB}.zendesk.com/oauth/tokens`, async ({ request }) => {
+        const params = new URLSearchParams(await request.text());
+        expect(params.get('grant_type')).toBe('refresh_token');
+        expect(params.get('refresh_token')).toBe('old-refresh');
+        expect(params.get('client_id')).toBe(CLIENT_ID);
+        // Public PKCE client → no client secret.
+        expect(params.get('client_secret')).toBeNull();
+        return HttpResponse.json({
+          access_token: 'new-access',
+          refresh_token: 'new-refresh',
+          token_type: 'bearer',
+          scope: 'read write',
+          expires_in: 3600,
+        });
+      }),
+    );
+
+    const result = await refreshAccessToken({
+      subdomain: SUB,
+      oauthClientId: CLIENT_ID,
+      refreshToken: 'old-refresh',
+    });
+
+    expect(result.access_token).toBe('new-access');
+    expect(result.refresh_token).toBe('new-refresh');
+    expect(result.expires_in).toBe(3600);
+  });
+
+  it('throws when the refresh token is rejected', async () => {
+    mswServer.use(
+      http.post(`https://${SUB}.zendesk.com/oauth/tokens`, () =>
+        HttpResponse.text('invalid_grant', { status: 400 }),
+      ),
+    );
+
+    await expect(
+      refreshAccessToken({ subdomain: SUB, oauthClientId: CLIENT_ID, refreshToken: 'dead' }),
+    ).rejects.toThrow(/Token refresh failed \(400\)/);
   });
 });
