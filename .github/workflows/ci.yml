@@ -25,7 +25,11 @@ jobs:
 
       - run: pnpm typecheck
 
-      - run: pnpm test:coverage
+      # TEMPORARY DIAGNOSTIC (revert before merge): the test step hangs on CI
+      # but not locally. Bound it so the job completes and logs become
+      # readable; `hanging-process` dumps the open handles keeping the worker
+      # alive, `--reporter=verbose` shows the last test that ran.
+      - run: timeout -k 15 300 pnpm test:coverage --reporter=verbose --reporter=hanging-process
 
       - name: Coverage summary
         if: always()
