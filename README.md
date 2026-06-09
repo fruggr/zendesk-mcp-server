@@ -255,6 +255,13 @@ Add to your `.vscode/mcp.json`:
 
 ## Quick start: remote (HTTP)
 
+> 🧪 **Experimental.** The HTTP transport is shipped but has not yet been
+> exercised end-to-end against a real Zendesk tenant from every supported
+> MCP client. Local stdio is the supported path. Until this notice is
+> removed, expect rough edges around OAuth discovery behind reverse
+> proxies, CORS with browser clients, and 401 / refresh flows — please
+> open an issue with the symptoms you hit.
+
 Deploy a private MCP server for **one** Zendesk account. Every MCP client connecting to the server presents its **own** user's OAuth bearer in `Authorization:` — the server never sees a shared admin key.
 
 ### Zendesk OAuth setup
