@@ -1,15 +1,18 @@
-import type { IncomingMessage } from 'node:http';
+import { request as httpRequest, type IncomingMessage } from 'node:http';
+import { HttpResponse, http } from 'msw';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Config } from '../../../src/config';
 import {
   buildOAuthMetadata,
   DEFAULT_BROWSER_MCP_CLIENT_ORIGINS,
   extractBearer,
-  isOriginAllowed,
+  MAX_BODY_BYTES,
+  resolveAllowedOrigin,
   resolveResourceUrl,
   startHttpTransport,
 } from '../../../src/transports/http';
-import { errorHandlers } from '../../msw-handlers';
+import { type Logger, silentLogger } from '../../../src/utils/logger';
+import { errorHandlers, MOCK_USER } from '../../msw-handlers';
 import { mswServer } from '../../setup';
 
 const baseConfig: Config = {
@@ -26,6 +29,33 @@ const baseConfig: Config = {
 
 const mockRequest = (headers: Record<string, string | string[] | undefined>): IncomingMessage =>
   ({ headers }) as unknown as IncomingMessage;
+
+// Initialize an MCP session over HTTP and return its mcp-session-id.
+const initializeSession = async (port: number, authorization: string): Promise<string> => {
+  const init = await fetch(`http://127.0.0.1:${port}/mcp`, {
+    method: 'POST',
+    headers: {
+      Authorization: authorization,
+      'Content-Type': 'application/json',
+      Accept: 'application/json, text/event-stream',
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'initialize',
+      id: 1,
+      params: {
+        protocolVersion: '2025-06-18',
+        capabilities: {},
+        clientInfo: { name: 'test', version: '0.0.0' },
+      },
+    }),
+  });
+  expect(init.status).toBe(200);
+  const sessionId = init.headers.get('mcp-session-id');
+  await init.text();
+  if (!sessionId) throw new Error('initialize did not return a session id');
+  return sessionId;
+};
 
 describe('extractBearer', () => {
   it('returns the token from a well-formed Bearer header', () => {
@@ -68,29 +98,19 @@ describe('resolveResourceUrl', () => {
     );
   });
 
-  it('warns and returns the wildcard URL when host is 0.0.0.0 and publicUrl is unset', () => {
-    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    try {
-      const url = resolveResourceUrl({ ...baseConfig, host: '0.0.0.0', port: 3000 });
-      expect(url).toBe('http://0.0.0.0:3000');
-      const warned = errSpy.mock.calls.some((args) =>
-        args.some(
-          (a) => typeof a === 'string' && a.includes('WARNING') && a.includes('PUBLIC_URL'),
-        ),
-      );
-      expect(warned).toBe(true);
-    } finally {
-      errSpy.mockRestore();
-    }
+  it('warns via the structured logger when host is 0.0.0.0 and publicUrl is unset', () => {
+    const warnSpy = vi.fn();
+    const logger: Logger = { ...silentLogger, warn: warnSpy };
+    const url = resolveResourceUrl({ ...baseConfig, host: '0.0.0.0', port: 3000 }, logger);
+    expect(url).toBe('http://0.0.0.0:3000');
+    expect(warnSpy).toHaveBeenCalledWith(
+      'public_url_unset',
+      expect.objectContaining({ host: '0.0.0.0', advertised: 'http://0.0.0.0:3000' }),
+    );
   });
 
   it('also recognizes :: as the wildcard host', () => {
-    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    try {
-      expect(resolveResourceUrl({ ...baseConfig, host: '::', port: 3000 })).toBe('http://:::3000');
-    } finally {
-      errSpy.mockRestore();
-    }
+    expect(resolveResourceUrl({ ...baseConfig, host: '::', port: 3000 })).toBe('http://:::3000');
   });
 });
 
@@ -217,33 +237,34 @@ describe('startHttpTransport (HTTP roundtrip)', () => {
   it('routes a follow-up request to its existing session via mcp-session-id', async () => {
     // Regression coverage for the existing-session branch in handleMcpRequest:
     // initialize once → capture the session id → POST again with that id and
-    // assert the request is routed to the same session (no re-init, no 401).
+    // assert the request is routed to the same session (no re-init).
     handle = await startHttpTransport(baseConfig);
-    const init = await fetch(`http://127.0.0.1:${handle.port}/mcp`, {
+    const sessionId = await initializeSession(handle.port, 'Bearer test-token');
+
+    // Follow-up: tools/list on the same session. The handler should route via
+    // sessions.get(sessionId).transport.handleRequest. The bearer stays
+    // mandatory: Authorization is validated on every request, not only at
+    // session initialization.
+    const followUp = await fetch(`http://127.0.0.1:${handle.port}/mcp`, {
       method: 'POST',
       headers: {
         Authorization: 'Bearer test-token',
         'Content-Type': 'application/json',
         Accept: 'application/json, text/event-stream',
+        'mcp-session-id': sessionId,
       },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        method: 'initialize',
-        id: 1,
-        params: {
-          protocolVersion: '2025-06-18',
-          capabilities: {},
-          clientInfo: { name: 'test', version: '0.0.0' },
-        },
-      }),
+      body: JSON.stringify({ jsonrpc: '2.0', method: 'tools/list', id: 2 }),
     });
-    const sessionId = init.headers.get('mcp-session-id');
-    if (!sessionId) throw new Error('initialize did not return a session id');
-    await init.text();
+    expect(followUp.status).toBe(200);
+    await followUp.text();
+  });
 
-    // Follow-up: tools/list on the same session. The handler should route via
-    // sessions.get(sessionId).transport.handleRequest — no bearer needed at
-    // this point because the session is already authenticated.
+  it('rejects a sessionful request without Authorization with 401 (session id is not a credential)', async () => {
+    // Security regression lock: a leaked mcp-session-id alone must NOT grant
+    // access to the session's Zendesk token.
+    handle = await startHttpTransport(baseConfig);
+    const sessionId = await initializeSession(handle.port, 'Bearer test-token');
+
     const followUp = await fetch(`http://127.0.0.1:${handle.port}/mcp`, {
       method: 'POST',
       headers: {
@@ -253,7 +274,146 @@ describe('startHttpTransport (HTTP roundtrip)', () => {
       },
       body: JSON.stringify({ jsonrpc: '2.0', method: 'tools/list', id: 2 }),
     });
-    expect(followUp.status).toBe(200);
+    expect(followUp.status).toBe(401);
+    expect(followUp.headers.get('www-authenticate')).toMatch(/^Bearer\b/i);
+    await followUp.text();
+  });
+
+  it('uses the freshest bearer presented on an existing session (token rotation)', async () => {
+    // Clients refresh their Zendesk access token mid-session; the next tool
+    // call must go out with the new token, not the one captured at init.
+    const seenAuth: Array<string | null> = [];
+    mswServer.use(
+      http.get('https://testsubdomain.zendesk.com/api/v2/users/me', ({ request }) => {
+        seenAuth.push(request.headers.get('authorization'));
+        return HttpResponse.json({ user: MOCK_USER });
+      }),
+    );
+    handle = await startHttpTransport(baseConfig);
+    const sessionId = await initializeSession(handle.port, 'Bearer first-token');
+
+    const call = await fetch(`http://127.0.0.1:${handle.port}/mcp`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer rotated-token',
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream',
+        'mcp-session-id': sessionId,
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'tools/call',
+        id: 2,
+        params: { name: 'get_current_user', arguments: {} },
+      }),
+    });
+    expect(call.status).toBe(200);
+    await call.text();
+    expect(seenAuth).toEqual(['Bearer rotated-token']);
+  });
+
+  // Both 413 tests inject a small cap: the production default is 4 MB, and
+  // pushing megabytes through the test stack means MSW's interceptor clones
+  // and buffers the body — slow, and a source of timing-dependent hangs on
+  // constrained CI runners. The cap value is irrelevant to the behavior.
+  const SMALL_CAP = 64 * 1024;
+
+  it('rejects a body over the configured cap with 413', async () => {
+    handle = await startHttpTransport(baseConfig, undefined, { maxBodyBytes: SMALL_CAP });
+    const res = await fetch(`http://127.0.0.1:${handle.port}/mcp`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer test-token',
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream',
+      },
+      body: `{"pad":"${'x'.repeat(SMALL_CAP + 1)}"}`,
+    });
+    expect(res.status).toBe(413);
+    await res.text();
+  });
+
+  it('defaults the body cap to MAX_BODY_BYTES (sanity)', () => {
+    expect(MAX_BODY_BYTES).toBe(4 * 1024 * 1024);
+  });
+
+  it('responds 413 mid-upload and drops the connection (no deadlock on slow clients)', async () => {
+    // Regression for a CI-only deadlock: when the cap is hit while the client
+    // is still uploading, the request stream is paused; unless the server
+    // destroys the socket after the 413, the connection wedges and
+    // handle.close() (in afterEach) hangs forever. Reproduced here with a
+    // request that announces more than it ever sends.
+    handle = await startHttpTransport(baseConfig, undefined, { maxBodyBytes: SMALL_CAP });
+    const status = await new Promise<number>((resolve, reject) => {
+      const req = httpRequest({
+        host: '127.0.0.1',
+        port: handle?.port,
+        path: '/mcp',
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer test-token',
+          'Content-Type': 'application/json',
+          'Content-Length': String(SMALL_CAP * 2),
+        },
+      });
+      let responseReceived = false;
+      req.on('response', (res) => {
+        responseReceived = true;
+        res.resume();
+        resolve(res.statusCode ?? 0);
+      });
+      // The server destroys the socket right after the 413, and the RST can
+      // race the response bytes on a loaded kernel — an ECONNRESET after the
+      // response is the expected teardown, not a failure.
+      req.on('error', (err) => {
+        if (!responseReceived) reject(err);
+      });
+      // Send just past the cap, then keep the request open forever.
+      req.write(Buffer.alloc(SMALL_CAP + 1024, 120));
+    });
+    expect(status).toBe(413);
+    // afterEach's handle.close() locks the "shutdown never hangs" half.
+  });
+
+  it('rejects malformed JSON with 400 and JSON-RPC -32700 Parse Error', async () => {
+    handle = await startHttpTransport(baseConfig);
+    const res = await fetch(`http://127.0.0.1:${handle.port}/mcp`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer test-token',
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream',
+      },
+      body: '{this is not json',
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: { code: number } };
+    expect(body.error.code).toBe(-32700);
+  });
+
+  it('evicts idle sessions after the configured timeout', async () => {
+    handle = await startHttpTransport(baseConfig, undefined, {
+      sessionIdleTimeoutMs: 50,
+      sweepIntervalMs: 20,
+    });
+    const sessionId = await initializeSession(handle.port, 'Bearer test-token');
+
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    // The session is gone: the request falls through to the new-session path,
+    // where a non-initialize POST on a fresh transport is rejected by the SDK
+    // (anything but 200 proves the old session no longer exists).
+    const followUp = await fetch(`http://127.0.0.1:${handle.port}/mcp`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer test-token',
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream',
+        'mcp-session-id': sessionId,
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', method: 'tools/list', id: 2 }),
+    });
+    expect(followUp.status).not.toBe(200);
     await followUp.text();
   });
 
@@ -280,31 +440,40 @@ describe('startHttpTransport (HTTP roundtrip)', () => {
   });
 });
 
-describe('isOriginAllowed', () => {
+describe('resolveAllowedOrigin', () => {
   it('always allows the default browser MCP client origins', () => {
     for (const origin of DEFAULT_BROWSER_MCP_CLIENT_ORIGINS) {
-      expect(isOriginAllowed(origin, [])).toBe(true);
+      expect(resolveAllowedOrigin(origin, [])).toBe(origin);
     }
   });
 
   it('always allows localhost on any port (dev tooling)', () => {
-    expect(isOriginAllowed('http://localhost:6274', [])).toBe(true);
-    expect(isOriginAllowed('http://127.0.0.1:9999', [])).toBe(true);
-    expect(isOriginAllowed('http://[::1]:3000', [])).toBe(true);
+    expect(resolveAllowedOrigin('http://localhost:6274', [])).toBe('http://localhost:6274');
+    expect(resolveAllowedOrigin('http://127.0.0.1:9999', [])).toBe('http://127.0.0.1:9999');
+    expect(resolveAllowedOrigin('http://[::1]:3000', [])).toBe('http://[::1]:3000');
   });
 
   it('rejects an unknown origin not in defaults nor extras', () => {
-    expect(isOriginAllowed('https://evil.example.com', [])).toBe(false);
+    expect(resolveAllowedOrigin('https://evil.example.com', [])).toBeUndefined();
   });
 
   it('accepts an extra origin passed by the operator', () => {
-    expect(isOriginAllowed('https://my-app.example.com', ['https://my-app.example.com'])).toBe(
-      true,
+    expect(resolveAllowedOrigin('https://my-app.example.com', ['https://my-app.example.com'])).toBe(
+      'https://my-app.example.com',
     );
   });
 
+  it('matches extras by strict equality — config normalization is what makes trailing slashes work', () => {
+    // Browsers never send a trailing slash in Origin; an un-normalized entry
+    // can't match. loadConfig normalizes entries to their URL origin, which is
+    // covered in tests/unit/config.test.ts.
+    expect(
+      resolveAllowedOrigin('https://my-app.example.com', ['https://my-app.example.com/']),
+    ).toBeUndefined();
+  });
+
   it('rejects malformed origin strings without throwing', () => {
-    expect(isOriginAllowed('not-a-url', [])).toBe(false);
+    expect(resolveAllowedOrigin('not-a-url', [])).toBeUndefined();
   });
 
   it('lists ChatGPT first in the default allowlist (largest user base)', () => {
@@ -420,37 +589,16 @@ describe('startHttpTransport (Zendesk 401 backstop)', () => {
   //   3. NO `onUnauthorized` callback to be invoked server-side — there is
   //      nothing to invalidate (this is asserted indirectly by point 2 and
   //      explicitly in the http.ts construction `createMcpServer(config, () =>
-  //      bearer, logger)` which omits the fourth argument).
+  //      auth.bearer, logger)` which omits the fourth argument).
   it('surfaces a Zendesk 401 as an MCP tool error and keeps the session open', async () => {
     mswServer.use(errorHandlers.usersMeUnauthorized);
     handle = await startHttpTransport(baseConfig);
-
-    const initRes = await fetch(`http://127.0.0.1:${handle.port}/mcp`, {
-      method: 'POST',
-      headers: {
-        Authorization: 'Bearer client-issued-bearer',
-        'Content-Type': 'application/json',
-        Accept: 'application/json, text/event-stream',
-      },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        method: 'initialize',
-        id: 1,
-        params: {
-          protocolVersion: '2025-06-18',
-          capabilities: {},
-          clientInfo: { name: 'test', version: '0.0.0' },
-        },
-      }),
-    });
-    expect(initRes.status).toBe(200);
-    const sessionId = initRes.headers.get('mcp-session-id');
-    if (!sessionId) throw new Error('initialize did not return a session id');
-    await initRes.text();
+    const sessionId = await initializeSession(handle.port, 'Bearer client-issued-bearer');
 
     const callRes = await fetch(`http://127.0.0.1:${handle.port}/mcp`, {
       method: 'POST',
       headers: {
+        Authorization: 'Bearer client-issued-bearer',
         'Content-Type': 'application/json',
         Accept: 'application/json, text/event-stream',
         'mcp-session-id': sessionId,
@@ -489,6 +637,7 @@ describe('startHttpTransport (Zendesk 401 backstop)', () => {
     const followUp = await fetch(`http://127.0.0.1:${handle.port}/mcp`, {
       method: 'POST',
       headers: {
+        Authorization: 'Bearer client-issued-bearer',
         'Content-Type': 'application/json',
         Accept: 'application/json, text/event-stream',
         'mcp-session-id': sessionId,

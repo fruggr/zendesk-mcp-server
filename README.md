@@ -287,6 +287,12 @@ zendesk-mcp-server <your-subdomain> --transport http --port 3000 \
 | **Caddy / nginx / Traefik in front of a VM** | `PUBLIC_URL=https://mcp.example.com` |
 | **Local dev (no proxy)** | `--host 127.0.0.1 --port 3000` — the resource URL is derived automatically (the wildcard `0.0.0.0` is what triggers the warning) |
 
+### Sessions & request limits
+
+- `Authorization: Bearer …` is required on **every** `/mcp` request — a session id alone is never accepted as a credential. The most recent bearer presented on a session is the one used for Zendesk calls, so a client refreshing its token mid-session just works.
+- Request bodies are capped at 4 MB (`413` beyond that).
+- Sessions idle for more than 30 minutes are evicted server-side; clients re-initialize transparently on their next request.
+
 ### Verify discovery endpoints
 
 Served by the HTTP transport in `src/transports/http.ts`:

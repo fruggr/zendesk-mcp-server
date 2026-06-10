@@ -9,6 +9,9 @@ permissions:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    # The suite finishes in well under a minute; a wedged test or runner
+    # should fail fast instead of holding the job for the 6-hour default.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
 

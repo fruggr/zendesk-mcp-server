@@ -79,12 +79,6 @@ export const resolveAllowedOrigin = (
   }
 };
 
-/** Boolean view of `resolveAllowedOrigin`, kept for the existing tests. */
-export const isOriginAllowed = (
-  origin: string,
-  extraOrigins: ReadonlyArray<string> | undefined,
-): boolean => resolveAllowedOrigin(origin, extraOrigins) !== undefined;
-
 const applyCorsHeaders = (
   req: IncomingMessage,
   res: ServerResponse,
@@ -136,19 +130,19 @@ const handleCorsPreflight = (
 //   3. Fallback to host:port + warning. Clients following RFC 8707 strictly
 //      will reject this resource identifier, so log a clear warning so the
 //      operator knows to set PUBLIC_URL.
-export const resolveResourceUrl = (config: Config): string => {
+export const resolveResourceUrl = (config: Config, logger: Logger = silentLogger): string => {
   if (config.publicUrl) return config.publicUrl.replace(/\/+$/, '');
   if (!WILDCARD_HOSTS.has(config.host)) {
     return `http://${config.host}:${config.port}`;
   }
-  console.error(
-    `[zendesk-mcp-server] WARNING: HOST=${config.host} but PUBLIC_URL is unset. ` +
-      `OAuth discovery will advertise http://${config.host}:${config.port} as the ` +
-      `resource identifier, which is not routable from external clients and may ` +
-      `cause spec-compliant MCP clients to refuse the connection. Set PUBLIC_URL ` +
-      `(or --public-url) to the URL clients use to reach this server (e.g. ` +
-      `https://your-host.example.com).`,
-  );
+  logger.warn('public_url_unset', {
+    host: config.host,
+    advertised: `http://${config.host}:${config.port}`,
+    hint:
+      'OAuth discovery will advertise a non-routable resource identifier and spec-compliant ' +
+      'MCP clients may refuse the connection. Set PUBLIC_URL (or --public-url) to the URL ' +
+      'clients use to reach this server (e.g. https://your-host.example.com).',
+  });
   return `http://${config.host}:${config.port}`;
 };
 
@@ -186,10 +180,13 @@ interface OAuthMetadata {
   };
 }
 
-export const buildOAuthMetadata = (config: Config): OAuthMetadata => {
+export const buildOAuthMetadata = (
+  config: Config,
+  logger: Logger = silentLogger,
+): OAuthMetadata => {
   const { authorizeUrl, tokenUrl } = getOAuthUrls(config.subdomain);
   const issuer = `https://${config.subdomain}.zendesk.com`;
-  const resource = resolveResourceUrl(config);
+  const resource = resolveResourceUrl(config, logger);
   return {
     protectedResource: {
       authorization_servers: [issuer],
@@ -215,38 +212,127 @@ const sendJson = (res: ServerResponse, status: number, body: unknown): void => {
   res.end(JSON.stringify(body));
 };
 
+// Single construction point for JSON-RPC-shaped HTTP errors so the envelope
+// ({ error, id: null, jsonrpc }) can't drift between the 4xx/5xx paths.
+const sendJsonRpcError = (
+  res: ServerResponse,
+  status: number,
+  code: number,
+  message: string,
+  headers: Record<string, string> = {},
+): void => {
+  res.writeHead(status, { 'Content-Type': 'application/json', ...headers });
+  res.end(JSON.stringify({ error: { code, message }, id: null, jsonrpc: '2.0' }));
+};
+
 const sendUnauthorized = (res: ServerResponse, resource: string): void => {
   // RFC 6750 + MCP 2025-06-18: the WWW-Authenticate header points the client
   // at the resource metadata that bootstraps the OAuth discovery flow.
   const wwwAuthenticate = `Bearer resource_metadata="${resource}/.well-known/oauth-protected-resource", error="invalid_token", error_description="${MISSING_BEARER_MESSAGE}"`;
-  res.writeHead(401, {
-    'Content-Type': 'application/json',
+  sendJsonRpcError(res, 401, -32000, MISSING_BEARER_MESSAGE, {
     'WWW-Authenticate': wwwAuthenticate,
   });
-  res.end(
-    JSON.stringify({
-      error: { code: -32000, message: MISSING_BEARER_MESSAGE },
-      id: null,
-      jsonrpc: '2.0',
-    }),
-  );
 };
 
 interface Session {
   transport: StreamableHTTPServerTransport;
+  /**
+   * Latest bearer presented for this session. Tool calls read through this
+   * object so a client that refreshes its Zendesk token mid-session has the
+   * fresh token used on the next call.
+   */
+  auth: { bearer: string };
+  /** Epoch ms of the last request routed to this session (idle eviction). */
+  lastActivityAt: number;
   close(): Promise<void>;
 }
 
-// Read the request body into a string. The SDK transport expects a parsed
-// body or will parse from the stream itself; we go through a buffer to keep
-// the JSON-RPC dispatch deterministic.
-const readBody = (req: IncomingMessage): Promise<string> =>
-  new Promise((resolve, reject) => {
+// JSON-RPC tool calls are small; this is a generous ceiling that exists only
+// so a client can't stream an unbounded body into server memory.
+export const MAX_BODY_BYTES = 4 * 1024 * 1024;
+
+type BodyResult =
+  | { ok: true; value: unknown }
+  | { ok: false; status: number; rpcCode: number; message: string };
+
+// Read and parse the request body. The SDK transport could parse the stream
+// itself, but it neither caps the body size nor maps parse failures to the
+// right HTTP status — buffering here keeps both concerns in one place.
+const readJsonBody = (req: IncomingMessage, maxBodyBytes: number): Promise<BodyResult> =>
+  new Promise((resolve) => {
     const chunks: Buffer[] = [];
-    req.on('data', (chunk) => chunks.push(chunk));
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
-    req.on('error', reject);
+    let total = 0;
+    let settled = false;
+    const settle = (result: BodyResult): void => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
+    req.on('data', (chunk: Buffer) => {
+      total += chunk.length;
+      if (total > maxBodyBytes) {
+        req.removeAllListeners('data');
+        settle({
+          ok: false,
+          status: 413,
+          rpcCode: -32600,
+          message: `Request body exceeds ${maxBodyBytes} bytes.`,
+        });
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => {
+      const raw = Buffer.concat(chunks).toString('utf8');
+      if (!raw) {
+        settle({ ok: true, value: undefined });
+        return;
+      }
+      try {
+        settle({ ok: true, value: JSON.parse(raw) });
+      } catch {
+        settle({
+          ok: false,
+          status: 400,
+          rpcCode: -32700,
+          message: 'Parse error: request body is not valid JSON.',
+        });
+      }
+    });
+    req.on('error', () =>
+      settle({
+        ok: false,
+        status: 400,
+        rpcCode: -32600,
+        message: 'Request body could not be read.',
+      }),
+    );
   });
+
+const respondBodyError = (
+  req: IncomingMessage,
+  res: ServerResponse,
+  failure: Extract<BodyResult, { ok: false }>,
+): void => {
+  const headers = failure.status === 413 ? { Connection: 'close' } : {};
+  sendJsonRpcError(res, failure.status, failure.rpcCode, failure.message, headers);
+  if (failure.status === 413) {
+    // The client may still be mid-upload with the request stream paused
+    // (readJsonBody dropped its listeners at the cap). Left alone, the
+    // connection wedges: the client blocks on backpressure and
+    // httpServer.close() waits on the socket forever. Drop it as soon as the
+    // 413 has flushed.
+    if (res.writableFinished) req.destroy();
+    else res.once('finish', () => req.destroy());
+  }
+};
+
+// A client that vanishes without DELETEing its session would otherwise leak a
+// McpServer + bearer forever (the SDK only fires onclose on an explicit
+// DELETE). A periodic sweep closes sessions with no traffic for this long;
+// well-behaved clients simply re-initialize on their next request.
+const SESSION_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+const SESSION_SWEEP_INTERVAL_MS = 60 * 1000;
 
 export interface HttpServerHandle {
   /** Actual bound port (resolved when listen completes — useful for port:0 tests). */
@@ -255,58 +341,84 @@ export interface HttpServerHandle {
   close(): Promise<void>;
 }
 
+export interface HttpTransportOptions {
+  /** Idle-session eviction timeout override (tests). */
+  sessionIdleTimeoutMs?: number;
+  /** Idle-session sweep interval override (tests). */
+  sweepIntervalMs?: number;
+  /** Request body cap override (tests use a small cap to stay cheap). */
+  maxBodyBytes?: number;
+}
+
 export const startHttpTransport = async (
   config: Config,
   logger: Logger = silentLogger,
+  options: HttpTransportOptions = {},
 ): Promise<HttpServerHandle> => {
-  const metadata = buildOAuthMetadata(config);
+  const metadata = buildOAuthMetadata(config, logger);
   const sessions = new Map<string, Session>();
+  const idleTimeoutMs = options.sessionIdleTimeoutMs ?? SESSION_IDLE_TIMEOUT_MS;
+  const maxBodyBytes = options.maxBodyBytes ?? MAX_BODY_BYTES;
 
   const handleMcpRequest = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
-    const sessionId =
-      typeof req.headers['mcp-session-id'] === 'string' ? req.headers['mcp-session-id'] : undefined;
-
-    // Existing session: route the request to its transport.
-    if (sessionId) {
-      const session = sessions.get(sessionId);
-      if (session) {
-        const body = req.method === 'POST' ? await readBody(req) : undefined;
-        const parsed = body ? JSON.parse(body) : undefined;
-        await session.transport.handleRequest(req, res, parsed);
-        return;
-      }
-    }
-
-    // New session: an unauthenticated request gets a 401 + WWW-Authenticate
-    // that bootstraps the OAuth flow on the client side. The bearer is
-    // captured here and passed to the per-session McpServer as the token
-    // source for every tool call on that session — no async-local storage
-    // needed because each session has its own server instance.
+    // MCP 2025-06-18: the Authorization header is validated on EVERY request,
+    // not only at session initialization — a session id alone is not a
+    // credential. An unauthenticated request gets a 401 + WWW-Authenticate
+    // that bootstraps the OAuth flow on the client side.
     const bearer = extractBearer(req);
     if (!bearer) {
       sendUnauthorized(res, metadata.protectedResource.resource);
       return;
     }
 
+    const sessionId =
+      typeof req.headers['mcp-session-id'] === 'string' ? req.headers['mcp-session-id'] : undefined;
+
+    // Existing session: adopt the presented bearer (clients may have
+    // refreshed their Zendesk token mid-session) and route the request to
+    // the session's transport.
+    if (sessionId) {
+      const session = sessions.get(sessionId);
+      if (session) {
+        session.auth.bearer = bearer;
+        session.lastActivityAt = Date.now();
+        const body =
+          req.method === 'POST'
+            ? await readJsonBody(req, maxBodyBytes)
+            : ({ ok: true, value: undefined } as const);
+        if (!body.ok) {
+          respondBodyError(req, res, body);
+          return;
+        }
+        await session.transport.handleRequest(req, res, body.value);
+        return;
+      }
+    }
+
     if (req.method !== 'POST') {
       // Non-POST without a session ID can't initialize a new session.
-      sendJson(res, 400, {
-        error: { code: -32000, message: 'No active session; initialize via POST first.' },
-        id: null,
-        jsonrpc: '2.0',
-      });
+      sendJsonRpcError(res, 400, -32000, 'No active session; initialize via POST first.');
       return;
     }
 
-    const body = await readBody(req);
-    const parsed = body ? JSON.parse(body) : undefined;
+    const body = await readJsonBody(req, maxBodyBytes);
+    if (!body.ok) {
+      respondBodyError(req, res, body);
+      return;
+    }
 
-    const server = createMcpServer(config, () => bearer, logger);
+    // New session: the bearer is held in a per-session mutable cell read by
+    // the per-session McpServer's token source — no async-local storage
+    // needed because each session has its own server instance.
+    const auth = { bearer };
+    const server = createMcpServer(config, () => auth.bearer, logger);
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
       onsessioninitialized: (newId) => {
         sessions.set(newId, {
           transport,
+          auth,
+          lastActivityAt: Date.now(),
           close: async () => {
             await transport.close();
             await server.close();
@@ -323,7 +435,7 @@ export const startHttpTransport = async (
     // purely a type-system seam.
     // biome-ignore lint/suspicious/noExplicitAny: SDK type seam, see above
     await server.connect(transport as any);
-    await transport.handleRequest(req, res, parsed);
+    await transport.handleRequest(req, res, body.value);
   };
 
   const requestListener = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
@@ -356,20 +468,13 @@ export const startHttpTransport = async (
       res.writeHead(404, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Not found', path: url.pathname }));
     } catch (err) {
+      const message = err instanceof Error ? err.message : 'Internal Server Error';
       if (!res.headersSent) {
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-      }
-      if (!res.writableEnded) {
-        res.end(
-          JSON.stringify({
-            error: {
-              code: -32603,
-              message: err instanceof Error ? err.message : 'Internal Server Error',
-            },
-            id: null,
-            jsonrpc: '2.0',
-          }),
-        );
+        sendJsonRpcError(res, 500, -32603, message);
+      } else if (!res.writableEnded) {
+        // Headers already on the wire: appending a JSON error mid-stream would
+        // corrupt the body; just terminate the response.
+        res.end();
       }
     }
   };
@@ -390,11 +495,38 @@ export const startHttpTransport = async (
   const boundPort = typeof addr === 'object' && addr !== null ? addr.port : config.port;
   logger.info('http_transport_ready', { host: config.host, port: boundPort });
 
+  const sweepIdleSessions = async (): Promise<void> => {
+    const cutoff = Date.now() - idleTimeoutMs;
+    for (const [id, session] of sessions) {
+      if (session.lastActivityAt > cutoff) continue;
+      sessions.delete(id);
+      try {
+        await session.close();
+      } catch (err) {
+        logger.warn('session_close_failed', {
+          sessionId: id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  };
+  const sweeper = setInterval(
+    () => void sweepIdleSessions(),
+    options.sweepIntervalMs ?? SESSION_SWEEP_INTERVAL_MS,
+  );
+  // The sweeper must never keep the process alive on its own.
+  sweeper.unref();
+
   return {
     port: boundPort,
     close: async () => {
-      for (const session of sessions.values()) await session.close();
+      clearInterval(sweeper);
+      await Promise.all([...sessions.values()].map((session) => session.close()));
       sessions.clear();
+      // server.close() waits for every connection to drain; a wedged or
+      // keep-alive socket would stall shutdown forever. Sessions are already
+      // closed at this point, so dropping the remaining sockets is safe.
+      httpServer.closeAllConnections();
       await new Promise<void>((resolve, reject) => {
         httpServer.close((err) => (err ? reject(err) : resolve()));
       });

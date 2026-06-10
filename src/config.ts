@@ -33,7 +33,21 @@ export const ConfigSchema = z.object({
    * Desktop, Claude Code CLI, Cursor, VS Code, Zed…) are unaffected
    * because they send no Origin header.
    */
-  corsOrigins: z.array(z.string().url()).default([]),
+  corsOrigins: z
+    .array(
+      z
+        .string()
+        .url()
+        // Browsers send `Origin` with no trailing slash or path, and the CORS
+        // allowlist matches by strict equality. Normalize the configured value
+        // to its origin so `https://app.example.com/` (natural when
+        // copy-pasting a URL) still matches at runtime.
+        .transform((value) => new URL(value).origin)
+        .refine((origin) => origin !== 'null', {
+          message: 'CORS origin must be an http(s) URL with a host',
+        }),
+    )
+    .default([]),
   callbackPort: z.number().int().min(1).max(65535).optional(),
 });
 
@@ -53,6 +67,19 @@ interface CliResult {
   corsOrigins?: string[];
   callbackPort?: number;
 }
+
+// Number.parseInt('8080abc', 10) === 8080 — silently accepts a numeric
+// prefix. Validate strictly so malformed values fail loudly instead. Range
+// checks (0 vs 1 minimum etc.) stay in ConfigSchema, the single authority.
+const parsePort = (raw: string, label: string): number => {
+  if (!/^\d+$/.test(raw)) {
+    throw new Error(`Invalid ${label} value: "${raw}". Expected an integer 0-65535.`);
+  }
+  return Number(raw);
+};
+
+const parsePortEnv = (raw: string | undefined, label: string): number | undefined =>
+  raw === undefined || raw === '' ? undefined : parsePort(raw, label);
 
 const parseCliArgs = (args: string[]): CliResult => {
   const result: CliResult = {};
@@ -86,12 +113,7 @@ const parseCliArgs = (args: string[]): CliResult => {
       result.host = next;
       i++;
     } else if (arg === '--port' && next) {
-      // Number.parseInt('8080abc', 10) === 8080 — silently accepts a numeric
-      // prefix. Validate strictly so malformed values fail loudly instead.
-      if (!/^\d+$/.test(next)) {
-        throw new Error(`Invalid --port value: "${next}". Expected an integer 0-65535.`);
-      }
-      result.port = Number(next);
+      result.port = parsePort(next, '--port');
       i++;
     } else if (arg === '--public-url' && next) {
       result.publicUrl = next;
@@ -101,7 +123,7 @@ const parseCliArgs = (args: string[]): CliResult => {
       result.corsOrigins.push(next);
       i++;
     } else if (arg === '--callback-port' && next) {
-      result.callbackPort = Number(next);
+      result.callbackPort = parsePort(next, '--callback-port');
       i++;
     } else if (!arg.startsWith('-') && positionalIndex === 0) {
       result.subdomain = arg;
@@ -110,14 +132,6 @@ const parseCliArgs = (args: string[]): CliResult => {
   }
 
   return result;
-};
-
-const parsePortEnv = (raw: string | undefined): number | undefined => {
-  if (raw === undefined || raw === '') return undefined;
-  if (!/^\d+$/.test(raw)) {
-    throw new Error(`Invalid PORT value: "${raw}". Expected an integer 0-65535.`);
-  }
-  return Number(raw);
 };
 
 export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
@@ -131,7 +145,7 @@ export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
 
   const transport = cli.transport ?? process.env['TRANSPORT'] ?? 'stdio';
   const host = cli.host ?? process.env['HOST'] ?? '0.0.0.0';
-  const port = cli.port ?? parsePortEnv(process.env['PORT']) ?? 3000;
+  const port = cli.port ?? parsePortEnv(process.env['PORT'], 'PORT') ?? 3000;
   const publicUrl = cli.publicUrl ?? process.env['PUBLIC_URL'];
 
   // CORS allowlist extension: CLI flags first, then comma-separated env var.
@@ -143,8 +157,9 @@ export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
     .filter((s) => s.length > 0);
   const corsOrigins = [...(cli.corsOrigins ?? []), ...corsFromEnv];
 
-  const envCallbackPort = process.env['ZENDESK_OAUTH_CALLBACK_PORT'];
-  const callbackPort = cli.callbackPort ?? (envCallbackPort ? Number(envCallbackPort) : undefined);
+  const callbackPort =
+    cli.callbackPort ??
+    parsePortEnv(process.env['ZENDESK_OAUTH_CALLBACK_PORT'], 'ZENDESK_OAUTH_CALLBACK_PORT');
 
   const zendeskEmail = process.env['ZENDESK_EMAIL'];
   const zendeskApiToken = process.env['ZENDESK_API_TOKEN'];
