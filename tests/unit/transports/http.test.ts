@@ -356,14 +356,18 @@ describe('startHttpTransport (HTTP roundtrip)', () => {
           'Content-Length': String(SMALL_CAP * 2),
         },
       });
+      let responseReceived = false;
       req.on('response', (res) => {
+        responseReceived = true;
         res.resume();
         resolve(res.statusCode ?? 0);
       });
-      // The server destroys the socket right after the 413 — an ECONNRESET
-      // here is the expected teardown, not a failure, unless no response
-      // ever arrived.
-      req.on('error', (err) => reject(err));
+      // The server destroys the socket right after the 413, and the RST can
+      // race the response bytes on a loaded kernel — an ECONNRESET after the
+      // response is the expected teardown, not a failure.
+      req.on('error', (err) => {
+        if (!responseReceived) reject(err);
+      });
       // Send just past the cap, then keep the request open forever.
       req.write(Buffer.alloc(SMALL_CAP + 1024, 120));
     });
