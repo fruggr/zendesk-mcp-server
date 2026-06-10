@@ -1,3 +1,17 @@
+## [1.9.0](https://github.com/fruggr/zendesk-mcp-server/compare/v1.8.0...v1.9.0) (2026-06-10)
+
+### Features
+
+* remote MCP deployment with per-user OAuth 2.1 PKCE ([#40](https://github.com/fruggr/zendesk-mcp-server/issues/40)) ([5de1dfe](https://github.com/fruggr/zendesk-mcp-server/commit/5de1dfe50eb0a5bb0519392aafdfd7f334f31976))
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Chores
+
+* **deps:** update pnpm to v11.5.1 ([#76](https://github.com/fruggr/zendesk-mcp-server/issues/76)) ([c085dfa](https://github.com/fruggr/zendesk-mcp-server/commit/c085dfa8817a86de2d4585a97e5026d2306729a1))
+</details>
+
 ## [1.8.0](https://github.com/fruggr/zendesk-mcp-server/compare/v1.7.0...v1.8.0) (2026-06-08)
 
 ### Features
