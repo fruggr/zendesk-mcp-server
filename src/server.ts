@@ -67,12 +67,46 @@ export const aggregateAnnotations = (
   openWorldHint: true,
 });
 
+type ProxyDispatch = (args: Record<string, unknown>) => Promise<ToolResult>;
+
+// Each proxy carries its OWN handler map, scoped to the operations it
+// advertises. In `namespace` mode this is essential: without it, a caller
+// could invoke `zendesk_tickets` with operation="get_article" and dispatch
+// a help-center handler via a shared global map. The description would lie
+// but the call would still succeed.
+export const buildProxyDispatch = (
+  tools: ToolDefinition[],
+  onUnauthorized: (() => void) | undefined,
+): ProxyDispatch => {
+  const operationNames = tools.map((t) => t.name);
+  const localHandlers = new Map<string, ToolDefinition>(tools.map((t) => [t.name, t]));
+
+  return async (args) => {
+    const { operation, params } = args as {
+      operation: string;
+      params: Record<string, unknown>;
+    };
+    const def = localHandlers.get(operation);
+    if (!def) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `Unknown operation "${operation}". Available: ${operationNames.join(', ')}`,
+          },
+        ],
+      };
+    }
+    const validated = def.inputSchema.parse(params);
+    return runHandler(def, validated, onUnauthorized);
+  };
+};
+
 const registerProxyTool = (
   server: McpServer,
   toolName: string,
   title: string,
   tools: ToolDefinition[],
-  handlerMap: Map<string, ToolDefinition>,
   readOnlyMode: boolean,
   onUnauthorized: (() => void) | undefined,
 ): void => {
@@ -81,33 +115,20 @@ const registerProxyTool = (
   const annotations = aggregateAnnotations(tools);
   const prefix = readOnlyMode ? '[RO] ' : '';
 
+  const dispatch = buildProxyDispatch(tools, onUnauthorized);
+
   server.registerTool(
     toolName,
     {
       title,
       description: `${prefix}${title}. Specify the operation and its parameters.\n\nAvailable operations:\n${operationList}`,
-      inputSchema: z.object({
+      inputSchema: {
         operation: z.string().describe(`One of: ${operationNames.join(', ')}`),
         params: z.record(z.string(), z.unknown()).default({}).describe('Operation parameters'),
-      }),
+      },
       annotations,
     },
-    async ({ operation, params }) => {
-      const def = handlerMap.get(operation);
-      if (!def) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Unknown operation "${operation}". Available: ${operationNames.join(', ')}`,
-            },
-          ],
-        };
-      }
-      // Validate params through the tool's own schema
-      const validated = def.inputSchema.parse(params);
-      return runHandler(def, validated, onUnauthorized);
-    },
+    async (args) => dispatch(args as Record<string, unknown>),
   );
 };
 
@@ -146,22 +167,15 @@ export const createMcpServer = (
     tools: config.tools,
   });
 
-  // Build handler map for proxy dispatch
-  const handlerMap = new Map<string, ToolDefinition>();
-  for (const tool of filteredTools) {
-    handlerMap.set(tool.name, tool);
-  }
-
   switch (config.mode) {
     case 'all': {
-      // Register each tool individually
       for (const tool of filteredTools) {
         server.registerTool(
           tool.name,
           {
             title: tool.title,
             description: tool.description,
-            inputSchema: tool.inputSchema,
+            inputSchema: tool.inputSchema.shape,
             annotations: tool.annotations,
           },
           async (params) => runHandler(tool, params as Record<string, unknown>, onUnauthorized),
@@ -179,7 +193,6 @@ export const createMcpServer = (
             label.toolName,
             label.title,
             tools,
-            handlerMap,
             config.readOnly,
             onUnauthorized,
           );
@@ -193,7 +206,6 @@ export const createMcpServer = (
         'zendesk',
         'Zendesk',
         filteredTools,
-        handlerMap,
         config.readOnly,
         onUnauthorized,
       );

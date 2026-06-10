@@ -1,12 +1,16 @@
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { describe, expect, it } from 'vitest';
 import type { Config } from '../../src/config';
+import { filterTools } from '../../src/routing/registry';
 import {
   aggregateAnnotations,
   buildOperationList,
+  buildProxyDispatch,
   createMcpServer,
   summarizeDescription,
 } from '../../src/server';
 import type { ToolAnnotations } from '../../src/tools/definitions';
+import { createAllTools } from '../../src/tools/index';
 
 const ann = (overrides: Partial<ToolAnnotations> = {}): ToolAnnotations => ({
   readOnlyHint: false,
@@ -26,24 +30,41 @@ const baseConfig: Config = {
   logLevel: 'info',
   mode: 'all',
   readOnly: false,
+  transport: 'stdio',
+  host: '0.0.0.0',
+  port: 3000,
+  corsOrigins: [],
 };
 
 const getToken = () => 'test-token';
 
+// `_registeredTools` is private TS but always present at runtime — it's how the
+// SDK stores the registered tools internally. Reading it here lets us assert
+// shape without going through the wire (which the integration suite already
+// does end-to-end).
+const registeredToolNames = (server: McpServer): string[] =>
+  Object.keys(
+    (server as unknown as { _registeredTools: Record<string, unknown> })._registeredTools,
+  );
+
 describe('createMcpServer', () => {
   it('creates a server in all mode', () => {
     const server = createMcpServer({ ...baseConfig, mode: 'all' }, getToken);
-    expect(server).toBeDefined();
+    expect(registeredToolNames(server).length).toBeGreaterThan(0);
   });
 
   it('creates a server in namespace mode', () => {
     const server = createMcpServer({ ...baseConfig, mode: 'namespace' }, getToken);
-    expect(server).toBeDefined();
+    const names = registeredToolNames(server);
+    // namespace mode produces one proxy per surviving namespace
+    expect(names).toContain('zendesk_tickets');
+    expect(names).toContain('zendesk_help_center');
+    expect(names).toContain('zendesk_users');
   });
 
   it('creates a server in single mode', () => {
     const server = createMcpServer({ ...baseConfig, mode: 'single' }, getToken);
-    expect(server).toBeDefined();
+    expect(registeredToolNames(server)).toEqual(['zendesk']);
   });
 
   it('creates a server with readOnly filter', () => {
@@ -53,7 +74,10 @@ describe('createMcpServer', () => {
 
   it('creates a server with namespace filter', () => {
     const server = createMcpServer({ ...baseConfig, namespaces: ['tickets'] }, getToken);
-    expect(server).toBeDefined();
+    const names = registeredToolNames(server);
+    // mode=all + namespace=tickets → only tickets-namespace leaf tools
+    expect(names).toContain('get_ticket');
+    expect(names).not.toContain('get_article');
   });
 
   it('creates a server with tool filter', () => {
@@ -61,31 +85,48 @@ describe('createMcpServer', () => {
       { ...baseConfig, mode: 'all', tools: ['get_ticket', 'get_current_user'] },
       getToken,
     );
-    expect(server).toBeDefined();
+    expect(registeredToolNames(server).sort()).toEqual(['get_current_user', 'get_ticket']);
   });
 
   it('registers a single read-only proxy when namespace and read-only are combined', () => {
-    const server = createMcpServer(
-      {
-        ...baseConfig,
-        mode: 'namespace',
-        namespaces: ['help_center'],
-        readOnly: true,
-      },
-      getToken,
-    );
+    const config: Config = {
+      ...baseConfig,
+      mode: 'namespace',
+      namespaces: ['help_center'],
+      readOnly: true,
+    };
+    const server = createMcpServer(config, getToken);
+    expect(registeredToolNames(server)).toEqual(['zendesk_help_center']);
 
-    const registered = introspect(server);
-    const names = Object.keys(registered);
-
-    expect(names).toEqual(['zendesk_help_center']);
-
-    const description = registered['zendesk_help_center']?.description ?? '';
+    const description = introspect(server)['zendesk_help_center']?.description ?? '';
     expect(description).not.toMatch(/\(write\)/);
     expect(description).toContain('search_articles');
     expect(description).toContain('get_article');
     expect(description).not.toContain('create_article');
     expect(description).not.toContain('update_article');
+  });
+
+  it('namespace proxy dispatch rejects operations outside its scoped tools', async () => {
+    // Regression: previously, every proxy shared one global handlerMap, so a
+    // caller could invoke `zendesk_tickets` with operation="get_article" and
+    // dispatch a help-center handler. Each proxy must scope dispatch to its
+    // own operations. We exercise the pure helper directly.
+    const allTools = createAllTools({ subdomain: 'x', getToken });
+    const ticketsTools = filterTools(allTools, {
+      readOnly: false,
+      namespaces: ['tickets'],
+    });
+    const dispatch = buildProxyDispatch(ticketsTools, undefined);
+
+    // get_article belongs to the help_center namespace; the tickets-scoped
+    // dispatch must reject it without ever reaching a real handler.
+    const out = await dispatch({ operation: 'get_article', params: { article_id: 1 } });
+    expect(out.content[0]?.type).toBe('text');
+    const text = (out.content[0] as { type: 'text'; text: string }).text;
+    expect(text).toMatch(/Unknown operation "get_article"/);
+    // The error message must list only the scoped operations, not the global set.
+    expect(text).toContain('get_ticket');
+    expect(text).not.toContain('search_articles');
   });
 
   it('marks read-only proxies with readOnlyHint=true and a [RO] description prefix', () => {

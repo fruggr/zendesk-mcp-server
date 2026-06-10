@@ -1,7 +1,7 @@
 {
   "name": "@fruggr/zendesk-mcp-server",
   "version": "1.8.0",
-  "description": "Model Context Protocol (MCP) server for the Zendesk Support & Help Center APIs — per-user OAuth 2.1 PKCE authentication, read-only mode, and token-efficient section-based article editing.",
+  "description": "Model Context Protocol (MCP) server for the Zendesk Support & Help Center APIs — runs locally (stdio) or as a private remote MCP server (HTTP), with per-user OAuth 2.1 PKCE authentication, read-only mode, and token-efficient section-based article editing.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -9,7 +9,8 @@
     "zendesk-mcp-server": "./dist/index.js"
   },
   "files": [
-    "dist/**/*"
+    "dist/**/*",
+    "glama.json"
   ],
   "scripts": {
     "build": "tsdown",

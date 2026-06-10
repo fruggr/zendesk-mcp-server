@@ -13,22 +13,34 @@ documentation.
   it's user-facing (→ `README.md`) or a deep dive (→ `docs/`): link it, don't
   inline it.
 
+Toolchain (Node 24 + pnpm 11) is the dev floor; the published package still runs on Node 20+ (a CI job exercises the packed tarball on Node 20).
+
 ## Architecture
 
 Standard MCP server under `src/` (entry `index.ts` → `server.ts`). Auth in
 `auth/`, HTTP client in `client/`, tool definitions in `tools/`, tool filtering
-in `routing/registry.ts`.
+in `routing/registry.ts`. Transports in `transports/`: stdio (SDK
+`StdioServerTransport`) plus a thin `node:http` HTTP transport that wraps
+`StreamableHTTPServerTransport` and serves the RFC 9728 / RFC 8414 OAuth
+discovery endpoints; HTTP builds a per-session `McpServer` so the request's
+bearer is captured in the tools' closure — no shared state.
 
 **Tool modes** (chosen at startup by `--mode`): `all` (every tool individually),
 `namespace` (default — one proxy per namespace), `single` (one `zendesk` proxy).
 Proxies take `{ operation, params }` and validate `params` through the original
-Zod schema. `--namespace` / `--read-only` / `--tool` are applied by `filterTools`
-*before* the mode switch; `--tool` also forces `mode: all` (`config.ts`).
+Zod schema. Each proxy dispatches only within its own scoped handler map, so a
+`zendesk_tickets` proxy cannot invoke a `help_center` operation. `--namespace` /
+`--read-only` / `--tool` are applied by `filterTools` *before* the mode switch;
+`--tool` also forces `mode: all` (`config.ts`).
+
+**Auth flavors** — stdio+OAuth (`token-store.ts`, lazy browser PKCE),
+stdio+API-token (static Basic auth header), HTTP (per-session bearer captured
+from `Authorization:`). API-token mode is **refused at boot** in HTTP because a
+shared static credential would expose every caller to the issuing user's
+rights.
 
 Setup, CLI flags, env vars and auth flows live in `README.md`; manual tool
 testing in `docs/live-testing.md`.
-
-## Testing
 
 ## Testing
 
@@ -48,6 +60,9 @@ testing in `docs/live-testing.md`.
 - TypeScript strict; Biome for lint/format (`pnpm check`).
 - Functional: pure functions, immutable data, no classes (except `ZendeskApiError`).
 - Tool handlers are standalone functions in `ToolDefinition[]` arrays.
+- ASCII-only error messages on auth paths — `node:http` rejects non-ASCII bytes
+  in `WWW-Authenticate` and other headers (`ERR_INVALID_CHAR`), which surfaces
+  as a 500 instead of the spec-required 401.
 
 ## Communication language
 

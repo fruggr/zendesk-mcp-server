@@ -9,6 +9,13 @@ import { type Config, ConfigSchema } from '../../src/config';
  */
 export interface ConnectedClient {
   client: Client;
+  /**
+   * Origin the client is connected to (e.g. `http://127.0.0.1:43997` for the
+   * HTTP harness). Undefined for transports without an HTTP surface (stdio).
+   * Tests that need to poke sibling endpoints (`/healthz`, `.well-known/...`)
+   * use this rather than reaching into the SDK transport's internals.
+   */
+  baseUrl?: string;
   close(): Promise<void>;
 }
 
@@ -36,5 +43,9 @@ export const makeConfig = (overrides: Partial<Config> = {}): Config =>
     logLevel: 'info',
     mode: 'all',
     readOnly: false,
+    transport: 'stdio',
+    host: '127.0.0.1',
+    port: 0,
+    corsOrigins: [],
     ...overrides,
   });

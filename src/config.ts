@@ -9,6 +9,9 @@ export type LogLevel = z.infer<typeof LogLevel>;
 export const Namespace = z.enum(['tickets', 'help_center', 'users']);
 export type Namespace = z.infer<typeof Namespace>;
 
+export const Transport = z.enum(['stdio', 'http']);
+export type Transport = z.infer<typeof Transport>;
+
 export const ConfigSchema = z.object({
   subdomain: z.string().min(1, 'ZENDESK_SUBDOMAIN is required'),
   oauthClientId: z.string().min(1),
@@ -19,6 +22,32 @@ export const ConfigSchema = z.object({
   readOnly: z.boolean(),
   namespaces: z.array(Namespace).optional(),
   tools: z.array(z.string()).optional(),
+  transport: Transport,
+  host: z.string().min(1),
+  port: z.number().int().min(0).max(65535),
+  publicUrl: z.string().url().optional(),
+  /**
+   * Additional browser origins allowed by CORS in HTTP mode. The default
+   * allowlist (the major web MCP clients + localhost-any-port for dev) is
+   * always applied; this list extends it. Native MCP clients (Claude
+   * Desktop, Claude Code CLI, Cursor, VS Code, Zed…) are unaffected
+   * because they send no Origin header.
+   */
+  corsOrigins: z
+    .array(
+      z
+        .string()
+        .url()
+        // Browsers send `Origin` with no trailing slash or path, and the CORS
+        // allowlist matches by strict equality. Normalize the configured value
+        // to its origin so `https://app.example.com/` (natural when
+        // copy-pasting a URL) still matches at runtime.
+        .transform((value) => new URL(value).origin)
+        .refine((origin) => origin !== 'null', {
+          message: 'CORS origin must be an http(s) URL with a host',
+        }),
+    )
+    .default([]),
   callbackPort: z.number().int().min(1).max(65535).optional(),
 });
 
@@ -31,8 +60,34 @@ interface CliResult {
   namespaces?: string[];
   tools?: string[];
   logLevel?: string;
+  transport?: string;
+  host?: string;
+  port?: number;
+  publicUrl?: string;
+  corsOrigins?: string[];
   callbackPort?: number;
 }
+
+// Number.parseInt('8080abc', 10) === 8080 — silently accepts a numeric
+// prefix. Validate strictly so malformed values fail loudly instead. Range
+// checks (0 vs 1 minimum etc.) stay in ConfigSchema, the single authority.
+//
+// The error intentionally does NOT echo the offending value: when `label`
+// names a variable CodeQL's heuristics treat as sensitive (anything with
+// "OAUTH" / "TOKEN" / etc. in the name, like ZENDESK_OAUTH_CALLBACK_PORT),
+// reflecting `raw` into a thrown Error.message that bubbles up to the
+// `console.error('Fatal error:', error)` in src/index.ts gets flagged as
+// `js/clear-text-logging`. The label alone tells the operator which knob is
+// wrong; they can re-read their env / CLI to see what they actually set.
+const parsePort = (raw: string, label: string): number => {
+  if (!/^\d+$/.test(raw)) {
+    throw new Error(`Invalid ${label} value. Expected an integer 0-65535.`);
+  }
+  return Number(raw);
+};
+
+const parsePortEnv = (raw: string | undefined, label: string): number | undefined =>
+  raw === undefined || raw === '' ? undefined : parsePort(raw, label);
 
 const parseCliArgs = (args: string[]): CliResult => {
   const result: CliResult = {};
@@ -59,8 +114,24 @@ const parseCliArgs = (args: string[]): CliResult => {
     } else if (arg === '--log-level' && next) {
       result.logLevel = next;
       i++;
+    } else if (arg === '--transport' && next) {
+      result.transport = next;
+      i++;
+    } else if (arg === '--host' && next) {
+      result.host = next;
+      i++;
+    } else if (arg === '--port' && next) {
+      result.port = parsePort(next, '--port');
+      i++;
+    } else if (arg === '--public-url' && next) {
+      result.publicUrl = next;
+      i++;
+    } else if (arg === '--cors-origin' && next) {
+      result.corsOrigins = result.corsOrigins ?? [];
+      result.corsOrigins.push(next);
+      i++;
     } else if (arg === '--callback-port' && next) {
-      result.callbackPort = Number(next);
+      result.callbackPort = parsePort(next, '--callback-port');
       i++;
     } else if (!arg.startsWith('-') && positionalIndex === 0) {
       result.subdomain = arg;
@@ -80,19 +151,54 @@ export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
 
   const mode = cli.tools?.length ? 'all' : (cli.mode ?? 'namespace');
 
-  const envCallbackPort = process.env['ZENDESK_OAUTH_CALLBACK_PORT'];
-  const callbackPort = cli.callbackPort ?? (envCallbackPort ? Number(envCallbackPort) : undefined);
+  const transport = cli.transport ?? process.env['TRANSPORT'] ?? 'stdio';
+  const host = cli.host ?? process.env['HOST'] ?? '0.0.0.0';
+  const port = cli.port ?? parsePortEnv(process.env['PORT'], 'PORT') ?? 3000;
+  const publicUrl = cli.publicUrl ?? process.env['PUBLIC_URL'];
+
+  // CORS allowlist extension: CLI flags first, then comma-separated env var.
+  // The defaults (major web MCP clients + localhost-any-port) are baked into
+  // the HTTP transport — this list ADDS to them, never replaces them.
+  const corsFromEnv = (process.env['CORS_ORIGIN'] ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  const corsOrigins = [...(cli.corsOrigins ?? []), ...corsFromEnv];
+
+  const callbackPort =
+    cli.callbackPort ??
+    parsePortEnv(process.env['ZENDESK_OAUTH_CALLBACK_PORT'], 'ZENDESK_OAUTH_CALLBACK_PORT');
+
+  const zendeskEmail = process.env['ZENDESK_EMAIL'];
+  const zendeskApiToken = process.env['ZENDESK_API_TOKEN'];
+
+  // API token auth in HTTP mode would expose the issuing user's full rights to
+  // anyone reaching the server (shared static credential). Refuse only when
+  // BOTH are set — a stray ZENDESK_EMAIL in the shell environment is harmless
+  // by itself, and rejecting it would surprise operators who intended OAuth.
+  if (transport === 'http' && zendeskEmail && zendeskApiToken) {
+    throw new Error(
+      'API token authentication (ZENDESK_EMAIL + ZENDESK_API_TOKEN) is not supported in HTTP mode. ' +
+        'HTTP mode requires per-user OAuth 2.1 PKCE - unset these variables and configure your ' +
+        'MCP client to perform the OAuth flow against Zendesk.',
+    );
+  }
 
   return ConfigSchema.parse({
     subdomain,
     oauthClientId,
-    zendeskEmail: process.env['ZENDESK_EMAIL'],
-    zendeskApiToken: process.env['ZENDESK_API_TOKEN'],
+    zendeskEmail,
+    zendeskApiToken,
     logLevel: cli.logLevel ?? process.env['LOG_LEVEL'] ?? 'info',
     mode,
     readOnly: cli.readOnly ?? false,
     namespaces: cli.namespaces,
     tools: cli.tools,
+    transport,
+    host,
+    port,
+    publicUrl,
+    corsOrigins,
     callbackPort,
   });
 };

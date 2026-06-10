@@ -8,6 +8,9 @@ describe('loadConfig', () => {
     delete process.env['ZENDESK_EMAIL'];
     delete process.env['ZENDESK_API_TOKEN'];
     delete process.env['LOG_LEVEL'];
+    delete process.env['TRANSPORT'];
+    delete process.env['HOST'];
+    delete process.env['PORT'];
     delete process.env['ZENDESK_OAUTH_CALLBACK_PORT'];
   });
 
@@ -77,29 +80,180 @@ describe('loadConfig', () => {
     expect(config.zendeskApiToken).toBe('tok');
   });
 
-  it('leaves callbackPort undefined by default', () => {
-    const config = loadConfig(['mycompany']);
-    expect(config.callbackPort).toBeUndefined();
+  describe('transport', () => {
+    it('defaults to stdio', () => {
+      const config = loadConfig(['mycompany']);
+      expect(config.transport).toBe('stdio');
+      expect(config.host).toBe('0.0.0.0');
+      expect(config.port).toBe(3000);
+    });
+
+    it('parses --transport, --host, --port flags', () => {
+      const config = loadConfig([
+        'mycompany',
+        '--transport',
+        'http',
+        '--host',
+        '127.0.0.1',
+        '--port',
+        '8080',
+      ]);
+      expect(config.transport).toBe('http');
+      expect(config.host).toBe('127.0.0.1');
+      expect(config.port).toBe(8080);
+    });
+
+    it('reads TRANSPORT/HOST/PORT from env when CLI omits them', () => {
+      process.env['TRANSPORT'] = 'http';
+      process.env['HOST'] = '0.0.0.0';
+      process.env['PORT'] = '4000';
+      const config = loadConfig(['mycompany']);
+      expect(config.transport).toBe('http');
+      expect(config.host).toBe('0.0.0.0');
+      expect(config.port).toBe(4000);
+    });
+
+    it('CLI overrides env for transport flags', () => {
+      process.env['TRANSPORT'] = 'http';
+      process.env['PORT'] = '4000';
+      const config = loadConfig(['mycompany', '--transport', 'stdio', '--port', '5000']);
+      expect(config.transport).toBe('stdio');
+      expect(config.port).toBe(5000);
+    });
+
+    it('rejects --port values that are not strictly numeric', () => {
+      expect(() => loadConfig(['mycompany', '--port', '8080abc'])).toThrow(/Invalid --port value/);
+      expect(() => loadConfig(['mycompany', '--port', 'abc'])).toThrow();
+    });
+
+    it('rejects PORT env values that are not strictly numeric', () => {
+      process.env['PORT'] = '8080abc';
+      expect(() => loadConfig(['mycompany'])).toThrow(/Invalid PORT value/);
+    });
+
+    it('refuses API token credentials in HTTP mode when both are set', () => {
+      process.env['ZENDESK_EMAIL'] = 'a@b.com';
+      process.env['ZENDESK_API_TOKEN'] = 'tok';
+      expect(() => loadConfig(['mycompany', '--transport', 'http'])).toThrow(
+        /API token authentication.*not supported in HTTP mode/,
+      );
+    });
+
+    it('allows ZENDESK_EMAIL alone in HTTP mode (no token actually configured)', () => {
+      process.env['ZENDESK_EMAIL'] = 'ops@example.com';
+      expect(() => loadConfig(['mycompany', '--transport', 'http'])).not.toThrow();
+    });
+
+    it('allows ZENDESK_API_TOKEN alone in HTTP mode', () => {
+      process.env['ZENDESK_API_TOKEN'] = 'tok';
+      expect(() => loadConfig(['mycompany', '--transport', 'http'])).not.toThrow();
+    });
+
+    it('accepts API token credentials in stdio mode', () => {
+      process.env['ZENDESK_EMAIL'] = 'a@b.com';
+      process.env['ZENDESK_API_TOKEN'] = 'tok';
+      const config = loadConfig(['mycompany']);
+      expect(config.transport).toBe('stdio');
+      expect(config.zendeskApiToken).toBe('tok');
+    });
   });
 
-  it('parses --callback-port flag', () => {
-    const config = loadConfig(['mycompany', '--callback-port', '51000']);
-    expect(config.callbackPort).toBe(51000);
+  describe('publicUrl', () => {
+    beforeEach(() => {
+      delete process.env['PUBLIC_URL'];
+    });
+
+    it('parses --public-url CLI flag', () => {
+      const config = loadConfig([
+        'mycompany',
+        '--transport',
+        'http',
+        '--public-url',
+        'https://mcp.example.com',
+      ]);
+      expect(config.publicUrl).toBe('https://mcp.example.com');
+    });
+
+    it('reads PUBLIC_URL from env', () => {
+      process.env['PUBLIC_URL'] = 'https://mcp.example.com';
+      const config = loadConfig(['mycompany', '--transport', 'http']);
+      expect(config.publicUrl).toBe('https://mcp.example.com');
+    });
+
+    it('rejects a non-URL PUBLIC_URL', () => {
+      process.env['PUBLIC_URL'] = 'not-a-url';
+      expect(() => loadConfig(['mycompany', '--transport', 'http'])).toThrow();
+    });
+
+    it('defaults to undefined', () => {
+      const config = loadConfig(['mycompany']);
+      expect(config.publicUrl).toBeUndefined();
+    });
   });
 
-  it('reads ZENDESK_OAUTH_CALLBACK_PORT from env', () => {
-    process.env['ZENDESK_OAUTH_CALLBACK_PORT'] = '52000';
-    const config = loadConfig(['mycompany']);
-    expect(config.callbackPort).toBe(52000);
+  describe('corsOrigins', () => {
+    beforeEach(() => {
+      delete process.env['CORS_ORIGIN'];
+    });
+
+    it('normalizes a trailing slash to the bare origin (browsers send no slash in Origin)', () => {
+      const config = loadConfig(['mycompany', '--cors-origin', 'https://my-app.example.com/']);
+      expect(config.corsOrigins).toEqual(['https://my-app.example.com']);
+    });
+
+    it('normalizes a URL with a path down to its origin', () => {
+      process.env['CORS_ORIGIN'] = 'https://my-app.example.com/some/page';
+      const config = loadConfig(['mycompany']);
+      expect(config.corsOrigins).toEqual(['https://my-app.example.com']);
+    });
+
+    it('keeps an already-normalized origin untouched', () => {
+      const config = loadConfig(['mycompany', '--cors-origin', 'https://my-app.example.com']);
+      expect(config.corsOrigins).toEqual(['https://my-app.example.com']);
+    });
+
+    it('rejects values that are not URLs', () => {
+      expect(() => loadConfig(['mycompany', '--cors-origin', 'not-a-url'])).toThrow();
+    });
   });
 
-  it('prefers --callback-port over the env var', () => {
-    process.env['ZENDESK_OAUTH_CALLBACK_PORT'] = '52000';
-    const config = loadConfig(['mycompany', '--callback-port', '51000']);
-    expect(config.callbackPort).toBe(51000);
-  });
+  describe('callbackPort', () => {
+    it('leaves callbackPort undefined by default', () => {
+      const config = loadConfig(['mycompany']);
+      expect(config.callbackPort).toBeUndefined();
+    });
 
-  it('rejects a callback port outside the TCP range', () => {
-    expect(() => loadConfig(['mycompany', '--callback-port', '70000'])).toThrow();
+    it('parses --callback-port flag', () => {
+      const config = loadConfig(['mycompany', '--callback-port', '51000']);
+      expect(config.callbackPort).toBe(51000);
+    });
+
+    it('reads ZENDESK_OAUTH_CALLBACK_PORT from env', () => {
+      process.env['ZENDESK_OAUTH_CALLBACK_PORT'] = '52000';
+      const config = loadConfig(['mycompany']);
+      expect(config.callbackPort).toBe(52000);
+    });
+
+    it('prefers --callback-port over the env var', () => {
+      process.env['ZENDESK_OAUTH_CALLBACK_PORT'] = '52000';
+      const config = loadConfig(['mycompany', '--callback-port', '51000']);
+      expect(config.callbackPort).toBe(51000);
+    });
+
+    it('rejects a callback port outside the TCP range', () => {
+      expect(() => loadConfig(['mycompany', '--callback-port', '70000'])).toThrow();
+    });
+
+    it('rejects --callback-port values that are not strictly numeric', () => {
+      // Same strictness as --port: Number.parseInt would accept '51000abc'.
+      expect(() => loadConfig(['mycompany', '--callback-port', '51000abc'])).toThrow(
+        /Invalid --callback-port value/,
+      );
+    });
+
+    it('rejects ZENDESK_OAUTH_CALLBACK_PORT env values that are not strictly numeric', () => {
+      process.env['ZENDESK_OAUTH_CALLBACK_PORT'] = '52000abc';
+      expect(() => loadConfig(['mycompany'])).toThrow(/Invalid ZENDESK_OAUTH_CALLBACK_PORT value/);
+    });
   });
 });
