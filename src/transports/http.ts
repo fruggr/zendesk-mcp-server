@@ -258,7 +258,7 @@ type BodyResult =
 // Read and parse the request body. The SDK transport could parse the stream
 // itself, but it neither caps the body size nor maps parse failures to the
 // right HTTP status — buffering here keeps both concerns in one place.
-const readJsonBody = (req: IncomingMessage): Promise<BodyResult> =>
+const readJsonBody = (req: IncomingMessage, maxBodyBytes: number): Promise<BodyResult> =>
   new Promise((resolve) => {
     const chunks: Buffer[] = [];
     let total = 0;
@@ -270,13 +270,13 @@ const readJsonBody = (req: IncomingMessage): Promise<BodyResult> =>
     };
     req.on('data', (chunk: Buffer) => {
       total += chunk.length;
-      if (total > MAX_BODY_BYTES) {
+      if (total > maxBodyBytes) {
         req.removeAllListeners('data');
         settle({
           ok: false,
           status: 413,
           rpcCode: -32600,
-          message: `Request body exceeds ${MAX_BODY_BYTES} bytes.`,
+          message: `Request body exceeds ${maxBodyBytes} bytes.`,
         });
         return;
       }
@@ -346,6 +346,8 @@ export interface HttpTransportOptions {
   sessionIdleTimeoutMs?: number;
   /** Idle-session sweep interval override (tests). */
   sweepIntervalMs?: number;
+  /** Request body cap override (tests use a small cap to stay cheap). */
+  maxBodyBytes?: number;
 }
 
 export const startHttpTransport = async (
@@ -356,6 +358,7 @@ export const startHttpTransport = async (
   const metadata = buildOAuthMetadata(config, logger);
   const sessions = new Map<string, Session>();
   const idleTimeoutMs = options.sessionIdleTimeoutMs ?? SESSION_IDLE_TIMEOUT_MS;
+  const maxBodyBytes = options.maxBodyBytes ?? MAX_BODY_BYTES;
 
   const handleMcpRequest = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     // MCP 2025-06-18: the Authorization header is validated on EVERY request,
@@ -381,7 +384,7 @@ export const startHttpTransport = async (
         session.lastActivityAt = Date.now();
         const body =
           req.method === 'POST'
-            ? await readJsonBody(req)
+            ? await readJsonBody(req, maxBodyBytes)
             : ({ ok: true, value: undefined } as const);
         if (!body.ok) {
           respondBodyError(req, res, body);
@@ -398,7 +401,7 @@ export const startHttpTransport = async (
       return;
     }
 
-    const body = await readJsonBody(req);
+    const body = await readJsonBody(req, maxBodyBytes);
     if (!body.ok) {
       respondBodyError(req, res, body);
       return;

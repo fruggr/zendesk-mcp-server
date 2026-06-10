@@ -312,8 +312,14 @@ describe('startHttpTransport (HTTP roundtrip)', () => {
     expect(seenAuth).toEqual(['Bearer rotated-token']);
   });
 
-  it('rejects a body over MAX_BODY_BYTES with 413', async () => {
-    handle = await startHttpTransport(baseConfig);
+  // Both 413 tests inject a small cap: the production default is 4 MB, and
+  // pushing megabytes through the test stack means MSW's interceptor clones
+  // and buffers the body — slow, and a source of timing-dependent hangs on
+  // constrained CI runners. The cap value is irrelevant to the behavior.
+  const SMALL_CAP = 64 * 1024;
+
+  it('rejects a body over the configured cap with 413', async () => {
+    handle = await startHttpTransport(baseConfig, undefined, { maxBodyBytes: SMALL_CAP });
     const res = await fetch(`http://127.0.0.1:${handle.port}/mcp`, {
       method: 'POST',
       headers: {
@@ -321,10 +327,14 @@ describe('startHttpTransport (HTTP roundtrip)', () => {
         'Content-Type': 'application/json',
         Accept: 'application/json, text/event-stream',
       },
-      body: `{"pad":"${'x'.repeat(MAX_BODY_BYTES + 1)}"}`,
+      body: `{"pad":"${'x'.repeat(SMALL_CAP + 1)}"}`,
     });
     expect(res.status).toBe(413);
     await res.text();
+  });
+
+  it('defaults the body cap to MAX_BODY_BYTES (sanity)', () => {
+    expect(MAX_BODY_BYTES).toBe(4 * 1024 * 1024);
   });
 
   it('responds 413 mid-upload and drops the connection (no deadlock on slow clients)', async () => {
@@ -333,7 +343,7 @@ describe('startHttpTransport (HTTP roundtrip)', () => {
     // destroys the socket after the 413, the connection wedges and
     // handle.close() (in afterEach) hangs forever. Reproduced here with a
     // request that announces more than it ever sends.
-    handle = await startHttpTransport(baseConfig);
+    handle = await startHttpTransport(baseConfig, undefined, { maxBodyBytes: SMALL_CAP });
     const status = await new Promise<number>((resolve, reject) => {
       const req = httpRequest({
         host: '127.0.0.1',
@@ -343,7 +353,7 @@ describe('startHttpTransport (HTTP roundtrip)', () => {
         headers: {
           Authorization: 'Bearer test-token',
           'Content-Type': 'application/json',
-          'Content-Length': String(MAX_BODY_BYTES * 2),
+          'Content-Length': String(SMALL_CAP * 2),
         },
       });
       req.on('response', (res) => {
@@ -355,7 +365,7 @@ describe('startHttpTransport (HTTP roundtrip)', () => {
       // ever arrived.
       req.on('error', (err) => reject(err));
       // Send just past the cap, then keep the request open forever.
-      req.write(Buffer.alloc(MAX_BODY_BYTES + 1024, 120));
+      req.write(Buffer.alloc(SMALL_CAP + 1024, 120));
     });
     expect(status).toBe(413);
     // afterEach's handle.close() locks the "shutdown never hangs" half.
