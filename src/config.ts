@@ -71,9 +71,17 @@ interface CliResult {
 // Number.parseInt('8080abc', 10) === 8080 — silently accepts a numeric
 // prefix. Validate strictly so malformed values fail loudly instead. Range
 // checks (0 vs 1 minimum etc.) stay in ConfigSchema, the single authority.
+//
+// The error intentionally does NOT echo the offending value: when `label`
+// names a variable CodeQL's heuristics treat as sensitive (anything with
+// "OAUTH" / "TOKEN" / etc. in the name, like ZENDESK_OAUTH_CALLBACK_PORT),
+// reflecting `raw` into a thrown Error.message that bubbles up to the
+// `console.error('Fatal error:', error)` in src/index.ts gets flagged as
+// `js/clear-text-logging`. The label alone tells the operator which knob is
+// wrong; they can re-read their env / CLI to see what they actually set.
 const parsePort = (raw: string, label: string): number => {
   if (!/^\d+$/.test(raw)) {
-    throw new Error(`Invalid ${label} value: "${raw}". Expected an integer 0-65535.`);
+    throw new Error(`Invalid ${label} value. Expected an integer 0-65535.`);
   }
   return Number(raw);
 };
