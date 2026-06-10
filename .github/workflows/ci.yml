@@ -28,25 +28,7 @@ jobs:
 
       - run: pnpm typecheck
 
-      # TEMPORARY DIAGNOSTIC (revert before merge): test:coverage hangs
-      # intermittently on GitHub runners only, and only when vitest writes to
-      # the runner's stdout pipe (file-redirected runs are consistently
-      # green). Keep the pipe condition via `tee`, capture everything to a
-      # file, and kill the whole process group at the bound so the step always
-      # exits with readable logs (the last running test + open handles).
-      - run: |
-          set +e
-          setsid bash -o pipefail -c 'pnpm test:coverage --reporter=verbose --reporter=hanging-process 2>&1 | tee vitest-diag.log' &
-          pgid=$!
-          ( sleep 240 && kill -TERM -- "-$pgid" 2>/dev/null; sleep 15 && kill -KILL -- "-$pgid" 2>/dev/null ) &
-          watcher=$!
-          wait "$pgid"
-          code=$?
-          kill "$watcher" 2>/dev/null
-          echo "=== exit code: $code ==="
-          echo "=== last 120 lines of vitest output ==="
-          tail -n 120 vitest-diag.log
-          exit $code
+      - run: pnpm test:coverage
 
       - name: Coverage summary
         if: always()
