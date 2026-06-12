@@ -79,7 +79,9 @@ Any change to the tool surface syncs `README.md` in the same PR (tool tables,
 per-section `(N tools)` counts, global tool count). Update namespace counts in
 `tests/unit/routing/registry.test.ts` and the length assertions in
 `tests/unit/tools/*.test.ts`. Proxy descriptions surface only the first sentence
-of a tool's description — keep it standalone.
+of a tool's description — keep it standalone. Changes to the non-tool MCP surface
+(server `instructions`, `resources`, `prompts`) sync the relevant `README.md`
+section in the same PR.
 
 ## Submission quality bar
 

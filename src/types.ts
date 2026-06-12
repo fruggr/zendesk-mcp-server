@@ -146,6 +146,13 @@ export interface ZendeskSection {
   updated_at: string;
 }
 
+// GET /api/v2/help_center/locales — the Help Center's active languages and the
+// one served by default.
+export interface ZendeskLocalesResponse {
+  locales: string[];
+  default_locale: string;
+}
+
 export interface PaginationMeta {
   has_more: boolean;
   after_cursor: string | null;

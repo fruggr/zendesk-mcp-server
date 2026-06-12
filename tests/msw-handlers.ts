@@ -123,6 +123,11 @@ export const MOCK_USER_SEGMENT = {
   updated_at: '2026-01-02T00:00:00Z',
 };
 
+export const MOCK_LOCALES = {
+  locales: ['en-us', 'fr'],
+  default_locale: 'en-us',
+};
+
 export const MOCK_ARTICLE_ATTACHMENT = {
   id: 20001,
   file_name: 'screenshot.png',
@@ -185,7 +190,21 @@ export const errorHandlers = {
     `${BASE}/users/me`,
     () => new HttpResponse('unauthorized', { status: 401 }),
   ),
+  localesUnauthorized: http.get(
+    `${HC_BASE}/locales`,
+    () => new HttpResponse('unauthorized', { status: 401 }),
+  ),
 };
+
+// Opt-in override: a Help Center with more sections than a single page, used to
+// exercise the topology resource's "summary mode" (tree omitted, count + hint).
+export const manySectionsHandler = http.get(`${HC_BASE}/sections`, () =>
+  HttpResponse.json({
+    sections: [MOCK_SECTION],
+    meta: { has_more: true, after_cursor: 'next-page-cursor' },
+    count: 250,
+  }),
+);
 
 export const handlers = [
   // Tickets
@@ -363,6 +382,9 @@ export const handlers = [
     HttpResponse.json({ records: [MOCK_CONTENT_TAG], count: 1 }),
   ),
   http.post(`${BASE}/guide/content_tags`, () => HttpResponse.json({ record: MOCK_CONTENT_TAG })),
+
+  // Help Center - Locales
+  http.get(`${HC_BASE}/locales`, () => HttpResponse.json(MOCK_LOCALES)),
 
   // Help Center - User Segments
   http.get(`${HC_BASE}/user_segments`, () =>
