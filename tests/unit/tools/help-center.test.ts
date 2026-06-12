@@ -270,7 +270,7 @@ describe('help center tools', () => {
       const tool = findTool('create_content_tag');
       const result = await tool.handler({ name: 'accessibility' });
       expect(result.content[0]?.text).toContain('Content tag created');
-      expect(result.content[0]?.text).toContain('scanner');
+      expect(result.content[0]?.text).toContain('accessibility');
     });
   });
 
