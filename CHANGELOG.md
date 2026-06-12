@@ -1,3 +1,18 @@
+## [1.9.1](https://github.com/fruggr/zendesk-mcp-server/compare/v1.9.0...v1.9.1) (2026-06-12)
+
+### Bug Fixes
+
+* send content_tag wrapper when creating Guide content tags ([#81](https://github.com/fruggr/zendesk-mcp-server/issues/81)) ([db38a80](https://github.com/fruggr/zendesk-mcp-server/commit/db38a80f4ac3b677db4f892774b3a3db77587232))
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Chores
+
+* **deps:** lock file maintenance ([#78](https://github.com/fruggr/zendesk-mcp-server/issues/78)) ([f9a3d36](https://github.com/fruggr/zendesk-mcp-server/commit/f9a3d36a1389647fbc874bd370ed329bdef06d2e))
+* **deps:** update pnpm to v11.5.2 ([#80](https://github.com/fruggr/zendesk-mcp-server/issues/80)) ([9ddd3b1](https://github.com/fruggr/zendesk-mcp-server/commit/9ddd3b172662356b095b3efc2f002ceda5bd9630))
+</details>
+
 ## [1.9.0](https://github.com/fruggr/zendesk-mcp-server/compare/v1.8.0...v1.9.0) (2026-06-10)
 
 ### Features
