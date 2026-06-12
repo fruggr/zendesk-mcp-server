@@ -651,14 +651,16 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       handler: async (params) => {
         const { name } = params as { name: string };
         const token = await getToken();
-        const { record } = await zendeskPost<{ record: ZendeskContentTag }>(
+        const { content_tag } = await zendeskPost<{ content_tag: ZendeskContentTag }>(
           subdomain,
           token,
           '/guide/content_tags',
-          { record: { name } },
+          { content_tag: { name } },
         );
         return {
-          content: [{ type: 'text', text: `Content tag created.\n\n${formatContentTag(record)}` }],
+          content: [
+            { type: 'text', text: `Content tag created.\n\n${formatContentTag(content_tag)}` },
+          ],
         };
       },
     },
