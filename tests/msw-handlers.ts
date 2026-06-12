@@ -206,6 +206,16 @@ export const manySectionsHandler = http.get(`${HC_BASE}/sections`, () =>
   }),
 );
 
+// Opt-in override: a Help Center with more categories than a single page, used to
+// exercise the topology resource's "summary mode" when categories themselves overflow.
+export const manyCategoriesHandler = http.get(`${HC_BASE}/categories`, () =>
+  HttpResponse.json({
+    categories: [MOCK_CATEGORY],
+    meta: { has_more: true, after_cursor: 'next-page-cursor' },
+    count: 250,
+  }),
+);
+
 export const handlers = [
   // Tickets
   http.get(`${BASE}/tickets/:id`, ({ params }) => {

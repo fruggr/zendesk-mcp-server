@@ -6,7 +6,7 @@ import {
   formatTopology,
   type TopologyData,
 } from '../../../src/guidance/topology';
-import { errorHandlers, manySectionsHandler } from '../../msw-handlers';
+import { errorHandlers, manyCategoriesHandler, manySectionsHandler } from '../../msw-handlers';
 import { mswServer } from '../../setup';
 
 const SUBDOMAIN = 'testsubdomain';
@@ -22,6 +22,7 @@ describe('fetchTopology', () => {
     expect(data.sections.map((s) => s.id)).toEqual([600]);
     expect(data.sections[0]?.category_id).toBe(800);
     expect(data.sectionsHasMore).toBe(false);
+    expect(data.categoriesHasMore).toBe(false);
     expect(data.userSegments.map((s) => s.id)).toEqual([15001]);
     expect(data.permissionGroups.map((g) => g.id)).toEqual([12001]);
     expect(data.currentUser.id).toBe(9999);
@@ -32,6 +33,12 @@ describe('fetchTopology', () => {
     mswServer.use(manySectionsHandler);
     const data = await fetchTopology(SUBDOMAIN, TOKEN);
     expect(data.sectionsHasMore).toBe(true);
+  });
+
+  it('flags has_more when the Help Center has more categories than a page', async () => {
+    mswServer.use(manyCategoriesHandler);
+    const data = await fetchTopology(SUBDOMAIN, TOKEN);
+    expect(data.categoriesHasMore).toBe(true);
   });
 });
 
@@ -62,6 +69,7 @@ const baseData = (): TopologyData => ({
     },
   ],
   sectionsHasMore: false,
+  categoriesHasMore: false,
   userSegments: [
     {
       id: 15001,
@@ -109,6 +117,13 @@ describe('formatTopology', () => {
     expect(text).toContain('list_sections');
     // Categories are still listed, but the section heading "FAQ" is not.
     expect(text).toContain('General');
+    expect(text).not.toContain('FAQ');
+  });
+
+  it('signals truncation and points at list_categories when categories are truncated', () => {
+    const text = formatTopology({ ...baseData(), categoriesHasMore: true });
+    expect(text).toContain('list_categories');
+    // Tree is omitted (categories list is itself partial), so the section is not shown.
     expect(text).not.toContain('FAQ');
   });
 });

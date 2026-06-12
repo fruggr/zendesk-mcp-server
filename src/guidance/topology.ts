@@ -26,6 +26,8 @@ export interface TopologyData {
   sections: ZendeskSection[];
   /** True when the tenant has more sections than a single page (tree omitted). */
   sectionsHasMore: boolean;
+  /** True when the tenant has more categories than a single page (tree omitted). */
+  categoriesHasMore: boolean;
   userSegments: ZendeskUserSegment[];
   permissionGroups: ZendeskPermissionGroup[];
   currentUser: ZendeskUser;
@@ -34,8 +36,8 @@ export interface TopologyData {
 /**
  * Fetch the structural topology with the CALLER'S token, so the result respects
  * that user's read permissions (no privileged shared credential). Categories
- * and sections are capped at one max-size page; `sectionsHasMore` signals a
- * Help Center too large to enumerate inline.
+ * and sections are each capped at one max-size page; `sectionsHasMore` /
+ * `categoriesHasMore` signal a Help Center too large to enumerate inline.
  */
 export const fetchTopology = async (subdomain: string, token: string): Promise<TopologyData> => {
   const pageParams = { 'page[size]': String(MAX_PAGE_SIZE) };
@@ -63,6 +65,7 @@ export const fetchTopology = async (subdomain: string, token: string): Promise<T
     categories: categoriesRes.categories ?? [],
     sections: sectionsRes.sections ?? [],
     sectionsHasMore: extractPaginationMeta(sectionsRes).has_more,
+    categoriesHasMore: extractPaginationMeta(categoriesRes).has_more,
     userSegments: segmentsRes.user_segments ?? [],
     permissionGroups: permsRes.permission_groups ?? [],
     currentUser: meRes.user,
@@ -70,14 +73,21 @@ export const fetchTopology = async (subdomain: string, token: string): Promise<T
 };
 
 const renderTree = (data: TopologyData): string[] => {
-  // Too many sections to enumerate honestly from one page: list categories only
-  // and point at list_sections rather than showing a misleading partial tree.
-  if (data.sectionsHasMore) {
+  // Too many categories or sections to enumerate honestly from one page: omit the
+  // tree and point at the list_* tools rather than showing a misleading partial
+  // tree. When categories overflow, the category list below is itself partial.
+  if (data.categoriesHasMore || data.sectionsHasMore) {
+    const reasons: string[] = [];
+    if (data.categoriesHasMore) reasons.push(`more than ${MAX_PAGE_SIZE} categories`);
+    if (data.sectionsHasMore) reasons.push(`more than ${MAX_PAGE_SIZE} sections`);
     return [
-      `More than ${MAX_PAGE_SIZE} sections — the full tree is omitted to stay concise.`,
-      'Categories:',
+      `Large Help Center (${reasons.join(' and ')}) — the full tree is omitted to stay concise.`,
+      data.categoriesHasMore ? 'Categories (partial list):' : 'Categories:',
       ...data.categories.map(formatCategory),
       '',
+      ...(data.categoriesHasMore
+        ? ['Use the `list_categories` tool to enumerate all categories.']
+        : []),
       'Use the `list_sections` tool (filtered by `category_id`) to enumerate sections under a category.',
     ];
   }
