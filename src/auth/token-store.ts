@@ -75,6 +75,10 @@ export const createTokenStore = (
 
   const setToken = (accessToken: string, refreshToken?: string | undefined) => {
     token = { accessToken, refreshToken };
+    // A token installed this way has no known expiry and unknown age, like the
+    // disk-loaded one: let it be probe-refreshed once rather than inheriting a
+    // previous token's "already probed" state (the flag is store-wide).
+    probedUnknownExpiry = false;
     persist(token);
   };
 
@@ -90,8 +94,15 @@ export const createTokenStore = (
 
   // Try to silently mint a fresh access token from the stored refresh token.
   // Resolves to the new access token, or `undefined` if there's nothing to
-  // refresh / the refresh failed (in which case the dead token is dropped).
-  const tryRefresh = async (current: StoredToken): Promise<string | undefined> => {
+  // refresh / the refresh failed. On failure the on-demand path drops the dead
+  // token (so getToken falls back to the browser flow); the background keepalive
+  // passes `dropOnFailure: false` because it refreshes preemptively while the
+  // access token may still be valid — a transient 5xx/network blip must not wipe
+  // a usable token and force needless re-auth.
+  const tryRefresh = async (
+    current: StoredToken,
+    { dropOnFailure = true }: { dropOnFailure?: boolean } = {},
+  ): Promise<string | undefined> => {
     if (!current.refreshToken) return undefined;
     try {
       const result = await refreshAccessToken(
@@ -119,8 +130,12 @@ export const createTokenStore = (
         error: err instanceof Error ? err.message : String(err),
       });
       // Refresh token expired/invalid → drop it so we fall back to a fresh flow.
-      token = undefined;
-      clearPersistedToken(tokenPath, logger);
+      // Skipped for the background keepalive, which must keep a still-valid token
+      // alive across a transient failure.
+      if (dropOnFailure) {
+        token = undefined;
+        clearPersistedToken(tokenPath, logger);
+      }
       return undefined;
     }
   };
@@ -232,7 +247,7 @@ export const createTokenStore = (
   // stdio-only: HTTP carries a per-session bearer and doesn't use this store.
   const scheduledRefresh = setInterval(() => {
     if (token?.refreshToken && !refreshing) {
-      refreshing = tryRefresh(token).finally(() => {
+      refreshing = tryRefresh(token, { dropOnFailure: false }).finally(() => {
         refreshing = undefined;
       });
     }
