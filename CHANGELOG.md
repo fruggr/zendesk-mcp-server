@@ -1,3 +1,9 @@
+## [2.0.1](https://github.com/fruggr/zendesk-mcp-server/compare/v2.0.0...v2.0.1) (2026-06-13)
+
+### Bug Fixes
+
+* **tools:** enrich descriptions and parameters of low-scoring tools ([#85](https://github.com/fruggr/zendesk-mcp-server/issues/85)) ([7e63159](https://github.com/fruggr/zendesk-mcp-server/commit/7e6315970a4e4f170952717d5698cca42a876cbc))
+
 ## [2.0.0](https://github.com/fruggr/zendesk-mcp-server/compare/v1.9.1...v2.0.0) (2026-06-13)
 
 ### ⚠ BREAKING CHANGES
