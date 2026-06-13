@@ -81,7 +81,9 @@ Prose and section headers are deliberately count-free (no per-section
 only go stale. Exact counts still live where they're load-bearing: namespace
 counts in `tests/unit/routing/registry.test.ts` and the length assertions in
 `tests/unit/tools/*.test.ts` — update those. Proxy descriptions surface only the
-first sentence of a tool's description — keep it standalone.
+first sentence of a tool's description — keep it standalone. Changes to the
+non-tool MCP surface (server `instructions`, `resources`, `prompts`) sync the
+relevant `README.md` section in the same PR.
 
 ## Submission quality bar
 

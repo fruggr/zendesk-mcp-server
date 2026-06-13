@@ -3,6 +3,12 @@ export const DEFAULT_PAGE_SIZE = 100;
 export const MAX_PAGE_SIZE = 100;
 export const TOKEN_CACHE_TTL_MS = 5 * 60 * 1000;
 
+// TTL for the per-session Help Center topology cache (zendesk-hc://topology).
+// The tenant's structure (locales, category/section tree, segments) changes
+// rarely, so a short TTL keeps a session's repeated reads cheap without going
+// stale for long after a reorg.
+export const TOPOLOGY_TTL_MS = 5 * 60 * 1000;
+
 // Local port the OAuth PKCE flow listens on for the browser callback. Must match
 // the redirect URL registered in the Zendesk OAuth client. Deliberately picked
 // outside the usual dev range (3000/5000/8080…) and below the OS ephemeral

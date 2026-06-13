@@ -151,6 +151,27 @@ zendesk-mcp-server acme --namespace tickets
 
 </details>
 
+## Help Center context (instructions + resources)
+
+Beyond tools, the server hands an LLM the structural context it needs to work
+against *your* Help Center — so it stops guessing locales or fuzzy-matching
+section names and uses real IDs instead. This is delivered through two
+MCP-native channels (both active only when the `help_center` namespace is, and
+disabled together with `--no-topology`):
+
+- **`instructions`** (sent on `initialize`): a short, static blob auto-loaded by
+  compliant clients. It names the subdomain and points at the topology resource.
+- **`zendesk-hc://topology`** (a pull-only [MCP resource](https://modelcontextprotocol.io/docs/concepts/resources)):
+  read on demand, it returns Markdown describing the active locales (and the
+  default), the category → section tree with IDs, the visibility user segments,
+  the permission groups, and the calling user's role. It is fetched **with the
+  caller's own token**, so it respects that user's read permissions. On a very
+  large Help Center the section tree is summarized (per-category, with a pointer
+  to `list_sections`) to stay concise.
+
+Clients that don't consume `instructions` or `resources` simply ignore them —
+the feature degrades silently. Use `--no-topology` to turn both off server-wide.
+
 ## Prerequisites
 
 - **Node.js** >= 20 (runtime — declared in `package.json#engines.node`)
@@ -418,6 +439,8 @@ Options:
   --namespace <ns>        Filter by namespace (repeatable): tickets, help_center, users
   --tool <name>           Filter by tool name (repeatable, forces --mode all)
   --read-only             Only expose read operations
+  --no-topology           Disable the Help Center structural context
+                          (instructions + zendesk-hc://topology resource)
   --log-level <level>     debug | info (default) | warn | error
   --transport <t>         stdio (default) | http
   --host <host>           HTTP bind host (default: 0.0.0.0)

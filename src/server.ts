@@ -2,6 +2,12 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import * as z from 'zod/v4';
 import { ZendeskApiError } from './client/zendesk-api';
 import type { Config } from './config';
+import {
+  buildInstructions,
+  helpCenterContextEnabled,
+  TOPOLOGY_RESOURCE_URI,
+} from './guidance/instructions';
+import { createTopologyProvider } from './guidance/topology';
 import { filterTools, groupByNamespace } from './routing/registry';
 import type { ToolAnnotations, ToolResult } from './tools/definitions';
 import { createAllTools, type ToolDefinition } from './tools/index';
@@ -145,6 +151,9 @@ export const createMcpServer = (
   // Read name/version from package.json at runtime rather than hardcoding them
   // (the old literals were stale and even carried the wrong package name).
   const pkg = readPackageInfo();
+  // Static, I/O-free Help Center context auto-loaded by clients on initialize.
+  // Built before connect; undefined (and omitted) when the context is disabled.
+  const instructions = buildInstructions(config);
   const server = new McpServer(
     {
       name: pkg.name,
@@ -152,8 +161,10 @@ export const createMcpServer = (
     },
     // Advertise the logging capability so structured diagnostics (notably the
     // OAuth browser flow) reach clients that support it. Clients that don't
-    // simply ignore the notifications.
-    { capabilities: { logging: {} } },
+    // simply ignore the notifications. The `resources` capability is merged in
+    // automatically by registerResource below. Spread `instructions` only when
+    // present so the field is omitted entirely (exactOptionalPropertyTypes).
+    { capabilities: { logging: {} }, ...(instructions ? { instructions } : {}) },
   );
 
   // Route the logger's MCP sink through this server. Auth runs lazily on the
@@ -213,6 +224,27 @@ export const createMcpServer = (
       );
       break;
     }
+  }
+
+  // Pull-only Help Center topology resource. Read on demand with the caller's
+  // token (resolved at read time via getToken), so auth timing and ACL are
+  // both correct. Registered only when the context is enabled; this also
+  // advertises the `resources` capability (merged with `logging`).
+  if (helpCenterContextEnabled(config)) {
+    const topology = createTopologyProvider(getToken, config.subdomain, onUnauthorized);
+    server.registerResource(
+      'help-center-topology',
+      TOPOLOGY_RESOURCE_URI,
+      {
+        title: 'Zendesk Help Center topology',
+        description:
+          'Active locales, category → section tree, visibility segments, permission groups, and your role. Read before creating or editing content.',
+        mimeType: 'text/markdown',
+      },
+      async (uri) => ({
+        contents: [{ uri: uri.toString(), mimeType: 'text/markdown', text: await topology.read() }],
+      }),
+    );
   }
 
   logger.info('tools_registered', { count: filteredTools.length, mode: config.mode });

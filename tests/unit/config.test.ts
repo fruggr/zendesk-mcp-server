@@ -50,6 +50,16 @@ describe('loadConfig', () => {
     expect(config.readOnly).toBe(true);
   });
 
+  it('enables the topology context by default', () => {
+    const config = loadConfig(['mycompany']);
+    expect(config.topology).toBe(true);
+  });
+
+  it('parses --no-topology flag', () => {
+    const config = loadConfig(['mycompany', '--no-topology']);
+    expect(config.topology).toBe(false);
+  });
+
   it('parses multiple --namespace flags', () => {
     const config = loadConfig(['mycompany', '--namespace', 'tickets', '--namespace', 'users']);
     expect(config.namespaces).toEqual(['tickets', 'users']);

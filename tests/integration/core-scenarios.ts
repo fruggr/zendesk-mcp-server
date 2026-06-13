@@ -32,6 +32,51 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         connected = await harness.connect(makeConfig());
         expect(connected.client.getServerCapabilities()?.logging).toBeDefined();
       });
+
+      it('advertises the resources capability alongside logging when help_center is active', async () => {
+        connected = await harness.connect(makeConfig());
+        const caps = connected.client.getServerCapabilities();
+        expect(caps?.logging).toBeDefined();
+        expect(caps?.resources).toBeDefined();
+      });
+    });
+
+    describe('instructions + topology resource', () => {
+      it('sends Help Center instructions referencing the topology resource', async () => {
+        connected = await harness.connect(makeConfig());
+        const instructions = connected.client.getInstructions();
+        expect(instructions).toContain('zendesk-hc://topology');
+        expect(instructions).toContain('testsubdomain');
+      });
+
+      it('omits instructions and the resource when help_center is filtered out', async () => {
+        connected = await harness.connect(
+          makeConfig({ mode: 'namespace', namespaces: ['tickets'] }),
+        );
+        expect(connected.client.getInstructions()).toBeUndefined();
+        expect(connected.client.getServerCapabilities()?.resources).toBeUndefined();
+      });
+
+      it('omits instructions and the resource when topology is disabled', async () => {
+        connected = await harness.connect(makeConfig({ topology: false }));
+        expect(connected.client.getInstructions()).toBeUndefined();
+        expect(connected.client.getServerCapabilities()?.resources).toBeUndefined();
+      });
+
+      it('lists and reads the topology resource with the live tenant structure', async () => {
+        connected = await harness.connect(makeConfig());
+        const { resources } = await connected.client.listResources();
+        expect(resources.map((r) => r.uri)).toContain('zendesk-hc://topology');
+
+        const read = await connected.client.readResource({ uri: 'zendesk-hc://topology' });
+        const text = (read.contents ?? [])
+          .map((c) => (typeof c.text === 'string' ? c.text : ''))
+          .join('\n');
+        expect(text).toContain('en-us'); // default locale
+        expect(text).toContain('(800)'); // category General
+        expect(text).toContain('(600)'); // section FAQ
+        expect(text).toContain('admin'); // current user role
+      });
     });
 
     describe('tools/list', () => {

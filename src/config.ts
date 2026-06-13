@@ -20,6 +20,14 @@ export const ConfigSchema = z.object({
   readOnly: z.boolean(),
   namespaces: z.array(Namespace).optional(),
   tools: z.array(z.string()).optional(),
+  /**
+   * Whether to expose the Help Center structural context (the `instructions`
+   * blob + the `zendesk-hc://topology` resource). On by default; an operator
+   * disables it server-wide with `--no-topology` (e.g. on a very large Help
+   * Center, or when the context is unwanted). Only ever active when the
+   * `help_center` namespace itself is active.
+   */
+  topology: z.boolean().default(true),
   transport: Transport,
   host: z.string().min(1),
   port: z.number().int().min(0).max(65535),
@@ -57,6 +65,7 @@ interface CliResult {
   readOnly?: boolean;
   namespaces?: string[];
   tools?: string[];
+  topology?: boolean;
   logLevel?: string;
   transport?: string;
   host?: string;
@@ -101,6 +110,8 @@ const parseCliArgs = (args: string[]): CliResult => {
       i++;
     } else if (arg === '--read-only') {
       result.readOnly = true;
+    } else if (arg === '--no-topology') {
+      result.topology = false;
     } else if (arg === '--namespace' && next) {
       result.namespaces = result.namespaces ?? [];
       result.namespaces.push(next);
@@ -175,6 +186,7 @@ export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
     readOnly: cli.readOnly ?? false,
     namespaces: cli.namespaces,
     tools: cli.tools,
+    topology: cli.topology ?? true,
     transport,
     host,
     port,

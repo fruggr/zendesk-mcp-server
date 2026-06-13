@@ -8,19 +8,21 @@
  * one-shot client you can run from any branch to exercise tools live.
  *
  * Usage:
- *   pnpm tsx scripts/mcp-live.ts list                       # list exposed tools
+ *   pnpm tsx scripts/mcp-live.ts list                       # list exposed tools + resources
  *   pnpm tsx scripts/mcp-live.ts call <tool> '<json-params>' # call one tool
+ *   pnpm tsx scripts/mcp-live.ts read <resource-uri>         # read one resource
  *
  * Anything after `--` is forwarded to the server config parser, so the full CLI
  * surface (`--mode`, `--namespace`, `--read-only`, `--tool`) is available:
  *   pnpm tsx scripts/mcp-live.ts list -- --mode namespace
  *   pnpm tsx scripts/mcp-live.ts call get_current_user '{}' -- --mode all
+ *   pnpm tsx scripts/mcp-live.ts read zendesk-hc://topology -- --mode all
  *
  * Auth: this server is OAuth 2.1 PKCE only, and the browser flow can't run
  * headless. So `list` / schema validation work credential-free, and a real
- * `call` reads a pre-obtained OAuth access token from ZENDESK_OAUTH_TOKEN and
- * sends it as a Bearer. Grab one via the normal OAuth flow (e.g. in a local
- * session) and export it before calling.
+ * `call` or `read` reads a pre-obtained OAuth access token from
+ * ZENDESK_OAUTH_TOKEN and sends it as a Bearer. Grab one via the normal OAuth
+ * flow (e.g. in a local session) and export it before calling.
  */
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
@@ -88,6 +90,25 @@ const main = async (): Promise<void> => {
         const firstLine = (tool.description ?? '').split('\n')[0];
         console.log(`- ${tool.name}: ${firstLine}`);
       }
+      // Resources are only advertised when the server registers at least one
+      // (e.g. the topology resource). In tool-only sessions (--no-topology, or a
+      // namespace without resources) the capability is absent, so guard the call
+      // to keep `list` working everywhere.
+      if (client.getServerCapabilities()?.resources) {
+        const { resources } = await client.listResources();
+        console.log(`\n# ${resources.length} resource(s)\n`);
+        for (const resource of resources) {
+          console.log(`- ${resource.uri}: ${resource.description ?? resource.name}`);
+        }
+      }
+      return;
+    }
+
+    if (command === 'read') {
+      const uri = toolName;
+      if (!uri) fail('Usage: mcp-live.ts read <resource-uri>');
+      const result = await client.readResource({ uri: uri as string });
+      console.log(JSON.stringify(result, null, 2));
       return;
     }
 
@@ -107,7 +128,7 @@ const main = async (): Promise<void> => {
       return;
     }
 
-    fail(`Unknown command "${command}". Use "list" or "call".`);
+    fail(`Unknown command "${command}". Use "list", "call" or "read".`);
   } finally {
     await client.close();
     await server.close();
