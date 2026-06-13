@@ -224,8 +224,11 @@ file per subdomain in your OS config dir —
 elsewhere; override the path with `ZENDESK_TOKEN_FILE`). It is reused across restarts, so you don't
 re-authenticate every time the MCP client respawns the server. If the Zendesk
 OAuth client has token expiration enabled, the stored refresh token is used to
-renew access silently; only an expired/invalid refresh token triggers a new
-browser sign-in.
+renew access silently — **proactively** (the token is refreshed before use when
+it's expired, near expiry, or of unknown age, so the first request after an
+overnight gap never hits a visible auth error) and **periodically** in the
+background so a long-lived, idle session never serves a stale token. Only an
+expired/invalid refresh token triggers a new browser sign-in.
 
 > **Port conflict?** If port `27439` is already in use the first tool call returns
 > a clear error telling you to set `ZENDESK_OAUTH_CALLBACK_PORT` (or
