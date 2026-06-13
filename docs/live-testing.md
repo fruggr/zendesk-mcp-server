@@ -65,16 +65,20 @@ branch. The tools appear as `mcp__zendesk-local__*` and can be called live.
 Works immediately in any conversation/terminal, no session restart:
 
 ```bash
-# List the tools the server would expose (no creds needed)
+# List the tools AND resources the server would expose (no creds needed)
 pnpm mcp:live list
 pnpm mcp:live list -- --mode namespace        # forward server flags after `--`
 
 # Call a tool (needs creds for a real Zendesk response)
 pnpm mcp:live call get_current_user '{}'
 pnpm mcp:live call get_ticket '{"ticket_id": 123}' -- --mode all
+
+# Read a resource (needs creds — fetched with the caller's token)
+pnpm mcp:live read zendesk-hc://topology -- --mode all
 ```
 
 It links a real MCP `Client` to the server over an in-memory transport
-(identical to `tests/integration/stdio-harness.ts`), so `tools/list` and
-`tools/call` cross the wire and dispatch through the genuine handlers. Use it
-for quick manual checks or as a basis for scripted/CI assertions.
+(identical to `tests/integration/stdio-harness.ts`), so `tools/list`,
+`tools/call`, `resources/list` and `resources/read` cross the wire and dispatch
+through the genuine handlers. Use it for quick manual checks or as a basis for
+scripted/CI assertions.
