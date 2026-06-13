@@ -1,3 +1,9 @@
+## [2.1.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.0.1...v2.1.0) (2026-06-13)
+
+### Features
+
+* **help-center:** expose structural topology via instructions + resource ([#83](https://github.com/fruggr/zendesk-mcp-server/issues/83)) ([9aad9a9](https://github.com/fruggr/zendesk-mcp-server/commit/9aad9a979366785b45332b51a2efedace4c666c2))
+
 ## [2.0.1](https://github.com/fruggr/zendesk-mcp-server/compare/v2.0.0...v2.0.1) (2026-06-13)
 
 ### Bug Fixes
