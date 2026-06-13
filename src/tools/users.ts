@@ -142,10 +142,20 @@ export const createUserTools = (ctx: ToolContext): ToolDefinition[] => {
       namespace: 'users',
       readOnly: true,
       title: 'List Zendesk Organizations',
-      description: 'List all organizations with pagination.',
+      description:
+        'List all organizations with pagination. Returns the name and id of each organization plus basic fields; results are cursor-paginated. Use get_organization with an id for full details (tags, domains, notes), or search for query-based lookups by name. Organizations group end users and can be referenced when creating or filtering tickets.',
       inputSchema: z.object({
-        page_size: z.number().int().min(1).max(MAX_PAGE_SIZE).default(DEFAULT_PAGE_SIZE),
-        cursor: z.string().optional(),
+        page_size: z
+          .number()
+          .int()
+          .min(1)
+          .max(MAX_PAGE_SIZE)
+          .default(DEFAULT_PAGE_SIZE)
+          .describe('Organizations per page (1-100, default 100).'),
+        cursor: z
+          .string()
+          .optional()
+          .describe('Pagination cursor from a previous response; omit for the first page.'),
       }),
       annotations: {
         readOnlyHint: true,

@@ -169,11 +169,26 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       namespace: 'help_center',
       readOnly: true,
       title: 'List Help Center Categories',
-      description: 'List all Help Center categories. Optionally filter by locale.',
+      description:
+        'List all Help Center categories. Categories are the top level of the Guide hierarchy (category → section → article); each entry includes its id, name and locale. Results are cursor-paginated. Pair a returned category id with list_sections to drill down, then list_articles to reach articles. Pass a locale to read category names in that translation.',
       inputSchema: z.object({
-        locale: z.string().optional(),
-        page_size: z.number().int().min(1).max(MAX_PAGE_SIZE).default(DEFAULT_PAGE_SIZE),
-        cursor: z.string().optional(),
+        locale: z
+          .string()
+          .optional()
+          .describe(
+            'Locale for category names (e.g., "en-us", "fr"). Defaults to the Help Center default locale.',
+          ),
+        page_size: z
+          .number()
+          .int()
+          .min(1)
+          .max(MAX_PAGE_SIZE)
+          .default(DEFAULT_PAGE_SIZE)
+          .describe('Categories per page (1-100, default 100).'),
+        cursor: z
+          .string()
+          .optional()
+          .describe('Pagination cursor from a previous response; omit for the first page.'),
       }),
       annotations: {
         readOnlyHint: true,
@@ -214,12 +229,33 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       namespace: 'help_center',
       readOnly: true,
       title: 'List Help Center Sections',
-      description: 'List sections, optionally filtered by category ID and locale.',
+      description:
+        "List Help Center sections. Sections are the middle level of the Guide hierarchy (category → section → article) and group related articles; each entry includes its id, name, category_id and locale. Results are cursor-paginated. Pass category_id to list only one category's sections (ids come from list_categories), then use a section id with list_articles. Pass a locale to read section names in that translation.",
       inputSchema: z.object({
-        category_id: z.number().int().optional(),
-        locale: z.string().optional(),
-        page_size: z.number().int().min(1).max(MAX_PAGE_SIZE).default(DEFAULT_PAGE_SIZE),
-        cursor: z.string().optional(),
+        category_id: z
+          .number()
+          .int()
+          .optional()
+          .describe(
+            'Restrict to sections of this category (id from list_categories). Omit to list every section.',
+          ),
+        locale: z
+          .string()
+          .optional()
+          .describe(
+            'Locale for section names (e.g., "en-us", "fr"). Defaults to the Help Center default locale.',
+          ),
+        page_size: z
+          .number()
+          .int()
+          .min(1)
+          .max(MAX_PAGE_SIZE)
+          .default(DEFAULT_PAGE_SIZE)
+          .describe('Sections per page (1-100, default 100).'),
+        cursor: z
+          .string()
+          .optional()
+          .describe('Pagination cursor from a previous response; omit for the first page.'),
       }),
       annotations: {
         readOnlyHint: true,
@@ -381,13 +417,19 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       namespace: 'help_center',
       readOnly: false,
       title: 'Create Article Translation',
-      description: 'Create a translation for an existing article in a specific locale.',
+      description:
+        'Create a translation for an existing article in a specific locale. The article must already exist (create it with create_article); this adds a new localized version and returns the created translation (locale, title, draft state). The target locale must not already have a translation — use update_article_translation to modify an existing one, and list_article_translations to see which locales exist. Provide the full HTML body.',
       inputSchema: z.object({
-        article_id: z.number().int(),
+        article_id: z.number().int().describe('ID of the existing article to translate.'),
         locale: z.string().describe('Target locale (e.g., "fr", "de")'),
-        title: z.string().min(1),
+        title: z.string().min(1).describe('Translated article title.'),
         body: z.string().min(1).describe('Translated body (HTML)'),
-        draft: z.boolean().default(false),
+        draft: z
+          .boolean()
+          .default(false)
+          .describe(
+            'Create the translation as a draft (not visible to end users). Defaults to false (published).',
+          ),
       }),
       annotations: {
         readOnlyHint: false,
@@ -638,9 +680,13 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       namespace: 'help_center',
       readOnly: false,
       title: 'Create Content Tag',
-      description: 'Create a new content tag for Guide articles.',
+      description:
+        'Create a new content tag for Guide articles. Content tags are end-user visible labels that help readers discover related articles; this returns the created tag with its id. Check list_content_tags first to avoid duplicates, then attach the new id via the content_tag_ids parameter of create_article or update_article. For internal search-ranking labels that are not shown to end users, use article labels (list_labels) instead.',
       inputSchema: z.object({
-        name: z.string().min(1).describe('Content tag name'),
+        name: z
+          .string()
+          .min(1)
+          .describe('Content tag name as shown to end users (e.g., "billing", "getting-started").'),
       }),
       annotations: {
         readOnlyHint: false,
@@ -722,9 +768,13 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       namespace: 'help_center',
       readOnly: true,
       title: 'List Article Attachments',
-      description: 'List all attachments for an article.',
+      description:
+        'List all attachments for an article. Returns attachment metadata only (id, file name, content type, size, URL), not the file bytes; both inline and block attachments are included. This is for Help Center articles — for attachments on support tickets use get_ticket_attachments instead. Upload new files with create_article_attachment.',
       inputSchema: z.object({
-        article_id: z.number().int().describe('Article ID'),
+        article_id: z
+          .number()
+          .int()
+          .describe('ID of the Help Center article whose attachments to list.'),
       }),
       annotations: {
         readOnlyHint: true,

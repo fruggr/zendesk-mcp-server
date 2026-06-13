@@ -282,16 +282,31 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: false,
       title: 'Create Zendesk Ticket',
       description:
-        'Create a new Zendesk support ticket with subject, description, and optional priority/type/assignee/tags.',
+        'Create a new Zendesk support ticket with subject, description, and optional priority/type/assignee/tags. The description becomes the first public comment of the ticket, and the new ticket id is returned. After creation, use update_ticket to change status or assignee, add_public_comment or add_private_note to reply, and manage_tags to adjust tags. Look up valid assignee_id / group_id and custom field ids via search_users or your Zendesk admin settings.',
       inputSchema: z.object({
         subject: z.string().min(1).describe('Ticket subject'),
         description: z.string().min(1).describe('Ticket description'),
-        priority: z.enum(['urgent', 'high', 'normal', 'low']).optional(),
-        type: z.enum(['problem', 'incident', 'question', 'task']).optional(),
-        assignee_id: z.number().int().optional(),
-        group_id: z.number().int().optional(),
-        tags: z.array(z.string()).optional(),
-        custom_fields: z.array(z.object({ id: z.number().int(), value: z.unknown() })).optional(),
+        priority: z
+          .enum(['urgent', 'high', 'normal', 'low'])
+          .optional()
+          .describe('Ticket priority. One of urgent, high, normal, low.'),
+        type: z
+          .enum(['problem', 'incident', 'question', 'task'])
+          .optional()
+          .describe('Ticket type. One of problem, incident, question, task.'),
+        assignee_id: z
+          .number()
+          .int()
+          .optional()
+          .describe('User id of the agent to assign the ticket to.'),
+        group_id: z.number().int().optional().describe('Id of the group to assign the ticket to.'),
+        tags: z.array(z.string()).optional().describe('Tags to set on the ticket.'),
+        custom_fields: z
+          .array(z.object({ id: z.number().int(), value: z.unknown() }))
+          .optional()
+          .describe(
+            'Custom field values as { id, value } pairs (field ids come from your Zendesk admin settings).',
+          ),
       }),
       annotations: {
         readOnlyHint: false,
@@ -323,17 +338,40 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: false,
       title: 'Update Zendesk Ticket',
       description:
-        'Update an existing ticket (status, priority, type, assignee, group, subject, tags, custom fields).',
+        'Update an existing ticket (status, priority, type, assignee, group, subject, tags, custom fields). Only the fields you pass are changed, and the updated ticket is returned. Setting tags here replaces the whole tag set — use manage_tags to add or remove individual tags without overwriting the rest. This tool does not post replies: use add_public_comment or add_private_note for that. Find the ticket id via search_tickets or list_tickets.',
       inputSchema: z.object({
         ticket_id: z.number().int().describe('Ticket ID'),
-        status: z.enum(['new', 'open', 'pending', 'hold', 'solved', 'closed']).optional(),
-        priority: z.enum(['urgent', 'high', 'normal', 'low']).optional(),
-        type: z.enum(['problem', 'incident', 'question', 'task']).optional(),
-        assignee_id: z.number().int().optional(),
-        group_id: z.number().int().optional(),
-        subject: z.string().optional(),
-        tags: z.array(z.string()).optional(),
-        custom_fields: z.array(z.object({ id: z.number().int(), value: z.unknown() })).optional(),
+        status: z
+          .enum(['new', 'open', 'pending', 'hold', 'solved', 'closed'])
+          .optional()
+          .describe('New ticket status. One of new, open, pending, hold, solved, closed.'),
+        priority: z
+          .enum(['urgent', 'high', 'normal', 'low'])
+          .optional()
+          .describe('Ticket priority. One of urgent, high, normal, low.'),
+        type: z
+          .enum(['problem', 'incident', 'question', 'task'])
+          .optional()
+          .describe('Ticket type. One of problem, incident, question, task.'),
+        assignee_id: z
+          .number()
+          .int()
+          .optional()
+          .describe('User id of the agent to assign the ticket to.'),
+        group_id: z.number().int().optional().describe('Id of the group to assign the ticket to.'),
+        subject: z.string().optional().describe('New ticket subject line.'),
+        tags: z
+          .array(z.string())
+          .optional()
+          .describe(
+            'Replaces the full tag set on the ticket. Use manage_tags for incremental add/remove.',
+          ),
+        custom_fields: z
+          .array(z.object({ id: z.number().int(), value: z.unknown() }))
+          .optional()
+          .describe(
+            'Custom field values as { id, value } pairs (field ids come from your Zendesk admin settings).',
+          ),
       }),
       annotations: {
         readOnlyHint: false,
