@@ -49,7 +49,7 @@ A project-scoped `.mcp.json` is committed at the repo root:
 
 - Runs the server straight from **source** via `tsx`, so it always reflects the
   checked-out branch (no build step). Requires `pnpm install` to have run.
-- `--mode all` exposes the 37 individual tools so you can call any operation
+- `--mode all` exposes every individual tool so you can call any operation
   directly. Drop it for the default `namespace` mode, or pass
   `--read-only` / `--namespace <ns>` to scope the surface.
 - `ZENDESK_SUBDOMAIN` is set in the file (`fruggr`) since it is not a secret;

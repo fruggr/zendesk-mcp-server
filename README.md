@@ -58,13 +58,13 @@ The server registers tools in one of three modes, controlled by `--mode`:
 
 | Mode | Tools exposed | Best for |
 |------|--------------|----------|
-| **`all`** | 37 individual tools (`get_ticket`, `search_articles`, ...) | Clients with good tool selection, full granularity |
+| **`all`** | Every operation as its own tool (`get_ticket`, `search_articles`, ...) | Clients with good tool selection, full granularity |
 | **`namespace`** (default) | 3 proxy tools (`zendesk_tickets`, `zendesk_help_center`, `zendesk_users`) | Balanced context usage, grouped operations |
 | **`single`** | 1 proxy tool (`zendesk`) | Minimal context footprint, single entry point |
 
 In `namespace` and `single` modes, the proxy tool accepts `{ "operation": "<tool_name>", "params": { ... } }` and dispatches to the appropriate handler after validating params through the original Zod schema. Proxy descriptions include only the first sentence of each sub-operation to stay compact; the full schema is applied when the operation is actually called.
 
-> **Tip:** The `single` mode is particularly useful for models with limited tool slots — one tool handles all 36 operations.
+> **Tip:** The `single` mode is particularly useful for models with limited tool slots — one tool handles every operation.
 
 ### Scoping the surface
 
@@ -435,7 +435,7 @@ Options:
 **Examples:**
 
 ```bash
-# Local single-tool mode — minimal context, all 37 operations in one tool
+# Local single-tool mode — minimal context, every operation in one tool
 zendesk-mcp-server acme --mode single
 
 # Read-only tickets only
