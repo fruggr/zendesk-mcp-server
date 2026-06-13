@@ -75,11 +75,13 @@ Must work with every mainstream MCP agent; no PR may degrade one. New tools foll
 
 ## Documentation maintenance
 
-Any change to the tool surface syncs `README.md` in the same PR (tool tables,
-per-section `(N tools)` counts, global tool count). Update namespace counts in
-`tests/unit/routing/registry.test.ts` and the length assertions in
-`tests/unit/tools/*.test.ts`. Proxy descriptions surface only the first sentence
-of a tool's description — keep it standalone.
+Any change to the tool surface syncs the `README.md` tool tables in the same PR.
+Prose and section headers are deliberately count-free (no per-section
+`(N tools)` or global tool totals) — don't reintroduce hardcoded counts, they
+only go stale. Exact counts still live where they're load-bearing: namespace
+counts in `tests/unit/routing/registry.test.ts` and the length assertions in
+`tests/unit/tools/*.test.ts` — update those. Proxy descriptions surface only the
+first sentence of a tool's description — keep it standalone.
 
 ## Submission quality bar
 

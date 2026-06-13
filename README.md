@@ -15,7 +15,7 @@ Most Zendesk integrations use a shared admin API key, giving every user full acc
 
 - **Per-user authentication, OAuth-only** — In both transports, auth is OAuth 2.1 PKCE: each user authenticates with their own Zendesk credentials, so the LLM sees exactly what the user is allowed to see. Static API tokens are deliberately **not** supported (see [below](#what-this-server-does-not-do)).
 - **Two deployment shapes, same auth story** — Run it on your laptop as a stdio MCP server (Claude Desktop / Claude Code / VS Code) or deploy it as a private remote MCP server with one user, one Zendesk session per HTTP request.
-- **Context-friendly tool modes** — Expose tens of individual tools, 3 namespace proxies, or a single unified tool. Choose the mode that fits your LLM's context budget.
+- **Context-friendly tool modes** — Expose every operation as its own tool, group them into namespace proxies, or collapse to a single unified tool. Tools are segmented into namespaces you can selectively enable, so each context loads only the surface it needs.
 - **Section-based article editing** — For large Help Center articles, read and rewrite one section at a time (parsed by h1/h2/h3 headings) instead of shuffling the full HTML body through the LLM. Reduces tokens by 10–100× on targeted edits.
 - **Read-only mode** — Restrict the server to read operations only, ideal for assistants that should never modify data.
 - **Lean stack** — Built on the official `@modelcontextprotocol/sdk` plus `zod`.
@@ -59,8 +59,8 @@ The server registers tools in one of three modes, controlled by `--mode`:
 | Mode | Tools exposed | Best for |
 |------|--------------|----------|
 | **`all`** | Every operation as its own tool (`get_ticket`, `search_articles`, ...) | Clients with good tool selection, full granularity |
-| **`namespace`** (default) | 3 proxy tools (`zendesk_tickets`, `zendesk_help_center`, `zendesk_users`) | Balanced context usage, grouped operations |
-| **`single`** | 1 proxy tool (`zendesk`) | Minimal context footprint, single entry point |
+| **`namespace`** (default) | One proxy tool per namespace (`zendesk_tickets`, `zendesk_help_center`, `zendesk_users`) | Balanced context usage, grouped operations |
+| **`single`** | A single proxy tool (`zendesk`) | Minimal context footprint, single entry point |
 
 In `namespace` and `single` modes, the proxy tool accepts `{ "operation": "<tool_name>", "params": { ... } }` and dispatches to the appropriate handler after validating params through the original Zod schema. Proxy descriptions include only the first sentence of each sub-operation to stay compact; the full schema is applied when the operation is actually called.
 
@@ -83,7 +83,7 @@ zendesk-mcp-server acme --namespace tickets
 ## Available tools
 
 <details>
-<summary><strong>Tickets</strong> (10 tools)</summary>
+<summary><strong>Tickets</strong></summary>
 
 | Tool | Description | Mode |
 |------|-------------|------|
@@ -101,7 +101,7 @@ zendesk-mcp-server acme --namespace tickets
 </details>
 
 <details>
-<summary><strong>Help Center</strong> (21 tools)</summary>
+<summary><strong>Help Center</strong></summary>
 
 | Tool | Description | Mode |
 |------|-------------|------|
@@ -130,7 +130,7 @@ zendesk-mcp-server acme --namespace tickets
 </details>
 
 <details>
-<summary><strong>Users & Organizations</strong> (5 tools)</summary>
+<summary><strong>Users & Organizations</strong></summary>
 
 | Tool | Description | Mode |
 |------|-------------|------|
@@ -143,7 +143,7 @@ zendesk-mcp-server acme --namespace tickets
 </details>
 
 <details>
-<summary><strong>Search</strong> (1 tool)</summary>
+<summary><strong>Search</strong></summary>
 
 | Tool | Description | Mode |
 |------|-------------|------|
