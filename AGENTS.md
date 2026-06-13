@@ -33,11 +33,11 @@ Zod schema. Each proxy dispatches only within its own scoped handler map, so a
 `--read-only` / `--tool` are applied by `filterTools` *before* the mode switch;
 `--tool` also forces `mode: all` (`config.ts`).
 
-**Auth flavors** — stdio+OAuth (`token-store.ts`, lazy browser PKCE),
-stdio+API-token (static Basic auth header), HTTP (per-session bearer captured
-from `Authorization:`). API-token mode is **refused at boot** in HTTP because a
-shared static credential would expose every caller to the issuing user's
-rights.
+**Auth** — per-user OAuth 2.1 PKCE only, no static API-token mode. stdio: lazy
+browser PKCE via `token-store.ts`. HTTP: per-session bearer captured from
+`Authorization:`. Dropping API-token auth is deliberate (static shared
+credential — insufficiently secure, doesn't scale to multi-user/remote); the
+rationale lives in `README.md` ("What this server does *not* do").
 
 Setup, CLI flags, env vars and auth flows live in `README.md`; manual tool
 testing in `docs/live-testing.md`.
