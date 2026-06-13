@@ -114,23 +114,8 @@ describe('helpCenterPut', () => {
   });
 });
 
-describe('Basic auth support', () => {
-  it('sends Basic header when token starts with "Basic "', async () => {
-    mswServer.use(
-      http.get('https://testsubdomain.zendesk.com/api/v2/users/me', ({ request }) => {
-        const auth = request.headers.get('Authorization');
-        return HttpResponse.json({ user: { auth_header: auth } });
-      }),
-    );
-    const result = await zendeskGet<{ user: { auth_header: string } }>(
-      SUB,
-      'Basic dGVzdA==',
-      '/users/me',
-    );
-    expect(result.user.auth_header).toBe('Basic dGVzdA==');
-  });
-
-  it('sends Bearer header for plain tokens', async () => {
+describe('auth header', () => {
+  it('sends the OAuth token as a Bearer header', async () => {
     mswServer.use(
       http.get('https://testsubdomain.zendesk.com/api/v2/users/me', ({ request }) => {
         const auth = request.headers.get('Authorization');

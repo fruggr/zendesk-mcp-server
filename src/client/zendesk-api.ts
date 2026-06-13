@@ -34,9 +34,8 @@ export interface ZendeskRequestOptions {
   params?: Record<string, string>;
 }
 
-// token is either a Bearer OAuth token or a "Basic xxx" string (stdio API token mode)
-const buildAuthHeader = (token: string): string =>
-  token.startsWith('Basic ') ? token : `Bearer ${token}`;
+// token is a per-user OAuth 2.1 PKCE access token (the only auth mode)
+const buildAuthHeader = (token: string): string => `Bearer ${token}`;
 
 const buildUrl = (base: string, path: string, params?: Record<string, string>): string => {
   const url = new URL(`${base}${path}`);

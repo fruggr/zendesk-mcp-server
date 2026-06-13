@@ -1,4 +1,3 @@
-import { buildBasicAuthHeader } from './auth/api-token';
 import { createTokenStore } from './auth/token-store';
 import type { Config } from './config';
 import { loadConfig } from './config';
@@ -8,13 +7,6 @@ import { startStdioTransport } from './transports/stdio';
 import { createLogger, type Logger } from './utils/logger';
 
 const buildStdioServer = (config: Config, logger: Logger) => {
-  if (config.zendeskEmail && config.zendeskApiToken) {
-    // API token mode — static Basic auth. No onUnauthorized callback: a stale
-    // API token is a credential rotation problem, not something the server
-    // can recover from at runtime.
-    const staticToken = buildBasicAuthHeader(config.zendeskEmail, config.zendeskApiToken);
-    return createMcpServer(config, () => staticToken, logger);
-  }
   // OAuth mode — browser-based auth on first tool call. `invalidate` drops the
   // dead access token on a 401 so the next call refreshes/re-authenticates.
   const tokenStore = createTokenStore(

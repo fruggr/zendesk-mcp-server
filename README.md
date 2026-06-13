@@ -13,9 +13,9 @@ A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that co
 
 Most Zendesk integrations use a shared admin API key, giving every user full access to every ticket. This server takes a different approach:
 
-- **Per-user authentication by default** — In both transports, the default is OAuth 2.1 PKCE: each user authenticates with their own Zendesk credentials, so the LLM sees exactly what the user is allowed to see. A static API-token escape hatch is documented below for stdio-only CI / headless contexts; it's refused at boot in HTTP mode.
+- **Per-user authentication, OAuth-only** — In both transports, auth is OAuth 2.1 PKCE: each user authenticates with their own Zendesk credentials, so the LLM sees exactly what the user is allowed to see. Static API tokens are deliberately **not** supported (see [below](#what-this-server-does-not-do)).
 - **Two deployment shapes, same auth story** — Run it on your laptop as a stdio MCP server (Claude Desktop / Claude Code / VS Code) or deploy it as a private remote MCP server with one user, one Zendesk session per HTTP request.
-- **Context-friendly tool modes** — Expose 37 individual tools, 3 namespace proxies, or a single unified tool. Choose the mode that fits your LLM's context budget.
+- **Context-friendly tool modes** — Expose every operation as its own tool, group them into namespace proxies, or collapse to a single unified tool. Tools are segmented into namespaces you can selectively enable, so each context loads only the surface it needs.
 - **Section-based article editing** — For large Help Center articles, read and rewrite one section at a time (parsed by h1/h2/h3 headings) instead of shuffling the full HTML body through the LLM. Reduces tokens by 10–100× on targeted edits.
 - **Read-only mode** — Restrict the server to read operations only, ideal for assistants that should never modify data.
 - **Lean stack** — Built on the official `@modelcontextprotocol/sdk` plus `zod`.
@@ -34,14 +34,23 @@ Most Zendesk integrations use a shared admin API key, giving every user full acc
 **Look elsewhere when:**
 
 - You need Zendesk products outside Support & Guide (e.g. Talk, Explore analytics, Sell) — those endpoints aren't covered.
-- You need a single shared service account for all users — that's the opposite of this server's per-user OAuth model (the API-token escape hatch exists for stdio CI only, and is refused at boot in HTTP).
+- You need a single shared service account, or static API-token auth — this server doesn't support either, by design (see [What this server does *not* do](#what-this-server-does-not-do)).
+
+## What this server does *not* do
+
+**No API-token authentication.** This server is OAuth 2.1 PKCE only — there is no `ZENDESK_EMAIL` + `ZENDESK_API_TOKEN` (Basic auth) mode, in any transport. This is a deliberate design choice:
+
+- **API tokens are insufficiently secure.** A Zendesk API token is a long-lived, static, shared secret that carries the full rights of the issuing user — no per-user scoping, no short expiry, no per-user consent or revocation. OAuth 2.1 PKCE issues per-user, revocable tokens instead, so the LLM only ever sees what the authenticated user is allowed to see.
+- **API tokens don't scale.** A single static credential can't attribute actions to individual users or be revoked granularly, and it makes a multi-user remote deployment unsafe (in HTTP it would expose the issuing user's rights to every caller). OAuth scales naturally: each MCP client carries its own user's token.
+
+If you specifically need an API-token / service-account mode (e.g. headless CI with a shared account), use one of the other Zendesk MCP servers that support it — see [Inspiration & related projects](#inspiration--related-projects).
 
 ## Use cases
 
 | Persona | Transport | Auth | Quick start |
 |---------|-----------|------|-------------|
-| **Run it on your laptop** — single user, plugged into Claude Desktop / Claude Code / VS Code | `stdio` (default) | OAuth 2.1 PKCE in your browser (or API token for CI) | [Quick start: local](#quick-start-local-stdio) |
-| **Deploy a private remote MCP server** — one server per Zendesk account, each MCP client carries its own user's OAuth token | `http` | Per-user OAuth 2.1 PKCE bearer in `Authorization:` header; API token refused | [Quick start: remote](#quick-start-remote-http) |
+| **Run it on your laptop** — single user, plugged into Claude Desktop / Claude Code / VS Code | `stdio` (default) | OAuth 2.1 PKCE in your browser | [Quick start: local](#quick-start-local-stdio) |
+| **Deploy a private remote MCP server** — one server per Zendesk account, each MCP client carries its own user's OAuth token | `http` | Per-user OAuth 2.1 PKCE bearer in `Authorization:` header | [Quick start: remote](#quick-start-remote-http) |
 
 ## Tool modes
 
@@ -49,13 +58,13 @@ The server registers tools in one of three modes, controlled by `--mode`:
 
 | Mode | Tools exposed | Best for |
 |------|--------------|----------|
-| **`all`** | 37 individual tools (`get_ticket`, `search_articles`, ...) | Clients with good tool selection, full granularity |
-| **`namespace`** (default) | 3 proxy tools (`zendesk_tickets`, `zendesk_help_center`, `zendesk_users`) | Balanced context usage, grouped operations |
-| **`single`** | 1 proxy tool (`zendesk`) | Minimal context footprint, single entry point |
+| **`all`** | Every operation as its own tool (`get_ticket`, `search_articles`, ...) | Clients with good tool selection, full granularity |
+| **`namespace`** (default) | One proxy tool per namespace (`zendesk_tickets`, `zendesk_help_center`, `zendesk_users`) | Balanced context usage, grouped operations |
+| **`single`** | A single proxy tool (`zendesk`) | Minimal context footprint, single entry point |
 
 In `namespace` and `single` modes, the proxy tool accepts `{ "operation": "<tool_name>", "params": { ... } }` and dispatches to the appropriate handler after validating params through the original Zod schema. Proxy descriptions include only the first sentence of each sub-operation to stay compact; the full schema is applied when the operation is actually called.
 
-> **Tip:** The `single` mode is particularly useful for models with limited tool slots — one tool handles all 36 operations.
+> **Tip:** The `single` mode is particularly useful for models with limited tool slots — one tool handles every operation.
 
 ### Scoping the surface
 
@@ -74,7 +83,7 @@ zendesk-mcp-server acme --namespace tickets
 ## Available tools
 
 <details>
-<summary><strong>Tickets</strong> (10 tools)</summary>
+<summary><strong>Tickets</strong></summary>
 
 | Tool | Description | Mode |
 |------|-------------|------|
@@ -92,7 +101,7 @@ zendesk-mcp-server acme --namespace tickets
 </details>
 
 <details>
-<summary><strong>Help Center</strong> (21 tools)</summary>
+<summary><strong>Help Center</strong></summary>
 
 | Tool | Description | Mode |
 |------|-------------|------|
@@ -121,7 +130,7 @@ zendesk-mcp-server acme --namespace tickets
 </details>
 
 <details>
-<summary><strong>Users & Organizations</strong> (5 tools)</summary>
+<summary><strong>Users & Organizations</strong></summary>
 
 | Tool | Description | Mode |
 |------|-------------|------|
@@ -134,7 +143,7 @@ zendesk-mcp-server acme --namespace tickets
 </details>
 
 <details>
-<summary><strong>Search</strong> (1 tool)</summary>
+<summary><strong>Search</strong></summary>
 
 | Tool | Description | Mode |
 |------|-------------|------|
@@ -201,8 +210,6 @@ browser sign-in.
 > a clear error telling you to set `ZENDESK_OAUTH_CALLBACK_PORT` (or
 > `--callback-port`) to a free port — remember to register the matching
 > `http://localhost:<port>/callback` redirect URL in your Zendesk OAuth client.
-
-> **API token escape hatch (stdio only).** For headless/CI environments where a browser is unavailable, set `ZENDESK_EMAIL` + `ZENDESK_API_TOKEN` (generate the token in **Admin Center → Apps and integrations → APIs → Zendesk API → Token Access**). The MCP server then uses Basic auth instead of starting the OAuth flow. This mode is **refused at boot in HTTP** because a shared static credential would expose every caller to the issuing user's rights.
 
 ### MCP client wiring
 
@@ -428,7 +435,7 @@ Options:
 **Examples:**
 
 ```bash
-# Local single-tool mode — minimal context, all 37 operations in one tool
+# Local single-tool mode — minimal context, every operation in one tool
 zendesk-mcp-server acme --mode single
 
 # Read-only tickets only
@@ -450,8 +457,6 @@ zendesk-mcp-server acme --transport http --port 8080 \
 | `ZENDESK_OAUTH_CLIENT_ID` | no | `<subdomain>_zendesk` | OAuth client identifier |
 | `ZENDESK_OAUTH_CALLBACK_PORT` | no | `27439` | Local port for the OAuth browser callback (also `--callback-port`). Must match the redirect URL registered in Zendesk. **stdio only**. |
 | `ZENDESK_TOKEN_FILE` | no | OS config dir | Path to the persisted OAuth token file (`0600`). |
-| `ZENDESK_EMAIL` | stdio API-token only | — | Agent email for Basic auth — **refused in HTTP** |
-| `ZENDESK_API_TOKEN` | stdio API-token only | — | Zendesk API token — **refused in HTTP** |
 | `TRANSPORT` | no | `stdio` | `stdio` or `http` |
 | `HOST` | no | `0.0.0.0` | HTTP bind host |
 | `PORT` | no | `3000` | HTTP bind port (`0` to let the OS pick) |
@@ -459,7 +464,7 @@ zendesk-mcp-server acme --transport http --port 8080 \
 | `CORS_ORIGIN` | no | — | Comma-separated browser origins added to the default CORS allowlist |
 | `LOG_LEVEL` | no | `info` | Log verbosity (`debug` surfaces the full OAuth flow trace) |
 
-In stdio, if both `ZENDESK_EMAIL` and `ZENDESK_API_TOKEN` are set, the server uses API token auth; otherwise it uses OAuth 2.1 PKCE. In HTTP mode, API token credentials are refused at boot — only per-user OAuth 2.1 PKCE is accepted. Full API-token setup is documented in [`docs/api-token-stdio.md`](docs/api-token-stdio.md).
+The server uses per-user OAuth 2.1 PKCE for every transport (local stdio and remote HTTP). There is no static API-token mode — see [What this server does *not* do](#what-this-server-does-not-do).
 
 ## Troubleshooting
 
@@ -567,9 +572,10 @@ Versions follow [SemVer](https://semver.org/) and are calculated **automatically
 ## FAQ
 
 **Do I need a Zendesk admin API key?**
-No. The default OAuth 2.1 PKCE flow means each user authenticates with their own
-credentials and the server acts with exactly their permissions. API-token auth is
-available for headless/CI use (see [Authentication](#authentication)).
+No — and the server doesn't support one. The OAuth 2.1 PKCE flow means each user
+authenticates with their own credentials and the server acts with exactly their
+permissions. Static API tokens are intentionally unsupported (see
+[What this server does *not* do](#what-this-server-does-not-do)).
 
 **Which Zendesk products are supported?**
 Zendesk Support (tickets, users, organizations) and the Help Center / Guide

@@ -5,8 +5,6 @@ describe('loadConfig', () => {
   beforeEach(() => {
     delete process.env['ZENDESK_SUBDOMAIN'];
     delete process.env['ZENDESK_OAUTH_CLIENT_ID'];
-    delete process.env['ZENDESK_EMAIL'];
-    delete process.env['ZENDESK_API_TOKEN'];
     delete process.env['LOG_LEVEL'];
     delete process.env['TRANSPORT'];
     delete process.env['HOST'];
@@ -72,14 +70,6 @@ describe('loadConfig', () => {
     expect(config.logLevel).toBe('debug');
   });
 
-  it('captures zendeskEmail and zendeskApiToken from env', () => {
-    process.env['ZENDESK_EMAIL'] = 'a@b.com';
-    process.env['ZENDESK_API_TOKEN'] = 'tok';
-    const config = loadConfig(['mycompany']);
-    expect(config.zendeskEmail).toBe('a@b.com');
-    expect(config.zendeskApiToken).toBe('tok');
-  });
-
   describe('transport', () => {
     it('defaults to stdio', () => {
       const config = loadConfig(['mycompany']);
@@ -129,32 +119,6 @@ describe('loadConfig', () => {
     it('rejects PORT env values that are not strictly numeric', () => {
       process.env['PORT'] = '8080abc';
       expect(() => loadConfig(['mycompany'])).toThrow(/Invalid PORT value/);
-    });
-
-    it('refuses API token credentials in HTTP mode when both are set', () => {
-      process.env['ZENDESK_EMAIL'] = 'a@b.com';
-      process.env['ZENDESK_API_TOKEN'] = 'tok';
-      expect(() => loadConfig(['mycompany', '--transport', 'http'])).toThrow(
-        /API token authentication.*not supported in HTTP mode/,
-      );
-    });
-
-    it('allows ZENDESK_EMAIL alone in HTTP mode (no token actually configured)', () => {
-      process.env['ZENDESK_EMAIL'] = 'ops@example.com';
-      expect(() => loadConfig(['mycompany', '--transport', 'http'])).not.toThrow();
-    });
-
-    it('allows ZENDESK_API_TOKEN alone in HTTP mode', () => {
-      process.env['ZENDESK_API_TOKEN'] = 'tok';
-      expect(() => loadConfig(['mycompany', '--transport', 'http'])).not.toThrow();
-    });
-
-    it('accepts API token credentials in stdio mode', () => {
-      process.env['ZENDESK_EMAIL'] = 'a@b.com';
-      process.env['ZENDESK_API_TOKEN'] = 'tok';
-      const config = loadConfig(['mycompany']);
-      expect(config.transport).toBe('stdio');
-      expect(config.zendeskApiToken).toBe('tok');
     });
   });
 

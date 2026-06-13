@@ -36,7 +36,7 @@ them, so redact anything you add by hand.
 - Package version: <!-- e.g. 1.4.0 -->
 - Node.js version: <!-- node --version -->
 - OS:
-- Auth method: <!-- OAuth 2.1 PKCE / API token -->
+- Transport: <!-- stdio / http -->
 - Mode / flags: <!-- e.g. --mode namespace --read-only -->
 
 ## Additional context

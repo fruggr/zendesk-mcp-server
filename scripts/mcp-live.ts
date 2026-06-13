@@ -16,13 +16,14 @@
  *   pnpm tsx scripts/mcp-live.ts list -- --mode namespace
  *   pnpm tsx scripts/mcp-live.ts call get_current_user '{}' -- --mode all
  *
- * Auth: real Zendesk calls need ZENDESK_SUBDOMAIN + ZENDESK_EMAIL +
- * ZENDESK_API_TOKEN in the environment (API-token / Basic auth). The OAuth flow
- * is intentionally unsupported here because it opens a browser.
+ * Auth: this server is OAuth 2.1 PKCE only, and the browser flow can't run
+ * headless. So `list` / schema validation work credential-free, and a real
+ * `call` reads a pre-obtained OAuth access token from ZENDESK_OAUTH_TOKEN and
+ * sends it as a Bearer. Grab one via the normal OAuth flow (e.g. in a local
+ * session) and export it before calling.
  */
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { buildBasicAuthHeader } from '../src/auth/api-token';
 import { loadConfig } from '../src/config';
 import { createMcpServer } from '../src/server';
 
@@ -57,20 +58,19 @@ if (!process.env['ZENDESK_SUBDOMAIN'] && !hasPositionalSubdomain) {
 
 const config = loadConfig(configArgs);
 
-// Mirror src/index.ts: prefer API-token auth. OAuth is unusable headless, so a
-// missing token only errors when a tool actually tries to reach Zendesk —
-// `list` and arg validation still work without credentials. Throwing (rather
-// than exiting) lets the MCP layer surface a clean tool error instead of
-// killing the process.
-const getToken =
-  config.zendeskEmail && config.zendeskApiToken
-    ? () => buildBasicAuthHeader(config.zendeskEmail as string, config.zendeskApiToken as string)
-    : (): string => {
-        throw new Error(
-          'Live calls need ZENDESK_EMAIL + ZENDESK_API_TOKEN (OAuth needs a browser). ' +
-            'Set them in the environment, or use `list` which requires no token.',
-        );
-      };
+// OAuth is unusable headless, so a missing token only errors when a tool
+// actually tries to reach Zendesk — `list` and arg validation still work
+// without credentials. Throwing (rather than exiting) lets the MCP layer
+// surface a clean tool error instead of killing the process.
+const oauthToken = process.env['ZENDESK_OAUTH_TOKEN'];
+const getToken = (): string => {
+  if (oauthToken) return oauthToken;
+  throw new Error(
+    'Live calls need a Zendesk OAuth access token in ZENDESK_OAUTH_TOKEN ' +
+      '(the browser PKCE flow cannot run headless here). ' +
+      'Obtain one via the normal OAuth flow and export it, or use `list` which requires no token.',
+  );
+};
 
 const main = async (): Promise<void> => {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();

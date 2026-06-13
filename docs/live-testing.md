@@ -13,18 +13,21 @@ Both boot the same `createMcpServer` the production entry point uses
 
 ## Auth note (important)
 
-The OAuth 2.1 PKCE flow opens a **browser**, which does not work in a headless
-remote/web environment. For live testing, use **API-token mode** by setting:
+This server is **OAuth 2.1 PKCE only** — there is no API-token mode. The PKCE
+flow opens a **browser**, which does not work in a headless remote/web
+environment. So for live testing:
 
-```
-ZENDESK_SUBDOMAIN=<your-subdomain>
-ZENDESK_EMAIL=<agent@company.com>
-ZENDESK_API_TOKEN=<token>
-```
+- `list` and schema validation work **without any credentials** — no token needed.
+- A real `call` needs a Zendesk OAuth **access token**. Obtain one via the normal
+  OAuth flow (e.g. in a local session where the browser can open), then provide it:
+
+  ```
+  ZENDESK_SUBDOMAIN=<your-subdomain>
+  ZENDESK_OAUTH_TOKEN=<oauth-access-token>
+  ```
 
 In a Claude Code web environment, inject these as environment variables in the
-environment configuration (not committed). `list` / schema validation work
-without credentials; only real API calls require them.
+environment configuration (not committed).
 
 ## A. `.mcp.json` — live tools inside a session
 
@@ -46,12 +49,12 @@ A project-scoped `.mcp.json` is committed at the repo root:
 
 - Runs the server straight from **source** via `tsx`, so it always reflects the
   checked-out branch (no build step). Requires `pnpm install` to have run.
-- `--mode all` exposes the 37 individual tools so you can call any operation
+- `--mode all` exposes every individual tool so you can call any operation
   directly. Drop it for the default `namespace` mode, or pass
   `--read-only` / `--namespace <ns>` to scope the surface.
 - `ZENDESK_SUBDOMAIN` is set in the file (`fruggr`) since it is not a secret;
-  the actual credentials (`ZENDESK_EMAIL` + `ZENDESK_API_TOKEN`) still come from
-  the environment (see auth note above) and are never stored in the file.
+  the OAuth access token (`ZENDESK_OAUTH_TOKEN`) still comes from the environment
+  (see auth note above) and is never stored in the file.
 
 MCP servers are connected at **session startup**, not hot-reloaded. So: commit
 `.mcp.json` to the branch, then open a **new** Claude Code session on that
