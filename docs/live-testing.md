@@ -21,7 +21,7 @@ environment. So for live testing:
 - A real `call` needs a Zendesk OAuth **access token**. Obtain one via the normal
   OAuth flow (e.g. in a local session where the browser can open), then provide it:
 
-  ```
+  ```bash
   ZENDESK_SUBDOMAIN=<your-subdomain>
   ZENDESK_OAUTH_TOKEN=<oauth-access-token>
   ```

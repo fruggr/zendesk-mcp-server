@@ -90,10 +90,16 @@ const main = async (): Promise<void> => {
         const firstLine = (tool.description ?? '').split('\n')[0];
         console.log(`- ${tool.name}: ${firstLine}`);
       }
-      const { resources } = await client.listResources();
-      console.log(`\n# ${resources.length} resource(s)\n`);
-      for (const resource of resources) {
-        console.log(`- ${resource.uri}: ${resource.description ?? resource.name}`);
+      // Resources are only advertised when the server registers at least one
+      // (e.g. the topology resource). In tool-only sessions (--no-topology, or a
+      // namespace without resources) the capability is absent, so guard the call
+      // to keep `list` working everywhere.
+      if (client.getServerCapabilities()?.resources) {
+        const { resources } = await client.listResources();
+        console.log(`\n# ${resources.length} resource(s)\n`);
+        for (const resource of resources) {
+          console.log(`- ${resource.uri}: ${resource.description ?? resource.name}`);
+        }
       }
       return;
     }

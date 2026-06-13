@@ -54,7 +54,7 @@ Verbatim instructions provided by `zendesk-local` at initialization:
 
 The first `read` of `zendesk-hc://topology` returned:
 
-```
+```text
 MCP error -32603: Authentication failed. Your Zendesk token may be expired or invalid. Re-authenticate to get a new token.
 ```
 
