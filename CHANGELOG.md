@@ -1,3 +1,21 @@
+## [2.0.0](https://github.com/fruggr/zendesk-mcp-server/compare/v1.9.1...v2.0.0) (2026-06-13)
+
+### ⚠ BREAKING CHANGES
+
+* OAuth-only (local + remote), drop static API-token auth (#84)
+
+### Features
+
+* OAuth-only (local + remote), drop static API-token auth ([#84](https://github.com/fruggr/zendesk-mcp-server/issues/84)) ([486c15a](https://github.com/fruggr/zendesk-mcp-server/commit/486c15a2056ca7cab32d1ae74199e218cea98e31))
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Chores
+
+* disable Claude co-author attribution in commits and PRs ([#82](https://github.com/fruggr/zendesk-mcp-server/issues/82)) ([0342f34](https://github.com/fruggr/zendesk-mcp-server/commit/0342f346dd4bbde84a10d6c04c14a55767d61f6f))
+</details>
+
 ## [1.9.1](https://github.com/fruggr/zendesk-mcp-server/compare/v1.9.0...v1.9.1) (2026-06-12)
 
 ### Bug Fixes
