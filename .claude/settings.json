@@ -10,7 +10,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "jq -r '[.tool_input.title, .tool_input.body] | map(select(type==\"string\")) | join(\" \")' | grep -qiE '\\b(avec|sans|donc|nous|vous|votre|notre|cette|dans|leur|une|aux|qui|que|mais|ses|alors|ainsi|aussi|chez|vers|selon|comme|cela)\\b|[éèêàâçùûüôîïœ]' && printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"GitHub content appears to be in French. Project rule (CLAUDE.md): all GitHub PRs, comments and reviews must be in English. Rewrite the text in English and retry.\"}}' || true"
+            "command": "jq -r '[.tool_input.title, .tool_input.body] | map(select(type==\"string\")) | join(\" \")' | grep -qiP '(*UTF)(*UCP)\\b(avec|sans|donc|nous|vous|votre|notre|cette|dans|leur|une|aux|qui|que|mais|ses|alors|ainsi|aussi|chez|vers|selon|comme|cela)\\b|[\\x{e9}\\x{e8}\\x{ea}\\x{e0}\\x{e2}\\x{e7}\\x{f9}\\x{fb}\\x{fc}\\x{f4}\\x{ee}\\x{ef}\\x{eb}\\x{0153}]' && printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"GitHub content appears to be in French. Project rule (CLAUDE.md): all GitHub PRs, comments and reviews must be in English. Rewrite the text in English and retry.\"}}' || true"
           }
         ]
       }
