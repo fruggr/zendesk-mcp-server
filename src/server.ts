@@ -17,8 +17,9 @@ import { readPackageInfo } from './utils/package-info';
 /**
  * Invoke a tool handler, notifying `onUnauthorized` when Zendesk rejects the
  * token (401). This lets the OAuth store drop the dead token so the next call
- * refreshes/re-authenticates instead of replaying a revoked token. A no-op
- * callback (API-token mode) leaves behavior unchanged.
+ * refreshes/re-authenticates instead of replaying a revoked token. The callback
+ * is omitted only where there is nothing to invalidate (e.g. HTTP per-session
+ * bearer, owned by the client).
  */
 const runHandler = async (
   def: ToolDefinition,
@@ -142,8 +143,9 @@ export const createMcpServer = (
   config: Config,
   getToken: () => string | Promise<string>,
   logger: Logger = silentLogger,
-  // Called when a tool handler hits a 401 from Zendesk (OAuth mode only). Lets
-  // the token store invalidate the rejected token. Omitted in API-token mode.
+  // Called when a tool handler hits a 401 from Zendesk. Lets the OAuth token
+  // store invalidate the rejected token. Omitted where there is nothing to
+  // invalidate (e.g. the HTTP per-session bearer is owned by the client).
   onUnauthorized?: () => void,
 ): McpServer => {
   // Read name/version from package.json at runtime rather than hardcoding them

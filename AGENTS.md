@@ -33,11 +33,11 @@ Zod schema. Each proxy dispatches only within its own scoped handler map, so a
 `--read-only` / `--tool` are applied by `filterTools` *before* the mode switch;
 `--tool` also forces `mode: all` (`config.ts`).
 
-**Auth flavors** — stdio+OAuth (`token-store.ts`, lazy browser PKCE),
-stdio+API-token (static Basic auth header), HTTP (per-session bearer captured
-from `Authorization:`). API-token mode is **refused at boot** in HTTP because a
-shared static credential would expose every caller to the issuing user's
-rights.
+**Auth** — per-user OAuth 2.1 PKCE only, no static API-token mode. stdio: lazy
+browser PKCE via `token-store.ts`. HTTP: per-session bearer captured from
+`Authorization:`. Dropping API-token auth is deliberate (static shared
+credential — insufficiently secure, doesn't scale to multi-user/remote); the
+rationale lives in `README.md` ("What this server does *not* do").
 
 Setup, CLI flags, env vars and auth flows live in `README.md`; manual tool
 testing in `docs/live-testing.md`.
@@ -75,13 +75,15 @@ Must work with every mainstream MCP agent; no PR may degrade one. New tools foll
 
 ## Documentation maintenance
 
-Any change to the tool surface syncs `README.md` in the same PR (tool tables,
-per-section `(N tools)` counts, global tool count). Update namespace counts in
-`tests/unit/routing/registry.test.ts` and the length assertions in
-`tests/unit/tools/*.test.ts`. Proxy descriptions surface only the first sentence
-of a tool's description — keep it standalone. Changes to the non-tool MCP surface
-(server `instructions`, `resources`, `prompts`) sync the relevant `README.md`
-section in the same PR.
+Any change to the tool surface syncs the `README.md` tool tables in the same PR.
+Prose and section headers are deliberately count-free (no per-section
+`(N tools)` or global tool totals) — don't reintroduce hardcoded counts, they
+only go stale. Exact counts still live where they're load-bearing: namespace
+counts in `tests/unit/routing/registry.test.ts` and the length assertions in
+`tests/unit/tools/*.test.ts` — update those. Proxy descriptions surface only the
+first sentence of a tool's description — keep it standalone. Changes to the
+non-tool MCP surface (server `instructions`, `resources`, `prompts`) sync the
+relevant `README.md` section in the same PR.
 
 ## Submission quality bar
 

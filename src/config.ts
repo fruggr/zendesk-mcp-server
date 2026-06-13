@@ -15,8 +15,6 @@ export type Transport = z.infer<typeof Transport>;
 export const ConfigSchema = z.object({
   subdomain: z.string().min(1, 'ZENDESK_SUBDOMAIN is required'),
   oauthClientId: z.string().min(1),
-  zendeskEmail: z.string().optional(),
-  zendeskApiToken: z.string().optional(),
   logLevel: LogLevel,
   mode: ToolMode,
   readOnly: z.boolean(),
@@ -180,26 +178,9 @@ export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
     cli.callbackPort ??
     parsePortEnv(process.env['ZENDESK_OAUTH_CALLBACK_PORT'], 'ZENDESK_OAUTH_CALLBACK_PORT');
 
-  const zendeskEmail = process.env['ZENDESK_EMAIL'];
-  const zendeskApiToken = process.env['ZENDESK_API_TOKEN'];
-
-  // API token auth in HTTP mode would expose the issuing user's full rights to
-  // anyone reaching the server (shared static credential). Refuse only when
-  // BOTH are set — a stray ZENDESK_EMAIL in the shell environment is harmless
-  // by itself, and rejecting it would surprise operators who intended OAuth.
-  if (transport === 'http' && zendeskEmail && zendeskApiToken) {
-    throw new Error(
-      'API token authentication (ZENDESK_EMAIL + ZENDESK_API_TOKEN) is not supported in HTTP mode. ' +
-        'HTTP mode requires per-user OAuth 2.1 PKCE - unset these variables and configure your ' +
-        'MCP client to perform the OAuth flow against Zendesk.',
-    );
-  }
-
   return ConfigSchema.parse({
     subdomain,
     oauthClientId,
-    zendeskEmail,
-    zendeskApiToken,
     logLevel: cli.logLevel ?? process.env['LOG_LEVEL'] ?? 'info',
     mode,
     readOnly: cli.readOnly ?? false,

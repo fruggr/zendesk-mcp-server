@@ -391,7 +391,17 @@ export const handlers = [
   http.get(`${BASE}/guide/content_tags`, () =>
     HttpResponse.json({ records: [MOCK_CONTENT_TAG], count: 1 }),
   ),
-  http.post(`${BASE}/guide/content_tags`, () => HttpResponse.json({ record: MOCK_CONTENT_TAG })),
+  http.post(`${BASE}/guide/content_tags`, async ({ request }) => {
+    const body = (await request.json()) as Record<string, unknown>;
+    const tag = body['content_tag'] as Record<string, unknown> | undefined;
+    if (!tag?.['name']) {
+      return HttpResponse.json(
+        { errors: [{ title: 'Value `undefined` for /content_tag', code: 'TypeError' }] },
+        { status: 400 },
+      );
+    }
+    return HttpResponse.json({ content_tag: { ...MOCK_CONTENT_TAG, name: tag['name'] } });
+  }),
 
   // Help Center - Locales
   http.get(`${HC_BASE}/locales`, () => HttpResponse.json(MOCK_LOCALES)),
