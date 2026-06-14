@@ -39,6 +39,9 @@ describe('[stdio] unauthorized backstop', () => {
 
     const result = await client.callTool({ name: 'get_current_user', arguments: {} });
 
+    // The backstop is not a transparent in-call retry: the call that hit the 401
+    // still surfaces the error to the client (`isError`). Recovery is deferred to
+    // the next call, whose getToken refreshes the token invalidated here.
     expect(result.isError).toBe(true);
     expect(onUnauthorized).toHaveBeenCalledTimes(1);
   });
