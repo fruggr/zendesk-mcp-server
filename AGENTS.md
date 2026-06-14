@@ -55,6 +55,14 @@ testing in `docs/live-testing.md`.
   live in `tests/functional/`; invoke via `/functional-testing`. Details in
   `tests/functional/README.md`.
 
+## Planning
+
+Every implementation plan must also carry a **functional validation plan** for
+the feature, written for an *independent* validator (another agent or a human) —
+not the implementer. It lives in the PR description; the validator posts their
+report as a PR comment (English). Procedure and template: invoke the
+`functional-validation-plan` skill — don't inline it here.
+
 ## Code style
 
 - TypeScript strict; Biome for lint/format (`pnpm check`).
