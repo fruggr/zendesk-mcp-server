@@ -1,3 +1,18 @@
+## [2.2.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.1.0...v2.2.0) (2026-06-14)
+
+### Features
+
+* **auth:** refresh OAuth tokens proactively and in the background ([#88](https://github.com/fruggr/zendesk-mcp-server/issues/88)) ([72859a3](https://github.com/fruggr/zendesk-mcp-server/commit/72859a3b5bd6160eed9c1e91899b1f1126297b8f))
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Chores
+
+* fix language hook false positives on typographic chars ([#87](https://github.com/fruggr/zendesk-mcp-server/issues/87)) ([1db8a07](https://github.com/fruggr/zendesk-mcp-server/commit/1db8a077276dce57631cb4632fcbb3f7543f39fe))
+* generalize AI assistant wording on OAuth success page ([#89](https://github.com/fruggr/zendesk-mcp-server/issues/89)) ([0fccac1](https://github.com/fruggr/zendesk-mcp-server/commit/0fccac1d8b39558a7aea052c3d6c570f5963003c))
+</details>
+
 ## [2.1.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.0.1...v2.1.0) (2026-06-13)
 
 ### Features
