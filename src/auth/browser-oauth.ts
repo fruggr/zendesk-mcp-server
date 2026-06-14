@@ -181,7 +181,7 @@ export const startBrowserAuth = (
         res.end(
           '<html><body>' +
             '<h1>Authentication successful!</h1>' +
-            '<p>You can close this tab and return to Claude Code.</p>' +
+            '<p>You can close this tab and return to your AI assistant.</p>' +
             '<p>This tab will auto-close in <span id="t">10</span>s.</p>' +
             '<script>' +
             'let n=10;' +
