@@ -22,8 +22,15 @@ formatting) — say so explicitly rather than silently omitting it.
 ## Hard rules
 
 - **Independent validator.** Write the plan FOR someone other than the
-  implementer — another agent (e.g. the local executor) or a human. Never assume
-  shared context: spell out setup, env vars, and how to observe results.
+  implementer — another agent (e.g. the local executor) or a human. Don't assume
+  it shares your conversation context: spell out the state to manipulate and how
+  to observe results.
+- **Assume a ready environment.** The validator starts on the branch with the
+  code operational and the MCP server preconfigured (`--mode all`) with its
+  tools already loaded into its Claude Code context. Do NOT add build/install
+  steps, transport choices, or CLI harnesses (`pnpm mcp:live`, `scripts/`): the
+  validator drives the feature by calling the real `mcp__<server>__*` tools
+  directly in its session, which is what exercises the running server.
 - **Lives in the PR description.** Put the plan in the PR body under a
   `## Functional validation plan` heading so it travels with the PR. Keep it in
   sync if the change evolves.
@@ -43,14 +50,17 @@ formatting) — say so explicitly rather than silently omitting it.
 
 Write the plan as a self-contained, copy-pasteable brief:
 
-1. **Context** — branch, what feature, how to get a runnable build (`pnpm install`,
-   which transport/mode applies; note any transport that does NOT exercise the code).
-2. **Setup & prerequisites** — env vars, credentials/egress needed, a throwaway
-   working copy of any mutable state, and how to observe (log level, files,
-   artifacts). Flag what can only be checked partially without real creds/egress.
+1. **Context** — the feature and which `mcp__<server>__*` tool call(s) exercise
+   it. Note any path that does NOT exercise the code (e.g. a transport the
+   feature doesn't touch), so the validator doesn't test the wrong surface.
+2. **Setup & prerequisites** — only what's NOT already provided by the ready
+   environment: the mutable state to seed/manipulate (on a throwaway copy),
+   credentials/egress needed for a real round-trip, and how to observe (log
+   level, files, artifacts). Flag what can only be checked partially without
+   real creds/egress.
 3. **Scenarios** — a table or list, each row: id, what it validates, the exact
-   manipulation, the action, the expected observable. Make "expected" concrete
-   (which log event, which file change, which error/URL).
+   manipulation, the tool call to make, the expected observable. Make "expected"
+   concrete (which log event, which file change, which error/URL).
 4. **Long-running behaviours** — for anything time-based, give the no-wait lever
    AND note the unit test that already covers it.
 5. **Priorities** — which scenarios are the real user-facing paths (do first).
