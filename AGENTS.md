@@ -60,8 +60,9 @@ testing in `docs/live-testing.md`.
 Every implementation plan must also carry a **functional validation plan** for
 the feature, written for an *independent* validator (another agent or a human) —
 not the implementer. It lives in the PR description; the validator posts their
-report as a PR comment (English). Procedure and template: invoke the
-`functional-validation-plan` skill — don't inline it here.
+report as a PR comment (English). Author the plan with the
+`functional-validation-plan` skill; the validator executes it with the
+`run-validation-plan` skill — don't inline either here.
 
 ## Code style
 
