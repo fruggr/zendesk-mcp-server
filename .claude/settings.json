@@ -3,6 +3,7 @@
     "commit": "",
     "pr": ""
   },
+  "includeCoAuthoredBy": false,
   "permissions": {
     "allow": ["mcp__zendesk-local"]
   },
