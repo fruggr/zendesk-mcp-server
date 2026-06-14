@@ -262,4 +262,160 @@ describe('createTokenStore', () => {
     );
     expect(startBrowserAuthMock).not.toHaveBeenCalled();
   });
+
+  it('proactively refreshes a stored token with no expiresAt before serving it', async () => {
+    // A token minted before Zendesk enabled expiration has no expiresAt; it must
+    // be refreshed ahead of use, not served until a 401 forces recovery.
+    loadTokenMock.mockReturnValue({ accessToken: 'old', refreshToken: 'r1' });
+    refreshAccessTokenMock.mockResolvedValue({
+      access_token: 'new',
+      refresh_token: 'r2',
+      expires_in: 3600,
+    });
+    const store = createTokenStore(CONFIG);
+
+    await expect(store.getToken()).resolves.toBe('new');
+    expect(refreshAccessTokenMock).toHaveBeenCalledWith(
+      expect.objectContaining({ refreshToken: 'r1' }),
+    );
+    expect(startBrowserAuthMock).not.toHaveBeenCalled();
+  });
+
+  it('probe-refreshes an unknown-expiry token only once, then trusts it', async () => {
+    // Refresh response also omits expires_in → the new token still has no
+    // expiresAt. We must not refresh on every subsequent call.
+    loadTokenMock.mockReturnValue({ accessToken: 'old', refreshToken: 'r1' });
+    refreshAccessTokenMock.mockResolvedValue({ access_token: 'new', refresh_token: 'r2' });
+    const store = createTokenStore(CONFIG);
+
+    await expect(store.getToken()).resolves.toBe('new');
+    await expect(store.getToken()).resolves.toBe('new');
+    expect(refreshAccessTokenMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('probe-refreshes a token set via setToken even after an earlier probe', async () => {
+    // The disk token gets probe-refreshed once, marking the store's probe state.
+    // A token later installed via setToken has unknown age, so it must be probed
+    // too — the probe state must not leak across tokens.
+    loadTokenMock.mockReturnValue({ accessToken: 'old', refreshToken: 'r1' });
+    refreshAccessTokenMock.mockResolvedValueOnce({
+      access_token: 'refreshed',
+      refresh_token: 'r2',
+      expires_in: 3600,
+    });
+    const store = createTokenStore(CONFIG);
+
+    await expect(store.getToken()).resolves.toBe('refreshed');
+
+    refreshAccessTokenMock.mockResolvedValueOnce({
+      access_token: 'reprobed',
+      refresh_token: 'r4',
+      expires_in: 3600,
+    });
+    store.setToken('preset', 'r3');
+
+    await expect(store.getToken()).resolves.toBe('reprobed');
+    expect(refreshAccessTokenMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ refreshToken: 'r3' }),
+    );
+  });
+
+  it('coalesces concurrent refreshes into a single network round-trip', async () => {
+    // Zendesk rotates the refresh token on every use, so two concurrent refreshes
+    // would invalidate each other — the refresh must be exclusive.
+    loadTokenMock.mockReturnValue({
+      accessToken: 'old',
+      refreshToken: 'r1',
+      expiresAt: Date.now() - 1000,
+    });
+    let resolveRefresh!: (r: TokenResult) => void;
+    refreshAccessTokenMock.mockReturnValue(
+      new Promise<TokenResult>((res) => {
+        resolveRefresh = res;
+      }),
+    );
+    const store = createTokenStore(CONFIG);
+
+    const calls = Promise.all([store.getToken(), store.getToken(), store.getToken()]);
+    resolveRefresh({ access_token: 'new', refresh_token: 'r2', expires_in: 3600 });
+
+    await expect(calls).resolves.toEqual(['new', 'new', 'new']);
+    expect(refreshAccessTokenMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes in the background before an idle token can go stale', async () => {
+    vi.useFakeTimers();
+    try {
+      loadTokenMock.mockReturnValue({
+        accessToken: 'old',
+        refreshToken: 'r1',
+        // Far from expiry, so getToken alone would never refresh.
+        expiresAt: Date.now() + 12 * 60 * 60 * 1000,
+      });
+      refreshAccessTokenMock.mockResolvedValue({
+        access_token: 'new',
+        refresh_token: 'r2',
+        expires_in: 3600,
+      });
+      const store = createTokenStore(CONFIG);
+
+      await vi.advanceTimersByTimeAsync(4 * 60 * 60 * 1000);
+
+      expect(refreshAccessTokenMock).toHaveBeenCalledWith(
+        expect.objectContaining({ refreshToken: 'r1' }),
+      );
+      store.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps the existing token when a background refresh fails transiently', async () => {
+    vi.useFakeTimers();
+    try {
+      loadTokenMock.mockReturnValue({
+        accessToken: 'live',
+        refreshToken: 'r1',
+        // Far from expiry: the background refresh runs preemptively while the
+        // token is still perfectly usable.
+        expiresAt: Date.now() + 12 * 60 * 60 * 1000,
+      });
+      refreshAccessTokenMock.mockRejectedValue(new Error('Token refresh failed (503)'));
+      const store = createTokenStore(CONFIG);
+
+      await vi.advanceTimersByTimeAsync(4 * 60 * 60 * 1000);
+
+      // A transient failure must not wipe a still-valid token or force re-auth.
+      expect(clearTokenMock).not.toHaveBeenCalled();
+      await expect(store.getToken()).resolves.toBe('live');
+      expect(startBrowserAuthMock).not.toHaveBeenCalled();
+      store.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('dispose stops the background refresh timer', async () => {
+    vi.useFakeTimers();
+    try {
+      loadTokenMock.mockReturnValue({
+        accessToken: 'old',
+        refreshToken: 'r1',
+        expiresAt: Date.now() + 12 * 60 * 60 * 1000,
+      });
+      refreshAccessTokenMock.mockResolvedValue({
+        access_token: 'new',
+        refresh_token: 'r2',
+        expires_in: 3600,
+      });
+      const store = createTokenStore(CONFIG);
+      store.dispose();
+
+      await vi.advanceTimersByTimeAsync(8 * 60 * 60 * 1000);
+
+      expect(refreshAccessTokenMock).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

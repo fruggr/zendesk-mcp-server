@@ -3,6 +3,8 @@
     "commit": "",
     "pr": ""
   },
+  "includeCoAuthoredBy": false,
+  "enabledMcpjsonServers": ["zendesk-local"],
   "hooks": {
     "PreToolUse": [
       {
