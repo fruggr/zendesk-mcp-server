@@ -1,6 +1,6 @@
 ---
 name: functional-validation-plan
-description: Produce a functional validation plan for a feature/bugfix, to be executed by an INDEPENDENT validator (another agent or a human), not the implementer. Use whenever you write an implementation plan, or land a feature/bugfix that warrants end-to-end validation. The plan lives in the PR description; the validator posts their report as a PR comment.
+description: Create a functional validation plan for a feature or bugfix. Use whenever you author an implementation plan, finish a feature/bugfix with runtime-observable behaviour, or prepare a PR that needs independent end-to-end validation — even when validation isn't explicitly asked for.
 ---
 
 # Functional validation plan — author protocol

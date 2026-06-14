@@ -1,14 +1,15 @@
 ---
 name: run-validation-plan
-description: Execute the functional validation plan from a PR description as the INDEPENDENT validator, then post the report as a PR comment. Use when asked to validate/QA a feature on a branch, or when handed a "Functional validation plan". Counterpart to the `functional-validation-plan` skill (the author side); this is the executor side.
+description: Execute a functional validation plan and report the findings. Use whenever you're asked to validate, QA, functionally verify, or check a feature/bugfix on a branch, or you're handed a functional validation plan to run — even when the skill isn't named.
 ---
 
 # Run a validation plan — validator protocol
 
-You are the **independent validator**. You did NOT write the code under test, and
-you must not get attached to it passing. Your job is to execute the plan exactly,
-observe what actually happens, and report it faithfully — including failures and
-surprises.
+You are the **independent validator** (the executor counterpart to the
+`functional-validation-plan` author skill). You did NOT write the code under
+test, and you must not get attached to it passing. Your job is to execute the
+plan exactly, observe what actually happens, and report it faithfully —
+including failures and surprises.
 
 ## Input & environment
 
