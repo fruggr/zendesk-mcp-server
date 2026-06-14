@@ -4,9 +4,7 @@
     "pr": ""
   },
   "includeCoAuthoredBy": false,
-  "permissions": {
-    "allow": ["mcp__zendesk-local"]
-  },
+  "enabledMcpjsonServers": ["zendesk-local"],
   "hooks": {
     "PreToolUse": [
       {
