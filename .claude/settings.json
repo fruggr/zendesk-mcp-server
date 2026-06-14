@@ -3,6 +3,9 @@
     "commit": "",
     "pr": ""
   },
+  "permissions": {
+    "allow": ["mcp__zendesk-local"]
+  },
   "hooks": {
     "PreToolUse": [
       {
