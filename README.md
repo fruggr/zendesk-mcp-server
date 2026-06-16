@@ -7,20 +7,57 @@
 [![Renovate enabled](https://img.shields.io/badge/renovate-enabled-brightgreen?logo=renovatebot&logoColor=white)](https://renovatebot.com)
 [![semantic-release](https://img.shields.io/badge/semantic--release-e10079?logo=semantic-release&logoColor=white)](https://github.com/semantic-release/semantic-release)
 
-A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that connects LLMs to the **Zendesk Support & Help Center APIs** — with per-user OAuth 2.1 PKCE authentication and fine-grained tool visibility controls. Runs locally over **stdio** or as a private **remote MCP server** over HTTP.
+**Bring Zendesk Support & the Help Center into your AI assistant.** A
+[Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that lets
+your assistant search articles, answer questions, and create, track and update
+tickets in plain language — **without switching apps**.
 
-## Why this server?
+Think of it as the [Zendesk agent for Microsoft 365 Copilot](https://support.zendesk.com/hc/en-us/articles/9958331458458-Using-the-Zendesk-agent-in-Microsoft-365-Copilot),
+but **vendor-neutral** — it drops into any MCP client (Claude Desktop, Claude
+Code, Cursor, VS Code, …) instead of being tied to one assistant — and it always
+acts with **each user's own Zendesk permissions**, never a shared admin key.
 
-Most Zendesk integrations use a shared admin API key, giving every user full access to every ticket. This server takes a different approach:
+## What your assistant can do
 
-- **Per-user authentication, OAuth-only** — In both transports, auth is OAuth 2.1 PKCE: each user authenticates with their own Zendesk credentials, so the LLM sees exactly what the user is allowed to see. Static API tokens are deliberately **not** supported (see [below](#what-this-server-does-not-do)).
+Ask in natural language; the assistant figures out context and intent, then calls
+the right tools on your behalf:
+
+- **Find answers in the Help Center** — "how do I request a software license?" or
+  "what's the time-off policy?" surfaces the right article, by meaning, not just
+  keywords.
+- **Create, view and update tickets without leaving the conversation** — open a
+  ticket, check its status, add a public reply or an internal note, change the
+  priority or assignee, or mark it solved.
+- **Summarize a ticket for reporting or a quick decision** — pull the details and
+  the full comment thread and get the gist in a sentence.
+- **Search and triage your queue in plain language** — "show me my open tickets
+  about billing from this week."
+- **Draft and maintain knowledge-base articles** — write a new article, or revise
+  a large one **one section at a time** so the whole HTML body never has to
+  round-trip through the model.
+
+Because it runs on the **user's own OAuth session**, the assistant only ever sees
+and touches what that person is allowed to — the same scoping you'd get signing
+into Zendesk directly.
+
+> Built and maintained by [Digital4better](https://digital4better.com) for the [Fruggr](https://www.fruggr.io) project.
+
+## How it's different
+
+Most Zendesk integrations use a shared admin API key, giving every user full
+access to every ticket, and bolt on a fixed set of tools. This server is built
+differently:
+
+- **Per-user authentication, OAuth-only** — In both transports, auth is OAuth 2.1 PKCE: each user authenticates with their own Zendesk credentials, so the assistant sees exactly what the user is allowed to see. Static API tokens are deliberately **not** supported (see [below](#what-this-server-does-not-do)).
 - **Two deployment shapes, same auth story** — Run it on your laptop as a stdio MCP server (Claude Desktop / Claude Code / VS Code) or deploy it as a private remote MCP server with one user, one Zendesk session per HTTP request.
 - **Context-friendly tool modes** — Expose every operation as its own tool, group them into namespace proxies, or collapse to a single unified tool. Tools are segmented into namespaces you can selectively enable, so each context loads only the surface it needs.
-- **Section-based article editing** — For large Help Center articles, read and rewrite one section at a time (parsed by h1/h2/h3 headings) instead of shuffling the full HTML body through the LLM. Reduces tokens by 10–100× on targeted edits.
+- **Section-based article editing** — For large Help Center articles, read and rewrite one section at a time (parsed by h1/h2/h3 headings) instead of shuffling the full HTML body through the assistant. Reduces tokens by 10–100× on targeted edits.
 - **Read-only mode** — Restrict the server to read operations only, ideal for assistants that should never modify data.
 - **Lean stack** — Built on the official `@modelcontextprotocol/sdk` plus `zod`.
 
-> Built and maintained by [Digital4better](https://digital4better.com) for the [Fruggr](https://www.fruggr.io) project.
+Under the hood it speaks to the **Zendesk Support & Help Center (Guide) APIs**,
+runs locally over **stdio** or as a private **remote MCP server** over HTTP, and
+ships fine-grained tool-visibility controls — the specifics are below.
 
 ## When to use this server
 
