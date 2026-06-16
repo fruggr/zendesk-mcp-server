@@ -40,8 +40,6 @@ Because it runs on the **user's own OAuth session**, the assistant only ever see
 and touches what that person is allowed to — the same scoping you'd get signing
 into Zendesk directly.
 
-> Built and maintained by [Digital4better](https://digital4better.com) for the [Fruggr](https://www.fruggr.io) project.
-
 ## How it's different
 
 Most Zendesk integrations use a shared admin API key, giving every user full
@@ -688,3 +686,7 @@ Every PR is reviewed automatically by [CodeRabbit](https://www.coderabbit.ai) in
 ## License
 
 [MIT](LICENSE)
+
+---
+
+> Built and maintained by [Digital4better](https://digital4better.com) for the [Fruggr](https://www.fruggr.io) project.
