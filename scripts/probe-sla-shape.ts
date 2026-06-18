@@ -60,17 +60,21 @@ const dump = (label: string, value: unknown): void => {
 const main = async (): Promise<void> => {
   const token = resolveToken();
 
+  // Both `slas` and `metric_events` are documented single-ticket sideloads.
+  // `slas` is the primary source (live countdown); `metric_events` is the
+  // documented fallback (apply_sla / breach / update_status events).
   const ticket = await zendeskGet<Record<string, unknown>>(
     subdomain,
     token,
     `/tickets/${ticketId}`,
-    { include: 'slas' },
+    { include: 'slas,metric_events' },
   );
   // Print only the structural ground truth, not the ticket body.
-  dump('GET /tickets/{id}?include=slas — top-level keys', Object.keys(ticket));
+  dump('GET /tickets/{id}?include=slas,metric_events — top-level keys', Object.keys(ticket));
+  dump('slas payload', ticket['slas'] ?? '(no "slas" key present)');
   dump(
-    'GET /tickets/{id}?include=slas — slas payload',
-    ticket['slas'] ?? '(no "slas" key present)',
+    'metric_events payload (fallback)',
+    ticket['metric_events'] ?? '(no "metric_events" key present)',
   );
 
   const policies = await zendeskGet<Record<string, unknown>>(subdomain, token, '/slas/policies');

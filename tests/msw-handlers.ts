@@ -60,22 +60,24 @@ export const MOCK_SLA_POLICY = {
 // active metric whose breach is far in the future so "remaining" stays positive.
 export const MOCK_SLA_SIDELOAD = {
   ticket_id: 1,
-  policy_id: 123,
-  title: 'SLA contractuels fruggr - Bugs/Incidents',
-  description: 'Contractual SLA for bugs and incidents',
+  policy: {
+    id: 123,
+    title: 'SLA contractuels fruggr - Bugs/Incidents',
+    description: 'Contractual SLA for bugs and incidents',
+  },
   policy_metrics: [
     {
       metric: 'first_reply_time',
       stage: 'achieved',
       target: 420,
-      business: false,
+      business_hours: false,
       breach_at: '2026-01-01T07:00:00Z',
     },
     {
       metric: 'requester_wait_time',
       stage: 'active',
       target: 4200,
-      business: false,
+      business_hours: false,
       breach_at: '2099-06-18T21:37:00Z',
     },
   ],

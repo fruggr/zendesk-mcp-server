@@ -89,6 +89,15 @@ describe('formatSlaBlock', () => {
     expect(formatSlaBlock(entry([]))).toBe('');
   });
 
+  it('reads the applied policy from a nested policy object', () => {
+    const result = formatSlaBlock({
+      ticket_id: 1,
+      policy: { id: 531, title: 'Main Policy', description: 'x' },
+      policy_metrics: [{ metric: 'first_reply_time', stage: 'achieved', target: 60 }],
+    } as never);
+    expect(result).toContain('**Policy**: Main Policy (531)');
+  });
+
   it('shows minutes remaining for an active metric with a future breach', () => {
     const future = new Date(Date.now() + 60 * 60_000).toISOString();
     const result = formatSlaBlock(

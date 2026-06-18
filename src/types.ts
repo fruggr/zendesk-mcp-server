@@ -59,8 +59,19 @@ export interface ZendeskSlaLiveMetric {
   due_at?: string | null;
 }
 
+// Nested applied-policy object. Zendesk consistently exposes the applied policy
+// as `policy: { id, title, description }` (e.g. the `sla` object on ticket
+// metric events), so the sideload is read that way first, with flat
+// `policy_id` / `title` kept as a fallback.
+export interface ZendeskSlaPolicyRef {
+  id?: number;
+  title?: string;
+  description?: string | null;
+}
+
 export interface ZendeskSlaSideloadEntry {
   ticket_id?: number;
+  policy?: ZendeskSlaPolicyRef;
   policy_id?: number;
   title?: string;
   description?: string | null;
