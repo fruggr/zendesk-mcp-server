@@ -31,6 +31,15 @@ formatting) — say so explicitly rather than silently omitting it.
   steps, transport choices, or CLI harnesses (`pnpm mcp:live`, `scripts/`): the
   validator drives the feature by calling the real `mcp__<server>__*` tools
   directly in its session, which is what exercises the running server.
+  - **Exception — ground-truth capture.** When the change depends on the shape
+    of an undocumented external response that the *formatted* tool output cannot
+    reveal (e.g. a Zendesk sideload whose exact field names we guessed), the
+    MCP tools are insufficient on their own: they show rendered text, never the
+    raw upstream JSON. In that case a small **read-only capture probe**
+    (`scripts/probe-*.ts`, reusing the existing auth/client) IS warranted. Make
+    it the first, blocking scenario: the validator runs it and pastes the raw
+    payload into the PR so the implementer can align the types, any correlation
+    key, and the test mocks to reality before the rest of the plan is trusted.
 - **Lives in the PR description.** Put the plan in the PR body under a
   `## Functional validation plan` heading so it travels with the PR. Keep it in
   sync if the change evolves.
@@ -57,7 +66,8 @@ Write the plan as a self-contained, copy-pasteable brief:
    environment: the mutable state to seed/manipulate (on a throwaway copy),
    credentials/egress needed for a real round-trip, and how to observe (log
    level, files, artifacts). Flag what can only be checked partially without
-   real creds/egress.
+   real creds/egress. If a ground-truth capture probe exists (see the exception
+   above), state how to run it and that its raw output must be reported.
 3. **Scenarios** — a table or list, each row: id, what it validates, the exact
    manipulation, the tool call to make, the expected observable. Make "expected"
    concrete (which log event, which file change, which error/URL).
