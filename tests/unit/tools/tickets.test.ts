@@ -20,9 +20,9 @@ const getAllText = (result: { content: Array<{ type: string; text?: string }> })
     .join('\n');
 
 describe('ticket tools', () => {
-  it('creates 10 tools (10 tickets + 1 search elsewhere)', () => {
+  it('creates 11 tools (search_tickets lives here; the unified search is elsewhere)', () => {
     const tools = createTicketTools(ctx);
-    expect(tools).toHaveLength(10);
+    expect(tools).toHaveLength(11);
   });
 
   describe('get_ticket', () => {
@@ -31,6 +31,47 @@ describe('ticket tools', () => {
       const result = await tool.handler({ ticket_id: 1, include_comments: false });
       expect(result.content[0]?.text).toContain('Ticket #1');
       expect(result.content[0]?.text).toContain('Test ticket');
+    });
+
+    it('includes the live SLA state when a policy applies', async () => {
+      const tool = findTool('get_ticket');
+      const result = await tool.handler({ ticket_id: 1, include_comments: false });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('### SLA');
+      expect(text).toContain('SLA contractuels fruggr - Bugs/Incidents');
+      expect(text).toContain('requester_wait_time');
+      expect(text).toContain('remaining');
+    });
+
+    it('shows no SLA block when no policy applies', async () => {
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id', ({ params }) =>
+          HttpResponse.json({
+            ticket: {
+              id: Number(params['id']),
+              subject: 'No SLA ticket',
+              description: '',
+              status: 'open',
+              priority: 'low',
+              type: 'question',
+              assignee_id: null,
+              requester_id: 1,
+              group_id: null,
+              organization_id: null,
+              tags: [],
+              created_at: '2026-01-01T00:00:00Z',
+              updated_at: '2026-01-02T00:00:00Z',
+              custom_fields: [],
+            },
+            slas: [],
+          }),
+        ),
+      );
+      const tool = findTool('get_ticket');
+      const result = await tool.handler({ ticket_id: 7, include_comments: false });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('No SLA ticket');
+      expect(text).not.toContain('### SLA');
     });
 
     it('includes comments when requested', async () => {
@@ -369,6 +410,32 @@ describe('ticket tools', () => {
       const tool = findTool('search_tickets');
       const result = await tool.handler({ query: 'status:open', per_page: 100, page: 1 });
       expect(result.content[0]?.text).toContain('Test ticket');
+    });
+
+    it('surfaces per-result SLA state for queue triage', async () => {
+      const tool = findTool('search_tickets');
+      const result = await tool.handler({ query: 'status:open', per_page: 100, page: 1 });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('### SLA');
+      expect(text).toContain('requester_wait_time');
+    });
+  });
+
+  describe('list_sla_policies', () => {
+    it('returns the policy matrix with conditions and targets', async () => {
+      const tool = findTool('list_sla_policies');
+      const result = await tool.handler({ per_page: 100, page: 1 });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('SLA contractuels fruggr - Bugs/Incidents');
+      expect(text).toContain('first_reply_time');
+      expect(text).toContain('420 min');
+      expect(text).toContain('type is incident');
+    });
+
+    it('has readOnly annotation', () => {
+      const tool = findTool('list_sla_policies');
+      expect(tool.readOnly).toBe(true);
+      expect(tool.annotations.readOnlyHint).toBe(true);
     });
   });
 

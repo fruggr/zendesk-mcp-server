@@ -16,10 +16,19 @@ import {
 import type {
   ZendeskComment,
   ZendeskListResponse,
+  ZendeskSlaPolicy,
+  ZendeskSlaSideloadEntry,
   ZendeskTicket,
   ZendeskTicketAttachment,
 } from '../types';
-import { formatComment, formatList, formatTicket, truncateIfNeeded } from '../utils/formatting';
+import {
+  formatComment,
+  formatList,
+  formatSlaBlock,
+  formatSlaPolicy,
+  formatTicket,
+  truncateIfNeeded,
+} from '../utils/formatting';
 import {
   buildCursorParams,
   buildOffsetParams,
@@ -112,6 +121,19 @@ const collectAttachmentBlocks = async (
   return blocks;
 };
 
+// Correlate a top-level `slas` sideload back to a single ticket. Prefers an
+// explicit ticket_id match; falls back to a lone entry without a ticket_id
+// (the get_ticket case, where the sideload describes the one fetched ticket).
+const findSlaForTicket = (
+  slas: ZendeskSlaSideloadEntry[] | undefined,
+  ticketId: number,
+): ZendeskSlaSideloadEntry | undefined => {
+  const entries = slas ?? [];
+  const match = entries.find((e) => e.ticket_id === ticketId);
+  if (match) return match;
+  return entries.length === 1 && entries[0]?.ticket_id == null ? entries[0] : undefined;
+};
+
 export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
   const { subdomain, getToken } = ctx;
 
@@ -122,7 +144,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: true,
       title: 'Get Zendesk Ticket',
       description:
-        'Retrieve a Zendesk ticket by ID, including its comments if requested. Returns ticket details (subject, status, priority, assignee, tags, description) and optionally all comments/internal notes.',
+        'Retrieve a Zendesk ticket by ID, including its comments if requested. Returns ticket details (subject, status, priority, assignee, tags, description) and optionally all comments/internal notes. The live SLA state (applied policy, per-metric targets, due dates, time remaining and breach status) is included automatically whenever an SLA policy applies to the ticket.',
       inputSchema: z.object({
         ticket_id: z.number().int().describe('Ticket ID'),
         include_comments: z.boolean().default(false).describe('Include ticket comments'),
@@ -139,12 +161,11 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           include_comments: boolean;
         };
         const token = await getToken();
-        const { ticket } = await zendeskGet<{ ticket: ZendeskTicket }>(
-          subdomain,
-          token,
-          `/tickets/${ticket_id}`,
-        );
-        let text = formatTicket(ticket);
+        const { ticket, slas } = await zendeskGet<{
+          ticket: ZendeskTicket;
+          slas?: ZendeskSlaSideloadEntry[];
+        }>(subdomain, token, `/tickets/${ticket_id}`, { include: 'slas' });
+        let text = formatTicket(ticket) + formatSlaBlock(findSlaForTicket(slas, ticket.id));
         if (include_comments) {
           const { comments } = await zendeskGet<{ comments: ZendeskComment[] }>(
             subdomain,
@@ -228,7 +249,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: true,
       title: 'Search Zendesk Tickets',
       description:
-        'Search tickets using Zendesk query syntax (e.g., "status:open assignee:me", "priority:urgent type:incident"). Returns total count.',
+        'Search tickets using Zendesk query syntax (e.g., "status:open assignee:me", "priority:urgent type:incident"). Returns total count. Each result carries its live SLA state when an SLA policy applies, so queue triage like "breaching today" works without a per-ticket fetch.',
       inputSchema: z.object({
         query: z.string().min(1).describe('Zendesk search query string'),
         per_page: z
@@ -253,22 +274,22 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           page: number;
         };
         const token = await getToken();
-        const response = await zendeskGet<ZendeskListResponse<ZendeskTicket>>(
-          subdomain,
-          token,
-          '/search',
-          {
-            query: `type:ticket ${query}`,
-            ...buildOffsetParams(per_page, page),
-          },
-        );
+        const response = await zendeskGet<
+          ZendeskListResponse<ZendeskTicket> & { slas?: ZendeskSlaSideloadEntry[] }
+        >(subdomain, token, '/search', {
+          query: `type:ticket ${query}`,
+          include: 'tickets(slas)',
+          ...buildOffsetParams(per_page, page),
+        });
+        const formatTicketWithSla = (ticket: ZendeskTicket): string =>
+          formatTicket(ticket) + formatSlaBlock(findSlaForTicket(response.slas, ticket.id));
         return {
           content: [
             {
               type: 'text',
               text: formatList(
                 response.results ?? [],
-                formatTicket,
+                formatTicketWithSla,
                 extractSearchPaginationMeta(response, per_page, page),
               ),
             },
@@ -564,6 +585,52 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
             {
               type: 'text',
               text: `Tags updated on ticket #${ticket_id}. Current: ${updated.tags.join(', ') || 'none'}`,
+            },
+          ],
+        };
+      },
+    },
+    {
+      name: 'list_sla_policies',
+      namespace: 'tickets',
+      readOnly: true,
+      title: 'List SLA Policies',
+      description:
+        'List the configured SLA policies with their filter conditions and per-priority reply/resolution targets. Use this to explain why a given target applies to a ticket and to reconstruct deadlines deterministically instead of hard-coding the policy matrix.',
+      inputSchema: z.object({
+        per_page: z
+          .number()
+          .int()
+          .min(1)
+          .max(MAX_PAGE_SIZE)
+          .default(DEFAULT_PAGE_SIZE)
+          .describe('Results per page'),
+        page: z.number().int().min(1).default(1).describe('Page number'),
+      }),
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+      handler: async (params) => {
+        const { per_page, page } = params as { per_page: number; page: number };
+        const token = await getToken();
+        const response = await zendeskGet<ZendeskListResponse<ZendeskSlaPolicy>>(
+          subdomain,
+          token,
+          '/slas/policies',
+          buildOffsetParams(per_page, page),
+        );
+        return {
+          content: [
+            {
+              type: 'text',
+              text: formatList(
+                response.sla_policies ?? [],
+                formatSlaPolicy,
+                extractSearchPaginationMeta(response, per_page, page),
+              ),
             },
           ],
         };

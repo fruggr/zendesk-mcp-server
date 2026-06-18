@@ -10,6 +10,9 @@ import type {
   ZendeskOrganization,
   ZendeskPermissionGroup,
   ZendeskSection,
+  ZendeskSlaLiveMetric,
+  ZendeskSlaPolicy,
+  ZendeskSlaSideloadEntry,
   ZendeskTicket,
   ZendeskTranslation,
   ZendeskUser,
@@ -40,6 +43,82 @@ export const formatTicket = (ticket: ZendeskTicket): string =>
   ]
     .filter(Boolean)
     .join('\n');
+
+const formatConditionValue = (value: unknown): string =>
+  value === null || value === undefined
+    ? ''
+    : typeof value === 'object'
+      ? JSON.stringify(value)
+      : String(value);
+
+export const formatSlaPolicy = (policy: ZendeskSlaPolicy): string => {
+  const conditions = [
+    ...policy.filter.all.map((c) =>
+      `all: ${c.field} ${c.operator} ${formatConditionValue(c.value)}`.trim(),
+    ),
+    ...policy.filter.any.map((c) =>
+      `any: ${c.field} ${c.operator} ${formatConditionValue(c.value)}`.trim(),
+    ),
+  ];
+  const targets = policy.policy_metrics.map(
+    (m) =>
+      `  - ${m.priority} / ${m.metric}: ${m.target} min${m.business_hours ? ' (business)' : ''}`,
+  );
+  return [
+    `## SLA policy: ${policy.title} (${policy.id})`,
+    policy.description ? `- **Description**: ${policy.description}` : '',
+    `- **Position**: ${policy.position}`,
+    conditions.length > 0 ? `- **Conditions**: ${conditions.join('; ')}` : '',
+    targets.length > 0 ? '- **Targets**:' : '',
+    ...targets,
+  ]
+    .filter(Boolean)
+    .join('\n');
+};
+
+const minutesUntil = (iso: string): number | null => {
+  const t = Date.parse(iso);
+  return Number.isNaN(t) ? null : Math.round((t - Date.now()) / 60_000);
+};
+
+const formatSlaMetric = (m: ZendeskSlaLiveMetric): string => {
+  const stage = m.stage ?? m.status ?? 'unknown';
+  const due = m.breach_at ?? m.due_at ?? null;
+  const business = m.business ?? m.business_hours ?? false;
+  const parts = [`- **${m.metric}** — ${stage}`];
+  if (m.target != null) parts.push(`target ${m.target} min${business ? ' (business)' : ''}`);
+  if (due) {
+    const remaining = minutesUntil(due);
+    if (stage === 'paused' || stage === 'achieved' || stage === 'fulfilled' || remaining == null) {
+      parts.push(`due ${due}`);
+    } else if (remaining < 0) {
+      parts.push(`due ${due} — breached (${Math.abs(remaining)} min overdue)`);
+    } else {
+      parts.push(`due ${due} — ${remaining} min remaining`);
+    }
+  }
+  return parts.join('; ');
+};
+
+// SLA block appended after a formatted ticket. Returns '' when no policy
+// applies, so it is safe to concatenate unconditionally (incl. in search rows).
+export const formatSlaBlock = (entry: ZendeskSlaSideloadEntry | undefined): string => {
+  if (!entry?.policy_metrics || entry.policy_metrics.length === 0) return '';
+  const lines = ['### SLA'];
+  if (entry.title || entry.policy_id != null) {
+    const id = entry.policy_id != null ? ` (${entry.policy_id})` : '';
+    lines.push(`- **Policy**: ${entry.title ?? 'unknown'}${id}`);
+  }
+  const futureBreaches = entry.policy_metrics
+    .map((m) => m.breach_at ?? m.due_at)
+    .map((d) => (d ? Date.parse(d) : Number.NaN))
+    .filter((t) => !Number.isNaN(t) && t > Date.now());
+  if (futureBreaches.length > 0) {
+    lines.push(`- **Next breach**: ${new Date(Math.min(...futureBreaches)).toISOString()}`);
+  }
+  for (const m of entry.policy_metrics) lines.push(formatSlaMetric(m));
+  return `\n\n${lines.join('\n')}`;
+};
 
 export const formatComment = (comment: ZendeskComment): string => {
   const lines = [

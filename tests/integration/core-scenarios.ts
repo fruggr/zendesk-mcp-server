@@ -88,6 +88,17 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         expect(names).toContain('get_current_user');
         expect(names).toContain('get_ticket');
         expect(names).toContain('create_ticket');
+        expect(names).toContain('list_sla_policies');
+      });
+
+      it('reaches list_sla_policies over the wire and returns the policy matrix', async () => {
+        connected = await harness.connect(makeConfig({ mode: 'all' }));
+        const result = await connected.client.callTool({
+          name: 'list_sla_policies',
+          arguments: {},
+        });
+        expect(result.isError).toBeFalsy();
+        expect(textOf(result)).toContain('SLA contractuels fruggr - Bugs/Incidents');
       });
 
       it('exposes one proxy per namespace in "namespace" mode', async () => {

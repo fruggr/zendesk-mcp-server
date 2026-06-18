@@ -15,6 +15,56 @@ export interface ZendeskTicket {
   custom_fields: Array<{ id: number; value: unknown }>;
 }
 
+// GET /api/v2/slas/policies.json — a configured SLA policy with its filter
+// conditions and per-priority reply/resolution targets.
+export interface ZendeskSlaCondition {
+  field: string;
+  operator: string;
+  value: unknown;
+}
+
+export interface ZendeskSlaPolicyMetric {
+  priority: string;
+  metric: string;
+  target: number;
+  business_hours: boolean;
+}
+
+export interface ZendeskSlaPolicy {
+  id: number;
+  title: string;
+  description: string | null;
+  position: number;
+  filter: { all: ZendeskSlaCondition[]; any: ZendeskSlaCondition[] };
+  policy_metrics: ZendeskSlaPolicyMetric[];
+  created_at: string;
+  updated_at: string;
+}
+
+// Live per-ticket SLA state, returned as a top-level `slas` sideload when a
+// ticket is fetched with `?include=slas` (or `?include=tickets(slas)` in search).
+// The exact field names of this sideload are not crisply documented, so the
+// volatile fields are optional and the formatter reads them defensively
+// (`stage ?? status`, `breach_at ?? due_at`, `business ?? business_hours`).
+export interface ZendeskSlaLiveMetric {
+  metric: string;
+  stage?: string;
+  status?: string;
+  target?: number;
+  business?: boolean;
+  business_hours?: boolean;
+  breach_at?: string | null;
+  due_at?: string | null;
+}
+
+export interface ZendeskSlaSideloadEntry {
+  ticket_id?: number;
+  policy_id?: number;
+  title?: string;
+  description?: string | null;
+  policy_metrics: ZendeskSlaLiveMetric[];
+}
+
 export interface ZendeskTicketAttachment {
   id: number;
   file_name: string;
@@ -170,6 +220,7 @@ export interface ZendeskListResponse<T> {
   comments?: T[];
   translations?: T[];
   permission_groups?: T[];
+  sla_policies?: T[];
   meta?: {
     has_more: boolean;
     after_cursor: string;

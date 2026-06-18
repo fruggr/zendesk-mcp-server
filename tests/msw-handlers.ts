@@ -20,6 +20,48 @@ export const MOCK_TICKET = {
   custom_fields: [],
 };
 
+export const MOCK_SLA_POLICY = {
+  id: 123,
+  title: 'SLA contractuels fruggr - Bugs/Incidents',
+  description: 'Contractual SLA for bugs and incidents',
+  position: 1,
+  filter: {
+    all: [{ field: 'type', operator: 'is', value: 'incident' }],
+    any: [],
+  },
+  policy_metrics: [
+    { priority: 'high', metric: 'first_reply_time', target: 420, business_hours: false },
+    { priority: 'high', metric: 'requester_wait_time', target: 4200, business_hours: false },
+  ],
+  created_at: '2026-01-01T00:00:00Z',
+  updated_at: '2026-01-02T00:00:00Z',
+};
+
+// Live per-ticket SLA sideload (`?include=slas`). One achieved metric and one
+// active metric whose breach is far in the future so "remaining" stays positive.
+export const MOCK_SLA_SIDELOAD = {
+  ticket_id: 1,
+  policy_id: 123,
+  title: 'SLA contractuels fruggr - Bugs/Incidents',
+  description: 'Contractual SLA for bugs and incidents',
+  policy_metrics: [
+    {
+      metric: 'first_reply_time',
+      stage: 'achieved',
+      target: 420,
+      business: false,
+      breach_at: '2026-01-01T07:00:00Z',
+    },
+    {
+      metric: 'requester_wait_time',
+      stage: 'active',
+      target: 4200,
+      business: false,
+      breach_at: '2099-06-18T21:37:00Z',
+    },
+  ],
+};
+
 export const MOCK_USER = {
   id: 9999,
   name: 'Test User',
@@ -218,9 +260,15 @@ export const manyCategoriesHandler = http.get(`${HC_BASE}/categories`, () =>
 
 export const handlers = [
   // Tickets
-  http.get(`${BASE}/tickets/:id`, ({ params }) => {
+  http.get(`${BASE}/tickets/:id`, ({ params, request }) => {
     if (params['id'] === '404') return HttpResponse.json({}, { status: 404 });
-    return HttpResponse.json({ ticket: { ...MOCK_TICKET, id: Number(params['id']) } });
+    const id = Number(params['id']);
+    const ticket = { ...MOCK_TICKET, id };
+    const include = new URL(request.url).searchParams.get('include') ?? '';
+    if (include.includes('slas')) {
+      return HttpResponse.json({ ticket, slas: [{ ...MOCK_SLA_SIDELOAD, ticket_id: id }] });
+    }
+    return HttpResponse.json({ ticket });
   }),
   http.get(`${BASE}/tickets/:id/comments`, () => HttpResponse.json({ comments: [MOCK_COMMENT] })),
   http.get(`${BASE}/attachments/:id`, ({ params }) => {
@@ -266,12 +314,23 @@ export const handlers = [
     HttpResponse.json({ ticket: { ...MOCK_TICKET, id: Number(params['id']), status: 'solved' } }),
   ),
 
+  // SLA policies
+  http.get(`${BASE}/slas/policies`, () =>
+    HttpResponse.json({ sla_policies: [MOCK_SLA_POLICY], count: 1 }),
+  ),
+
   // Search
   http.get(`${BASE}/search`, ({ request }) => {
     const url = new URL(request.url);
     const query = url.searchParams.get('query') ?? '';
+    const withSla = (url.searchParams.get('include') ?? '').includes('slas');
     if (query.includes('type:ticket')) {
-      return HttpResponse.json({ results: [{ ...MOCK_TICKET, result_type: 'ticket' }], count: 1 });
+      const body: Record<string, unknown> = {
+        results: [{ ...MOCK_TICKET, result_type: 'ticket' }],
+        count: 1,
+      };
+      if (withSla) body['slas'] = [{ ...MOCK_SLA_SIDELOAD, ticket_id: MOCK_TICKET.id }];
+      return HttpResponse.json(body);
     }
     if (query.includes('type:user')) {
       return HttpResponse.json({ results: [{ ...MOCK_USER, result_type: 'user' }], count: 1 });
