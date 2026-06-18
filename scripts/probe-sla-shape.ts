@@ -79,7 +79,14 @@ const main = async (): Promise<void> => {
 
   const policies = await zendeskGet<Record<string, unknown>>(subdomain, token, '/slas/policies');
   dump('GET /slas/policies — top-level keys', Object.keys(policies));
-  const list = (policies['sla_policies'] as unknown[]) ?? [];
+  const rawSlaPolicies = policies['sla_policies'];
+  if (!Array.isArray(rawSlaPolicies)) {
+    dump(
+      'GET /slas/policies — unexpected `sla_policies` shape',
+      rawSlaPolicies ?? '(no "sla_policies" key present)',
+    );
+  }
+  const list = Array.isArray(rawSlaPolicies) ? rawSlaPolicies : [];
   dump('GET /slas/policies — first policy (representative shape)', list[0] ?? '(no policies)');
   console.log(`\n(${list.length} SLA policies total)`);
 };
