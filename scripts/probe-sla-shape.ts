@@ -1,42 +1,57 @@
 #!/usr/bin/env tsx
 /**
- * Ground-truth capture for the Zendesk SLA sideload (issue #92 / PR #93).
+ * Ground-truth capture for live per-ticket SLA (issue #92 / PR #93).
  *
  * The MCP tools only ever return *formatted text*, never the raw Zendesk JSON,
  * so the exact shape of the SLA data (which is not crisply documented) cannot be
  * observed through them. This one-shot probe hits the live tenant directly and
  * prints the RAW JSON for every candidate per-ticket SLA source, each probed in
  * ISOLATION so an unrecognized sibling sideload can't mask a valid one:
- *   - GET /api/v2/tickets/{id}.json?include=slas           (NOT honored here)
- *   - GET /api/v2/tickets/{id}.json?include=metric_events  (SLA `sla` objects?)
- *   - GET /api/v2/tickets/{id}/metrics.json                (generic metric_set)
- *   - GET /api/v2/slas/policies.json                       (the policy matrix)
+ *   - GET /api/v2/users/me.json                             (token role: admin?)
+ *   - GET /api/v2/tickets/{id}.json?include=slas            (NOT honored here)
+ *   - GET /api/v2/tickets/{id}.json?include=metric_events   (SLA `sla` objects?)
+ *   - GET /api/v2/tickets/{id}/metrics.json                 (generic metric_set)
+ *   - GET /api/v2/slas/policies.json                        (the policy matrix)
  *
- * It only prints the SLA-relevant keys (top-level key list + payloads), never
+ * A first probe of `?include=metric_events` came back as just `["ticket"]`, but
+ * that run was INCONCLUSIVE, not a refutation: the research report flags two
+ * preconditions for SLA data to surface — the token must be an admin, and the
+ * ticket must actually have an SLA policy applied (priority set, policy matched;
+ * Group SLAs may only surface via metric_events). So this probe now:
+ *   1. prints the token's role up front (warns if it is not admin), and
+ *   2. uses Search (`include=tickets(slas)`) to AUTO-DISCOVER a ticket that
+ *      genuinely carries live `policy_metrics`, and probes that one when the id
+ *      passed on the CLI has no live SLA (or no id is passed at all).
+ * It also highlights any `sla` / `group_sla` object found on a metric event —
+ * that object (policy {id,title} + target minutes + business/calendar + breach)
+ * is the candidate source for a get_ticket SLA block.
+ *
+ * It only prints SLA-relevant keys (top-level key lists, payloads, ids), never
  * ticket subjects/bodies, so there is minimal PII to redact.
  *
  * Usage (zero setup in an env where the zendesk-local MCP server is configured):
- *   pnpm tsx scripts/probe-sla-shape.ts <ticket_id>
+ *   pnpm tsx scripts/probe-sla-shape.ts [ticket_id]
  *
- * The subdomain is read from ZENDESK_SUBDOMAIN, else from the zendesk-local entry
- * in .mcp.json. The token is read from ZENDESK_OAUTH_TOKEN, else from the access
- * token cached on disk when the server was authenticated once (stdio OAuth flow).
- * Override either explicitly when needed:
+ * Pass a ticket_id known to be covered by an SLA, or omit it to let the probe
+ * discover one. The subdomain is read from ZENDESK_SUBDOMAIN, else from the
+ * zendesk-local entry in .mcp.json. The token is read from ZENDESK_OAUTH_TOKEN,
+ * else from the access token cached on disk when the server was authenticated
+ * once (stdio OAuth flow). Override either explicitly when needed:
  *   ZENDESK_SUBDOMAIN=fruggr ZENDESK_OAUTH_TOKEN=<token> \
- *     pnpm tsx scripts/probe-sla-shape.ts <ticket_id>
+ *     pnpm tsx scripts/probe-sla-shape.ts [ticket_id]
  *
- * Paste the output into a PR comment so the maintainer can align the
- * TypeScript types and the MSW mock (MOCK_SLA_SIDELOAD) to the real shape.
+ * Paste the output into a PR comment so the maintainer can decide whether
+ * get_ticket can surface SLA via metric_events, and align types/mocks.
  */
 import { readFileSync } from 'node:fs';
 import { loadToken, resolveTokenPath } from '../src/auth/token-persistence';
 import { zendeskGet } from '../src/client/zendesk-api';
 
-const ticketId = process.argv[2];
-if (!ticketId || !/^\d+$/.test(ticketId)) {
+const cliTicketId = process.argv[2];
+if (cliTicketId && !/^\d+$/.test(cliTicketId)) {
   console.error(
-    'Usage: pnpm tsx scripts/probe-sla-shape.ts <ticket_id>\n' +
-      '  ticket_id must be a numeric id of a ticket that is covered by an SLA policy.',
+    'Usage: pnpm tsx scripts/probe-sla-shape.ts [ticket_id]\n' +
+      '  ticket_id (optional) must be numeric; omit it to auto-discover an SLA-covered ticket.',
   );
   process.exit(1);
 }
@@ -82,38 +97,103 @@ const dump = (label: string, value: unknown): void => {
   console.log(JSON.stringify(value, null, 2));
 };
 
+const hasLiveSla = (slas: unknown): boolean =>
+  Array.isArray((slas as { policy_metrics?: unknown[] } | undefined)?.policy_metrics) &&
+  ((slas as { policy_metrics: unknown[] }).policy_metrics.length ?? 0) > 0;
+
+// Pull the SLA-bearing object off a metric event under either documented key.
+const slaObjectOf = (ev: unknown): unknown => {
+  const e = ev as Record<string, unknown> | undefined;
+  return e?.['sla'] ?? e?.['group_sla'] ?? null;
+};
+
 const main = async (): Promise<void> => {
   const token = resolveToken();
 
-  // Probe each candidate single-ticket SLA source in ISOLATION, so an
-  // unrecognized sibling sideload can't mask a valid one (the first probe
-  // requested `slas,metric_events` together and got back only `["ticket"]`,
-  // which couldn't tell us whether `metric_events` itself is honored here).
+  // (0) Token role — `metric_events`/SLA data is admin-gated, so a non-admin
+  // token is the first thing that would make this probe come back empty.
+  let role: unknown = '(unknown)';
+  try {
+    const me = await zendeskGet<Record<string, unknown>>(subdomain, token, '/users/me');
+    const user = (me['user'] as Record<string, unknown> | undefined) ?? {};
+    role = { role: user['role'], role_type: user['role_type'], id: user['id'] };
+    dump('GET /users/me — token identity (role MUST be admin for SLA data)', role);
+    if (user['role'] !== 'admin') {
+      console.log(
+        '\n!!! WARNING: token role is not "admin" — SLA sideloads/metric_events are ' +
+          'admin-gated, so empty results below are EXPECTED and INCONCLUSIVE. Re-run ' +
+          'with an admin token (ZENDESK_OAUTH_TOKEN).',
+      );
+    }
+  } catch (e) {
+    console.log(`\n(could not read /users/me: ${e instanceof Error ? e.message : e})`);
+  }
+
+  // (1) Auto-discover a ticket that genuinely carries live SLA, via the one
+  // source we KNOW works (Search `include=tickets(slas)`). This both confirms
+  // the search shape and gives a guaranteed-covered ticket id to probe, so an
+  // empty metric_events result can't be blamed on "this ticket had no SLA".
+  let targetId = cliTicketId;
+  try {
+    const search = await zendeskGet<{ results?: Array<Record<string, unknown>> }>(
+      subdomain,
+      token,
+      '/search',
+      { query: 'type:ticket status<solved', include: 'tickets(slas)' },
+    );
+    const results = search.results ?? [];
+    const covered = results.filter((r) => hasLiveSla(r['slas']));
+    dump(
+      'Search type:ticket include=tickets(slas) — ids WITH live policy_metrics',
+      covered.map((r) => ({ id: r['id'], slas: r['slas'] })).slice(0, 5),
+    );
+    console.log(
+      `\n(${covered.length}/${results.length} returned tickets carry live SLA policy_metrics)`,
+    );
+    if (!targetId && covered[0]?.['id'] != null) {
+      targetId = String(covered[0]['id']);
+      console.log(
+        `\n-> No ticket_id passed; probing auto-discovered SLA-covered ticket ${targetId}.`,
+      );
+    } else if (targetId && !covered.some((r) => String(r['id']) === targetId)) {
+      const fallback = covered[0]?.['id'];
+      console.log(
+        `\n!!! Ticket ${targetId} is NOT among the SLA-covered tickets above; its SLA probes ` +
+          `may be empty for that reason.${fallback != null ? ` Consider re-running with ${fallback}.` : ''}`,
+      );
+    }
+  } catch (e) {
+    console.log(`\n(search discovery failed: ${e instanceof Error ? e.message : e})`);
+  }
+
+  if (!targetId) {
+    console.error(
+      '\nNo ticket to probe (none passed and none discovered with a live SLA). ' +
+        'Pass an SLA-covered ticket_id explicitly.',
+    );
+    process.exit(1);
+  }
 
   // (a) `slas` on Show Ticket — expected NOT honored (silently dropped).
   const ticketSlas = await zendeskGet<Record<string, unknown>>(
     subdomain,
     token,
-    `/tickets/${ticketId}`,
-    {
-      include: 'slas',
-    },
+    `/tickets/${targetId}`,
+    { include: 'slas' },
   );
   dump('GET /tickets/{id}?include=slas — top-level keys', Object.keys(ticketSlas));
   dump('slas payload', ticketSlas['slas'] ?? '(no "slas" key present)');
 
-  // (b) `metric_events` on Show Ticket — per Zendesk docs each SLA metric event
-  // carries an `sla`/`group_sla` object (policy {id,title,description} + target
-  // in minutes + business/calendar + the breach timestamp). If present, this is
-  // the richer source for the get_ticket SLA block. Print the first event of
-  // each distinct type so the shape (esp. the `sla` object) is visible.
+  // (b) `metric_events` on Show Ticket — the candidate richer source. Per the
+  // Zendesk docs each SLA metric event carries an `sla`/`group_sla` object
+  // (policy {id,title,description} + target minutes + business/calendar + breach
+  // timestamp). Print one event per type, then isolate the SLA objects so we can
+  // see whether stage + breach_at + policy + target are all reconstructable.
   const ticketEvents = await zendeskGet<Record<string, unknown>>(
     subdomain,
     token,
-    `/tickets/${ticketId}`,
-    {
-      include: 'metric_events',
-    },
+    `/tickets/${targetId}`,
+    { include: 'metric_events' },
   );
   dump('GET /tickets/{id}?include=metric_events — top-level keys', Object.keys(ticketEvents));
   const events = ticketEvents['metric_events'];
@@ -124,6 +204,17 @@ const main = async (): Promise<void> => {
       if (!byType.has(type)) byType.set(type, ev);
     }
     dump(`metric_events — ${events.length} total, one sample per type`, [...byType.values()]);
+    const slaObjects = events.map(slaObjectOf).filter((s) => s != null);
+    dump(
+      `metric_events — ${slaObjects.length} events carry an sla/group_sla object`,
+      slaObjects.slice(0, 6),
+    );
+    if (slaObjects.length === 0) {
+      console.log(
+        '\n!!! No sla/group_sla object on any metric event. If the token is admin and the ' +
+          'ticket is SLA-covered (see discovery above), get_ticket has NO reliable SLA source.',
+      );
+    }
   } else {
     dump('metric_events payload', events ?? '(no "metric_events" key present)');
   }
@@ -133,7 +224,7 @@ const main = async (): Promise<void> => {
   const metrics = await zendeskGet<Record<string, unknown>>(
     subdomain,
     token,
-    `/tickets/${ticketId}/metrics`,
+    `/tickets/${targetId}/metrics`,
   );
   dump(
     'GET /tickets/{id}/metrics — ticket_metric (no SLA policy/target/breach expected)',
