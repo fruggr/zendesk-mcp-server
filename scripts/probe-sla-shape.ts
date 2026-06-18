@@ -4,14 +4,17 @@ import { loadToken, resolveTokenPath } from '../src/auth/token-persistence';
  * Ground-truth capture for the Zendesk SLA sideload (issue #92 / PR #93).
  *
  * The MCP tools only ever return *formatted text*, never the raw Zendesk JSON,
- * so the exact shape of the `slas` sideload (which is not crisply documented)
- * cannot be observed through them. This one-shot probe hits the live tenant
- * directly and prints the RAW JSON for:
- *   - GET /api/v2/tickets/{id}.json?include=slas   (the per-ticket SLA sideload)
- *   - GET /api/v2/slas/policies.json               (the policy matrix)
+ * so the exact shape of the SLA data (which is not crisply documented) cannot be
+ * observed through them. This one-shot probe hits the live tenant directly and
+ * prints the RAW JSON for every candidate per-ticket SLA source, each probed in
+ * ISOLATION so an unrecognized sibling sideload can't mask a valid one:
+ *   - GET /api/v2/tickets/{id}.json?include=slas           (NOT honored here)
+ *   - GET /api/v2/tickets/{id}.json?include=metric_events  (SLA `sla` objects?)
+ *   - GET /api/v2/tickets/{id}/metrics.json                (generic metric_set)
+ *   - GET /api/v2/slas/policies.json                       (the policy matrix)
  *
- * It only prints the SLA-relevant keys (top-level key list + `slas` payload +
- * policies), never ticket subjects/bodies, so there is minimal PII to redact.
+ * It only prints the SLA-relevant keys (top-level key list + payloads), never
+ * ticket subjects/bodies, so there is minimal PII to redact.
  *
  * Usage (same auth model as scripts/mcp-live.ts):
  *   ZENDESK_SUBDOMAIN=fruggr ZENDESK_OAUTH_TOKEN=<token> \
@@ -60,21 +63,59 @@ const dump = (label: string, value: unknown): void => {
 const main = async (): Promise<void> => {
   const token = resolveToken();
 
-  // Both `slas` and `metric_events` are documented single-ticket sideloads.
-  // `slas` is the primary source (live countdown); `metric_events` is the
-  // documented fallback (apply_sla / breach / update_status events).
-  const ticket = await zendeskGet<Record<string, unknown>>(
+  // Probe each candidate single-ticket SLA source in ISOLATION, so an
+  // unrecognized sibling sideload can't mask a valid one (the first probe
+  // requested `slas,metric_events` together and got back only `["ticket"]`,
+  // which couldn't tell us whether `metric_events` itself is honored here).
+
+  // (a) `slas` on Show Ticket — expected NOT honored (silently dropped).
+  const ticketSlas = await zendeskGet<Record<string, unknown>>(
     subdomain,
     token,
     `/tickets/${ticketId}`,
-    { include: 'slas,metric_events' },
+    {
+      include: 'slas',
+    },
   );
-  // Print only the structural ground truth, not the ticket body.
-  dump('GET /tickets/{id}?include=slas,metric_events — top-level keys', Object.keys(ticket));
-  dump('slas payload', ticket['slas'] ?? '(no "slas" key present)');
+  dump('GET /tickets/{id}?include=slas — top-level keys', Object.keys(ticketSlas));
+  dump('slas payload', ticketSlas['slas'] ?? '(no "slas" key present)');
+
+  // (b) `metric_events` on Show Ticket — per Zendesk docs each SLA metric event
+  // carries an `sla`/`group_sla` object (policy {id,title,description} + target
+  // in minutes + business/calendar + the breach timestamp). If present, this is
+  // the richer source for the get_ticket SLA block. Print the first event of
+  // each distinct type so the shape (esp. the `sla` object) is visible.
+  const ticketEvents = await zendeskGet<Record<string, unknown>>(
+    subdomain,
+    token,
+    `/tickets/${ticketId}`,
+    {
+      include: 'metric_events',
+    },
+  );
+  dump('GET /tickets/{id}?include=metric_events — top-level keys', Object.keys(ticketEvents));
+  const events = ticketEvents['metric_events'];
+  if (Array.isArray(events)) {
+    const byType = new Map<unknown, unknown>();
+    for (const ev of events) {
+      const type = (ev as Record<string, unknown>)?.['type'];
+      if (!byType.has(type)) byType.set(type, ev);
+    }
+    dump(`metric_events — ${events.length} total, one sample per type`, [...byType.values()]);
+  } else {
+    dump('metric_events payload', events ?? '(no "metric_events" key present)');
+  }
+
+  // (c) The per-ticket metric_set (reply/resolution timing) — confirm it carries
+  // NO SLA policy/target/breach, i.e. it cannot stand in for the SLA block.
+  const metrics = await zendeskGet<Record<string, unknown>>(
+    subdomain,
+    token,
+    `/tickets/${ticketId}/metrics`,
+  );
   dump(
-    'metric_events payload (fallback)',
-    ticket['metric_events'] ?? '(no "metric_events" key present)',
+    'GET /tickets/{id}/metrics — ticket_metric (no SLA policy/target/breach expected)',
+    metrics['ticket_metric'] ?? metrics,
   );
 
   const policies = await zendeskGet<Record<string, unknown>>(subdomain, token, '/slas/policies');
