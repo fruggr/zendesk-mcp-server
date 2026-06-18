@@ -82,11 +82,9 @@ const minutesUntil = (iso: string): number | null => {
 };
 
 const formatSlaMetric = (m: ZendeskSlaLiveMetric): string => {
-  const stage = m.stage ?? m.status ?? 'unknown';
-  const due = m.breach_at ?? m.due_at ?? null;
-  const business = m.business_hours ?? m.business ?? false;
+  const stage = m.stage ?? 'unknown';
+  const due = m.breach_at ?? null;
   const parts = [`- **${m.metric}** — ${stage}`];
-  if (m.target != null) parts.push(`target ${m.target} min${business ? ' (business)' : ''}`);
   if (due) {
     const remaining = minutesUntil(due);
     if (stage === 'paused' || stage === 'achieved' || stage === 'fulfilled' || remaining == null) {
@@ -100,19 +98,16 @@ const formatSlaMetric = (m: ZendeskSlaLiveMetric): string => {
   return parts.join('; ');
 };
 
-// SLA block appended after a formatted ticket. Returns '' when no policy
-// applies, so it is safe to concatenate unconditionally (incl. in search rows).
+// Live SLA block appended after a formatted ticket. Renders only the state the
+// Search `slas` sideload actually carries (per-metric stage + breach countdown)
+// — targets and policy identity are not on the wire (see `list_sla_policies`).
+// Returns '' when no policy applies, so it is safe to concatenate
+// unconditionally (incl. in search rows).
 export const formatSlaBlock = (entry: ZendeskSlaSideloadEntry | undefined): string => {
   if (!entry?.policy_metrics || entry.policy_metrics.length === 0) return '';
   const lines = ['### SLA'];
-  const policyTitle = entry.policy?.title ?? entry.title;
-  const policyId = entry.policy?.id ?? entry.policy_id;
-  if (policyTitle || policyId != null) {
-    const id = policyId != null ? ` (${policyId})` : '';
-    lines.push(`- **Policy**: ${policyTitle ?? 'unknown'}${id}`);
-  }
   const futureBreaches = entry.policy_metrics
-    .map((m) => m.breach_at ?? m.due_at)
+    .map((m) => m.breach_at)
     .map((d) => (d ? Date.parse(d) : Number.NaN))
     .filter((t) => !Number.isNaN(t) && t > Date.now());
   if (futureBreaches.length > 0) {

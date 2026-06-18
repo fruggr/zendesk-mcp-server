@@ -56,30 +56,14 @@ export const MOCK_SLA_POLICY = {
   url: 'https://testsubdomain.zendesk.com/api/v2/slas/policies/123',
 };
 
-// Live per-ticket SLA sideload (`?include=slas`). One achieved metric and one
-// active metric whose breach is far in the future so "remaining" stays positive.
+// Live per-ticket SLA, nested on each Search result (`include=tickets(slas)`).
+// Mirrors the real shape (see #92): only live metrics — no ticket_id, no policy
+// identity, no target. One achieved metric and one active metric whose breach is
+// far in the future so "remaining" stays positive.
 export const MOCK_SLA_SIDELOAD = {
-  ticket_id: 1,
-  policy: {
-    id: 123,
-    title: 'SLA contractuels fruggr - Bugs/Incidents',
-    description: 'Contractual SLA for bugs and incidents',
-  },
   policy_metrics: [
-    {
-      metric: 'first_reply_time',
-      stage: 'achieved',
-      target: 420,
-      business_hours: false,
-      breach_at: '2026-01-01T07:00:00Z',
-    },
-    {
-      metric: 'requester_wait_time',
-      stage: 'active',
-      target: 4200,
-      business_hours: false,
-      breach_at: '2099-06-18T21:37:00Z',
-    },
+    { metric: 'first_reply_time', stage: 'achieved', breach_at: '2026-01-01T07:00:00Z' },
+    { metric: 'requester_wait_time', stage: 'active', breach_at: '2099-06-18T21:37:00Z', days: 12 },
   ],
 };
 
@@ -281,15 +265,12 @@ export const manyCategoriesHandler = http.get(`${HC_BASE}/categories`, () =>
 
 export const handlers = [
   // Tickets
-  http.get(`${BASE}/tickets/:id`, ({ params, request }) => {
+  http.get(`${BASE}/tickets/:id`, ({ params }) => {
     if (params['id'] === '404') return HttpResponse.json({}, { status: 404 });
     const id = Number(params['id']);
-    const ticket = { ...MOCK_TICKET, id };
-    const include = new URL(request.url).searchParams.get('include') ?? '';
-    if (include.includes('slas')) {
-      return HttpResponse.json({ ticket, slas: [{ ...MOCK_SLA_SIDELOAD, ticket_id: id }] });
-    }
-    return HttpResponse.json({ ticket });
+    // The Show Ticket endpoint does not expose SLA (Zendesk ignores
+    // `include=slas` there, see #92), so no `slas` is ever returned here.
+    return HttpResponse.json({ ticket: { ...MOCK_TICKET, id } });
   }),
   http.get(`${BASE}/tickets/:id/comments`, () => HttpResponse.json({ comments: [MOCK_COMMENT] })),
   http.get(`${BASE}/attachments/:id`, ({ params }) => {
@@ -345,12 +326,10 @@ export const handlers = [
     const query = url.searchParams.get('query') ?? '';
     const withSla = (url.searchParams.get('include') ?? '').includes('slas');
     if (query.includes('type:ticket')) {
-      const body: Record<string, unknown> = {
-        results: [{ ...MOCK_TICKET, result_type: 'ticket' }],
-        count: 1,
-      };
-      if (withSla) body['slas'] = [{ ...MOCK_SLA_SIDELOAD, ticket_id: MOCK_TICKET.id }];
-      return HttpResponse.json(body);
+      // `slas` is nested on each result, not a top-level array (see #92).
+      const ticket: Record<string, unknown> = { ...MOCK_TICKET, result_type: 'ticket' };
+      if (withSla) ticket['slas'] = MOCK_SLA_SIDELOAD;
+      return HttpResponse.json({ results: [ticket], count: 1 });
     }
     if (query.includes('type:user')) {
       return HttpResponse.json({ results: [{ ...MOCK_USER, result_type: 'user' }], count: 1 });

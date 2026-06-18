@@ -26,8 +26,7 @@
  *     pnpm tsx scripts/probe-sla-shape.ts <ticket_id>
  *
  * Paste the output into a PR comment so the maintainer can align the
- * TypeScript types, the `findSlaForTicket` correlation key and the MSW mock
- * (MOCK_SLA_SIDELOAD) to the real shape.
+ * TypeScript types and the MSW mock (MOCK_SLA_SIDELOAD) to the real shape.
  */
 import { readFileSync } from 'node:fs';
 import { loadToken, resolveTokenPath } from '../src/auth/token-persistence';

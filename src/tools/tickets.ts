@@ -17,7 +17,6 @@ import type {
   ZendeskComment,
   ZendeskListResponse,
   ZendeskSlaPolicy,
-  ZendeskSlaSideloadEntry,
   ZendeskTicket,
   ZendeskTicketAttachment,
 } from '../types';
@@ -124,16 +123,6 @@ const collectAttachmentBlocks = async (
 // Correlate a top-level `slas` sideload back to a single ticket. Prefers an
 // explicit ticket_id match; falls back to a lone entry without a ticket_id
 // (the get_ticket case, where the sideload describes the one fetched ticket).
-const findSlaForTicket = (
-  slas: ZendeskSlaSideloadEntry[] | undefined,
-  ticketId: number,
-): ZendeskSlaSideloadEntry | undefined => {
-  const entries = slas ?? [];
-  const match = entries.find((e) => e.ticket_id === ticketId);
-  if (match) return match;
-  return entries.length === 1 && entries[0]?.ticket_id == null ? entries[0] : undefined;
-};
-
 export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
   const { subdomain, getToken } = ctx;
 
@@ -144,7 +133,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: true,
       title: 'Get Zendesk Ticket',
       description:
-        'Retrieve a Zendesk ticket by ID, including its comments if requested. Returns ticket details (subject, status, priority, assignee, tags, description) and optionally all comments/internal notes. The live SLA state (applied policy, per-metric targets, due dates, time remaining and breach status) is included automatically whenever an SLA policy applies to the ticket.',
+        "Retrieve a Zendesk ticket by ID, including its comments if requested. Returns ticket details (subject, status, priority, assignee, tags, description) and optionally all comments/internal notes. To see a ticket's live SLA state (stage and breach countdown), use search_tickets, which surfaces it per result; the per-ticket Show endpoint does not expose SLA data.",
       inputSchema: z.object({
         ticket_id: z.number().int().describe('Ticket ID'),
         include_comments: z.boolean().default(false).describe('Include ticket comments'),
@@ -161,11 +150,15 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           include_comments: boolean;
         };
         const token = await getToken();
-        const { ticket, slas } = await zendeskGet<{
-          ticket: ZendeskTicket;
-          slas?: ZendeskSlaSideloadEntry[];
-        }>(subdomain, token, `/tickets/${ticket_id}`, { include: 'slas' });
-        let text = formatTicket(ticket) + formatSlaBlock(findSlaForTicket(slas, ticket.id));
+        // No SLA block here: Zendesk does not expose live SLA on the Show Ticket
+        // endpoint (`include=slas` is silently ignored). SLA surfaces via
+        // search_tickets instead — see #92.
+        const { ticket } = await zendeskGet<{ ticket: ZendeskTicket }>(
+          subdomain,
+          token,
+          `/tickets/${ticket_id}`,
+        );
+        let text = formatTicket(ticket);
         if (include_comments) {
           const { comments } = await zendeskGet<{ comments: ZendeskComment[] }>(
             subdomain,
@@ -274,15 +267,20 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           page: number;
         };
         const token = await getToken();
-        const response = await zendeskGet<
-          ZendeskListResponse<ZendeskTicket> & { slas?: ZendeskSlaSideloadEntry[] }
-        >(subdomain, token, '/search', {
-          query: `type:ticket ${query}`,
-          include: 'tickets(slas)',
-          ...buildOffsetParams(per_page, page),
-        });
+        const response = await zendeskGet<ZendeskListResponse<ZendeskTicket>>(
+          subdomain,
+          token,
+          '/search',
+          {
+            query: `type:ticket ${query}`,
+            include: 'tickets(slas)',
+            ...buildOffsetParams(per_page, page),
+          },
+        );
+        // The `slas` sideload is nested on each result (no top-level array, no
+        // ticket_id correlation) — read it straight off the ticket.
         const formatTicketWithSla = (ticket: ZendeskTicket): string =>
-          formatTicket(ticket) + formatSlaBlock(findSlaForTicket(response.slas, ticket.id));
+          formatTicket(ticket) + formatSlaBlock(ticket.slas);
         return {
           content: [
             {

@@ -13,6 +13,10 @@ export interface ZendeskTicket {
   created_at: string;
   updated_at: string;
   custom_fields: Array<{ id: number; value: unknown }>;
+  // Live SLA state, present only on Search results fetched with
+  // `include=tickets(slas)` (nested per result). Absent on the Show Ticket
+  // endpoint — Zendesk silently ignores `include=slas` there (see #92).
+  slas?: ZendeskSlaSideloadEntry;
 }
 
 // GET /api/v2/slas/policies.json — a configured SLA policy with its filter
@@ -43,38 +47,19 @@ export interface ZendeskSlaPolicy {
   url?: string;
 }
 
-// Live per-ticket SLA state, returned as a top-level `slas` sideload when a
-// ticket is fetched with `?include=slas` (or `?include=tickets(slas)` in search).
-// The exact field names of this sideload are not crisply documented, so the
-// volatile fields are optional and the formatter reads them defensively
-// (`stage ?? status`, `breach_at ?? due_at`, `business ?? business_hours`).
+// Live per-ticket SLA state, nested on each ticket result of a Search fetched
+// with `include=tickets(slas)` (verified against the live API, see #92). It
+// carries only the live metrics: no `ticket_id` (correlation is by nesting),
+// no policy identity and no target (those live in `/slas/policies`, surfaced
+// by `list_sla_policies`).
 export interface ZendeskSlaLiveMetric {
   metric: string;
-  stage?: string;
-  status?: string;
-  target?: number;
-  business?: boolean;
-  business_hours?: boolean;
+  stage?: string; // active | paused | achieved | fulfilled | breached | ...
   breach_at?: string | null;
-  due_at?: string | null;
-}
-
-// Nested applied-policy object. Zendesk consistently exposes the applied policy
-// as `policy: { id, title, description }` (e.g. the `sla` object on ticket
-// metric events), so the sideload is read that way first, with flat
-// `policy_id` / `title` kept as a fallback.
-export interface ZendeskSlaPolicyRef {
-  id?: number;
-  title?: string;
-  description?: string | null;
+  days?: number; // whole days to breach, when Zendesk includes it
 }
 
 export interface ZendeskSlaSideloadEntry {
-  ticket_id?: number;
-  policy?: ZendeskSlaPolicyRef;
-  policy_id?: number;
-  title?: string;
-  description?: string | null;
   policy_metrics: ZendeskSlaLiveMetric[];
 }
 

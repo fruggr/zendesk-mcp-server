@@ -81,27 +81,17 @@ describe('formatSlaPolicy', () => {
 });
 
 describe('formatSlaBlock', () => {
-  const entry = (metrics: unknown[]) =>
-    ({ ticket_id: 1, policy_id: 123, title: 'P', policy_metrics: metrics }) as never;
+  const entry = (metrics: unknown[]) => ({ policy_metrics: metrics }) as never;
 
   it('returns an empty string when no SLA applies', () => {
     expect(formatSlaBlock(undefined)).toBe('');
     expect(formatSlaBlock(entry([]))).toBe('');
   });
 
-  it('reads the applied policy from a nested policy object', () => {
-    const result = formatSlaBlock({
-      ticket_id: 1,
-      policy: { id: 531, title: 'Main Policy', description: 'x' },
-      policy_metrics: [{ metric: 'first_reply_time', stage: 'achieved', target: 60 }],
-    } as never);
-    expect(result).toContain('**Policy**: Main Policy (531)');
-  });
-
   it('shows minutes remaining for an active metric with a future breach', () => {
     const future = new Date(Date.now() + 60 * 60_000).toISOString();
     const result = formatSlaBlock(
-      entry([{ metric: 'requester_wait_time', stage: 'active', target: 4200, breach_at: future }]),
+      entry([{ metric: 'requester_wait_time', stage: 'active', breach_at: future }]),
     );
     expect(result).toContain('### SLA');
     expect(result).toContain('Next breach');
@@ -111,7 +101,7 @@ describe('formatSlaBlock', () => {
   it('flags a breached metric as overdue instead of a negative countdown', () => {
     const past = new Date(Date.now() - 60 * 60_000).toISOString();
     const result = formatSlaBlock(
-      entry([{ metric: 'first_reply_time', stage: 'active', target: 420, breach_at: past }]),
+      entry([{ metric: 'first_reply_time', stage: 'active', breach_at: past }]),
     );
     expect(result).toContain('breached');
     expect(result).toContain('overdue');
@@ -122,36 +112,16 @@ describe('formatSlaBlock', () => {
     const future = new Date(Date.now() + 60 * 60_000).toISOString();
     const result = formatSlaBlock(
       entry([
-        { metric: 'agent_work_time', stage: 'paused', target: 100, breach_at: future },
-        { metric: 'first_reply_time', stage: 'achieved', target: 420, breach_at: future },
+        { metric: 'agent_work_time', stage: 'paused', breach_at: future },
+        { metric: 'first_reply_time', stage: 'achieved', breach_at: future },
       ]),
     );
     expect(result).not.toContain('remaining');
   });
 
-  it('reads the alternate field names defensively (status/due_at/business_hours)', () => {
-    const future = new Date(Date.now() + 60 * 60_000).toISOString();
-    const result = formatSlaBlock(
-      entry([
-        {
-          metric: 'next_reply_time',
-          status: 'active',
-          target: 60,
-          business_hours: true,
-          due_at: future,
-        },
-      ]),
-    );
-    expect(result).toContain('next_reply_time');
-    expect(result).toContain('(business)');
-    expect(result).toContain('min remaining');
-  });
-
   it('tolerates an unparseable timestamp without crashing', () => {
     const result = formatSlaBlock(
-      entry([
-        { metric: 'first_reply_time', stage: 'active', target: 420, breach_at: 'not-a-date' },
-      ]),
+      entry([{ metric: 'first_reply_time', stage: 'active', breach_at: 'not-a-date' }]),
     );
     expect(result).toContain('first_reply_time');
     expect(result).not.toContain('remaining');

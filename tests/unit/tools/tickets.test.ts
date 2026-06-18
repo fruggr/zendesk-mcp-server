@@ -33,45 +33,10 @@ describe('ticket tools', () => {
       expect(result.content[0]?.text).toContain('Test ticket');
     });
 
-    it('includes the live SLA state when a policy applies', async () => {
+    it('does not surface an SLA block (not exposed on the Show Ticket endpoint)', async () => {
       const tool = findTool('get_ticket');
       const result = await tool.handler({ ticket_id: 1, include_comments: false });
-      const text = result.content[0]?.text ?? '';
-      expect(text).toContain('### SLA');
-      expect(text).toContain('SLA contractuels fruggr - Bugs/Incidents');
-      expect(text).toContain('requester_wait_time');
-      expect(text).toContain('remaining');
-    });
-
-    it('shows no SLA block when no policy applies', async () => {
-      mswServer.use(
-        http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id', ({ params }) =>
-          HttpResponse.json({
-            ticket: {
-              id: Number(params['id']),
-              subject: 'No SLA ticket',
-              description: '',
-              status: 'open',
-              priority: 'low',
-              type: 'question',
-              assignee_id: null,
-              requester_id: 1,
-              group_id: null,
-              organization_id: null,
-              tags: [],
-              created_at: '2026-01-01T00:00:00Z',
-              updated_at: '2026-01-02T00:00:00Z',
-              custom_fields: [],
-            },
-            slas: [],
-          }),
-        ),
-      );
-      const tool = findTool('get_ticket');
-      const result = await tool.handler({ ticket_id: 7, include_comments: false });
-      const text = result.content[0]?.text ?? '';
-      expect(text).toContain('No SLA ticket');
-      expect(text).not.toContain('### SLA');
+      expect(result.content[0]?.text).not.toContain('### SLA');
     });
 
     it('includes comments when requested', async () => {
