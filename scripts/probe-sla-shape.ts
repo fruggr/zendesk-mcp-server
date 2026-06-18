@@ -1,5 +1,4 @@
 #!/usr/bin/env tsx
-import { loadToken, resolveTokenPath } from '../src/auth/token-persistence';
 /**
  * Ground-truth capture for the Zendesk SLA sideload (issue #92 / PR #93).
  *
@@ -16,20 +15,23 @@ import { loadToken, resolveTokenPath } from '../src/auth/token-persistence';
  * It only prints the SLA-relevant keys (top-level key list + payloads), never
  * ticket subjects/bodies, so there is minimal PII to redact.
  *
- * Usage (same auth model as scripts/mcp-live.ts):
+ * Usage (zero setup in an env where the zendesk-local MCP server is configured):
+ *   pnpm tsx scripts/probe-sla-shape.ts <ticket_id>
+ *
+ * The subdomain is read from ZENDESK_SUBDOMAIN, else from the zendesk-local entry
+ * in .mcp.json. The token is read from ZENDESK_OAUTH_TOKEN, else from the access
+ * token cached on disk when the server was authenticated once (stdio OAuth flow).
+ * Override either explicitly when needed:
  *   ZENDESK_SUBDOMAIN=fruggr ZENDESK_OAUTH_TOKEN=<token> \
  *     pnpm tsx scripts/probe-sla-shape.ts <ticket_id>
- *
- * If you have already authenticated the server once (stdio OAuth flow), the
- * access token cached on disk for the subdomain is used automatically and
- * ZENDESK_OAUTH_TOKEN can be omitted.
  *
  * Paste the output into a PR comment so the maintainer can align the
  * TypeScript types, the `findSlaForTicket` correlation key and the MSW mock
  * (MOCK_SLA_SIDELOAD) to the real shape.
  */
+import { readFileSync } from 'node:fs';
+import { loadToken, resolveTokenPath } from '../src/auth/token-persistence';
 import { zendeskGet } from '../src/client/zendesk-api';
-import { loadConfig } from '../src/config';
 
 const ticketId = process.argv[2];
 if (!ticketId || !/^\d+$/.test(ticketId)) {
@@ -40,8 +42,29 @@ if (!ticketId || !/^\d+$/.test(ticketId)) {
   process.exit(1);
 }
 
-const config = loadConfig([]);
-const { subdomain } = config;
+// The probe only needs a subdomain + a token to make GETs — not the full server
+// config. Resolve the subdomain from the same places the server uses, so it runs
+// with zero manual setup: ZENDESK_SUBDOMAIN, else the subdomain `.mcp.json`
+// already configures the local server with (its env is injected into the MCP
+// subprocess only, never the interactive shell, which is why a bare run fails).
+const resolveSubdomain = (): string => {
+  const fromEnv = process.env['ZENDESK_SUBDOMAIN'];
+  if (fromEnv) return fromEnv;
+  try {
+    const mcp = JSON.parse(readFileSync(new URL('../.mcp.json', import.meta.url), 'utf8'));
+    const sub = mcp?.mcpServers?.['zendesk-local']?.env?.ZENDESK_SUBDOMAIN;
+    if (typeof sub === 'string' && sub) return sub;
+  } catch {
+    // fall through to the error below
+  }
+  console.error(
+    'No Zendesk subdomain. Set ZENDESK_SUBDOMAIN, or run from a checkout whose ' +
+      '.mcp.json configures the zendesk-local server.',
+  );
+  process.exit(1);
+};
+
+const subdomain = resolveSubdomain();
 
 const resolveToken = (): string => {
   const fromEnv = process.env['ZENDESK_OAUTH_TOKEN'];
