@@ -25,21 +25,31 @@ formatting) — say so explicitly rather than silently omitting it.
   implementer — another agent (e.g. the local executor) or a human. Don't assume
   it shares your conversation context: spell out the state to manipulate and how
   to observe results.
-- **Assume a ready environment.** The validator starts on the branch with the
-  code operational and the MCP server preconfigured (`--mode all`) with its
-  tools already loaded into its Claude Code context. Do NOT add build/install
-  steps, transport choices, or CLI harnesses (`pnpm mcp:live`, `scripts/`): the
-  validator drives the feature by calling the real `mcp__<server>__*` tools
-  directly in its session, which is what exercises the running server.
+- **Assume a fully ready environment — don't make the validator build it.** The
+  validator's session is already **on the PR branch, in a live checkout, with the
+  MCP server running and authenticated** and its tools loaded as `mcp__<server>__*`
+  (`--mode all`). So the plan must NOT ask the validator to:
+  - check out / fetch / clone / pull the branch (it's already on it — at most,
+    capture `git rev-parse HEAD` to name the SHA);
+  - build, install, or start the server (`pnpm …`, transport choices,
+    `pnpm mcp:live`, other `scripts/`);
+  - locate or configure credentials, tokens, or the base URL (a valid token is
+    already wired into the running server and reused by any sanctioned script).
+
+  The validator drives the feature by calling the real `mcp__<server>__*` tools
+  directly — that *is* what exercises the running server. A credential/egress
+  error is a `BLOCKED` finding to report, never a setup task to perform.
   - **Exception — ground-truth capture.** When the change depends on the shape
     of an undocumented external response that the *formatted* tool output cannot
     reveal (e.g. a Zendesk sideload whose exact field names we guessed), the
     MCP tools are insufficient on their own: they show rendered text, never the
     raw upstream JSON. In that case a small **read-only capture probe**
-    (`scripts/probe-*.ts`, reusing the existing auth/client) IS warranted. Make
-    it the first, blocking scenario: the validator runs it and pastes the raw
-    payload into the PR so the implementer can align the types, any correlation
-    key, and the test mocks to reality before the rest of the plan is trusted.
+    (`scripts/probe-*.ts`) IS warranted. It **reuses the already-present auth**
+    (the same `ZENDESK_OAUTH_TOKEN` / cached token file the running server uses) —
+    state the exact command to run, not how to obtain a token. Make it the first,
+    blocking scenario: the validator runs it and pastes the raw payload into the
+    PR so the implementer can align the types, any correlation key, and the test
+    mocks to reality before the rest of the plan is trusted.
 - **Lives in the PR description.** Put the plan in the PR body under a
   `## Functional validation plan` heading so it travels with the PR. Keep it in
   sync if the change evolves.
