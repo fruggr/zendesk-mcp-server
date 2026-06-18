@@ -20,21 +20,40 @@ export const MOCK_TICKET = {
   custom_fields: [],
 };
 
+// Shape mirrors the official SLA Policies API reference: condition values can be
+// arrays (e.g. `includes`), policy_metrics carry target_in_seconds, and the
+// record has a `url`. The resolution metric is `total_resolution_time`.
 export const MOCK_SLA_POLICY = {
   id: 123,
   title: 'SLA contractuels fruggr - Bugs/Incidents',
   description: 'Contractual SLA for bugs and incidents',
   position: 1,
   filter: {
-    all: [{ field: 'type', operator: 'is', value: 'incident' }],
+    all: [
+      { field: 'type', operator: 'is', value: 'incident' },
+      { field: 'custom_status_id', operator: 'includes', value: ['1', '2'] },
+    ],
     any: [],
   },
   policy_metrics: [
-    { priority: 'high', metric: 'first_reply_time', target: 420, business_hours: false },
-    { priority: 'high', metric: 'requester_wait_time', target: 4200, business_hours: false },
+    {
+      priority: 'high',
+      metric: 'first_reply_time',
+      target: 420,
+      target_in_seconds: 25200,
+      business_hours: false,
+    },
+    {
+      priority: 'high',
+      metric: 'total_resolution_time',
+      target: 4200,
+      target_in_seconds: 252000,
+      business_hours: false,
+    },
   ],
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-02T00:00:00Z',
+  url: 'https://testsubdomain.zendesk.com/api/v2/slas/policies/123',
 };
 
 // Live per-ticket SLA sideload (`?include=slas`). One achieved metric and one
@@ -314,10 +333,9 @@ export const handlers = [
     HttpResponse.json({ ticket: { ...MOCK_TICKET, id: Number(params['id']), status: 'solved' } }),
   ),
 
-  // SLA policies
-  http.get(`${BASE}/slas/policies`, () =>
-    HttpResponse.json({ sla_policies: [MOCK_SLA_POLICY], count: 1 }),
-  ),
+  // SLA policies — the real endpoint returns the full config list with no
+  // `count` wrapper, so omit it here to exercise the array-length fallback.
+  http.get(`${BASE}/slas/policies`, () => HttpResponse.json({ sla_policies: [MOCK_SLA_POLICY] })),
 
   // Search
   http.get(`${BASE}/search`, ({ request }) => {

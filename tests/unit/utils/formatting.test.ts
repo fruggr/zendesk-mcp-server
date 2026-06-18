@@ -71,6 +71,12 @@ describe('formatSlaPolicy', () => {
     expect(result).toContain('(123)');
     expect(result).toContain('type is incident');
     expect(result).toContain('high / first_reply_time: 420 min');
+    expect(result).toContain('high / total_resolution_time: 4200 min');
+  });
+
+  it('renders array-valued filter conditions (e.g. includes)', () => {
+    const result = formatSlaPolicy(MOCK_SLA_POLICY);
+    expect(result).toContain('custom_status_id includes ["1","2"]');
   });
 });
 

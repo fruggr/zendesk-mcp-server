@@ -27,6 +27,7 @@ export interface ZendeskSlaPolicyMetric {
   priority: string;
   metric: string;
   target: number;
+  target_in_seconds?: number;
   business_hours: boolean;
 }
 
@@ -39,6 +40,7 @@ export interface ZendeskSlaPolicy {
   policy_metrics: ZendeskSlaPolicyMetric[];
   created_at: string;
   updated_at: string;
+  url?: string;
 }
 
 // Live per-ticket SLA state, returned as a top-level `slas` sideload when a

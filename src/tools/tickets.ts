@@ -622,17 +622,16 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           '/slas/policies',
           buildOffsetParams(per_page, page),
         );
+        const policies = response.sla_policies ?? [];
+        // The SLA policies endpoint returns the full config list and, in
+        // practice, omits the `count` wrapper, so fall back to the array length
+        // rather than reporting "Results: 0".
+        const meta =
+          response.count != null
+            ? extractSearchPaginationMeta(response, per_page, page)
+            : { count: policies.length, has_more: false, after_cursor: null };
         return {
-          content: [
-            {
-              type: 'text',
-              text: formatList(
-                response.sla_policies ?? [],
-                formatSlaPolicy,
-                extractSearchPaginationMeta(response, per_page, page),
-              ),
-            },
-          ],
+          content: [{ type: 'text', text: formatList(policies, formatSlaPolicy, meta) }],
         };
       },
     },
