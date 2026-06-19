@@ -1,3 +1,22 @@
+## [2.3.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.2.0...v2.3.0) (2026-06-19)
+
+### Features
+
+* surface live SLA state on tickets and add list_sla_policies ([#93](https://github.com/fruggr/zendesk-mcp-server/issues/93)) ([e428b2b](https://github.com/fruggr/zendesk-mcp-server/commit/e428b2b62f9b0bc3f237e82c5f99c1bc60efebda))
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Documentation
+
+* lead README with the assistant experience (M365 Copilot vocabulary) ([#90](https://github.com/fruggr/zendesk-mcp-server/issues/90)) ([19b98e6](https://github.com/fruggr/zendesk-mcp-server/commit/19b98e6560f698635810587b6fe795e83e213537))
+
+### Chores
+
+* **deps:** update pnpm to v11.5.3 ([#91](https://github.com/fruggr/zendesk-mcp-server/issues/91)) ([62f058c](https://github.com/fruggr/zendesk-mcp-server/commit/62f058c3f7d4827e28016df55ef4f70afe1527dd))
+* **deps:** update pnpm to v11.6.0 ([#94](https://github.com/fruggr/zendesk-mcp-server/issues/94)) ([9b7f8c6](https://github.com/fruggr/zendesk-mcp-server/commit/9b7f8c6f1f2ef355baa05c9dc06adccb80b98c7e))
+</details>
+
 ## [2.2.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.1.0...v2.2.0) (2026-06-14)
 
 ### Features
