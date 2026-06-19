@@ -122,7 +122,7 @@ zendesk-mcp-server acme --namespace tickets
 
 | Tool | Description | Mode |
 |------|-------------|------|
-| `get_ticket` | Retrieve a ticket by ID with optional comments | read |
+| `get_ticket` | Retrieve a ticket by ID with optional comments and its live SLA state (resolved via a scoped search) | read |
 | `get_ticket_attachments` | Download ticket attachments (images as base64, others as references) | read |
 | `search_tickets` | Search tickets using Zendesk query syntax, with per-result SLA state | read |
 | `list_tickets` | List tickets with cursor-based pagination | read |

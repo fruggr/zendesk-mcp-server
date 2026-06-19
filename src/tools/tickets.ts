@@ -17,6 +17,7 @@ import type {
   ZendeskComment,
   ZendeskListResponse,
   ZendeskSlaPolicy,
+  ZendeskSlaSideloadEntry,
   ZendeskTicket,
   ZendeskTicketAttachment,
 } from '../types';
@@ -123,6 +124,45 @@ const collectAttachmentBlocks = async (
 // Correlate a top-level `slas` sideload back to a single ticket. Prefers an
 // explicit ticket_id match; falls back to a lone entry without a ticket_id
 // (the get_ticket case, where the sideload describes the one fetched ticket).
+// get_ticket has no direct SLA source — Zendesk silently ignores the `slas`
+// sideload on both Show Ticket and Show Many (#92). The only endpoint that
+// returns live SLA is Search, so resolve a single ticket's SLA via a tightly
+// scoped Search — its own requester, within a +/-1 day window around its
+// creation day (the window absorbs account-timezone skew in search dates) — and
+// correlate the result back by exact id. Best-effort by design: returns
+// undefined (never mis-attributed data) when the ticket falls outside the
+// result window (very high-volume requester) or Search is briefly unavailable
+// / not yet indexed.
+const fetchTicketSla = async (
+  subdomain: string,
+  token: string,
+  ticket: ZendeskTicket,
+): Promise<ZendeskSlaSideloadEntry | undefined> => {
+  const day = ticket.created_at.slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return undefined;
+  const shiftDay = (offset: number): string => {
+    const d = new Date(`${day}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + offset);
+    return d.toISOString().slice(0, 10);
+  };
+  try {
+    const { results } = await zendeskGet<ZendeskListResponse<ZendeskTicket>>(
+      subdomain,
+      token,
+      '/search',
+      {
+        query: `type:ticket requester:${ticket.requester_id} created>${shiftDay(-1)} created<${shiftDay(1)}`,
+        include: 'tickets(slas)',
+        ...buildOffsetParams(MAX_PAGE_SIZE, 1),
+      },
+    );
+    return (results ?? []).find((r) => r.id === ticket.id)?.slas;
+  } catch {
+    // SLA is supplementary — never fail get_ticket because the lookup faltered.
+    return undefined;
+  }
+};
+
 export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
   const { subdomain, getToken } = ctx;
 
@@ -133,7 +173,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: true,
       title: 'Get Zendesk Ticket',
       description:
-        "Retrieve a Zendesk ticket by ID, including its comments if requested. Returns ticket details (subject, status, priority, assignee, tags, description) and optionally all comments/internal notes. To see a ticket's live SLA state (stage and breach countdown), use search_tickets, which surfaces it per result; the per-ticket Show endpoint does not expose SLA data.",
+        'Retrieve a Zendesk ticket by ID, including its live SLA state (per-metric stage and breach countdown) when an SLA policy applies, plus its comments if requested. Returns ticket details (subject, status, priority, assignee, tags, description) and optionally all comments/internal notes. The per-ticket Show endpoint exposes no SLA, so the SLA block is resolved via a scoped search and may be absent for a very high-volume requester or a just-updated ticket; SLA targets and policy conditions live in list_sla_policies.',
       inputSchema: z.object({
         ticket_id: z.number().int().describe('Ticket ID'),
         include_comments: z.boolean().default(false).describe('Include ticket comments'),
@@ -150,15 +190,14 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           include_comments: boolean;
         };
         const token = await getToken();
-        // No SLA block here: Zendesk does not expose live SLA on the Show Ticket
-        // endpoint (`include=slas` is silently ignored). SLA surfaces via
-        // search_tickets instead — see #92.
         const { ticket } = await zendeskGet<{ ticket: ZendeskTicket }>(
           subdomain,
           token,
           `/tickets/${ticket_id}`,
         );
-        let text = formatTicket(ticket);
+        // Show Ticket exposes no SLA (#92); resolve it via a scoped Search.
+        let text =
+          formatTicket(ticket) + formatSlaBlock(await fetchTicketSla(subdomain, token, ticket));
         if (include_comments) {
           const { comments } = await zendeskGet<{ comments: ZendeskComment[] }>(
             subdomain,
@@ -242,7 +281,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: true,
       title: 'Search Zendesk Tickets',
       description:
-        'Search tickets using Zendesk query syntax (e.g., "status:open assignee:me", "priority:urgent type:incident"). Returns total count. Each result carries its live SLA state when an SLA policy applies, so queue triage like "breaching today" works without a per-ticket fetch.',
+        'Search tickets using Zendesk query syntax, returning each result with its live SLA state (per-metric stage and breach countdown) when an SLA policy applies. Examples: "status:open assignee:me", "priority:urgent type:incident". Returns total count, so queue triage like "breaching today" works without a per-ticket fetch.',
       inputSchema: z.object({
         query: z.string().min(1).describe('Zendesk search query string'),
         per_page: z

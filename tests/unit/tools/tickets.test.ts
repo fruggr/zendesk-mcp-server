@@ -2,6 +2,7 @@ import { HttpResponse, http } from 'msw';
 import { describe, expect, it } from 'vitest';
 import type { ToolContext } from '../../../src/tools/definitions';
 import { createTicketTools } from '../../../src/tools/tickets';
+import { MOCK_SLA_SIDELOAD, MOCK_TICKET } from '../../msw-handlers';
 import { mswServer } from '../../setup';
 
 const ctx: ToolContext = { subdomain: 'testsubdomain', getToken: () => 'test-token' };
@@ -33,10 +34,41 @@ describe('ticket tools', () => {
       expect(result.content[0]?.text).toContain('Test ticket');
     });
 
-    it('does not surface an SLA block (not exposed on the Show Ticket endpoint)', async () => {
+    it('surfaces live SLA state resolved via the scoped search fallback', async () => {
       const tool = findTool('get_ticket');
       const result = await tool.handler({ ticket_id: 1, include_comments: false });
-      expect(result.content[0]?.text).not.toContain('### SLA');
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('### SLA');
+      expect(text).toContain('requester_wait_time');
+      expect(text).toContain('remaining');
+    });
+
+    it('omits the SLA block when the ticket is not in the fallback search window', async () => {
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/search', () =>
+          // A result for a *different* ticket id — correlation must not match.
+          HttpResponse.json({ results: [{ ...MOCK_TICKET, id: 999, slas: MOCK_SLA_SIDELOAD }] }),
+        ),
+      );
+      const tool = findTool('get_ticket');
+      const result = await tool.handler({ ticket_id: 1, include_comments: false });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('Ticket #1');
+      expect(text).not.toContain('### SLA');
+    });
+
+    it('still returns the ticket when the SLA fallback search errors', async () => {
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/search', () =>
+          HttpResponse.json({}, { status: 500 }),
+        ),
+      );
+      const tool = findTool('get_ticket');
+      const result = await tool.handler({ ticket_id: 1, include_comments: false });
+      const text = result.content[0]?.text ?? '';
+      expect(result.isError).toBeFalsy();
+      expect(text).toContain('Ticket #1');
+      expect(text).not.toContain('### SLA');
     });
 
     it('includes comments when requested', async () => {
