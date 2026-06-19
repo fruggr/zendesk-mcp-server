@@ -11,6 +11,8 @@
  *   - GET /api/v2/tickets/{id}.json?include=slas            (NOT honored here)
  *   - GET /api/v2/tickets/{id}.json?include=metric_events   (SLA `sla` objects?)
  *   - GET /api/v2/tickets/{id}/metrics.json                 (generic metric_set)
+ *   - GET /api/v2/tickets/show_many.json?ids={id}&include=  (sideload honored?)
+ *   - GET /api/v2/search.json?query=...requester:{id}       (single-ticket reuse?)
  *   - GET /api/v2/slas/policies.json                        (the policy matrix)
  *
  * A first probe of `?include=metric_events` came back as just `["ticket"]`, but
@@ -230,6 +232,46 @@ const main = async (): Promise<void> => {
     'GET /tickets/{id}/metrics — ticket_metric (no SLA policy/target/breach expected)',
     metrics['ticket_metric'] ?? metrics,
   );
+
+  // (d) Show MANY Tickets — a DIFFERENT endpoint than Show Ticket. Test whether
+  // it honors the `slas` / `metric_events` sideload that Show Ticket silently
+  // drops. If it does, get_ticket gains a CLEAN, reliable per-id SLA path (one
+  // extra call, no pagination/indexing caveats) and the SLA can come back here.
+  for (const inc of ['slas', 'metric_events'] as const) {
+    const many = await zendeskGet<Record<string, unknown>>(subdomain, token, '/tickets/show_many', {
+      ids: targetId,
+      include: inc,
+    });
+    dump(`GET /tickets/show_many?ids={id}&include=${inc} — top-level keys`, Object.keys(many));
+    dump(`show_many ${inc} payload`, many[inc] ?? `(no "${inc}" key present)`);
+  }
+
+  // (e) Search-by-correlation feasibility — there is NO `id:` operator, so the
+  // only way to reuse the working Search `slas` sideload for ONE ticket is a
+  // scoped query (here: same requester) matched back by exact id. Measure the
+  // two failure modes of that approach: COVERAGE (is the target even in the
+  // result set?) and how many siblings we'd have to page through.
+  const targetTicket = (ticketSlas['ticket'] as Record<string, unknown> | undefined) ?? {};
+  const requesterId = targetTicket['requester_id'];
+  if (requesterId != null) {
+    const scoped = await zendeskGet<{ results?: Array<Record<string, unknown>>; count?: number }>(
+      subdomain,
+      token,
+      '/search',
+      { query: `type:ticket requester:${requesterId}`, include: 'tickets(slas)' },
+    );
+    const results = scoped.results ?? [];
+    const hit = results.find((r) => String(r['id']) === String(targetId));
+    dump('Search by requester + correlate by id — feasibility of a get_ticket fallback', {
+      requester_id: requesterId,
+      total_count: scoped['count'],
+      returned_on_first_page: results.length,
+      target_found_on_first_page: Boolean(hit),
+      target_slas: hit?.['slas'] ?? '(target NOT on first page — coverage gap)',
+    });
+  } else {
+    console.log('\n(no requester_id on the target ticket; skipping search-correlation probe)');
+  }
 
   const policies = await zendeskGet<Record<string, unknown>>(subdomain, token, '/slas/policies');
   dump('GET /slas/policies — top-level keys', Object.keys(policies));
