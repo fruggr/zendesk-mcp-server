@@ -127,7 +127,7 @@ zendesk-mcp-server acme --namespace tickets
 | `search_tickets` | Search tickets using Zendesk query syntax, with per-result SLA state | read |
 | `list_tickets` | List tickets with cursor-based pagination | read |
 | `get_linked_incidents` | Get incidents linked to a problem ticket | read |
-| `list_sla_policies` | List SLA policies with filter conditions and per-priority targets | read |
+| `list_sla_policies` | List SLA policies with filter conditions and per-priority targets (requires an admin token, or a custom role with the SLA-management permission) | read |
 | `create_ticket` | Create a new ticket with subject, description, priority, tags... | write |
 | `update_ticket` | Update ticket status, priority, assignee, tags, custom fields | write |
 | `add_private_note` | Add an internal note (not visible to requester) | write |
