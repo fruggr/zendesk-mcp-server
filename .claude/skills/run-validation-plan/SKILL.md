@@ -13,9 +13,22 @@ including failures and surprises.
 
 ## Input & environment
 
-- The plan lives in the PR description under `## Functional validation plan`.
-  Read it from there (`mcp__github__pull_request_read`); don't reconstruct it from
-  memory or from the implementer's chat.
+- **The plan is the verbatim `## Functional validation plan` section of the PR
+  description** — never a paraphrase reconstructed from the implementer's chat or
+  your own memory (that would break the independence this protocol exists to
+  protect). Obtain it in this order, stopping at the first that works:
+  1. **If the launcher handed it to you** (the plan text, or a PR number / URL,
+     injected into your session at launch), use that.
+  2. **Otherwise resolve the PR from the branch you are already on** — you do not
+     *search* for it. With the GitHub CLI: `gh pr view --json body,number` (no
+     argument = the current branch's PR). If the GitHub MCP is connected instead,
+     use `mcp__github__pull_request_read`. **Never `gh pr list` or any
+     head/search lookup** — you are sitting on the PR branch, so resolve it
+     directly.
+  - Do not assume a specific GitHub channel exists: the GitHub MCP
+    (`mcp__github__*`) is **not guaranteed** to be mounted in a validator session
+    — often only the server-under-test MCP is. Check what's available and fall
+    back to `gh`; don't burn a turn calling GitHub MCP tools that aren't there.
 
 ### Your environment is already set up — do NOT re-create it
 
@@ -30,7 +43,10 @@ need is under your feet. Concretely:
   want to confirm it's the PR head, compare against the PR — don't fetch to "get"
   it.
 - **The MCP server is live and authenticated in this session.** Its tools are
-  already loaded as `mcp__<server>__*` (e.g. `mcp__zendesk-local__*`). A valid
+  already loaded as `mcp__<server>__*` (e.g. `mcp__zendesk-local__*`) — but only
+  the **server under test** is mounted; do **not** assume the GitHub MCP
+  (`mcp__github__*`) is also present (see plan retrieval above — fall back to
+  `gh`). A valid
   token is already wired in — the running server uses it, and any helper script
   reuses the same auth (`ZENDESK_OAUTH_TOKEN`, else the cached token file resolved
   by the auth layer). **Do not go looking for the token, the auth flow, or the
@@ -61,8 +77,10 @@ need is under your feet. Concretely:
 
 ## Reporting
 
-Post the report as a **PR comment** in **English** (`mcp__github__add_issue_comment`).
-If you have no GitHub write access, output it for the human to paste. Structure:
+Post the report as a **PR comment** in **English**, resolving the channel the same
+way as the plan retrieval: `gh pr comment` (on the current branch) or, if the
+GitHub MCP is connected, `mcp__github__add_issue_comment`. If neither is available
+(no GitHub write access), output the full report for the human to paste. Structure:
 
 ```markdown
 ## Functional validation report — <commit SHA>
