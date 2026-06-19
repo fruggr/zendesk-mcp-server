@@ -20,6 +20,53 @@ export const MOCK_TICKET = {
   custom_fields: [],
 };
 
+// Shape mirrors the official SLA Policies API reference: condition values can be
+// arrays (e.g. `includes`), policy_metrics carry target_in_seconds, and the
+// record has a `url`. The resolution metric is `total_resolution_time`.
+export const MOCK_SLA_POLICY = {
+  id: 123,
+  title: 'SLA contractuels fruggr - Bugs/Incidents',
+  description: 'Contractual SLA for bugs and incidents',
+  position: 1,
+  filter: {
+    all: [
+      { field: 'type', operator: 'is', value: 'incident' },
+      { field: 'custom_status_id', operator: 'includes', value: ['1', '2'] },
+    ],
+    any: [],
+  },
+  policy_metrics: [
+    {
+      priority: 'high',
+      metric: 'first_reply_time',
+      target: 420,
+      target_in_seconds: 25200,
+      business_hours: false,
+    },
+    {
+      priority: 'high',
+      metric: 'total_resolution_time',
+      target: 4200,
+      target_in_seconds: 252000,
+      business_hours: false,
+    },
+  ],
+  created_at: '2026-01-01T00:00:00Z',
+  updated_at: '2026-01-02T00:00:00Z',
+  url: 'https://testsubdomain.zendesk.com/api/v2/slas/policies/123',
+};
+
+// Live per-ticket SLA, nested on each Search result (`include=tickets(slas)`).
+// Mirrors the real shape (see #92): only live metrics — no ticket_id, no policy
+// identity, no target. One achieved metric and one active metric whose breach is
+// far in the future so "remaining" stays positive.
+export const MOCK_SLA_SIDELOAD = {
+  policy_metrics: [
+    { metric: 'first_reply_time', stage: 'achieved', breach_at: '2026-01-01T07:00:00Z' },
+    { metric: 'requester_wait_time', stage: 'active', breach_at: '2099-06-18T21:37:00Z', days: 12 },
+  ],
+};
+
 export const MOCK_USER = {
   id: 9999,
   name: 'Test User',
@@ -220,7 +267,10 @@ export const handlers = [
   // Tickets
   http.get(`${BASE}/tickets/:id`, ({ params }) => {
     if (params['id'] === '404') return HttpResponse.json({}, { status: 404 });
-    return HttpResponse.json({ ticket: { ...MOCK_TICKET, id: Number(params['id']) } });
+    const id = Number(params['id']);
+    // The Show Ticket endpoint does not expose SLA (Zendesk ignores
+    // `include=slas` there, see #92), so no `slas` is ever returned here.
+    return HttpResponse.json({ ticket: { ...MOCK_TICKET, id } });
   }),
   http.get(`${BASE}/tickets/:id/comments`, () => HttpResponse.json({ comments: [MOCK_COMMENT] })),
   http.get(`${BASE}/attachments/:id`, ({ params }) => {
@@ -266,12 +316,20 @@ export const handlers = [
     HttpResponse.json({ ticket: { ...MOCK_TICKET, id: Number(params['id']), status: 'solved' } }),
   ),
 
+  // SLA policies — the real endpoint returns the full config list with no
+  // `count` wrapper, so omit it here to exercise the array-length fallback.
+  http.get(`${BASE}/slas/policies`, () => HttpResponse.json({ sla_policies: [MOCK_SLA_POLICY] })),
+
   // Search
   http.get(`${BASE}/search`, ({ request }) => {
     const url = new URL(request.url);
     const query = url.searchParams.get('query') ?? '';
+    const withSla = (url.searchParams.get('include') ?? '').includes('slas');
     if (query.includes('type:ticket')) {
-      return HttpResponse.json({ results: [{ ...MOCK_TICKET, result_type: 'ticket' }], count: 1 });
+      // `slas` is nested on each result, not a top-level array (see #92).
+      const ticket: Record<string, unknown> = { ...MOCK_TICKET, result_type: 'ticket' };
+      if (withSla) ticket['slas'] = MOCK_SLA_SIDELOAD;
+      return HttpResponse.json({ results: [ticket], count: 1 });
     }
     if (query.includes('type:user')) {
       return HttpResponse.json({ results: [{ ...MOCK_USER, result_type: 'user' }], count: 1 });

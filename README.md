@@ -122,11 +122,12 @@ zendesk-mcp-server acme --namespace tickets
 
 | Tool | Description | Mode |
 |------|-------------|------|
-| `get_ticket` | Retrieve a ticket by ID with optional comments | read |
+| `get_ticket` | Retrieve a ticket by ID with optional comments and its live SLA state (resolved via a scoped search) | read |
 | `get_ticket_attachments` | Download ticket attachments (images as base64, others as references) | read |
-| `search_tickets` | Search tickets using Zendesk query syntax | read |
+| `search_tickets` | Search tickets using Zendesk query syntax, with per-result SLA state | read |
 | `list_tickets` | List tickets with cursor-based pagination | read |
 | `get_linked_incidents` | Get incidents linked to a problem ticket | read |
+| `list_sla_policies` | List SLA policies with filter conditions and per-priority targets (requires an admin token, or a custom role with the SLA-management permission) | read |
 | `create_ticket` | Create a new ticket with subject, description, priority, tags... | write |
 | `update_ticket` | Update ticket status, priority, assignee, tags, custom fields | write |
 | `add_private_note` | Add an internal note (not visible to requester) | write |

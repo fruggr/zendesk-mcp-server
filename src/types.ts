@@ -13,6 +13,54 @@ export interface ZendeskTicket {
   created_at: string;
   updated_at: string;
   custom_fields: Array<{ id: number; value: unknown }>;
+  // Live SLA state, present only on Search results fetched with
+  // `include=tickets(slas)` (nested per result). Absent on the Show Ticket
+  // endpoint — Zendesk silently ignores `include=slas` there (see #92).
+  slas?: ZendeskSlaSideloadEntry;
+}
+
+// GET /api/v2/slas/policies.json — a configured SLA policy with its filter
+// conditions and per-priority reply/resolution targets.
+export interface ZendeskSlaCondition {
+  field: string;
+  operator: string;
+  value: unknown;
+}
+
+export interface ZendeskSlaPolicyMetric {
+  priority: string;
+  metric: string;
+  target: number;
+  target_in_seconds?: number;
+  business_hours: boolean;
+}
+
+export interface ZendeskSlaPolicy {
+  id: number;
+  title: string;
+  description: string | null;
+  position: number;
+  filter: { all: ZendeskSlaCondition[]; any: ZendeskSlaCondition[] };
+  policy_metrics: ZendeskSlaPolicyMetric[];
+  created_at: string;
+  updated_at: string;
+  url?: string;
+}
+
+// Live per-ticket SLA state, nested on each ticket result of a Search fetched
+// with `include=tickets(slas)` (verified against the live API, see #92). It
+// carries only the live metrics: no `ticket_id` (correlation is by nesting),
+// no policy identity and no target (those live in `/slas/policies`, surfaced
+// by `list_sla_policies`).
+export interface ZendeskSlaLiveMetric {
+  metric: string;
+  stage?: string; // active | paused | achieved | fulfilled | breached | ...
+  breach_at?: string | null;
+  days?: number; // whole days to breach, when Zendesk includes it
+}
+
+export interface ZendeskSlaSideloadEntry {
+  policy_metrics: ZendeskSlaLiveMetric[];
 }
 
 export interface ZendeskTicketAttachment {
@@ -170,6 +218,7 @@ export interface ZendeskListResponse<T> {
   comments?: T[];
   translations?: T[];
   permission_groups?: T[];
+  sla_policies?: T[];
   meta?: {
     has_more: boolean;
     after_cursor: string;
