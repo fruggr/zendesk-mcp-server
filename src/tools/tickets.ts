@@ -653,12 +653,26 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       handler: async (params) => {
         const { per_page, page } = params as { per_page: number; page: number };
         const token = await getToken();
-        const response = await zendeskGet<ZendeskListResponse<ZendeskSlaPolicy>>(
-          subdomain,
-          token,
-          '/slas/policies',
-          buildOffsetParams(per_page, page),
-        );
+        let response: ZendeskListResponse<ZendeskSlaPolicy>;
+        try {
+          response = await zendeskGet<ZendeskListResponse<ZendeskSlaPolicy>>(
+            subdomain,
+            token,
+            '/slas/policies',
+            buildOffsetParams(per_page, page),
+          );
+        } catch (error) {
+          // /slas/policies is the SLA *configuration* endpoint, which Zendesk
+          // restricts to admins. A 403 here means the token lacks that role, so
+          // replace the generic "Permission denied" with guidance the LLM can
+          // act on -- including the agent-accessible alternative.
+          if (error instanceof ZendeskApiError && error.status === 403) {
+            throw new Error(
+              'list_sla_policies reads SLA policy *configuration* (GET /slas/policies), which Zendesk restricts to admins (or a custom role granted the SLA-management permission). The current token lacks that permission (HTTP 403). This does not affect live SLA on tickets: per-metric SLA stage and breach countdown are available to any agent via get_ticket and search_tickets -- use those for triage and prioritization.',
+            );
+          }
+          throw error;
+        }
         const policies = response.sla_policies ?? [];
         // The SLA policies endpoint returns the full config list and, in
         // practice, omits the `count` wrapper, so fall back to the array length

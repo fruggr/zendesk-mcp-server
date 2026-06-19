@@ -434,6 +434,23 @@ describe('ticket tools', () => {
       expect(tool.readOnly).toBe(true);
       expect(tool.annotations.readOnlyHint).toBe(true);
     });
+
+    it('explains the admin-only requirement (and the alternative) on a 403', async () => {
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/slas/policies', () =>
+          HttpResponse.json({ error: 'Forbidden' }, { status: 403 }),
+        ),
+      );
+      const tool = findTool('list_sla_policies');
+      const error = await tool.handler({ per_page: 100, page: 1 }).then(
+        () => {
+          throw new Error('expected list_sla_policies to reject on 403');
+        },
+        (err: unknown) => err as Error,
+      );
+      expect(error.message).toMatch(/admin/i);
+      expect(error.message).toMatch(/get_ticket|search_tickets/);
+    });
   });
 
   describe('create_ticket', () => {
