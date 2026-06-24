@@ -85,7 +85,10 @@ describe('createMcpServer', () => {
       { ...baseConfig, mode: 'all', tools: ['get_ticket', 'get_current_user'] },
       getToken,
     );
-    expect(registeredToolNames(server).sort()).toEqual(['get_current_user', 'get_ticket']);
+    expect(registeredToolNames(server).sort((a, b) => a.localeCompare(b))).toEqual([
+      'get_current_user',
+      'get_ticket',
+    ]);
   });
 
   it('registers a single read-only proxy when namespace and read-only are combined', () => {

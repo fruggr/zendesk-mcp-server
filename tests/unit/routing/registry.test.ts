@@ -39,7 +39,10 @@ describe('filterTools', () => {
       tools: ['get_ticket', 'get_current_user'],
     });
     expect(filtered).toHaveLength(2);
-    expect(filtered.map((t) => t.name).sort()).toEqual(['get_current_user', 'get_ticket']);
+    expect(filtered.map((t) => t.name).sort((a, b) => a.localeCompare(b))).toEqual([
+      'get_current_user',
+      'get_ticket',
+    ]);
   });
 
   it('combines readOnly + namespace', () => {

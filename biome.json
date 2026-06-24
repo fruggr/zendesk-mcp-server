@@ -7,7 +7,19 @@
     "rules": {
       "recommended": true,
       "complexity": {
-        "useLiteralKeys": "off"
+        "useLiteralKeys": "off",
+        "useArrayFind": "error",
+        "noUselessReturn": "error"
+      },
+      "suspicious": {
+        "useArraySortCompare": "error",
+        "noDuplicatedSpreadProps": "error",
+        "noReturnAssign": "error",
+        "noProto": "error"
+      },
+      "style": {
+        "useErrorCause": "error",
+        "useGlobalThis": "error"
       }
     }
   },

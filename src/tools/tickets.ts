@@ -669,6 +669,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           if (error instanceof ZendeskApiError && error.status === 403) {
             throw new Error(
               'list_sla_policies reads SLA policy *configuration* (GET /slas/policies), which Zendesk restricts to admins (or a custom role granted the SLA-management permission). The current token lacks that permission (HTTP 403). This does not affect live SLA on tickets: per-metric SLA stage and breach countdown are available to any agent via get_ticket and search_tickets -- use those for triage and prioritization.',
+              { cause: error },
             );
           }
           throw error;
