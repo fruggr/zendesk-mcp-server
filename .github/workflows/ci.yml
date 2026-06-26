@@ -13,7 +13,7 @@ jobs:
     # should fail fast instead of holding the job for the 6-hour default.
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v6
 
