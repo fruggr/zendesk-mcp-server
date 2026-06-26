@@ -64,8 +64,9 @@ export const fetchTopology = async (subdomain: string, token: string): Promise<T
     locales,
     categories: categoriesRes.categories ?? [],
     sections: sectionsRes.sections ?? [],
-    sectionsHasMore: extractPaginationMeta(sectionsRes).has_more,
-    categoriesHasMore: extractPaginationMeta(categoriesRes).has_more,
+    sectionsHasMore: extractPaginationMeta(sectionsRes, sectionsRes.sections?.length ?? 0).has_more,
+    categoriesHasMore: extractPaginationMeta(categoriesRes, categoriesRes.categories?.length ?? 0)
+      .has_more,
     userSegments: segmentsRes.user_segments ?? [],
     permissionGroups: permsRes.permission_groups ?? [],
     currentUser: meRes.user,

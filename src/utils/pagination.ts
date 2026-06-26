@@ -22,10 +22,17 @@ export const buildOffsetParams = (perPage: number, page?: number): Record<string
   return params;
 };
 
-export const extractPaginationMeta = <T>(response: ZendeskListResponse<T>): PaginationMeta => ({
+// Cursor list endpoints (e.g. /tickets) return no `count` wrapper, which
+// previously surfaced as a misleading "Results: 0" footer even when a full page
+// came back (#100). Fall back to the number of items on the returned page so the
+// footer reflects what was actually returned.
+export const extractPaginationMeta = <T>(
+  response: ZendeskListResponse<T>,
+  itemCount: number,
+): PaginationMeta => ({
   has_more: response.meta?.has_more ?? response.next_page != null,
   after_cursor: response.meta?.after_cursor ?? null,
-  count: response.count ?? 0,
+  count: response.count ?? itemCount,
 });
 
 // For search responses — offset-based, count is always present

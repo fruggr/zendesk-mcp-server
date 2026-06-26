@@ -160,6 +160,28 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         expect(textOf(result)).toContain('Test User');
       });
 
+      it('rejects an unknown parameter in "all" mode instead of silently dropping it (#100)', async () => {
+        connected = await harness.connect(makeConfig({ mode: 'all' }));
+        const result = await connected.client.callTool({
+          name: 'list_tickets',
+          arguments: { per_page: 3 },
+        });
+        expect(result.isError).toBe(true);
+        expect(textOf(result)).toContain('per_page');
+      });
+
+      it('rejects an unknown parameter through a proxy instead of silently dropping it (#100)', async () => {
+        connected = await harness.connect(makeConfig({ mode: 'single' }));
+        const result = await connected.client.callTool({
+          name: 'zendesk',
+          arguments: { operation: 'list_tickets', params: { per_page: 3 } },
+        });
+        expect(result.isError).toBe(true);
+        const text = textOf(result);
+        expect(text).toContain('per_page');
+        expect(text).toContain('page_size');
+      });
+
       it('surfaces a Zendesk API error as an MCP tool error', async () => {
         mswServer.use(errorHandlers.usersMeUnauthorized);
 
