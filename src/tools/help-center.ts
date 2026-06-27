@@ -210,14 +210,15 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           path,
           buildCursorParams(page_size, cursor),
         );
+        const categories = response.categories ?? [];
         return {
           content: [
             {
               type: 'text',
               text: formatList(
-                response.categories ?? [],
+                categories,
                 formatCategory,
-                extractPaginationMeta(response),
+                extractPaginationMeta(response, categories.length),
               ),
             },
           ],
@@ -285,14 +286,15 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           path,
           buildCursorParams(page_size, cursor),
         );
+        const sections = response.sections ?? [];
         return {
           content: [
             {
               type: 'text',
               text: formatList(
-                response.sections ?? [],
+                sections,
                 formatSection,
-                extractPaginationMeta(response),
+                extractPaginationMeta(response, sections.length),
               ),
             },
           ],
@@ -309,8 +311,17 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       inputSchema: z.object({
         section_id: z.number().int().optional(),
         locale: z.string().optional(),
-        page_size: z.number().int().min(1).max(MAX_PAGE_SIZE).default(DEFAULT_PAGE_SIZE),
-        cursor: z.string().optional(),
+        page_size: z
+          .number()
+          .int()
+          .min(1)
+          .max(MAX_PAGE_SIZE)
+          .default(DEFAULT_PAGE_SIZE)
+          .describe('Articles per page (1-100, default 100).'),
+        cursor: z
+          .string()
+          .optional()
+          .describe('Pagination cursor from a previous response; omit for the first page.'),
         sort_by: z
           .enum(['created_at', 'updated_at', 'position', 'title'])
           .default('position')
@@ -361,7 +372,11 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
             content: [
               {
                 type: 'text',
-                text: formatList(articles, formatArticleSummary, extractPaginationMeta(response)),
+                text: formatList(
+                  articles,
+                  formatArticleSummary,
+                  extractPaginationMeta(response, articles.length),
+                ),
               },
             ],
           };
@@ -377,7 +392,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
             return `${formatArticleSummary(article)}\n- **Translations**: ${locales}`;
           }),
         );
-        const meta = extractPaginationMeta(response);
+        const meta = extractPaginationMeta(response, articles.length);
         const header = meta.count
           ? `Results: ${meta.count}${meta.has_more ? ` | More available (cursor: ${meta.after_cursor})` : ''}`
           : '';

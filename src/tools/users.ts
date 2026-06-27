@@ -172,14 +172,15 @@ export const createUserTools = (ctx: ToolContext): ToolDefinition[] => {
           '/organizations',
           buildCursorParams(page_size, cursor),
         );
+        const organizations = response.organizations ?? [];
         return {
           content: [
             {
               type: 'text',
               text: formatList(
-                response.organizations ?? [],
+                organizations,
                 formatOrganization,
-                extractPaginationMeta(response),
+                extractPaginationMeta(response, organizations.length),
               ),
             },
           ],

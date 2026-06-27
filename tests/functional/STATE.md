@@ -1,6 +1,6 @@
 ---
-branch: claude/laughing-lovelace-HmZOn
-current_run: 2026-05-30-pr53
+branch: claude/issue-100-analysis-tj9dq9
+current_run: 2026-06-26-pr102
 holder: leading
 ---
 
@@ -17,3 +17,4 @@ raw + report artifacts.
 | 02-namespace-mixed     | OK      | 2026-06-06  |
 | 03-single-readonly     | OK      | 2026-06-06  |
 | 04-all-baseline        | OK      | 2026-06-06  |
+| 05-strict-params       | OK      | 2026-06-27  |

@@ -510,10 +510,20 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       namespace: 'tickets',
       readOnly: true,
       title: 'List Zendesk Tickets',
-      description: 'List tickets with cursor-based pagination, sorted by most recently updated.',
+      description:
+        'List tickets with cursor-based pagination, sorted by most recently updated. Page size is controlled by page_size (not per_page, which is the offset-based parameter used by search_tickets); paginate by passing the returned cursor.',
       inputSchema: z.object({
-        page_size: z.number().int().min(1).max(MAX_PAGE_SIZE).default(DEFAULT_PAGE_SIZE),
-        cursor: z.string().optional().describe('Pagination cursor'),
+        page_size: z
+          .number()
+          .int()
+          .min(1)
+          .max(MAX_PAGE_SIZE)
+          .default(DEFAULT_PAGE_SIZE)
+          .describe('Tickets per page (1-100, default 100).'),
+        cursor: z
+          .string()
+          .optional()
+          .describe('Pagination cursor from a previous response; omit for the first page.'),
       }),
       annotations: {
         readOnlyHint: true,
@@ -530,14 +540,15 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           '/tickets',
           buildCursorParams(page_size, cursor),
         );
+        const tickets = response.tickets ?? [];
         return {
           content: [
             {
               type: 'text',
               text: formatList(
-                response.tickets ?? [],
+                tickets,
                 formatTicket,
-                extractPaginationMeta(response),
+                extractPaginationMeta(response, tickets.length),
               ),
             },
           ],

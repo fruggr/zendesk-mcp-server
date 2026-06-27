@@ -13,6 +13,7 @@ import type { ToolAnnotations, ToolResult } from './tools/definitions';
 import { createAllTools, type ToolDefinition } from './tools/index';
 import { type Logger, silentLogger } from './utils/logger';
 import { readPackageInfo } from './utils/package-info';
+import { createStrictParamsParser } from './utils/validation';
 
 /**
  * Invoke a tool handler, notifying `onUnauthorized` when Zendesk rejects the
@@ -93,15 +94,19 @@ export const buildProxyDispatch = (
   onUnauthorized: (() => void) | undefined,
 ): ProxyDispatch => {
   const operationNames = tools.map((t) => t.name);
-  const localHandlers = new Map<string, ToolDefinition>(tools.map((t) => [t.name, t]));
+  // Each entry carries a strict params parser built once here (not per call) so
+  // an unknown/mistyped param fails loudly instead of being silently dropped (#100).
+  const localHandlers = new Map(
+    tools.map((t) => [t.name, { def: t, parseParams: createStrictParamsParser(t.inputSchema) }]),
+  );
 
   return async (args) => {
     const { operation, params } = args as {
       operation: string;
       params: Record<string, unknown>;
     };
-    const def = localHandlers.get(operation);
-    if (!def) {
+    const entry = localHandlers.get(operation);
+    if (!entry) {
       return {
         content: [
           {
@@ -111,8 +116,9 @@ export const buildProxyDispatch = (
         ],
       };
     }
-    const validated = def.inputSchema.parse(params);
-    return runHandler(def, validated, onUnauthorized);
+    // The throw is wrapped as an MCP tool error by the SDK.
+    const validated = entry.parseParams(params);
+    return runHandler(entry.def, validated, onUnauthorized);
   };
 };
 
@@ -194,8 +200,11 @@ export const createMcpServer = (
           tool.name,
           {
             title: tool.title,
+            // Register the strict schema (not just `.shape`) so the SDK rejects
+            // unknown keys instead of silently stripping them, and advertises
+            // additionalProperties:false to clients (#100).
             description: tool.description,
-            inputSchema: tool.inputSchema.shape,
+            inputSchema: tool.inputSchema.strict(),
             annotations: tool.annotations,
           },
           async (params) => runHandler(tool, params as Record<string, unknown>, onUnauthorized),

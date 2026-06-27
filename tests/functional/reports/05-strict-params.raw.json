@@ -1,0 +1,1486 @@
+{
+  "tools": [
+    {
+      "name": "get_ticket",
+      "title": "Get Zendesk Ticket",
+      "description": "Retrieve a Zendesk ticket by ID, including its live SLA state (per-metric stage and breach countdown) when an SLA policy applies, plus its comments if requested. Returns ticket details (subject, status, priority, assignee, tags, description) and optionally all comments/internal notes. The per-ticket Show endpoint exposes no SLA, so the SLA block is resolved via a scoped search and may be absent for a very high-volume requester or a just-updated ticket; SLA targets and policy conditions live in list_sla_policies.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ticket_id": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Ticket ID"
+          },
+          "include_comments": {
+            "default": false,
+            "description": "Include ticket comments",
+            "type": "boolean"
+          }
+        },
+        "required": ["ticket_id"],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "get_ticket_attachments",
+      "title": "Get Zendesk Ticket Attachments",
+      "description": "Retrieve ticket attachments. Images are embedded inline; other files are listed as text references.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ticket_id": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Ticket ID"
+          },
+          "attachment_ids": {
+            "description": "Attachment IDs to fetch directly (e.g. extracted from a previous get_ticket(include_comments=true) call). When provided, skips the comments fetch entirely. When omitted, all attachments of the ticket are returned.",
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          }
+        },
+        "required": ["ticket_id"],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "search_tickets",
+      "title": "Search Zendesk Tickets",
+      "description": "Search tickets using Zendesk query syntax, returning each result with its live SLA state (per-metric stage and breach countdown) when an SLA policy applies. Examples: \"status:open assignee:me\", \"priority:urgent type:incident\". Returns total count, so queue triage like \"breaching today\" works without a per-ticket fetch.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Zendesk search query string"
+          },
+          "per_page": {
+            "default": 100,
+            "description": "Results per page",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "page": {
+            "default": 1,
+            "description": "Page number",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": ["query"],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "create_ticket",
+      "title": "Create Zendesk Ticket",
+      "description": "Create a new Zendesk support ticket with subject, description, and optional priority/type/assignee/tags. The description becomes the first public comment of the ticket, and the new ticket id is returned. After creation, use update_ticket to change status or assignee, add_public_comment or add_private_note to reply, and manage_tags to adjust tags. Look up valid assignee_id / group_id and custom field ids via search_users or your Zendesk admin settings.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "subject": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Ticket subject"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Ticket description"
+          },
+          "priority": {
+            "description": "Ticket priority. One of urgent, high, normal, low.",
+            "type": "string",
+            "enum": ["urgent", "high", "normal", "low"]
+          },
+          "type": {
+            "description": "Ticket type. One of problem, incident, question, task.",
+            "type": "string",
+            "enum": ["problem", "incident", "question", "task"]
+          },
+          "assignee_id": {
+            "description": "User id of the agent to assign the ticket to.",
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "group_id": {
+            "description": "Id of the group to assign the ticket to.",
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "tags": {
+            "description": "Tags to set on the ticket.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "custom_fields": {
+            "description": "Custom field values as { id, value } pairs (field ids come from your Zendesk admin settings).",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "value": {}
+              },
+              "required": ["id", "value"]
+            }
+          }
+        },
+        "required": ["subject", "description"],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "update_ticket",
+      "title": "Update Zendesk Ticket",
+      "description": "Update an existing ticket (status, priority, type, assignee, group, subject, tags, custom fields). Only the fields you pass are changed, and the updated ticket is returned. Setting tags here replaces the whole tag set — use manage_tags to add or remove individual tags without overwriting the rest. This tool does not post replies: use add_public_comment or add_private_note for that. Find the ticket id via search_tickets or list_tickets.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ticket_id": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Ticket ID"
+          },
+          "status": {
+            "description": "New ticket status. One of new, open, pending, hold, solved, closed.",
+            "type": "string",
+            "enum": ["new", "open", "pending", "hold", "solved", "closed"]
+          },
+          "priority": {
+            "description": "Ticket priority. One of urgent, high, normal, low.",
+            "type": "string",
+            "enum": ["urgent", "high", "normal", "low"]
+          },
+          "type": {
+            "description": "Ticket type. One of problem, incident, question, task.",
+            "type": "string",
+            "enum": ["problem", "incident", "question", "task"]
+          },
+          "assignee_id": {
+            "description": "User id of the agent to assign the ticket to.",
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "group_id": {
+            "description": "Id of the group to assign the ticket to.",
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "subject": {
+            "description": "New ticket subject line.",
+            "type": "string"
+          },
+          "tags": {
+            "description": "Replaces the full tag set on the ticket. Use manage_tags for incremental add/remove.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "custom_fields": {
+            "description": "Custom field values as { id, value } pairs (field ids come from your Zendesk admin settings).",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "value": {}
+              },
+              "required": ["id", "value"]
+            }
+          }
+        },
+        "required": ["ticket_id"],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "add_private_note",
+      "title": "Add Private Note",
+      "description": "Add an internal note (not visible to requester) to a ticket.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ticket_id": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Ticket ID"
+          },
+          "body": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Note content"
+          }
+        },
+        "required": ["ticket_id", "body"],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "add_public_comment",
+      "title": "Add Public Comment",
+      "description": "Add a public comment (visible to requester) to a ticket.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ticket_id": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Ticket ID"
+          },
+          "body": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Comment content"
+          }
+        },
+        "required": ["ticket_id", "body"],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "list_tickets",
+      "title": "List Zendesk Tickets",
+      "description": "List tickets with cursor-based pagination, sorted by most recently updated. Page size is controlled by page_size (not per_page, which is the offset-based parameter used by search_tickets); paginate by passing the returned cursor.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "page_size": {
+            "default": 100,
+            "description": "Tickets per page (1-100, default 100).",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "description": "Pagination cursor from a previous response; omit for the first page.",
+            "type": "string"
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "get_linked_incidents",
+      "title": "Get Linked Incidents",
+      "description": "Get all incident tickets linked to a problem ticket.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "problem_id": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Problem ticket ID"
+          }
+        },
+        "required": ["problem_id"],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "manage_tags",
+      "title": "Manage Ticket Tags",
+      "description": "Add or remove tags on a ticket.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ticket_id": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Ticket ID"
+          },
+          "add": {
+            "description": "Tags to add",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "remove": {
+            "description": "Tags to remove",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": ["ticket_id"],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "list_sla_policies",
+      "title": "List SLA Policies",
+      "description": "List the configured SLA policies with their filter conditions and per-priority reply/resolution targets. Use this to explain why a given target applies to a ticket and to reconstruct deadlines deterministically instead of hard-coding the policy matrix. Requires an admin token (or a custom role granted the SLA-management permission); a standard agent token gets 403 here, though it can still read live per-ticket SLA via get_ticket / search_tickets.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "per_page": {
+            "default": 100,
+            "description": "Results per page",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "page": {
+            "default": 1,
+            "description": "Page number",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "search",
+      "title": "Zendesk Unified Search",
+      "description": "Search across tickets, users, and organizations. Supports filters like \"type:ticket status:open\", \"type:user role:agent\". Returns total count and paginated results (100 per page). Organization results include name and ID only — use get_organization for full details (tags, domains, details).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Zendesk search query"
+          },
+          "per_page": {
+            "default": 100,
+            "description": "Results per page (max 100)",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "page": {
+            "default": 1,
+            "description": "Page number (1-based)",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": ["query"],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "search_articles",
+      "title": "Search Help Center Articles",
+      "description": "Full-text search across Help Center articles (metadata only, no body). Use get_article for full content. Supports locale filtering. Returns total count.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Search query"
+          },
+          "locale": {
+            "description": "Filter by locale (e.g., \"en-us\", \"fr\")",
+            "type": "string"
+          },
+          "per_page": {
+            "default": 100,
+            "description": "Results per page",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "page": {
+            "default": 1,
+            "description": "Page number",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": ["query"],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "get_article",
+      "title": "Get Help Center Article",
+      "description": "Retrieve an article by ID with full body content. For large articles, prefer get_article_outline + get_article_section to save tokens. Optionally specify locale for a translated version. Returns body (HTML), metadata, source_locale, and list of available translations.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "article_id": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Article ID"
+          },
+          "locale": {
+            "description": "Locale for translated version",
+            "type": "string"
+          }
+        },
+        "required": ["article_id"],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "list_categories",
+      "title": "List Help Center Categories",
+      "description": "List all Help Center categories. Categories are the top level of the Guide hierarchy (category → section → article); each entry includes its id, name and locale. Results are cursor-paginated. Pair a returned category id with list_sections to drill down, then list_articles to reach articles. Pass a locale to read category names in that translation.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "locale": {
+            "description": "Locale for category names (e.g., \"en-us\", \"fr\"). Defaults to the Help Center default locale.",
+            "type": "string"
+          },
+          "page_size": {
+            "default": 100,
+            "description": "Categories per page (1-100, default 100).",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "description": "Pagination cursor from a previous response; omit for the first page.",
+            "type": "string"
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "list_sections",
+      "title": "List Help Center Sections",
+      "description": "List Help Center sections. Sections are the middle level of the Guide hierarchy (category → section → article) and group related articles; each entry includes its id, name, category_id and locale. Results are cursor-paginated. Pass category_id to list only one category's sections (ids come from list_categories), then use a section id with list_articles. Pass a locale to read section names in that translation.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "description": "Restrict to sections of this category (id from list_categories). Omit to list every section.",
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "locale": {
+            "description": "Locale for section names (e.g., \"en-us\", \"fr\"). Defaults to the Help Center default locale.",
+            "type": "string"
+          },
+          "page_size": {
+            "default": 100,
+            "description": "Sections per page (1-100, default 100).",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "description": "Pagination cursor from a previous response; omit for the first page.",
+            "type": "string"
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "list_articles",
+      "title": "List Help Center Articles",
+      "description": "List articles (metadata only, no body). Use get_article for full content. Optionally filter by section ID and locale. Supports sort_by (\"title\", \"created_at\", \"updated_at\") and include_translations: true to show available translation locales per article. Note: include_translations must be re-sent on each paginated request.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "section_id": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "locale": {
+            "type": "string"
+          },
+          "page_size": {
+            "default": 100,
+            "description": "Articles per page (1-100, default 100).",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "description": "Pagination cursor from a previous response; omit for the first page.",
+            "type": "string"
+          },
+          "sort_by": {
+            "default": "position",
+            "description": "Sort field",
+            "type": "string",
+            "enum": ["created_at", "updated_at", "position", "title"]
+          },
+          "sort_order": {
+            "default": "asc",
+            "description": "Sort direction",
+            "type": "string",
+            "enum": ["asc", "desc"]
+          },
+          "include_translations": {
+            "default": false,
+            "description": "Include available translation locales per article (causes 1 extra API call per article)",
+            "type": "boolean"
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "list_article_translations",
+      "title": "List Article Translations",
+      "description": "List all available translations for an article (metadata only, no body: locale, title, draft, updated_at). Use get_article with locale for full translated content.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "article_id": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Article ID"
+          }
+        },
+        "required": ["article_id"],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "create_article_translation",
+      "title": "Create Article Translation",
+      "description": "Create a translation for an existing article in a specific locale. The article must already exist (create it with create_article); this adds a new localized version and returns the created translation (locale, title, draft state). The target locale must not already have a translation — use update_article_translation to modify an existing one, and list_article_translations to see which locales exist. Provide the full HTML body.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "article_id": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "ID of the existing article to translate."
+          },
+          "locale": {
+            "type": "string",
+            "description": "Target locale (e.g., \"fr\", \"de\")"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Translated article title."
+          },
+          "body": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Translated body (HTML)"
+          },
+          "draft": {
+            "default": false,
+            "description": "Create the translation as a draft (not visible to end users). Defaults to false (published).",
+            "type": "boolean"
+          }
+        },
+        "required": ["article_id", "locale", "title", "body"],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "update_article_translation",
+      "title": "Update Article Translation",
+      "description": "Update article content (title, body) in a specific locale. For targeted edits on one or a few sections, prefer update_article_section — this tool replaces the FULL body and re-sends the entire article on each write. Use the article's source_locale (from get_article) for the default language, or another locale for translations.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "article_id": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "locale": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "draft": {
+            "type": "boolean"
+          }
+        },
+        "required": ["article_id", "locale"],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "list_permission_groups",
+      "title": "List Permission Groups",
+      "description": "List all Guide permission groups. Use this to find the permission_group_id required when creating articles.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "create_article",
+      "title": "Create Help Center Article",
+      "description": "Create a new article in a section. The locale becomes the article's source_locale. Requires a permission_group_id (use list_permission_groups to find available IDs). To add content in other locales afterwards, use create_article_translation.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "section_id": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "body": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Article body (HTML)"
+          },
+          "permission_group_id": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Permission group ID (use list_permission_groups to find it)"
+          },
+          "user_segment_id": {
+            "description": "User segment ID for visibility (use list_user_segments to find it). Defaults to everyone.",
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "author_id": {
+            "description": "Author user ID. Defaults to the authenticated user.",
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "content_tag_ids": {
+            "description": "Content tag IDs (use list_content_tags to find them)",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "locale": {
+            "type": "string"
+          },
+          "draft": {
+            "default": true,
+            "type": "boolean"
+          },
+          "promoted": {
+            "default": false,
+            "type": "boolean"
+          },
+          "label_names": {
+            "description": "Label names for search ranking (use list_labels to see existing labels)",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": ["section_id", "title", "body", "permission_group_id"],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "update_article",
+      "title": "Update Help Center Article",
+      "description": "Update article metadata only (draft, promoted, labels, tags, visibility, section, sort position, etc.). Does NOT update content (title, body) — use update_article_translation for that.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "article_id": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "draft": {
+            "type": "boolean"
+          },
+          "promoted": {
+            "type": "boolean"
+          },
+          "label_names": {
+            "description": "Label names for search ranking",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "content_tag_ids": {
+            "description": "Content tag IDs",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "user_segment_id": {
+            "description": "User segment ID for visibility",
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "author_id": {
+            "description": "Author user ID",
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "permission_group_id": {
+            "description": "Permission group ID",
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "section_id": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "position": {
+            "description": "Sort position within the section (manual ordering only; 0 = first/top). New articles default to position 0. To move an article to the END of its section, set this to one more than the highest current position: read the highest position P from list_articles with sort_by=\"position\", sort_order=\"desc\", then set position = P + 1.",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": ["article_id"],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "list_content_tags",
+      "title": "List Content Tags",
+      "description": "List all Guide content tags. Content tags are visible to end users and help them find related articles.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "create_content_tag",
+      "title": "Create Content Tag",
+      "description": "Create a new content tag for Guide articles. Content tags are end-user visible labels that help readers discover related articles; this returns the created tag with its id. Check list_content_tags first to avoid duplicates, then attach the new id via the content_tag_ids parameter of create_article or update_article. For internal search-ranking labels that are not shown to end users, use article labels (list_labels) instead.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Content tag name as shown to end users (e.g., \"billing\", \"getting-started\")."
+          }
+        },
+        "required": ["name"],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "list_labels",
+      "title": "List Article Labels",
+      "description": "List all article labels. Labels improve Help Center search ranking and are not visible to end users.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "list_user_segments",
+      "title": "List User Segments",
+      "description": "List all user segments. User segments control article visibility (who can view). Use the ID when creating or updating articles.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "list_article_attachments",
+      "title": "List Article Attachments",
+      "description": "List all attachments for an article. Returns attachment metadata only (id, file name, content type, size, URL), not the file bytes; both inline and block attachments are included. This is for Help Center articles — for attachments on support tickets use get_ticket_attachments instead. Upload new files with create_article_attachment.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "article_id": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "ID of the Help Center article whose attachments to list."
+          }
+        },
+        "required": ["article_id"],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "get_article_outline",
+      "title": "Get Article Outline",
+      "description": "Return a compact outline of an article (list of sections delimited by h1/h2/h3, with word counts) for the given locale (defaults to source_locale). Includes available translations with their outdated status. Use get_article_section to fetch a specific section.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "article_id": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Article ID"
+          },
+          "locale": {
+            "description": "Locale of the body to outline (defaults to article source_locale)",
+            "type": "string"
+          }
+        },
+        "required": ["article_id"],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "get_article_section",
+      "title": "Get Article Section",
+      "description": "Retrieve the content of a single section of an article in a given locale. Use get_article_outline first to discover section indexes. Default format=\"html\" for round-trip safety. Pass format=\"markdown\" only for human review — the Markdown representation is lossy on some structures (<pre> with <br>, tables with multi-<p> cells are kept as raw HTML to limit the damage, but do not round-trip markdown content back through update_article_section).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "article_id": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Article ID"
+          },
+          "locale": {
+            "type": "string",
+            "description": "Locale of the body (e.g., \"en-us\", \"fr\")"
+          },
+          "section_index": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "0-based index of the section (see get_article_outline)"
+          },
+          "format": {
+            "default": "html",
+            "description": "Output format. \"html\" (default) is round-trip safe. \"markdown\" is lossy on some HTML structures — use only for human review, not before update_article_section.",
+            "type": "string",
+            "enum": ["html", "markdown"]
+          }
+        },
+        "required": ["article_id", "locale", "section_index"],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "update_article_section",
+      "title": "Update Article Section",
+      "description": "Replace the content of a single section of an article in a given locale, keeping the rest of the body intact. The server fetches the current body, replaces the targeted section, and PUTs the full reconstructed body via the Translations API. Default format=\"html\" for fidelity. Use format=\"markdown\" only when you control the input and know it does not rely on structures that round-trip poorly (code blocks with line breaks, tables with multi-paragraph cells). The section heading is preserved and is NOT part of the replaced content.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "article_id": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Article ID"
+          },
+          "locale": {
+            "type": "string",
+            "description": "Locale of the translation to update"
+          },
+          "section_index": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "0-based index of the section to replace (see get_article_outline)"
+          },
+          "content": {
+            "type": "string",
+            "description": "New content for the section (heading excluded). HTML by default, Markdown if format=\"markdown\"."
+          },
+          "format": {
+            "default": "html",
+            "description": "Input format. \"html\" (default) is the safe path. \"markdown\" is converted to HTML server-side but may introduce artifacts on complex content.",
+            "type": "string",
+            "enum": ["html", "markdown"]
+          }
+        },
+        "required": ["article_id", "locale", "section_index", "content"],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "compare_translations",
+      "title": "Compare Article Translations",
+      "description": "Compare section structure between two locales of the same article, matched by index. Returns a compact table (one row per section) with status: \"ok\" (both present, source/target word count ratio within 25%), \"different\" (word count ratio diverges by more than 25% — size signal only, NOT a semantic divergence: two locales may legitimately differ in verbosity) or \"missing\" (section absent in target). Useful to spot structurally stale or missing sections; do not interpret \"different\" as an edit regression on its own.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "article_id": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Article ID"
+          },
+          "source_locale": {
+            "type": "string",
+            "description": "Source (reference) locale"
+          },
+          "target_locale": {
+            "type": "string",
+            "description": "Target locale to compare against source"
+          }
+        },
+        "required": ["article_id", "source_locale", "target_locale"],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "create_article_attachment",
+      "title": "Create Article Attachment",
+      "description": "Upload an attachment to an article. Provide file content as base64-encoded string.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "article_id": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Article ID"
+          },
+          "file_name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "File name (e.g., \"screenshot.png\")"
+          },
+          "file_base64": {
+            "type": "string",
+            "minLength": 1,
+            "description": "File content encoded as base64"
+          },
+          "content_type": {
+            "default": "application/octet-stream",
+            "description": "MIME type (e.g., \"image/png\", \"application/pdf\")",
+            "type": "string"
+          }
+        },
+        "required": ["article_id", "file_name", "file_base64"],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "get_current_user",
+      "title": "Get Current Zendesk User",
+      "description": "Get the currently authenticated Zendesk user. Useful to verify identity and permissions.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "search_users",
+      "title": "Search Zendesk Users",
+      "description": "Search for users by name, email, or other criteria using Zendesk search query syntax. Returns total count.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Search query"
+          },
+          "per_page": {
+            "default": 100,
+            "description": "Results per page",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "page": {
+            "default": 1,
+            "description": "Page number",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": ["query"],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "get_user",
+      "title": "Get Zendesk User",
+      "description": "Retrieve a user by ID.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "User ID"
+          }
+        },
+        "required": ["user_id"],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "get_organization",
+      "title": "Get Zendesk Organization",
+      "description": "Retrieve an organization by ID.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Organization ID"
+          }
+        },
+        "required": ["organization_id"],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "list_organizations",
+      "title": "List Zendesk Organizations",
+      "description": "List all organizations with pagination. Returns the name and id of each organization plus basic fields; results are cursor-paginated. Use get_organization with an id for full details (tags, domains, notes), or search for query-based lookups by name. Organizations group end users and can be referenced when creating or filtering tickets.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "page_size": {
+            "default": 100,
+            "description": "Organizations per page (1-100, default 100).",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "description": "Pagination cursor from a previous response; omit for the first page.",
+            "type": "string"
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    }
+  ]
+}

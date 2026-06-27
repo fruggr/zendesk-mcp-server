@@ -132,6 +132,27 @@ describe('createMcpServer', () => {
     expect(text).not.toContain('search_articles');
   });
 
+  it('namespace proxy dispatch rejects unknown params instead of silently dropping them (#100)', async () => {
+    // list_tickets takes `page_size`, not `per_page`. Previously a mistyped
+    // `per_page` was silently stripped and page_size defaulted to 100, returning
+    // a large unpaginated page. Strict validation must reject it loudly and point
+    // at the valid parameter names.
+    const allTools = createAllTools({ subdomain: 'x', getToken });
+    const ticketsTools = filterTools(allTools, { readOnly: false, namespaces: ['tickets'] });
+    const dispatch = buildProxyDispatch(ticketsTools, undefined);
+
+    // The throw propagates to the SDK, which wraps it as an isError result; the
+    // pure dispatch helper surfaces it as a rejection.
+    const error = await dispatch({ operation: 'list_tickets', params: { per_page: 3 } }).then(
+      () => {
+        throw new Error('expected dispatch to reject the unknown param');
+      },
+      (err: unknown) => err as Error,
+    );
+    expect(error.message).toContain('per_page');
+    expect(error.message).toContain('page_size');
+  });
+
   it('marks read-only proxies with readOnlyHint=true and a [RO] description prefix', () => {
     const server = createMcpServer(
       {

@@ -496,6 +496,25 @@ describe('ticket tools', () => {
       const result = await tool.handler({ page_size: 25 });
       expect(result.content[0]?.text).toContain('Test ticket');
     });
+
+    it('reports the page item count when the cursor endpoint omits count (#100)', async () => {
+      // The real /tickets endpoint returns no `count` wrapper; ensure the footer
+      // reflects the number of tickets returned rather than a misleading "Results: 0".
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/tickets', () =>
+          HttpResponse.json({
+            tickets: [MOCK_TICKET, { ...MOCK_TICKET, id: 2 }],
+            meta: { has_more: true, after_cursor: 'NEXT' },
+          }),
+        ),
+      );
+      const tool = findTool('list_tickets');
+      const result = await tool.handler({ page_size: 25 });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('Results: 2');
+      expect(text).not.toContain('Results: 0');
+      expect(text).toContain('cursor: NEXT');
+    });
   });
 
   describe('get_linked_incidents', () => {
