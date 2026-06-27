@@ -1,3 +1,22 @@
+## [2.3.1](https://github.com/fruggr/zendesk-mcp-server/compare/v2.3.0...v2.3.1) (2026-06-27)
+
+### Bug Fixes
+
+* reject unknown tool params and fix list pagination footer ([#100](https://github.com/fruggr/zendesk-mcp-server/issues/100)) ([#102](https://github.com/fruggr/zendesk-mcp-server/issues/102)) ([b5c7aa9](https://github.com/fruggr/zendesk-mcp-server/commit/b5c7aa970655cc2c87cfc5eb39629aceb0b935e2))
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Chores
+
+* **deps:** lock file maintenance ([#99](https://github.com/fruggr/zendesk-mcp-server/issues/99)) ([97849fe](https://github.com/fruggr/zendesk-mcp-server/commit/97849feb202da7c2c075210ba45eb989877ad45a))
+* **deps:** update actions/checkout action to v7 ([#101](https://github.com/fruggr/zendesk-mcp-server/issues/101)) ([d805dd5](https://github.com/fruggr/zendesk-mcp-server/commit/d805dd5382eeddb8d40f253dc7ba868b5e65f39d))
+* **deps:** update dependency @biomejs/biome to v2.5.0 ([#95](https://github.com/fruggr/zendesk-mcp-server/issues/95)) ([7d17d32](https://github.com/fruggr/zendesk-mcp-server/commit/7d17d3253454ee54c3ae761ff7492b959c083974))
+* **deps:** update pnpm to v11.7.0 ([#96](https://github.com/fruggr/zendesk-mcp-server/issues/96)) ([3be769b](https://github.com/fruggr/zendesk-mcp-server/commit/3be769b572158dfecbc1341df4d3cb472bdaafa3))
+* **deps:** update pnpm to v11.8.0 ([#98](https://github.com/fruggr/zendesk-mcp-server/issues/98)) ([75726ad](https://github.com/fruggr/zendesk-mcp-server/commit/75726ad2a798e24ca319ae94b7c5bb92a13b7a5c))
+* **lint:** enable a conservative set of new Biome 2.5 rules ([#97](https://github.com/fruggr/zendesk-mcp-server/issues/97)) ([ec8789e](https://github.com/fruggr/zendesk-mcp-server/commit/ec8789e3b2f064786490f72e602ad5a3ea6eea5b))
+</details>
+
 ## [2.3.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.2.0...v2.3.0) (2026-06-19)
 
 ### Features
