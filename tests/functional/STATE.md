@@ -17,4 +17,4 @@ raw + report artifacts.
 | 02-namespace-mixed     | OK      | 2026-06-06  |
 | 03-single-readonly     | OK      | 2026-06-06  |
 | 04-all-baseline        | OK      | 2026-06-06  |
-| 05-strict-params       | done    | 2026-06-27  |
+| 05-strict-params       | OK      | 2026-06-27  |
