@@ -59,14 +59,15 @@ export const fetchTopology = async (subdomain: string, token: string): Promise<T
     zendeskGet<{ user: ZendeskUser }>(subdomain, token, '/users/me'),
   ]);
 
+  const categories = categoriesRes.categories ?? [];
+  const sections = sectionsRes.sections ?? [];
   return {
     subdomain,
     locales,
-    categories: categoriesRes.categories ?? [],
-    sections: sectionsRes.sections ?? [],
-    sectionsHasMore: extractPaginationMeta(sectionsRes, sectionsRes.sections?.length ?? 0).has_more,
-    categoriesHasMore: extractPaginationMeta(categoriesRes, categoriesRes.categories?.length ?? 0)
-      .has_more,
+    categories,
+    sections,
+    sectionsHasMore: extractPaginationMeta(sectionsRes, sections.length).has_more,
+    categoriesHasMore: extractPaginationMeta(categoriesRes, categories.length).has_more,
     userSegments: segmentsRes.user_segments ?? [],
     permissionGroups: permsRes.permission_groups ?? [],
     currentUser: meRes.user,
