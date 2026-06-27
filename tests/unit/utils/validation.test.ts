@@ -33,7 +33,19 @@ describe('createStrictParamsParser', () => {
     expect(error?.message).toContain('cursor');
   });
 
-  it('still surfaces type errors on known parameters', () => {
-    expect(() => parse({ page_size: 'big' })).toThrow();
+  it('propagates the raw Zod error (not the rewritten message) for known-parameter failures', () => {
+    const error = (() => {
+      try {
+        parse({ page_size: 'big' });
+        return null;
+      } catch (e) {
+        return e;
+      }
+    })();
+    // A type error on a *known* field must surface the original ZodError so the
+    // SDK reports the field-level detail, not the unknown-parameter rewrite.
+    expect(error).toMatchObject({
+      issues: [expect.objectContaining({ path: ['page_size'] })],
+    });
   });
 });
