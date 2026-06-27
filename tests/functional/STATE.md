@@ -1,7 +1,7 @@
 ---
 branch: claude/issue-100-analysis-tj9dq9
 current_run: 2026-06-26-pr102
-holder: executor
+holder: leading
 ---
 
 # Functional test run state
@@ -17,4 +17,4 @@ raw + report artifacts.
 | 02-namespace-mixed     | OK      | 2026-06-06  |
 | 03-single-readonly     | OK      | 2026-06-06  |
 | 04-all-baseline        | OK      | 2026-06-06  |
-| 05-strict-params       | pending | 2026-06-26  |
+| 05-strict-params       | done    | 2026-06-27  |
