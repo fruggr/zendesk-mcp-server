@@ -60,6 +60,14 @@ jobs:
 
       - run: node scripts/smoke-test.mjs
 
+      # Snapshot the version before semantic-release. @semantic-release/npm
+      # rewrites package.json#version in the working tree during its prepare
+      # step, so a change here is the signal that a release was actually cut
+      # (chore/docs-only pushes produce no release and must not republish).
+      - name: Snapshot version before release
+        id: before
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
       - run: pnpm exec semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -71,3 +79,55 @@ jobs:
           # surfacing the actual npm error).
           DEBUG: 'semantic-release:*'
           NPM_CONFIG_LOGLEVEL: verbose
+
+      # --- Mirror the release into the official MCP registry ---
+      # registry.modelcontextprotocol.io is increasingly the default discovery
+      # surface for MCP-aware clients. We publish here right after npm so the
+      # listing tracks every release with no manual step. Auth reuses the
+      # workflow's `id-token: write` (GitHub OIDC) — no extra secret. Ownership
+      # of the npm package is proven by the `mcpName` field in package.json.
+      - name: Detect whether a release was published
+        id: released
+        run: |
+          before='${{ steps.before.outputs.version }}'
+          after="$(node -p "require('./package.json').version")"
+          if [ "$before" != "$after" ]; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "version=$after" >> "$GITHUB_OUTPUT"
+            echo "Release $after detected; will publish to the MCP registry."
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+            echo "No release this run; skipping MCP registry publish."
+          fi
+
+      - name: Sync server.json to the released version
+        if: steps.released.outputs.published == 'true'
+        run: |
+          jq --arg v '${{ steps.released.outputs.version }}' \
+            '.version = $v | .packages[0].version = $v' server.json > server.json.tmp
+          mv server.json.tmp server.json
+
+      - name: Install mcp-publisher
+        if: steps.released.outputs.published == 'true'
+        run: |
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+
+      - name: Authenticate to the MCP registry (GitHub OIDC)
+        if: steps.released.outputs.published == 'true'
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish to the MCP registry
+        if: steps.released.outputs.published == 'true'
+        run: |
+          # The registry validates by fetching the npm tarball; allow a few
+          # retries for npm propagation right after publish.
+          for attempt in 1 2 3 4 5; do
+            if ./mcp-publisher publish; then
+              echo "Published ${{ steps.released.outputs.version }} to the MCP registry."
+              exit 0
+            fi
+            echo "Publish attempt $attempt failed; retrying in $((attempt * 10))s..."
+            sleep "$((attempt * 10))"
+          done
+          echo "MCP registry publish failed after 5 attempts." >&2
+          exit 1
