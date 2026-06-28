@@ -24,8 +24,6 @@ describe('server.json (MCP registry manifest)', () => {
 
   it('uses the GitHub-authenticated namespace for the fruggr org', () => {
     expect(serverJson.name).toBe('io.github.fruggr/zendesk-mcp-server');
-    // Reverse-DNS, exactly one slash separating namespace from server name.
-    expect(serverJson.name).toMatch(/^[a-zA-Z0-9.-]+\/[a-zA-Z0-9._-]+$/);
   });
 
   it('proves npm ownership: package.json#mcpName matches the registry name', () => {
