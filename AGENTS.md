@@ -102,11 +102,6 @@ and AI authors).
 
 ## Release workflow
 
-Fully automated via semantic-release on every push to `main`. Never bump the
-version or edit the `version` field in `package.json` **or `server.json`** — the
-release job rewrites `server.json`'s version from the freshly released one before
-publishing. Land a `fix:` / `feat:` / breaking Conventional Commit to trigger a
-release (`chore:` / `docs:` alone produce none). The same job mirrors each release
-into the official MCP registry (`server.json` manifest, `mcpName` in
-`package.json`, GitHub-OIDC auth — no extra secret). Details:
-`docs/release-automation.md`.
+Fully automated via semantic-release on push to `main`; never hand-bump the
+`version` in `package.json` or `server.json`. Triggers, npm + official MCP
+registry publishing, and version syncing: `docs/release-automation.md`.
