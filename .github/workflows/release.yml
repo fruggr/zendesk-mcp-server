@@ -103,14 +103,11 @@ jobs:
             echo "No release this run; skipping MCP registry publish."
           fi
 
-      - name: Sync server.json to the released version
+      - name: Generate server.json for the released version
         if: steps.released.outputs.published == 'true'
-        env:
-          VERSION: ${{ steps.released.outputs.version }}
-        run: |
-          jq --arg v "$VERSION" \
-            '.version = $v | .packages[0].version = $v' server.json > server.json.tmp
-          mv server.json.tmp server.json
+        # Built from package.json (already bumped by semantic-release) plus the
+        # MCP-specific metadata in the script — never hand-maintained.
+        run: node scripts/build-server-json.mjs > server.json
 
       - name: Install mcp-publisher
         if: steps.released.outputs.published == 'true'

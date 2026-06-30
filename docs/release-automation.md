@@ -48,12 +48,16 @@ each new version automatically.
   working tree only when it actually publishes. The job snapshots the version
   before and after semantic-release; the publish steps run **only** when it
   changed, so `chore:` / `docs:` pushes (no release) never touch the registry.
-- **Manifest.** [`server.json`](../server.json) at the repo root describes the
-  server (schema, name, npm package, stdio transport, subdomain argument). Its
-  `version` is overwritten in CI from the released version before publishing — do
-  not hand-bump it.
+- **Manifest.** `server.json` is **generated**, not committed:
+  [`scripts/build-server-json.mjs`](../scripts/build-server-json.mjs) derives
+  everything that already lives in `package.json` (name from `mcpName`, npm
+  identifier, version, repository, homepage) and declares only the
+  registry/launch specifics (schema, transport, subdomain argument, env). The
+  release job runs it (`node scripts/build-server-json.mjs > server.json`) right
+  before publishing; it is git-ignored so there is nothing to hand-maintain or
+  let drift. Regenerate locally with `pnpm build:server-json`.
 - **Ownership.** The registry proves npm ownership via the `mcpName` field in
-  `package.json` (must equal the `server.json` `name`).
+  `package.json` (which the generator uses as the `server.json` `name`).
 - **Auth.** `mcp-publisher login github-oidc` reuses the workflow's
   `id-token: write` GitHub OIDC token — the same permission npm Trusted
   Publishing already relies on. No new secret, and the `io.github.fruggr/*`
