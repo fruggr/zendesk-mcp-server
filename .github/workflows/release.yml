@@ -114,8 +114,21 @@ jobs:
 
       - name: Install mcp-publisher
         if: steps.released.outputs.published == 'true'
+        env:
+          # Pinned (not `latest`) and checksum-verified before it runs in this
+          # OIDC-privileged job. Bump from the modelcontextprotocol/registry
+          # releases when a newer publisher is needed.
+          MCP_PUBLISHER_VERSION: '1.7.9'
         run: |
-          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+          os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+          arch="$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')"
+          asset="mcp-publisher_${os}_${arch}.tar.gz"
+          base="https://github.com/modelcontextprotocol/registry/releases/download/v${MCP_PUBLISHER_VERSION}"
+          curl -fsSL -o "$asset" "$base/$asset"
+          curl -fsSL -o checksums.txt "$base/registry_${MCP_PUBLISHER_VERSION}_checksums.txt"
+          grep " ${asset}$" checksums.txt | sha256sum -c -
+          tar xzf "$asset" mcp-publisher
+          rm -f "$asset" checksums.txt
 
       - name: Authenticate to the MCP registry (GitHub OIDC)
         if: steps.released.outputs.published == 'true'

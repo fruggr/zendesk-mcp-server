@@ -43,6 +43,9 @@ describe('server.json (MCP registry manifest)', () => {
     expect(serverJson.repository).toEqual({
       url: 'https://github.com/fruggr/zendesk-mcp-server',
       source: 'github',
+      // Stable numeric repo id — keeps the registry entry valid if the repo is
+      // ever renamed or recreated.
+      id: '1206027556',
     });
   });
 
