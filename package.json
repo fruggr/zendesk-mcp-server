@@ -1,6 +1,6 @@
 {
   "name": "@fruggr/zendesk-mcp-server",
-  "version": "2.3.1",
+  "version": "2.4.0",
   "mcpName": "io.github.fruggr/zendesk-mcp-server",
   "description": "Model Context Protocol (MCP) server for the Zendesk Support & Help Center APIs — runs locally (stdio) or as a private remote MCP server (HTTP), with per-user OAuth 2.1 PKCE authentication, read-only mode, and token-efficient section-based article editing.",
   "type": "module",

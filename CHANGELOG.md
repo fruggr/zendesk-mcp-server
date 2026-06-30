@@ -1,3 +1,21 @@
+## [2.4.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.3.1...v2.4.0) (2026-06-30)
+
+### Features
+
+* publish to the official MCP registry on release ([#105](https://github.com/fruggr/zendesk-mcp-server/issues/105)) ([eb08049](https://github.com/fruggr/zendesk-mcp-server/commit/eb080494a1212aace5369e39ddcfa80324961e59))
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Chores
+
+* **deps:** update dependency @biomejs/biome to v2.5.1 ([#107](https://github.com/fruggr/zendesk-mcp-server/issues/107)) ([dbab4ff](https://github.com/fruggr/zendesk-mcp-server/commit/dbab4ffaf25a883aaba0cf67d3f488644bc9f7fc))
+
+### Tests
+
+* **release:** guard conventionalcommits preset rendering against breaking majors ([#104](https://github.com/fruggr/zendesk-mcp-server/issues/104)) ([a61f143](https://github.com/fruggr/zendesk-mcp-server/commit/a61f1438895140963d1e08e5a5c28bf08c73ba99))
+</details>
+
 ## [2.3.1](https://github.com/fruggr/zendesk-mcp-server/compare/v2.3.0...v2.3.1) (2026-06-27)
 
 ### Bug Fixes
