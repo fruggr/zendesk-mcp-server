@@ -1,6 +1,7 @@
 # Zendesk MCP Server
 
 [![Glama score](https://glama.ai/mcp/servers/fruggr/zendesk-mcp-server/badges/score.svg)](https://glama.ai/mcp/servers/fruggr/zendesk-mcp-server)
+[![MCP Registry](https://img.shields.io/badge/MCP_Registry-io.github.fruggr%2Fzendesk--mcp--server-0a7ea4)](https://registry.modelcontextprotocol.io/?search=io.github.fruggr/zendesk-mcp-server)
 [![npm version](https://img.shields.io/npm/v/@fruggr/zendesk-mcp-server?logo=npm&color=cb3837)](https://www.npmjs.com/package/@fruggr/zendesk-mcp-server)
 [![License: MIT](https://img.shields.io/npm/l/@fruggr/zendesk-mcp-server?color=blue)](LICENSE)
 [![Node.js](https://img.shields.io/node/v/@fruggr/zendesk-mcp-server?logo=nodedotjs&logoColor=white&color=339933)](https://nodejs.org)
@@ -622,7 +623,7 @@ This project was built with reference to:
 
 ## Releases & versioning
 
-Versions follow [SemVer](https://semver.org/) and are calculated **automatically** from commit messages — no one bumps the version by hand. Every merge to `main` triggers [semantic-release](https://github.com/semantic-release/semantic-release), which inspects the new [Conventional Commits](https://www.conventionalcommits.org/) since the previous tag, computes the next version, updates [`CHANGELOG.md`](CHANGELOG.md), publishes to npm, and creates the matching GitHub Release.
+Versions follow [SemVer](https://semver.org/) and are calculated **automatically** from commit messages — no one bumps the version by hand. Every merge to `main` triggers [semantic-release](https://github.com/semantic-release/semantic-release), which inspects the new [Conventional Commits](https://www.conventionalcommits.org/) since the previous tag, computes the next version, updates [`CHANGELOG.md`](CHANGELOG.md), publishes to npm, creates the matching GitHub Release, and mirrors the release into the [official MCP registry](https://registry.modelcontextprotocol.io) as [`io.github.fruggr/zendesk-mcp-server`](https://registry.modelcontextprotocol.io/?search=io.github.fruggr/zendesk-mcp-server) so registry-driven clients discover the new version automatically.
 
 | Commit type | Resulting bump |
 |---|---|

@@ -102,7 +102,7 @@ and AI authors).
 
 ## Release workflow
 
-Fully automated via semantic-release on every push to `main`. Never bump the
-version or edit the `version` field in `package.json`. Land a `fix:` / `feat:` /
-breaking Conventional Commit to trigger a release (`chore:` / `docs:` alone
-produce none). Details: `docs/release-automation.md`.
+Fully automated via semantic-release on push to `main`; never hand-bump the
+`version` in `package.json` (`server.json` is generated from it — never edit it
+by hand). Triggers, npm + official MCP registry publishing, and the generated
+manifest: `docs/release-automation.md`.

@@ -30,9 +30,40 @@ semantic-release scans commits since the last release
         ├─ commit `feat: …`             → minor release
         ├─ commit `BREAKING CHANGE`     → major release
         └─ commit `chore(deps): …`      → ignored (no release)
+        │
+        ▼ (when a release was cut)
+Mirror the release into the official MCP registry
 ```
 
 The commit-type → release-level mapping lives in `.releaserc.json` (preset `conventionalcommits`).
+
+## MCP registry publishing
+
+After semantic-release runs, the same `release.yml` job mirrors the release into
+the [official MCP registry](https://registry.modelcontextprotocol.io) under the
+name `io.github.fruggr/zendesk-mcp-server`, so registry-driven MCP clients pick up
+each new version automatically.
+
+- **Gating.** `@semantic-release/npm` rewrites `package.json`'s `version` in the
+  working tree only when it actually publishes. The job snapshots the version
+  before and after semantic-release; the publish steps run **only** when it
+  changed, so `chore:` / `docs:` pushes (no release) never touch the registry.
+- **Manifest.** `server.json` is **generated**, not committed:
+  [`scripts/build-server-json.mjs`](../scripts/build-server-json.mjs) derives
+  everything that already lives in `package.json` (name from `mcpName`, npm
+  identifier, version, repository, homepage) and declares only the
+  registry/launch specifics (schema, transport, subdomain argument, env). The
+  release job runs it (`node scripts/build-server-json.mjs > server.json`) right
+  before publishing; it is git-ignored so there is nothing to hand-maintain or
+  let drift. Regenerate locally with `pnpm build:server-json`.
+- **Ownership.** The registry proves npm ownership via the `mcpName` field in
+  `package.json` (which the generator uses as the `server.json` `name`).
+- **Auth.** `mcp-publisher login github-oidc` reuses the workflow's
+  `id-token: write` GitHub OIDC token — the same permission npm Trusted
+  Publishing already relies on. No new secret, and the `io.github.fruggr/*`
+  namespace is authorized because the workflow runs in the `fruggr` org's repo.
+- **Resilience.** The publish is retried a few times to absorb npm propagation
+  lag (the registry validates by fetching the freshly published npm tarball).
 
 ## Release notes content
 
