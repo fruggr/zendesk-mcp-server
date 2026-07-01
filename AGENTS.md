@@ -79,8 +79,15 @@ GitHub (PRs, commits, comments, code) in **English**. Chat follows the user's la
 
 ## Multi-agent compatibility — absolute rule
 
-Must work with every mainstream MCP agent; no PR may degrade one. New tools follow
-`docs/mcp-metadata.md`.
+Must work with every mainstream MCP agent; no PR may degrade one. Every **new
+tool** must meet the Glama Tool Definition Quality bar (clear purpose, usage
+guidelines, stated side effects, per-parameter `.describe()`) and keep the tool
+set coherent (naming, disambiguation, no needless duplication) — the server
+score is `60% mean + 40% min`, so one weak tool drags the whole surface down.
+Every **tool change** must keep the exposed JSON Schema (draft-07) a *superset*
+of the previous one: enrich freely, but never drop a field, loosen a type, or
+shorten an existing description. Criteria, the checklist and how to diff the
+schema: `docs/mcp-metadata.md`.
 
 ## Documentation maintenance
 
