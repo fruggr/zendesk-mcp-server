@@ -64,9 +64,11 @@ How well the tools work together *as a set*. Four dimensions, weighted equally:
 
 ## No regression on a tool change
 
-Agents consume our Zod schemas as **JSON Schema draft-07** — the conversion path
-the MCP SDK uses (`zod/v4-mini` → draft-07). A change is *multi-agent-safe* only
-when the exposed schema stays a **superset** of the previous one:
+Agents consume our Zod schemas as **JSON Schema draft-07**. We author schemas
+with `zod/v4` (see `src/tools/*`); the MCP SDK serializes them to draft-07
+internally via zod v4's mini/`toJSONSchema` path — you don't import `v4-mini`
+yourself. A change is *multi-agent-safe* only when the exposed schema stays a
+**superset** of the previous one:
 
 - **Never remove or shorten** an existing param `description` or the tool
   description — a stricter agent may key off exact text. Enriching is fine.
