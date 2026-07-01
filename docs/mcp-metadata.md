@@ -16,6 +16,9 @@ contract, not a vanity metric.
 ## Glama score, in one screen
 
 The overall score is **Tool Definition Quality (70 %) + Server Coherence (30 %)**.
+The weights and dimensions below are from Glama's public methodology
+([glama.ai/mcp/methodology](https://glama.ai/mcp/methodology), retrieved
+2026-07-01) — re-check it if the score moves, as the rubric may evolve.
 
 ### Tool Definition Quality — 70 %
 
