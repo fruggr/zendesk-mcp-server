@@ -553,6 +553,26 @@ describe('ticket tools', () => {
       expect(comment['public']).toBe(true);
     });
 
+    it('rejects an attachment with an empty content_type', () => {
+      const tool = findTool('add_public_comment');
+      const result = tool.inputSchema.safeParse({
+        ticket_id: 1,
+        body: 'x',
+        attachments: [{ file_name: 'a.txt', file_base64: 'aGk=', content_type: '' }],
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('defaults content_type when omitted on an attachment', () => {
+      const tool = findTool('add_public_comment');
+      const parsed = tool.inputSchema.parse({
+        ticket_id: 1,
+        body: 'x',
+        attachments: [{ file_name: 'a.txt', file_base64: 'aGk=' }],
+      }) as { attachments: Array<{ content_type: string }> };
+      expect(parsed.attachments[0]?.content_type).toBe('application/octet-stream');
+    });
+
     it('aggregates multiple files under a single upload token', async () => {
       const uploadReqs: { filename: string | null; token: string | null }[] = [];
       let putBody: Record<string, unknown> | undefined;

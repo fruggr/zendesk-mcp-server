@@ -173,6 +173,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
     file_base64: z.string().min(1).describe('File content encoded as base64.'),
     content_type: z
       .string()
+      .min(1)
       .default('application/octet-stream')
       .describe('MIME type, e.g. "text/plain", "image/png", "application/pdf".'),
   });
