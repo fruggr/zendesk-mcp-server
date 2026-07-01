@@ -78,6 +78,19 @@ describe('ticket tools', () => {
       expect(result.content[0]?.text).toContain('This is a comment');
     });
 
+    it('requests inline images when include_comments is set', async () => {
+      let inlineParam: string | null = null;
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/comments', ({ request }) => {
+          inlineParam = new URL(request.url).searchParams.get('include_inline_images');
+          return HttpResponse.json({ comments: [] });
+        }),
+      );
+      const tool = findTool('get_ticket');
+      await tool.handler({ ticket_id: 1, include_comments: true });
+      expect(inlineParam).toBe('true');
+    });
+
     it('has readOnly annotation', () => {
       const tool = findTool('get_ticket');
       expect(tool.annotations.readOnlyHint).toBe(true);
@@ -85,6 +98,19 @@ describe('ticket tools', () => {
   });
 
   describe('get_ticket_attachments', () => {
+    it('requests inline images from the comments endpoint', async () => {
+      let inlineParam: string | null = null;
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/comments', ({ request }) => {
+          inlineParam = new URL(request.url).searchParams.get('include_inline_images');
+          return HttpResponse.json({ comments: [] });
+        }),
+      );
+      const tool = findTool('get_ticket_attachments');
+      await tool.handler({ ticket_id: 1 });
+      expect(inlineParam).toBe('true');
+    });
+
     it('returns image content for image attachments', async () => {
       const tool = findTool('get_ticket_attachments');
       const result = await tool.handler({ ticket_id: 1 });

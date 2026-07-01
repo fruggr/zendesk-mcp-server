@@ -70,7 +70,10 @@ const fetchAllTicketComments = async (
     const response = await zendeskGet<{
       comments: ZendeskComment[];
       meta?: { has_more: boolean; after_cursor: string };
-    }>(subdomain, token, `/tickets/${ticketId}/comments`, buildCursorParams(MAX_PAGE_SIZE, cursor));
+    }>(subdomain, token, `/tickets/${ticketId}/comments`, {
+      ...buildCursorParams(MAX_PAGE_SIZE, cursor),
+      include_inline_images: 'true',
+    });
     all.push(...response.comments);
     pages += 1;
     if (!response.meta?.has_more || !response.meta?.after_cursor) break;
@@ -235,6 +238,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
             subdomain,
             token,
             `/tickets/${ticket_id}/comments`,
+            { include_inline_images: 'true' },
           );
           text += `\n\n---\n# Comments\n\n${comments.map(formatComment).join('\n\n')}`;
         }
