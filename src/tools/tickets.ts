@@ -201,6 +201,9 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
     return uploadToken as string;
   };
 
+  const formatAttachmentSuffix = (count?: number): string =>
+    count ? ` with ${count} attachment(s)` : '';
+
   return [
     {
       name: 'get_ticket',
@@ -523,7 +526,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         await zendeskPut(subdomain, token, `/tickets/${ticket_id}`, {
           ticket: { comment: { body, public: false, ...(uploads && { uploads }) } },
         });
-        const suffix = attachments?.length ? ` with ${attachments.length} attachment(s)` : '';
+        const suffix = formatAttachmentSuffix(attachments?.length);
         return {
           content: [{ type: 'text', text: `Private note added to ticket #${ticket_id}${suffix}.` }],
         };
@@ -563,7 +566,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         await zendeskPut(subdomain, token, `/tickets/${ticket_id}`, {
           ticket: { comment: { body, public: true, ...(uploads && { uploads }) } },
         });
-        const suffix = attachments?.length ? ` with ${attachments.length} attachment(s)` : '';
+        const suffix = formatAttachmentSuffix(attachments?.length);
         return {
           content: [
             { type: 'text', text: `Public comment added to ticket #${ticket_id}${suffix}.` },
