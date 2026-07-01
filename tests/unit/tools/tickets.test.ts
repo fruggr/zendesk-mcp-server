@@ -2,7 +2,7 @@ import { HttpResponse, http } from 'msw';
 import { describe, expect, it } from 'vitest';
 import type { ToolContext } from '../../../src/tools/definitions';
 import { createTicketTools } from '../../../src/tools/tickets';
-import { MOCK_SLA_SIDELOAD, MOCK_TICKET } from '../../msw-handlers';
+import { MOCK_SLA_SIDELOAD, MOCK_TICKET, MOCK_UPLOAD } from '../../msw-handlers';
 import { mswServer } from '../../setup';
 
 const ctx: ToolContext = { subdomain: 'testsubdomain', getToken: () => 'test-token' };
@@ -480,6 +480,38 @@ describe('ticket tools', () => {
       const result = await tool.handler({ ticket_id: 1, body: 'Internal note' });
       expect(result.content[0]?.text).toContain('Private note added');
     });
+
+    it('uploads and attaches a file to the note (kept private)', async () => {
+      let putBody: Record<string, unknown> | undefined;
+      mswServer.use(
+        http.put(
+          'https://testsubdomain.zendesk.com/api/v2/tickets/:id',
+          async ({ request, params }) => {
+            putBody = (await request.json()) as Record<string, unknown>;
+            return HttpResponse.json({ ticket: { ...MOCK_TICKET, id: Number(params['id']) } });
+          },
+        ),
+      );
+      const tool = findTool('add_private_note');
+      const result = await tool.handler({
+        ticket_id: 1,
+        body: 'Internal note',
+        attachments: [
+          {
+            file_name: 'trace.log',
+            file_base64: Buffer.from('boom').toString('base64'),
+            content_type: 'text/plain',
+          },
+        ],
+      });
+      expect(result.content[0]?.text).toContain('with 1 attachment(s)');
+      const comment = (putBody?.['ticket'] as Record<string, unknown>)['comment'] as Record<
+        string,
+        unknown
+      >;
+      expect(comment['uploads']).toEqual(['mock-upload-token']);
+      expect(comment['public']).toBe(false);
+    });
   });
 
   describe('add_public_comment', () => {
@@ -487,6 +519,78 @@ describe('ticket tools', () => {
       const tool = findTool('add_public_comment');
       const result = await tool.handler({ ticket_id: 1, body: 'Public reply' });
       expect(result.content[0]?.text).toContain('Public comment added');
+    });
+
+    it('uploads and attaches a file to the comment', async () => {
+      let putBody: Record<string, unknown> | undefined;
+      mswServer.use(
+        http.put(
+          'https://testsubdomain.zendesk.com/api/v2/tickets/:id',
+          async ({ request, params }) => {
+            putBody = (await request.json()) as Record<string, unknown>;
+            return HttpResponse.json({ ticket: { ...MOCK_TICKET, id: Number(params['id']) } });
+          },
+        ),
+      );
+      const tool = findTool('add_public_comment');
+      const result = await tool.handler({
+        ticket_id: 1,
+        body: 'See attached',
+        attachments: [
+          {
+            file_name: 'a.log',
+            file_base64: Buffer.from('hello').toString('base64'),
+            content_type: 'text/plain',
+          },
+        ],
+      });
+      expect(result.content[0]?.text).toContain('with 1 attachment(s)');
+      const comment = (putBody?.['ticket'] as Record<string, unknown>)['comment'] as Record<
+        string,
+        unknown
+      >;
+      expect(comment['uploads']).toEqual(['mock-upload-token']);
+      expect(comment['public']).toBe(true);
+    });
+
+    it('aggregates multiple files under a single upload token', async () => {
+      const uploadReqs: { filename: string | null; token: string | null }[] = [];
+      let putBody: Record<string, unknown> | undefined;
+      mswServer.use(
+        http.post('https://testsubdomain.zendesk.com/api/v2/uploads', ({ request }) => {
+          const url = new URL(request.url);
+          uploadReqs.push({
+            filename: url.searchParams.get('filename'),
+            token: url.searchParams.get('token'),
+          });
+          return HttpResponse.json({ upload: MOCK_UPLOAD });
+        }),
+        http.put(
+          'https://testsubdomain.zendesk.com/api/v2/tickets/:id',
+          async ({ request, params }) => {
+            putBody = (await request.json()) as Record<string, unknown>;
+            return HttpResponse.json({ ticket: { ...MOCK_TICKET, id: Number(params['id']) } });
+          },
+        ),
+      );
+      const tool = findTool('add_public_comment');
+      const b64 = Buffer.from('x').toString('base64');
+      await tool.handler({
+        ticket_id: 1,
+        body: 'multi',
+        attachments: [
+          { file_name: 'a.txt', file_base64: b64, content_type: 'text/plain' },
+          { file_name: 'b.txt', file_base64: b64, content_type: 'text/plain' },
+        ],
+      });
+      expect(uploadReqs).toHaveLength(2);
+      expect(uploadReqs[0]?.token).toBeNull();
+      expect(uploadReqs[1]?.token).toBe('mock-upload-token');
+      const comment = (putBody?.['ticket'] as Record<string, unknown>)['comment'] as Record<
+        string,
+        unknown
+      >;
+      expect(comment['uploads']).toEqual(['mock-upload-token']);
     });
   });
 

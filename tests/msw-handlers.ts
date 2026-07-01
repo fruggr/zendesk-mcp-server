@@ -224,6 +224,15 @@ export const MOCK_COMMENT = {
   ],
 };
 
+// Uploads API response (POST /uploads). The token is what gets carried on a
+// comment via comment.uploads; subsequent files aggregate under it via ?token=.
+export const MOCK_UPLOAD = {
+  token: 'mock-upload-token',
+  expires_at: '2026-01-01T01:00:00Z',
+  attachment: MOCK_TICKET_ATTACHMENT_PDF,
+  attachments: [MOCK_TICKET_ATTACHMENT_PDF],
+};
+
 // OAuth token endpoint used by the browser PKCE flow. Opt-in per test via
 // mswServer.use() so the OAuth roundtrip mock stays centralized here too.
 export const oauthTokenHandler = http.post('https://testsubdomain.zendesk.com/oauth/tokens', () =>
@@ -315,6 +324,7 @@ export const handlers = [
   http.put(`${BASE}/tickets/:id`, ({ params }) =>
     HttpResponse.json({ ticket: { ...MOCK_TICKET, id: Number(params['id']), status: 'solved' } }),
   ),
+  http.post(`${BASE}/uploads`, () => HttpResponse.json({ upload: MOCK_UPLOAD })),
 
   // SLA policies — the real endpoint returns the full config list with no
   // `count` wrapper, so omit it here to exercise the array-length fallback.
