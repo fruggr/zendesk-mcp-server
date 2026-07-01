@@ -27,10 +27,11 @@ export function buildServerJson(packageJson) {
   return {
     $schema: 'https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json',
     name: packageJson.mcpName,
-    // Standalone, <=100 chars (registry limit). Distinct from package.json's
+    // Standalone, <=100 chars (registry limit). Feature-oriented (what the
+    // assistant can do), mirroring the README. Distinct from package.json's
     // longer npm description on purpose, so it can't be derived from it.
     description:
-      'Zendesk Support & Help Center MCP server with per-user OAuth 2.1 PKCE authentication.',
+      'Draft, translate and update Help Center articles and manage Zendesk tickets from your AI assistant.',
     version: packageJson.version,
     repository: {
       url: repositoryUrl,

@@ -8,10 +8,12 @@
 [![Renovate enabled](https://img.shields.io/badge/renovate-enabled-brightgreen?logo=renovatebot&logoColor=white)](https://renovatebot.com)
 [![semantic-release](https://img.shields.io/badge/semantic--release-e10079?logo=semantic-release&logoColor=white)](https://github.com/semantic-release/semantic-release)
 
-**Bring Zendesk Support & the Help Center into your AI assistant.** A
-[Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that lets
-your assistant search articles, answer questions, and create, track and update
-tickets in plain language — **without switching apps**.
+**Bring Zendesk deep into your AI assistant.** A
+[Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for a
+two-way integration: find answers in the Help Center, **draft, update and
+translate** articles (keeping languages in sync), and **manage Support tickets**
+end to end — comments, triage and image attachments — all in plain language,
+**without switching apps**.
 
 Think of it as the [Zendesk agent for Microsoft 365 Copilot](https://support.zendesk.com/hc/en-us/articles/9958331458458-Using-the-Zendesk-agent-in-Microsoft-365-Copilot),
 but **vendor-neutral** — it drops into any MCP client (Claude Desktop, Claude
