@@ -173,7 +173,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
 
   const attachmentSchema = z.object({
     file_name: z.string().min(1).describe('File name, e.g. "app.log" or "screenshot.png".'),
-    file_base64: z.string().min(1).describe('File content encoded as base64.'),
+    file_base64: z.string().min(1).base64().describe('File content encoded as base64.'),
     content_type: z
       .string()
       .min(1)

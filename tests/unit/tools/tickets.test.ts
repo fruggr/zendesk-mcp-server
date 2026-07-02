@@ -589,6 +589,18 @@ describe('ticket tools', () => {
       expect(result.success).toBe(false);
     });
 
+    it('rejects an attachment whose file_base64 is not valid base64', () => {
+      const tool = findTool('add_public_comment');
+      const result = tool.inputSchema.safeParse({
+        ticket_id: 1,
+        body: 'x',
+        attachments: [
+          { file_name: 'a.txt', file_base64: 'not base64!!', content_type: 'text/plain' },
+        ],
+      });
+      expect(result.success).toBe(false);
+    });
+
     it('defaults content_type when omitted on an attachment', () => {
       const tool = findTool('add_public_comment');
       const parsed = tool.inputSchema.parse({
