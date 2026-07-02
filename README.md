@@ -133,8 +133,8 @@ zendesk-mcp-server acme --namespace tickets
 | `list_sla_policies` | List SLA policies with filter conditions and per-priority targets (requires an admin token, or a custom role with the SLA-management permission) | read |
 | `create_ticket` | Create a new ticket with subject, description, priority, tags... | write |
 | `update_ticket` | Update ticket status, priority, assignee, tags, custom fields | write |
-| `add_private_note` | Add an internal note (not visible to requester) | write |
-| `add_public_comment` | Add a public comment (visible to requester) | write |
+| `add_private_note` | Add an internal note (not visible to requester), optionally with file attachments | write |
+| `add_public_comment` | Add a public comment (visible to requester), optionally with file attachments | write |
 | `manage_tags` | Add or remove tags on a ticket | write |
 
 </details>

@@ -5,6 +5,7 @@ import {
   zendeskGet,
   zendeskPost,
   zendeskPut,
+  zendeskUpload,
 } from '../client/zendesk-api';
 import {
   DEFAULT_PAGE_SIZE,
@@ -20,6 +21,7 @@ import type {
   ZendeskSlaSideloadEntry,
   ZendeskTicket,
   ZendeskTicketAttachment,
+  ZendeskUpload,
 } from '../types';
 import {
   formatComment,
@@ -68,7 +70,10 @@ const fetchAllTicketComments = async (
     const response = await zendeskGet<{
       comments: ZendeskComment[];
       meta?: { has_more: boolean; after_cursor: string };
-    }>(subdomain, token, `/tickets/${ticketId}/comments`, buildCursorParams(MAX_PAGE_SIZE, cursor));
+    }>(subdomain, token, `/tickets/${ticketId}/comments`, {
+      ...buildCursorParams(MAX_PAGE_SIZE, cursor),
+      include_inline_images: 'true',
+    });
     all.push(...response.comments);
     pages += 1;
     if (!response.meta?.has_more || !response.meta?.after_cursor) break;
@@ -166,6 +171,39 @@ const fetchTicketSla = async (
 export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
   const { subdomain, getToken } = ctx;
 
+  const attachmentSchema = z.object({
+    file_name: z.string().min(1).describe('File name, e.g. "app.log" or "screenshot.png".'),
+    file_base64: z.string().min(1).base64().describe('File content encoded as base64.'),
+    content_type: z
+      .string()
+      .min(1)
+      .default('application/octet-stream')
+      .describe('MIME type, e.g. "text/plain", "image/png", "application/pdf".'),
+  });
+  type AttachmentInput = z.infer<typeof attachmentSchema>;
+
+  // Upload each file via the Zendesk Uploads API, aggregating them under a single
+  // upload token (the token from the first upload is passed to the next), and
+  // return that token for use in a comment's `uploads` array.
+  const uploadAttachments = async (token: string, files: AttachmentInput[]): Promise<string> => {
+    let uploadToken: string | undefined;
+    for (const file of files) {
+      const { upload } = await zendeskUpload<{ upload: ZendeskUpload }>(
+        subdomain,
+        token,
+        file.file_name,
+        Buffer.from(file.file_base64, 'base64'),
+        file.content_type,
+        uploadToken,
+      );
+      uploadToken = upload.token;
+    }
+    return uploadToken as string;
+  };
+
+  const formatAttachmentSuffix = (count?: number): string =>
+    count ? ` with ${count} attachment(s)` : '';
+
   return [
     {
       name: 'get_ticket',
@@ -203,6 +241,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
             subdomain,
             token,
             `/tickets/${ticket_id}/comments`,
+            { include_inline_images: 'true' },
           );
           text += `\n\n---\n# Comments\n\n${comments.map(formatComment).join('\n\n')}`;
         }
@@ -458,10 +497,15 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       namespace: 'tickets',
       readOnly: false,
       title: 'Add Private Note',
-      description: 'Add an internal note (not visible to requester) to a ticket.',
+      description:
+        'Add an internal note (not visible to requester) to a ticket, optionally with file attachments (uploaded via the Zendesk Uploads API and carried on the note).',
       inputSchema: z.object({
         ticket_id: z.number().int().describe('Ticket ID'),
         body: z.string().min(1).describe('Note content'),
+        attachments: z
+          .array(attachmentSchema)
+          .optional()
+          .describe('Files to attach to this note (base64-encoded content).'),
       }),
       annotations: {
         readOnlyHint: false,
@@ -470,12 +514,22 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         openWorldHint: true,
       },
       handler: async (params) => {
-        const { ticket_id, body } = params as { ticket_id: number; body: string };
+        const { ticket_id, body, attachments } = params as {
+          ticket_id: number;
+          body: string;
+          attachments?: AttachmentInput[];
+        };
         const token = await getToken();
+        const uploads = attachments?.length
+          ? [await uploadAttachments(token, attachments)]
+          : undefined;
         await zendeskPut(subdomain, token, `/tickets/${ticket_id}`, {
-          ticket: { comment: { body, public: false } },
+          ticket: { comment: { body, public: false, ...(uploads && { uploads }) } },
         });
-        return { content: [{ type: 'text', text: `Private note added to ticket #${ticket_id}.` }] };
+        const suffix = formatAttachmentSuffix(attachments?.length);
+        return {
+          content: [{ type: 'text', text: `Private note added to ticket #${ticket_id}${suffix}.` }],
+        };
       },
     },
     {
@@ -483,10 +537,15 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       namespace: 'tickets',
       readOnly: false,
       title: 'Add Public Comment',
-      description: 'Add a public comment (visible to requester) to a ticket.',
+      description:
+        'Add a public comment (visible to requester) to a ticket, optionally with file attachments (uploaded via the Zendesk Uploads API and carried on the comment).',
       inputSchema: z.object({
         ticket_id: z.number().int().describe('Ticket ID'),
         body: z.string().min(1).describe('Comment content'),
+        attachments: z
+          .array(attachmentSchema)
+          .optional()
+          .describe('Files to attach to this comment (base64-encoded content).'),
       }),
       annotations: {
         readOnlyHint: false,
@@ -495,13 +554,23 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         openWorldHint: true,
       },
       handler: async (params) => {
-        const { ticket_id, body } = params as { ticket_id: number; body: string };
+        const { ticket_id, body, attachments } = params as {
+          ticket_id: number;
+          body: string;
+          attachments?: AttachmentInput[];
+        };
         const token = await getToken();
+        const uploads = attachments?.length
+          ? [await uploadAttachments(token, attachments)]
+          : undefined;
         await zendeskPut(subdomain, token, `/tickets/${ticket_id}`, {
-          ticket: { comment: { body, public: true } },
+          ticket: { comment: { body, public: true, ...(uploads && { uploads }) } },
         });
+        const suffix = formatAttachmentSuffix(attachments?.length);
         return {
-          content: [{ type: 'text', text: `Public comment added to ticket #${ticket_id}.` }],
+          content: [
+            { type: 'text', text: `Public comment added to ticket #${ticket_id}${suffix}.` },
+          ],
         };
       },
     },

@@ -162,6 +162,35 @@ export const fetchZendeskBinary = async (
   return { data: Buffer.from(arrayBuffer), contentType };
 };
 
+// Zendesk Uploads API: POST /uploads?filename=... with the raw file bytes as the
+// body and Content-Type set to the file's MIME type. `executeRequest` always
+// JSON-encodes, so this goes direct to fetch (like helpCenterUpload). Pass
+// `uploadToken` to aggregate another file under an existing upload token.
+export const zendeskUpload = async <T>(
+  subdomain: string,
+  token: string,
+  filename: string,
+  data: Buffer,
+  contentType: string,
+  uploadToken?: string,
+): Promise<T> => {
+  const params: Record<string, string> = { filename };
+  if (uploadToken) params['token'] = uploadToken;
+  const url = buildUrl(getBaseUrl(subdomain), '/uploads', params);
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: buildAuthHeader(token), 'Content-Type': contentType },
+    body: data,
+  });
+
+  if (!response.ok) {
+    const responseBody = await response.text();
+    throw new ZendeskApiError(response.status, response.statusText, responseBody);
+  }
+
+  return response.json() as Promise<T>;
+};
+
 export const helpCenterUpload = async <T>(
   subdomain: string,
   token: string,

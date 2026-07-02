@@ -149,6 +149,23 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         expect(textOf(result)).toContain('Test User');
       });
 
+      it('uploads and attaches a file when posting a public comment', async () => {
+        connected = await harness.connect(makeConfig({ mode: 'all' }));
+        const result = await connected.client.callTool({
+          name: 'add_public_comment',
+          arguments: {
+            ticket_id: 1,
+            body: 'See attached',
+            attachments: [
+              { file_name: 'a.log', file_base64: 'aGVsbG8=', content_type: 'text/plain' },
+            ],
+          },
+        });
+
+        expect(result.isError).toBeFalsy();
+        expect(textOf(result)).toContain('with 1 attachment(s)');
+      });
+
       it('dispatches through the single proxy at runtime', async () => {
         connected = await harness.connect(makeConfig({ mode: 'single' }));
         const result = await connected.client.callTool({

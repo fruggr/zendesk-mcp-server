@@ -81,6 +81,13 @@ export interface ZendeskComment {
   attachments?: ZendeskTicketAttachment[];
 }
 
+export interface ZendeskUpload {
+  token: string;
+  expires_at: string;
+  attachment: ZendeskTicketAttachment;
+  attachments: ZendeskTicketAttachment[];
+}
+
 export interface ZendeskUser {
   id: number;
   name: string;
