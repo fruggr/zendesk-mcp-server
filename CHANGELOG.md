@@ -1,3 +1,22 @@
+## [2.5.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.4.0...v2.5.0) (2026-07-02)
+
+### Features
+
+* **tickets:** attach files to comments and notes via the Uploads API ([#110](https://github.com/fruggr/zendesk-mcp-server/issues/110)) ([5865835](https://github.com/fruggr/zendesk-mcp-server/commit/586583559123dee2d3c3639e174e06a33246e0d1))
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Documentation
+
+* **agents:** spell out the Glama criteria and no-regression rule for tools ([#111](https://github.com/fruggr/zendesk-mcp-server/issues/111)) ([aa8164c](https://github.com/fruggr/zendesk-mcp-server/commit/aa8164c8293fab79466e02ddf23399092f9284f2))
+* feature-oriented descriptions (registry, npm, README) ([#109](https://github.com/fruggr/zendesk-mcp-server/issues/109)) ([0354afc](https://github.com/fruggr/zendesk-mcp-server/commit/0354afc42f3808b4131cb5139a3fb5d5ac090133))
+
+### Chores
+
+* **deps:** update pnpm to v11.9.0 ([#108](https://github.com/fruggr/zendesk-mcp-server/issues/108)) ([41e69aa](https://github.com/fruggr/zendesk-mcp-server/commit/41e69aaaf1607a8d76f16fb3aba2e0f0ff848910))
+</details>
+
 ## [2.4.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.3.1...v2.4.0) (2026-06-30)
 
 ### Features
