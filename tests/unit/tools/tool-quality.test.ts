@@ -66,9 +66,6 @@ const novelTokenCount = (name: string, description: string): number => {
   return novel.size;
 };
 
-const shapeOf = (tool: (typeof tools)[number]): Record<string, { description?: string }> =>
-  (tool.inputSchema as unknown as { shape: Record<string, { description?: string }> }).shape;
-
 // A write tool must tell the caller what it changes / returns. Backstop list of
 // effect verbs — intentionally NOT surfaced in the failure message.
 const EFFECT =
@@ -92,8 +89,8 @@ describe('tool definition quality gate', () => {
   it('RULE A — every parameter description explains the param, not just its name', () => {
     const problems: string[] = [];
     for (const tool of tools) {
-      for (const [name, field] of Object.entries(shapeOf(tool))) {
-        const desc = field.description?.trim() ?? '';
+      for (const [name, field] of Object.entries(tool.inputSchema.shape)) {
+        const desc = (field as { description?: string }).description?.trim() ?? '';
         if (desc.length === 0) {
           problems.push(
             `❌ ${tool.name}.${name} — no .describe().\n` +

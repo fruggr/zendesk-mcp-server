@@ -56,6 +56,13 @@ import {
 } from '../utils/pagination';
 import type { ToolContext, ToolDefinition } from './definitions';
 
+// Byte-identical across the seven read/section/attachment tools that take an
+// article id. Kept as one constant (like PER_PAGE_DESC/PAGE_DESC) so the "how to
+// obtain it" guidance can't drift between copies. The two article-write tools
+// use their own variant ("...to update" / "...whose translation to update").
+const ARTICLE_ID_DESC =
+  'Article ID — the numeric id of the Help Center article. Obtain it from list_articles or search_articles.';
+
 const largeArticleHint = (body: string, sectionCount: number): string | null => {
   if (body.length < LARGE_ARTICLE_BODY_CHARS && sectionCount < LARGE_ARTICLE_SECTION_COUNT) {
     return null;
@@ -140,12 +147,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       description:
         'Retrieve an article by ID with full body content. For large articles, prefer get_article_outline + get_article_section to save tokens. Optionally specify locale for a translated version. Returns body (HTML), metadata, source_locale, and list of available translations.',
       inputSchema: z.object({
-        article_id: z
-          .number()
-          .int()
-          .describe(
-            'Article ID — the numeric id of the Help Center article. Obtain it from list_articles or search_articles.',
-          ),
+        article_id: z.number().int().describe(ARTICLE_ID_DESC),
         locale: z.string().optional().describe('Locale for translated version'),
       }),
       annotations: {
@@ -348,13 +350,11 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         sort_by: z
           .enum(['created_at', 'updated_at', 'position', 'title'])
           .default('position')
-          .describe(
-            'Field to sort by: "position" (manual order, default), "created_at", "updated_at", or "title".',
-          ),
+          .describe('Field to sort by; "position" (the default) is the manual order set in Guide.'),
         sort_order: z
           .enum(['asc', 'desc'])
           .default('asc')
-          .describe('Sort direction: "asc" (ascending, default) or "desc" (descending).'),
+          .describe('Sort direction: ascending or descending.'),
         include_translations: z
           .boolean()
           .default(false)
@@ -436,12 +436,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       description:
         'List all available translations for an article (metadata only, no body: locale, title, draft, updated_at). Use get_article with locale for full translated content.',
       inputSchema: z.object({
-        article_id: z
-          .number()
-          .int()
-          .describe(
-            'Article ID — the numeric id of the Help Center article. Obtain it from list_articles or search_articles.',
-          ),
+        article_id: z.number().int().describe(ARTICLE_ID_DESC),
       }),
       annotations: {
         readOnlyHint: true,
@@ -937,12 +932,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       description:
         'Return a compact outline of an article (list of sections delimited by h1/h2/h3, with word counts) for the given locale (defaults to source_locale). Includes available translations with their outdated status. Use get_article_section to fetch a specific section.',
       inputSchema: z.object({
-        article_id: z
-          .number()
-          .int()
-          .describe(
-            'Article ID — the numeric id of the Help Center article. Obtain it from list_articles or search_articles.',
-          ),
+        article_id: z.number().int().describe(ARTICLE_ID_DESC),
         locale: z
           .string()
           .optional()
@@ -1006,12 +996,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       description:
         'Retrieve the content of a single section of an article in a given locale. Use get_article_outline first to discover section indexes. Default format="html" for round-trip safety. Pass format="markdown" only for human review — the Markdown representation is lossy on some structures (<pre> with <br>, tables with multi-<p> cells are kept as raw HTML to limit the damage, but do not round-trip markdown content back through update_article_section).',
       inputSchema: z.object({
-        article_id: z
-          .number()
-          .int()
-          .describe(
-            'Article ID — the numeric id of the Help Center article. Obtain it from list_articles or search_articles.',
-          ),
+        article_id: z.number().int().describe(ARTICLE_ID_DESC),
         locale: z.string().describe('Locale of the body (e.g., "en-us", "fr")'),
         section_index: z
           .number()
@@ -1072,12 +1057,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       description:
         'Replace the content of a single section of an article in a given locale, keeping the rest of the body intact. The server fetches the current body, replaces the targeted section, and PUTs the full reconstructed body via the Translations API. Default format="html" for fidelity. Use format="markdown" only when you control the input and know it does not rely on structures that round-trip poorly (code blocks with line breaks, tables with multi-paragraph cells). The section heading is preserved and is NOT part of the replaced content.',
       inputSchema: z.object({
-        article_id: z
-          .number()
-          .int()
-          .describe(
-            'Article ID — the numeric id of the Help Center article. Obtain it from list_articles or search_articles.',
-          ),
+        article_id: z.number().int().describe(ARTICLE_ID_DESC),
         locale: z.string().describe('Locale of the translation to update'),
         section_index: z
           .number()
@@ -1143,12 +1123,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       description:
         'Compare section structure between two locales of the same article, matched by index. Returns a compact table (one row per section) with status: "ok" (both present, source/target word count ratio within 25%), "different" (word count ratio diverges by more than 25% — size signal only, NOT a semantic divergence: two locales may legitimately differ in verbosity) or "missing" (section absent in target). Useful to spot structurally stale or missing sections; do not interpret "different" as an edit regression on its own.',
       inputSchema: z.object({
-        article_id: z
-          .number()
-          .int()
-          .describe(
-            'Article ID — the numeric id of the Help Center article. Obtain it from list_articles or search_articles.',
-          ),
+        article_id: z.number().int().describe(ARTICLE_ID_DESC),
         source_locale: z
           .string()
           .describe(
@@ -1221,12 +1196,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       description:
         'Upload an attachment to an article. Provide file content as base64-encoded string.',
       inputSchema: z.object({
-        article_id: z
-          .number()
-          .int()
-          .describe(
-            'Article ID — the numeric id of the Help Center article. Obtain it from list_articles or search_articles.',
-          ),
+        article_id: z.number().int().describe(ARTICLE_ID_DESC),
         file_name: z.string().min(1).describe('File name (e.g., "screenshot.png")'),
         file_base64: z.string().min(1).describe('File content encoded as base64'),
         content_type: z
