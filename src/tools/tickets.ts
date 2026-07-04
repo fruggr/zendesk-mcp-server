@@ -660,11 +660,27 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       namespace: 'tickets',
       readOnly: false,
       title: 'Manage Ticket Tags',
-      description: 'Add or remove tags on a ticket.',
+      description:
+        "Add or remove tags on a ticket. Performs an incremental read-modify-write: it fetches the ticket's current tags, adds those in `add` and deletes those in `remove`, then saves the merged set — tags you don't list are left untouched and duplicates are collapsed. Adding a tag already present, or removing one that is absent, is a no-op (idempotent). Returns the ticket's full tag set after the update. Use this for incremental tag edits; to overwrite the entire tag set at once, or to change tags alongside other fields, use update_ticket instead. Find the ticket id via search_tickets or list_tickets.",
       inputSchema: z.object({
-        ticket_id: z.number().int().describe('Ticket ID'),
-        add: z.array(z.string()).optional().describe('Tags to add'),
-        remove: z.array(z.string()).optional().describe('Tags to remove'),
+        ticket_id: z
+          .number()
+          .int()
+          .describe(
+            'Ticket ID — the numeric id of the ticket whose tags to modify. Obtain it from search_tickets or list_tickets.',
+          ),
+        add: z
+          .array(z.string())
+          .optional()
+          .describe(
+            'Tags to add. Zendesk tags are single tokens; spaces in a tag are normalized to underscores. Adding a tag already on the ticket is a no-op. Omit to only remove.',
+          ),
+        remove: z
+          .array(z.string())
+          .optional()
+          .describe(
+            'Tags to remove. Removing a tag that is not present is a no-op; tags not listed here stay in place. Omit to only add.',
+          ),
       }),
       annotations: {
         readOnlyHint: false,
