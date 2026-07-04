@@ -673,7 +673,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           .array(z.string())
           .optional()
           .describe(
-            'Tags to add. Zendesk tags are single tokens; spaces in a tag are normalized to underscores. Adding a tag already on the ticket is a no-op. Omit to only remove.',
+            'Tags to add. Zendesk tags are single tokens: a value containing spaces is stored as separate tags rather than one tag, so join multi-word tags yourself with an underscore or dash (e.g. "urgent_request"). Adding a tag already on the ticket is a no-op. Omit to only remove.',
           ),
         remove: z
           .array(z.string())
