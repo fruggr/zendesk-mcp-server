@@ -30,6 +30,21 @@ reviews:
           summary (proxy modes only surface that first sentence).
         - Any new, renamed, or removed tool is reflected in README.md and
           AGENTS.md (tool tables and per-namespace counts).
+
+        Judge each tool definition against the Glama Tool Definition Quality
+        rubric (docs/mcp-metadata.md). tests/unit/tools/tool-quality.test.ts is
+        the deterministic FLOOR (param descriptions exist and aren't name
+        restatements, description is >1 sentence, write tools state their
+        effect); you are the CEILING that judgment can't be automated. Flag:
+        - descriptions or `.describe()` that pass the gate but add no real
+          guidance — e.g. text padded only to clear the length/token check,
+          without meaning, format, constraints, or when-to-use-vs-a-sibling.
+        - side effects, mutations, return values or failure modes left implicit
+          on a tool that has them (Behavioral Transparency).
+        - factual claims about Zendesk API behavior that look unverified or wrong
+          (e.g. how tags, locales, or pagination actually behave server-side).
+        - two similar tools an agent couldn't tell apart from their descriptions
+          alone (Disambiguation).
     - path: 'tests/**'
       instructions: |
         Zendesk API calls in tests must go through MSW handlers in

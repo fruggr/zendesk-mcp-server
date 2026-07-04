@@ -3,7 +3,12 @@ import { zendeskGet } from '../client/zendesk-api';
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '../constants';
 import type { ZendeskListResponse } from '../types';
 import { truncateIfNeeded } from '../utils/formatting';
-import { buildOffsetParams, extractSearchPaginationMeta } from '../utils/pagination';
+import {
+  buildOffsetParams,
+  extractSearchPaginationMeta,
+  PAGE_DESC,
+  PER_PAGE_DESC,
+} from '../utils/pagination';
 import type { ToolContext, ToolDefinition } from './definitions';
 
 const formatSearchResult = (result: Record<string, unknown>): string => {
@@ -32,15 +37,20 @@ export const createSearchTools = (ctx: ToolContext): ToolDefinition[] => {
       description:
         'Search across tickets, users, and organizations. Supports filters like "type:ticket status:open", "type:user role:agent". Returns total count and paginated results (100 per page). Organization results include name and ID only — use get_organization for full details (tags, domains, details).',
       inputSchema: z.object({
-        query: z.string().min(1).describe('Zendesk search query'),
+        query: z
+          .string()
+          .min(1)
+          .describe(
+            'Zendesk search query. Supports type/status/role filters (e.g. "type:ticket status:open", "type:user role:agent") and free text; omit a type filter to search tickets, users and organizations at once.',
+          ),
         per_page: z
           .number()
           .int()
           .min(1)
           .max(MAX_PAGE_SIZE)
           .default(DEFAULT_PAGE_SIZE)
-          .describe('Results per page (max 100)'),
-        page: z.number().int().min(1).default(1).describe('Page number (1-based)'),
+          .describe(PER_PAGE_DESC),
+        page: z.number().int().min(1).default(1).describe(PAGE_DESC),
       }),
       annotations: {
         readOnlyHint: true,

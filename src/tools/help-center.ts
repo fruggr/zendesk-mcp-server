@@ -51,6 +51,8 @@ import {
   buildOffsetParams,
   extractPaginationMeta,
   extractSearchPaginationMeta,
+  PAGE_DESC,
+  PER_PAGE_DESC,
 } from '../utils/pagination';
 import type { ToolContext, ToolDefinition } from './definitions';
 
@@ -78,7 +80,12 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       description:
         'Full-text search across Help Center articles (metadata only, no body). Use get_article for full content. Supports locale filtering. Returns total count.',
       inputSchema: z.object({
-        query: z.string().min(1).describe('Search query'),
+        query: z
+          .string()
+          .min(1)
+          .describe(
+            'Full-text query matched against article titles and body. Plain keywords; combine with the locale filter to scope to one language.',
+          ),
         locale: z.string().optional().describe('Filter by locale (e.g., "en-us", "fr")'),
         per_page: z
           .number()
@@ -86,8 +93,8 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           .min(1)
           .max(MAX_PAGE_SIZE)
           .default(DEFAULT_PAGE_SIZE)
-          .describe('Results per page'),
-        page: z.number().int().min(1).default(1).describe('Page number'),
+          .describe(PER_PAGE_DESC),
+        page: z.number().int().min(1).default(1).describe(PAGE_DESC),
       }),
       annotations: {
         readOnlyHint: true,
@@ -133,7 +140,12 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       description:
         'Retrieve an article by ID with full body content. For large articles, prefer get_article_outline + get_article_section to save tokens. Optionally specify locale for a translated version. Returns body (HTML), metadata, source_locale, and list of available translations.',
       inputSchema: z.object({
-        article_id: z.number().int().describe('Article ID'),
+        article_id: z
+          .number()
+          .int()
+          .describe(
+            'Article ID — the numeric id of the Help Center article. Obtain it from list_articles or search_articles.',
+          ),
         locale: z.string().optional().describe('Locale for translated version'),
       }),
       annotations: {
@@ -309,8 +321,19 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       description:
         'List articles (metadata only, no body). Use get_article for full content. Optionally filter by section ID and locale. Supports sort_by ("title", "created_at", "updated_at") and include_translations: true to show available translation locales per article. Note: include_translations must be re-sent on each paginated request.',
       inputSchema: z.object({
-        section_id: z.number().int().optional(),
-        locale: z.string().optional(),
+        section_id: z
+          .number()
+          .int()
+          .optional()
+          .describe(
+            'Restrict the listing to one section (numeric id from list_sections). Omit to list articles across all sections.',
+          ),
+        locale: z
+          .string()
+          .optional()
+          .describe(
+            'Restrict to a single locale, e.g. "en-us" or "fr". Omit for the default locale.',
+          ),
         page_size: z
           .number()
           .int()
@@ -325,8 +348,13 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         sort_by: z
           .enum(['created_at', 'updated_at', 'position', 'title'])
           .default('position')
-          .describe('Sort field'),
-        sort_order: z.enum(['asc', 'desc']).default('asc').describe('Sort direction'),
+          .describe(
+            'Field to sort by: "position" (manual order, default), "created_at", "updated_at", or "title".',
+          ),
+        sort_order: z
+          .enum(['asc', 'desc'])
+          .default('asc')
+          .describe('Sort direction: "asc" (ascending, default) or "desc" (descending).'),
         include_translations: z
           .boolean()
           .default(false)
@@ -407,7 +435,14 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       title: 'List Article Translations',
       description:
         'List all available translations for an article (metadata only, no body: locale, title, draft, updated_at). Use get_article with locale for full translated content.',
-      inputSchema: z.object({ article_id: z.number().int().describe('Article ID') }),
+      inputSchema: z.object({
+        article_id: z
+          .number()
+          .int()
+          .describe(
+            'Article ID — the numeric id of the Help Center article. Obtain it from list_articles or search_articles.',
+          ),
+      }),
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -485,11 +520,31 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       description:
         "Update article content (title, body) in a specific locale. For targeted edits on one or a few sections, prefer update_article_section — this tool replaces the FULL body and re-sends the entire article on each write. Use the article's source_locale (from get_article) for the default language, or another locale for translations.",
       inputSchema: z.object({
-        article_id: z.number().int(),
-        locale: z.string(),
-        title: z.string().optional(),
-        body: z.string().optional(),
-        draft: z.boolean().optional(),
+        article_id: z
+          .number()
+          .int()
+          .describe(
+            'Article ID — the numeric id of the article whose translation to update. Obtain it from list_articles or search_articles.',
+          ),
+        locale: z
+          .string()
+          .describe(
+            'Locale of the translation to update, e.g. "en-us" or "fr". Use the source_locale (from get_article) to edit the default language.',
+          ),
+        title: z
+          .string()
+          .optional()
+          .describe('New title for this locale. Omit to leave the current title unchanged.'),
+        body: z
+          .string()
+          .optional()
+          .describe(
+            'New full body (HTML) for this locale. Replaces the entire body — for a single-section edit prefer update_article_section. Omit to leave the body unchanged.',
+          ),
+        draft: z
+          .boolean()
+          .optional()
+          .describe('When true, keeps this translation as a draft; when false, publishes it.'),
       }),
       annotations: {
         readOnlyHint: false,
@@ -557,9 +612,15 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       description:
         "Create a new article in a section. The locale becomes the article's source_locale. Requires a permission_group_id (use list_permission_groups to find available IDs). To add content in other locales afterwards, use create_article_translation.",
       inputSchema: z.object({
-        section_id: z.number().int(),
-        title: z.string().min(1),
-        body: z.string().min(1).describe('Article body (HTML)'),
+        section_id: z
+          .number()
+          .int()
+          .describe('Section that will contain the article (numeric id from list_sections).'),
+        title: z.string().min(1).describe('Title of the new article, in its source locale.'),
+        body: z
+          .string()
+          .min(1)
+          .describe('Article body as HTML (this becomes the source-locale content).'),
         permission_group_id: z
           .number()
           .int()
@@ -580,9 +641,24 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           .array(z.string())
           .optional()
           .describe('Content tag IDs (use list_content_tags to find them)'),
-        locale: z.string().optional(),
-        draft: z.boolean().default(true),
-        promoted: z.boolean().default(false),
+        locale: z
+          .string()
+          .optional()
+          .describe(
+            'Source locale for the article, e.g. "en-us" or "fr". Defaults to the Help Center\'s default locale; becomes the article\'s source_locale.',
+          ),
+        draft: z
+          .boolean()
+          .default(true)
+          .describe(
+            'When true (default), the article is created unpublished; set false to publish immediately.',
+          ),
+        promoted: z
+          .boolean()
+          .default(false)
+          .describe(
+            'When true, marks the article as promoted (featured) in its section. Defaults to false.',
+          ),
         label_names: z
           .array(z.string())
           .optional()
@@ -621,15 +697,54 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       description:
         'Update article metadata only (draft, promoted, labels, tags, visibility, section, sort position, etc.). Does NOT update content (title, body) — use update_article_translation for that.',
       inputSchema: z.object({
-        article_id: z.number().int(),
-        draft: z.boolean().optional(),
-        promoted: z.boolean().optional(),
-        label_names: z.array(z.string()).optional().describe('Label names for search ranking'),
-        content_tag_ids: z.array(z.string()).optional().describe('Content tag IDs'),
-        user_segment_id: z.number().int().optional().describe('User segment ID for visibility'),
-        author_id: z.number().int().optional().describe('Author user ID'),
-        permission_group_id: z.number().int().optional().describe('Permission group ID'),
-        section_id: z.number().int().optional(),
+        article_id: z
+          .number()
+          .int()
+          .describe(
+            'Article ID — the numeric id of the article to update. Obtain it from list_articles or search_articles.',
+          ),
+        draft: z
+          .boolean()
+          .optional()
+          .describe('Set true to unpublish the article (revert to draft) or false to publish it.'),
+        promoted: z
+          .boolean()
+          .optional()
+          .describe(
+            'Set true to promote (feature) the article in its section, or false to unpromote it.',
+          ),
+        label_names: z
+          .array(z.string())
+          .optional()
+          .describe('Label names for search ranking (use list_labels to see existing labels).'),
+        content_tag_ids: z
+          .array(z.string())
+          .optional()
+          .describe('Content tag ids to attach (use list_content_tags to find them).'),
+        user_segment_id: z
+          .number()
+          .int()
+          .optional()
+          .describe(
+            'User segment that controls who can see the article (id from list_user_segments).',
+          ),
+        author_id: z
+          .number()
+          .int()
+          .optional()
+          .describe('User id of the article author (from search_users).'),
+        permission_group_id: z
+          .number()
+          .int()
+          .optional()
+          .describe(
+            'Guide permission group controlling who can edit (id from list_permission_groups).',
+          ),
+        section_id: z
+          .number()
+          .int()
+          .optional()
+          .describe('Move the article to this section (numeric id from list_sections).'),
         position: z
           .number()
           .int()
@@ -822,7 +937,12 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       description:
         'Return a compact outline of an article (list of sections delimited by h1/h2/h3, with word counts) for the given locale (defaults to source_locale). Includes available translations with their outdated status. Use get_article_section to fetch a specific section.',
       inputSchema: z.object({
-        article_id: z.number().int().describe('Article ID'),
+        article_id: z
+          .number()
+          .int()
+          .describe(
+            'Article ID — the numeric id of the Help Center article. Obtain it from list_articles or search_articles.',
+          ),
         locale: z
           .string()
           .optional()
@@ -886,7 +1006,12 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       description:
         'Retrieve the content of a single section of an article in a given locale. Use get_article_outline first to discover section indexes. Default format="html" for round-trip safety. Pass format="markdown" only for human review — the Markdown representation is lossy on some structures (<pre> with <br>, tables with multi-<p> cells are kept as raw HTML to limit the damage, but do not round-trip markdown content back through update_article_section).',
       inputSchema: z.object({
-        article_id: z.number().int().describe('Article ID'),
+        article_id: z
+          .number()
+          .int()
+          .describe(
+            'Article ID — the numeric id of the Help Center article. Obtain it from list_articles or search_articles.',
+          ),
         locale: z.string().describe('Locale of the body (e.g., "en-us", "fr")'),
         section_index: z
           .number()
@@ -947,7 +1072,12 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       description:
         'Replace the content of a single section of an article in a given locale, keeping the rest of the body intact. The server fetches the current body, replaces the targeted section, and PUTs the full reconstructed body via the Translations API. Default format="html" for fidelity. Use format="markdown" only when you control the input and know it does not rely on structures that round-trip poorly (code blocks with line breaks, tables with multi-paragraph cells). The section heading is preserved and is NOT part of the replaced content.',
       inputSchema: z.object({
-        article_id: z.number().int().describe('Article ID'),
+        article_id: z
+          .number()
+          .int()
+          .describe(
+            'Article ID — the numeric id of the Help Center article. Obtain it from list_articles or search_articles.',
+          ),
         locale: z.string().describe('Locale of the translation to update'),
         section_index: z
           .number()
@@ -1013,8 +1143,17 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       description:
         'Compare section structure between two locales of the same article, matched by index. Returns a compact table (one row per section) with status: "ok" (both present, source/target word count ratio within 25%), "different" (word count ratio diverges by more than 25% — size signal only, NOT a semantic divergence: two locales may legitimately differ in verbosity) or "missing" (section absent in target). Useful to spot structurally stale or missing sections; do not interpret "different" as an edit regression on its own.',
       inputSchema: z.object({
-        article_id: z.number().int().describe('Article ID'),
-        source_locale: z.string().describe('Source (reference) locale'),
+        article_id: z
+          .number()
+          .int()
+          .describe(
+            'Article ID — the numeric id of the Help Center article. Obtain it from list_articles or search_articles.',
+          ),
+        source_locale: z
+          .string()
+          .describe(
+            'Reference locale to diff against, e.g. "en-us". Usually the article source_locale (from get_article).',
+          ),
         target_locale: z.string().describe('Target locale to compare against source'),
       }),
       annotations: {
@@ -1082,7 +1221,12 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       description:
         'Upload an attachment to an article. Provide file content as base64-encoded string.',
       inputSchema: z.object({
-        article_id: z.number().int().describe('Article ID'),
+        article_id: z
+          .number()
+          .int()
+          .describe(
+            'Article ID — the numeric id of the Help Center article. Obtain it from list_articles or search_articles.',
+          ),
         file_name: z.string().min(1).describe('File name (e.g., "screenshot.png")'),
         file_base64: z.string().min(1).describe('File content encoded as base64'),
         content_type: z

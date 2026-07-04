@@ -8,6 +8,8 @@ import {
   buildOffsetParams,
   extractPaginationMeta,
   extractSearchPaginationMeta,
+  PAGE_DESC,
+  PER_PAGE_DESC,
 } from '../utils/pagination';
 import type { ToolContext, ToolDefinition } from './definitions';
 
@@ -43,15 +45,20 @@ export const createUserTools = (ctx: ToolContext): ToolDefinition[] => {
       description:
         'Search for users by name, email, or other criteria using Zendesk search query syntax. Returns total count.',
       inputSchema: z.object({
-        query: z.string().min(1).describe('Search query'),
+        query: z
+          .string()
+          .min(1)
+          .describe(
+            'Zendesk user search query — free text matched against name and email, and/or field filters like "email:jane@acme.com", "role:agent", "organization_id:123". A "type:user" scope is added automatically.',
+          ),
         per_page: z
           .number()
           .int()
           .min(1)
           .max(MAX_PAGE_SIZE)
           .default(DEFAULT_PAGE_SIZE)
-          .describe('Results per page'),
-        page: z.number().int().min(1).default(1).describe('Page number'),
+          .describe(PER_PAGE_DESC),
+        page: z.number().int().min(1).default(1).describe(PAGE_DESC),
       }),
       annotations: {
         readOnlyHint: true,
@@ -94,8 +101,16 @@ export const createUserTools = (ctx: ToolContext): ToolDefinition[] => {
       namespace: 'users',
       readOnly: true,
       title: 'Get Zendesk User',
-      description: 'Retrieve a user by ID.',
-      inputSchema: z.object({ user_id: z.number().int().describe('User ID') }),
+      description:
+        'Retrieve a single user by their numeric id. Returns the full user record (name, email, role, organization, tags). Use search_users when you only have a name or email, or get_current_user for the authenticated identity.',
+      inputSchema: z.object({
+        user_id: z
+          .number()
+          .int()
+          .describe(
+            'User ID — the numeric id of the Zendesk user to fetch. Obtain it from search_users, or from the requester/assignee fields of a ticket.',
+          ),
+      }),
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -118,8 +133,16 @@ export const createUserTools = (ctx: ToolContext): ToolDefinition[] => {
       namespace: 'users',
       readOnly: true,
       title: 'Get Zendesk Organization',
-      description: 'Retrieve an organization by ID.',
-      inputSchema: z.object({ organization_id: z.number().int().describe('Organization ID') }),
+      description:
+        'Retrieve a single organization by its numeric id. Returns full details (name, tags, domains, notes) — more than the name/id that search or list_organizations surface. Use list_organizations to browse or search for a name-based lookup.',
+      inputSchema: z.object({
+        organization_id: z
+          .number()
+          .int()
+          .describe(
+            'Organization ID — the numeric id of the Zendesk organization to fetch. Obtain it from list_organizations, search, or a user record.',
+          ),
+      }),
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
