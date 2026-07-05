@@ -1,3 +1,19 @@
+## [2.6.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.5.0...v2.6.0) (2026-07-05)
+
+### Features
+
+* **tools:** sharpen 28 tool definitions so agents call them correctly first time ([#117](https://github.com/fruggr/zendesk-mcp-server/issues/117)) ([40a0c70](https://github.com/fruggr/zendesk-mcp-server/commit/40a0c70cb2e316d737a2a539bf6398a17419c6fb))
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Chores
+
+* **coderabbit:** align tool-review rubric with Glama's published TDQS ([#129](https://github.com/fruggr/zendesk-mcp-server/issues/129)) ([e7ab3dd](https://github.com/fruggr/zendesk-mcp-server/commit/e7ab3dd6274e4c4ed9a4dc39bee107b7b8317962))
+* **coderabbit:** review src/tools against the Glama quality rubric ([#128](https://github.com/fruggr/zendesk-mcp-server/issues/128)) ([5ae6b40](https://github.com/fruggr/zendesk-mcp-server/commit/5ae6b40ace1e44520fd5bb63224b44b3e93d130b))
+* **deps:** lock file maintenance ([#112](https://github.com/fruggr/zendesk-mcp-server/issues/112)) ([b2a4db3](https://github.com/fruggr/zendesk-mcp-server/commit/b2a4db3d785019df09dce7219a03ec1948b945c4))
+</details>
+
 ## [2.5.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.4.0...v2.5.0) (2026-07-02)
 
 ### Features
