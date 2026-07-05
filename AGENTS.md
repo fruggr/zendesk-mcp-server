@@ -91,7 +91,9 @@ schema: `docs/mcp-metadata.md`.
 
 ## Documentation maintenance
 
-Any change to the tool surface syncs the `README.md` tool tables in the same PR.
+Any change to the tool surface syncs the tool tables in
+`docs/mcp-tools-reference.md` (and, if a whole namespace appears or disappears,
+the namespace list in the `README.md` "Available tools" section) in the same PR.
 Prose and section headers are deliberately count-free (no per-section
 `(N tools)` or global tool totals) — don't reintroduce hardcoded counts, they
 only go stale. Exact counts still live where they're load-bearing: namespace

@@ -28,8 +28,9 @@ reviews:
         - The Zod schema validates all inputs and matches the handler's usage.
         - The first sentence of the tool description reads as a self-contained
           summary (proxy modes only surface that first sentence).
-        - Any new, renamed, or removed tool is reflected in README.md and
-          AGENTS.md (tool tables and per-namespace counts).
+        - Any new, renamed, or removed tool is reflected in the tool tables in
+          docs/mcp-tools-reference.md, and in AGENTS.md / README.md when a whole
+          namespace or per-namespace count changes.
 
         Score each tool definition against Glama's TDQS rubric
         (github.com/glama-ai/tool-definition-quality-score). Core rule: a

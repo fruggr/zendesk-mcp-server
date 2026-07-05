@@ -49,7 +49,8 @@ The same checklist appears on the
 - [ ] Documentation is updated if behavior or the tool surface changed
       (see [Documentation maintenance](AGENTS.md#documentation-maintenance)
       in `AGENTS.md`).
-- [ ] If a new MCP tool was added, it is documented in `README.md`.
+- [ ] If a new MCP tool was added, it is documented in
+      `docs/mcp-tools-reference.md`.
 
 ## Code standards
 
