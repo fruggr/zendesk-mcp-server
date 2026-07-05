@@ -298,6 +298,17 @@ describe('help center tools', () => {
       expect(result.content[0]?.text).toContain('screenshot.png');
       expect(result.content[0]?.text).toContain('20001');
     });
+
+    it('reports an explicit message when the article has no attachments', async () => {
+      mswServer.use(
+        http.get(`${HC_BASE}/articles/:id/attachments`, () =>
+          HttpResponse.json({ article_attachments: [], count: 0 }),
+        ),
+      );
+      const tool = findTool('list_article_attachments');
+      const result = await tool.handler({ article_id: 5000 });
+      expect(result.content[0]?.text).toBe('No attachments found on article #5000.');
+    });
   });
 
   describe('create_article_attachment', () => {

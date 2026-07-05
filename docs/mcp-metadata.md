@@ -62,6 +62,32 @@ How well the tools work together *as a set*. Four dimensions, weighted equally:
 - Adding a param to an existing tool beats a near-duplicate tool (Tool Count).
 - Sync the `README.md` tool tables in the same PR.
 
+## How this is enforced (floor + ceiling)
+
+The rubric is ~60 % mechanically-checkable structure and ~40 % judgment, so we
+enforce it in two layers instead of relying on a human catching every thin tool:
+
+- **Deterministic floor — `tests/unit/tools/tool-quality.test.ts`.** A CI test
+  (sibling of `annotations.test.ts`) that iterates every tool and fails, with a
+  teaching message, when a definition drops below the floor:
+  - every parameter has a `.describe()` that adds information beyond the field
+    name (not `ticket_id` → "Ticket ID");
+  - the tool `description` is more than one sentence;
+  - a write tool (`readOnly: false`) states its effect / return value.
+
+  This guards the **`40 % minimum`** term of the server score — no single tool
+  can crater the surface. The failure messages state the intent and point at an
+  exemplar tool on purpose: fix by genuinely improving the definition, not by
+  padding text to clear the check (padding is caught by the ceiling below).
+- **Judgment ceiling — CodeRabbit (`.coderabbit.yaml`).** The `src/tools/**`
+  review instructions ask CodeRabbit to score each definition against the six
+  dimensions and flag what a static check can't: padded-but-empty descriptions,
+  implicit side effects, unverified claims about Zendesk behavior, and
+  indistinguishable sibling tools. This runs on the PR, off our pipeline.
+
+When you add or change a tool, run `pnpm test` locally; the floor test tells you
+exactly which dimension regressed.
+
 ## No regression on a tool change
 
 Agents consume our Zod schemas as **JSON Schema draft-07**. We author schemas

@@ -693,5 +693,11 @@ describe('ticket tools', () => {
       const result = await tool.handler({ ticket_id: 1, add: ['urgent'], remove: ['test'] });
       expect(result.content[0]?.text).toContain('Tags updated');
     });
+
+    it('steers callers toward update_ticket and states idempotent behavior', () => {
+      const tool = findTool('manage_tags');
+      expect(tool.description).toContain('update_ticket');
+      expect(tool.description).toContain('idempotent');
+    });
   });
 });

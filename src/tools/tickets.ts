@@ -36,6 +36,8 @@ import {
   buildOffsetParams,
   extractPaginationMeta,
   extractSearchPaginationMeta,
+  PAGE_DESC,
+  PER_PAGE_DESC,
 } from '../utils/pagination';
 import type { ToolContext, ToolDefinition, ToolImageContent, ToolTextContent } from './definitions';
 
@@ -213,8 +215,18 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       description:
         'Retrieve a Zendesk ticket by ID, including its live SLA state (per-metric stage and breach countdown) when an SLA policy applies, plus its comments if requested. Returns ticket details (subject, status, priority, assignee, tags, description) and optionally all comments/internal notes. The per-ticket Show endpoint exposes no SLA, so the SLA block is resolved via a scoped search and may be absent for a very high-volume requester or a just-updated ticket; SLA targets and policy conditions live in list_sla_policies.',
       inputSchema: z.object({
-        ticket_id: z.number().int().describe('Ticket ID'),
-        include_comments: z.boolean().default(false).describe('Include ticket comments'),
+        ticket_id: z
+          .number()
+          .int()
+          .describe(
+            'Ticket ID — the numeric id of the ticket to fetch. Obtain it from search_tickets or list_tickets.',
+          ),
+        include_comments: z
+          .boolean()
+          .default(false)
+          .describe(
+            'When true, appends the full public comment and internal note thread to the response. Defaults to false to keep the payload small; enable it when you need the conversation, not just the ticket fields.',
+          ),
       }),
       annotations: {
         readOnlyHint: true,
@@ -256,7 +268,12 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       description:
         'Retrieve ticket attachments. Images are embedded inline; other files are listed as text references.',
       inputSchema: z.object({
-        ticket_id: z.number().int().describe('Ticket ID'),
+        ticket_id: z
+          .number()
+          .int()
+          .describe(
+            'Ticket ID — the numeric id of the ticket whose attachments to fetch. Obtain it from search_tickets or list_tickets.',
+          ),
         attachment_ids: z
           .array(z.number().int())
           .optional()
@@ -320,17 +337,22 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: true,
       title: 'Search Zendesk Tickets',
       description:
-        'Search tickets using Zendesk query syntax, returning each result with its live SLA state (per-metric stage and breach countdown) when an SLA policy applies. Examples: "status:open assignee:me", "priority:urgent type:incident". Returns total count, so queue triage like "breaching today" works without a per-ticket fetch.',
+        'Search tickets using Zendesk query syntax, returning each result with its live SLA state (per-metric stage and breach countdown) when an SLA policy applies. Examples: "status:open assignee:me", "priority:urgent ticket_type:incident". Returns total count, so queue triage like "breaching today" works without a per-ticket fetch.',
       inputSchema: z.object({
-        query: z.string().min(1).describe('Zendesk search query string'),
+        query: z
+          .string()
+          .min(1)
+          .describe(
+            'Zendesk ticket search query — field filters like "status:open", "assignee:me", "priority:urgent ticket_type:incident", combined with free text. A "type:ticket" scope is added automatically, so filter the ticket kind with ticket_type: (e.g. ticket_type:incident), never type: (which the API rejects here).',
+          ),
         per_page: z
           .number()
           .int()
           .min(1)
           .max(MAX_PAGE_SIZE)
           .default(DEFAULT_PAGE_SIZE)
-          .describe('Results per page'),
-        page: z.number().int().min(1).default(1).describe('Page number'),
+          .describe(PER_PAGE_DESC),
+        page: z.number().int().min(1).default(1).describe(PAGE_DESC),
       }),
       annotations: {
         readOnlyHint: true,
@@ -381,8 +403,18 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       description:
         'Create a new Zendesk support ticket with subject, description, and optional priority/type/assignee/tags. The description becomes the first public comment of the ticket, and the new ticket id is returned. After creation, use update_ticket to change status or assignee, add_public_comment or add_private_note to reply, and manage_tags to adjust tags. Look up valid assignee_id / group_id and custom field ids via search_users or your Zendesk admin settings.',
       inputSchema: z.object({
-        subject: z.string().min(1).describe('Ticket subject'),
-        description: z.string().min(1).describe('Ticket description'),
+        subject: z
+          .string()
+          .min(1)
+          .describe(
+            'Ticket subject — the short summary line shown in ticket lists and search results.',
+          ),
+        description: z
+          .string()
+          .min(1)
+          .describe(
+            "Ticket description — the body of the request. It becomes the ticket's first public comment (visible to the requester).",
+          ),
         priority: z
           .enum(['urgent', 'high', 'normal', 'low'])
           .optional()
@@ -397,7 +429,12 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           .optional()
           .describe('User id of the agent to assign the ticket to.'),
         group_id: z.number().int().optional().describe('Id of the group to assign the ticket to.'),
-        tags: z.array(z.string()).optional().describe('Tags to set on the ticket.'),
+        tags: z
+          .array(z.string())
+          .optional()
+          .describe(
+            'Tags to set on the new ticket. Each tag is a single lowercase token (join multi-word tags with an underscore). Use manage_tags later to add or remove individual tags.',
+          ),
         custom_fields: z
           .array(z.object({ id: z.number().int(), value: z.unknown() }))
           .optional()
@@ -437,7 +474,12 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       description:
         'Update an existing ticket (status, priority, type, assignee, group, subject, tags, custom fields). Only the fields you pass are changed, and the updated ticket is returned. Setting tags here replaces the whole tag set — use manage_tags to add or remove individual tags without overwriting the rest. This tool does not post replies: use add_public_comment or add_private_note for that. Find the ticket id via search_tickets or list_tickets.',
       inputSchema: z.object({
-        ticket_id: z.number().int().describe('Ticket ID'),
+        ticket_id: z
+          .number()
+          .int()
+          .describe(
+            'Ticket ID — the numeric id of the ticket to update. Obtain it from search_tickets or list_tickets.',
+          ),
         status: z
           .enum(['new', 'open', 'pending', 'hold', 'solved', 'closed'])
           .optional()
@@ -456,7 +498,10 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           .optional()
           .describe('User id of the agent to assign the ticket to.'),
         group_id: z.number().int().optional().describe('Id of the group to assign the ticket to.'),
-        subject: z.string().optional().describe('New ticket subject line.'),
+        subject: z
+          .string()
+          .optional()
+          .describe('New subject line for the ticket; replaces the current subject when provided.'),
         tags: z
           .array(z.string())
           .optional()
@@ -498,10 +543,20 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: false,
       title: 'Add Private Note',
       description:
-        'Add an internal note (not visible to requester) to a ticket, optionally with file attachments (uploaded via the Zendesk Uploads API and carried on the note).',
+        'Add an internal note (not visible to requester) to a ticket, optionally with file attachments (uploaded via the Zendesk Uploads API and carried on the note). The note is appended to the ticket thread; use add_public_comment instead when the reply should be visible to the requester.',
       inputSchema: z.object({
-        ticket_id: z.number().int().describe('Ticket ID'),
-        body: z.string().min(1).describe('Note content'),
+        ticket_id: z
+          .number()
+          .int()
+          .describe(
+            'Ticket ID — the numeric id of the ticket to annotate. Obtain it from search_tickets or list_tickets.',
+          ),
+        body: z
+          .string()
+          .min(1)
+          .describe(
+            'Note text (internal, agent-only). Plain text or HTML; not shown to the requester.',
+          ),
         attachments: z
           .array(attachmentSchema)
           .optional()
@@ -538,10 +593,20 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: false,
       title: 'Add Public Comment',
       description:
-        'Add a public comment (visible to requester) to a ticket, optionally with file attachments (uploaded via the Zendesk Uploads API and carried on the comment).',
+        'Add a public comment (visible to requester) to a ticket, optionally with file attachments (uploaded via the Zendesk Uploads API and carried on the comment). The comment is appended to the ticket thread and emails the requester; use add_private_note instead for an internal, agent-only note.',
       inputSchema: z.object({
-        ticket_id: z.number().int().describe('Ticket ID'),
-        body: z.string().min(1).describe('Comment content'),
+        ticket_id: z
+          .number()
+          .int()
+          .describe(
+            'Ticket ID — the numeric id of the ticket to reply on. Obtain it from search_tickets or list_tickets.',
+          ),
+        body: z
+          .string()
+          .min(1)
+          .describe(
+            'Comment text sent to the requester. Plain text or HTML; visible in the ticket.',
+          ),
         attachments: z
           .array(attachmentSchema)
           .optional()
@@ -580,7 +645,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: true,
       title: 'List Zendesk Tickets',
       description:
-        'List tickets with cursor-based pagination, sorted by most recently updated. Page size is controlled by page_size (not per_page, which is the offset-based parameter used by search_tickets); paginate by passing the returned cursor.',
+        "List tickets with cursor-based pagination, in Zendesk's default order (ascending ticket id), not by recency. Page size is controlled by page_size (not per_page, which is the offset-based parameter used by search_tickets); paginate by passing the returned cursor. To find tickets by recency or any other criterion, use search_tickets with a query.",
       inputSchema: z.object({
         page_size: z
           .number()
@@ -629,9 +694,15 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       namespace: 'tickets',
       readOnly: true,
       title: 'Get Linked Incidents',
-      description: 'Get all incident tickets linked to a problem ticket.',
+      description:
+        "Get all incident tickets linked to a problem ticket. Returns the list of incidents that reference the given problem (Zendesk problem/incident relationship); useful to gauge a problem's blast radius before resolving it.",
       inputSchema: z.object({
-        problem_id: z.number().int().describe('Problem ticket ID'),
+        problem_id: z
+          .number()
+          .int()
+          .describe(
+            'Problem ticket ID — the numeric id of the ticket of type "problem" whose linked incidents to list. Obtain it from search_tickets or list_tickets.',
+          ),
       }),
       annotations: {
         readOnlyHint: true,
@@ -660,11 +731,27 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       namespace: 'tickets',
       readOnly: false,
       title: 'Manage Ticket Tags',
-      description: 'Add or remove tags on a ticket.',
+      description:
+        "Add or remove tags on a ticket. Performs an incremental read-modify-write: it fetches the ticket's current tags, adds those in `add` and deletes those in `remove`, then saves the merged set — tags you don't list are left untouched and duplicates are collapsed. Adding a tag already present, or removing one that is absent, is a no-op (idempotent). Returns the ticket's full tag set after the update. Use this for incremental tag edits; to overwrite the entire tag set at once, or to change tags alongside other fields, use update_ticket instead. Find the ticket id via search_tickets or list_tickets.",
       inputSchema: z.object({
-        ticket_id: z.number().int().describe('Ticket ID'),
-        add: z.array(z.string()).optional().describe('Tags to add'),
-        remove: z.array(z.string()).optional().describe('Tags to remove'),
+        ticket_id: z
+          .number()
+          .int()
+          .describe(
+            'Ticket ID — the numeric id of the ticket whose tags to modify. Obtain it from search_tickets or list_tickets.',
+          ),
+        add: z
+          .array(z.string())
+          .optional()
+          .describe(
+            'Tags to add. Zendesk tags are single tokens: a value containing spaces is stored as separate tags rather than one tag, so join multi-word tags yourself with an underscore or dash (e.g. "urgent_request"). Adding a tag already on the ticket is a no-op. Omit to only remove.',
+          ),
+        remove: z
+          .array(z.string())
+          .optional()
+          .describe(
+            'Tags to remove. Removing a tag that is not present is a no-op; tags not listed here stay in place. Omit to only add.',
+          ),
       }),
       annotations: {
         readOnlyHint: false,
@@ -721,8 +808,8 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           .min(1)
           .max(MAX_PAGE_SIZE)
           .default(DEFAULT_PAGE_SIZE)
-          .describe('Results per page'),
-        page: z.number().int().min(1).default(1).describe('Page number'),
+          .describe(PER_PAGE_DESC),
+        page: z.number().int().min(1).default(1).describe(PAGE_DESC),
       }),
       annotations: {
         readOnlyHint: true,
