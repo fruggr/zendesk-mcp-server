@@ -605,7 +605,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: false,
       title: 'Create Help Center Article',
       description:
-        "Create a new article in a section. The locale becomes the article's source_locale. Requires a permission_group_id (use list_permission_groups to find available IDs). To add content in other locales afterwards, use create_article_translation.",
+        "Create a new article in a section and return the created article with its id. The locale becomes the article's source_locale. Requires a permission_group_id (use list_permission_groups to find available IDs). To add content in other locales afterwards, use create_article_translation.",
       inputSchema: z.object({
         section_id: z
           .number()
@@ -690,7 +690,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: false,
       title: 'Update Help Center Article',
       description:
-        'Update article metadata only (draft, promoted, labels, tags, visibility, section, sort position, etc.). Does NOT update content (title, body) — use update_article_translation for that.',
+        'Update article metadata only (draft, promoted, labels, tags, visibility, section, sort position, etc.) and return the updated article. Does NOT update content (title, body) — use update_article_translation for that.',
       inputSchema: z.object({
         article_id: z
           .number()
@@ -1200,15 +1200,27 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: false,
       title: 'Create Article Attachment',
       description:
-        'Upload an attachment to an article. Provide file content as base64-encoded string.',
+        "Upload a file to a Help Center article and return the created attachment (its id, file name, content type, size and content URL). Not idempotent: calling it again uploads another copy rather than replacing the previous one. This is for article assets — for files on support tickets use get_ticket_attachments, and to see an article's existing attachments use list_article_attachments.",
       inputSchema: z.object({
         article_id: z.number().int().describe(ARTICLE_ID_DESC),
-        file_name: z.string().min(1).describe('File name (e.g., "screenshot.png")'),
-        file_base64: z.string().min(1).describe('File content encoded as base64'),
+        file_name: z
+          .string()
+          .min(1)
+          .describe(
+            'Name to store the file under, including its extension (e.g. "screenshot.png"); used as the download name.',
+          ),
+        file_base64: z
+          .string()
+          .min(1)
+          .describe(
+            "The file's raw bytes as a base64-encoded string; the server decodes them before upload.",
+          ),
         content_type: z
           .string()
           .default('application/octet-stream')
-          .describe('MIME type (e.g., "image/png", "application/pdf")'),
+          .describe(
+            'MIME type of the file, e.g. "image/png" or "application/pdf". Defaults to application/octet-stream when omitted.',
+          ),
       }),
       annotations: {
         readOnlyHint: false,

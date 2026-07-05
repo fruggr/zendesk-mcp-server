@@ -66,10 +66,15 @@ const novelTokenCount = (name: string, description: string): number => {
   return novel.size;
 };
 
-// A write tool must tell the caller what it changes / returns. Backstop list of
-// effect verbs — intentionally NOT surfaced in the failure message.
-const EFFECT =
-  /\b(returns?|replaces?|creates?|updates?|deletes?|adds?|removes?|sets?|posts?|uploads?|no-op|idempotent|overwrites?|changes?)\b/i;
+// A write tool must disclose its OUTCOME — what it returns or the concrete
+// resulting state — not merely restate its action. A bare action verb (a tool
+// named create_article_attachment described as "Upload an attachment…") passes
+// RULE B and looks fine, yet says nothing an annotation/name doesn't already
+// imply, which is exactly what Glama scores 2/5 on Behavioral Transparency. So
+// the backstop requires a result/return marker, not any verb. Intentionally NOT
+// surfaced in the failure message (teach the goal, not the trick).
+const OUTCOME =
+  /\b(?:returns?|returned|replaces?|replaced|overwrites?|appends?|appended|emails?|no-op|idempotent|the (?:created|updated|new|resulting))\b/i;
 
 const countSentences = (text: string): number =>
   text
@@ -130,15 +135,17 @@ describe('tool definition quality gate', () => {
     fail(problems);
   });
 
-  it('RULE C — every write tool states its effect or return value', () => {
+  it('RULE C — every write tool states its return value or resulting state', () => {
     const problems: string[] = [];
     for (const tool of tools) {
-      if (!tool.readOnly && !EFFECT.test(tool.description)) {
+      if (!tool.readOnly && !OUTCOME.test(tool.description)) {
         problems.push(
-          `❌ ${tool.name} — write tool (readOnly=false) whose description does not state what it\n` +
-            `   changes or returns: "${tool.description}"\n` +
-            `   Glama "Behavioral Transparency" (20%): a mutation's side effects must be explicit.\n` +
-            `   Fix: say what is created/updated/removed and what comes back, like ${EFFECT_EXEMPLAR}. See ${DOC}.`,
+          `❌ ${tool.name} — write tool (readOnly=false) whose description names an action but not\n` +
+            `   its outcome: "${tool.description}"\n` +
+            `   Glama "Behavioral Transparency" (20%): a mutation must disclose what it returns and\n` +
+            `   the resulting state — restating the action (the tool name) earns no credit.\n` +
+            `   Fix: state what comes back and any side effect (idempotency, duplicates), like\n` +
+            `   ${EFFECT_EXEMPLAR}. See ${DOC}.`,
         );
       }
     }
