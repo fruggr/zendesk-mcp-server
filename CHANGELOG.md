@@ -1,3 +1,9 @@
+## [2.6.1](https://github.com/fruggr/zendesk-mcp-server/compare/v2.6.0...v2.6.1) (2026-07-05)
+
+### Bug Fixes
+
+* **tools:** state outcomes on article write tools and harden the quality gate ([#130](https://github.com/fruggr/zendesk-mcp-server/issues/130)) ([8e75dfd](https://github.com/fruggr/zendesk-mcp-server/commit/8e75dfd238dc9cc874d1b045e817ff2508fbcc84))
+
 ## [2.6.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.5.0...v2.6.0) (2026-07-05)
 
 ### Features

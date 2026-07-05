@@ -1,6 +1,6 @@
 {
   "name": "@fruggr/zendesk-mcp-server",
-  "version": "2.6.0",
+  "version": "2.6.1",
   "mcpName": "io.github.fruggr/zendesk-mcp-server",
   "description": "A Model Context Protocol (MCP) server for a deep, two-way integration between your AI assistant and Zendesk: search the Help Center and draft, update and translate articles (section by section, keeping languages in sync), and manage Support tickets end to end — comments, triage and image attachments.",
   "type": "module",
