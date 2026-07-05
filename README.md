@@ -164,7 +164,7 @@ zendesk-mcp-server acme --namespace tickets
 | `update_article_translation` | Update an article's translation (full body) | write |
 | `update_article_section` | Replace a single section of an article | write |
 | `create_content_tag` | Create a new Guide content tag | write |
-| `create_article_attachment` | Upload an attachment to an article | write |
+| `create_article_attachment` | Upload a file to a Help Center article (returns the created attachment) | write |
 
 </details>
 

@@ -74,7 +74,7 @@ const novelTokenCount = (name: string, description: string): number => {
 // the backstop requires a result/return marker, not any verb. Intentionally NOT
 // surfaced in the failure message (teach the goal, not the trick).
 const OUTCOME =
-  /\b(returns?|returned|replaces?|replaced|overwrites?|appended?|appends|emails?|no-op|idempotent|the (?:created|updated|new|resulting)\b)/i;
+  /\b(?:returns?|returned|replaces?|replaced|overwrites?|appends?|appended|emails?|no-op|idempotent|the (?:created|updated|new|resulting))\b/i;
 
 const countSentences = (text: string): number =>
   text
