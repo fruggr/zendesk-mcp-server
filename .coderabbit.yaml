@@ -31,20 +31,29 @@ reviews:
         - Any new, renamed, or removed tool is reflected in README.md and
           AGENTS.md (tool tables and per-namespace counts).
 
-        Judge each tool definition against the Glama Tool Definition Quality
-        rubric (docs/mcp-metadata.md). tests/unit/tools/tool-quality.test.ts is
-        the deterministic FLOOR (param descriptions exist and aren't name
-        restatements, description is >1 sentence, write tools state their
-        effect); you are the CEILING that judgment can't be automated. Flag:
-        - descriptions or `.describe()` that pass the gate but add no real
-          guidance — e.g. text padded only to clear the length/token check,
-          without meaning, format, constraints, or when-to-use-vs-a-sibling.
-        - side effects, mutations, return values or failure modes left implicit
-          on a tool that has them (Behavioral Transparency).
-        - factual claims about Zendesk API behavior that look unverified or wrong
-          (e.g. how tags, locales, or pagination actually behave server-side).
-        - two similar tools an agent couldn't tell apart from their descriptions
-          alone (Disambiguation).
+        Score each tool definition against Glama's TDQS rubric
+        (github.com/glama-ai/tool-definition-quality-score). Core rule: a
+        description must add value BEYOND the structured fields — give no credit
+        for text that merely repeats the tool name, the input schema, or the
+        annotations. Use the full 1-5 range (3 = minimum viable; 4-5 only for
+        genuinely helpful). tests/unit/tools/tool-quality.test.ts is the
+        deterministic FLOOR (a param description exists and isn't a bare
+        name-echo, description is >1 sentence, write tools state an effect); you
+        are the judgment CEILING it can't automate. Flag, naming the dimension:
+        - Purpose Clarity: a description that just restates the tool name.
+        - Usage Guidelines: no "when to use it / when to prefer a sibling tool"
+          (use the sibling tool names for disambiguation).
+        - Behavioral Transparency: side effects, mutations or idempotency not
+          disclosed — and score WORST any description that CONTRADICTS the
+          annotations (readOnlyHint, destructiveHint, idempotentHint).
+        - Parameter Semantics: a `.describe()` that adds nothing over the field's
+          name, type, or schema constraints.
+        - Conciseness & Structure: padding, or the key point not front-loaded in
+          the first sentence (proxy modes surface only that first sentence).
+        - Contextual Completeness: anything an agent needs to call the tool
+          without reading the source.
+        Also flag factual claims about Zendesk API behavior (tags, locales,
+        pagination) that look unverified or wrong.
     - path: 'tests/**'
       instructions: |
         Zendesk API calls in tests must go through MSW handlers in
