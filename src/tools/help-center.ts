@@ -914,11 +914,17 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           article_attachments: ZendeskArticleAttachment[];
           count: number;
         }>(subdomain, token, `/articles/${article_id}/attachments`);
+        const attachments = response.article_attachments ?? [];
+        if (attachments.length === 0) {
+          return {
+            content: [{ type: 'text', text: `No attachments found on article #${article_id}.` }],
+          };
+        }
         return {
           content: [
             {
               type: 'text',
-              text: formatList(response.article_attachments ?? [], formatAttachment),
+              text: formatList(attachments, formatAttachment),
             },
           ],
         };
