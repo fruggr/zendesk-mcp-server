@@ -39,8 +39,10 @@ browser PKCE via `token-store.ts`. HTTP: per-session bearer captured from
 credential — insufficiently secure, doesn't scale to multi-user/remote); the
 rationale lives in `README.md` ("What this server does *not* do").
 
-Setup, CLI flags, env vars and auth flows live in `README.md`; manual tool
-testing in `docs/live-testing.md`.
+Local setup and auth flows live in `README.md`; CLI flags and env vars in
+`docs/configuration.md`; remote HTTP deployment in `docs/http-deployment.md`;
+troubleshooting in `docs/troubleshooting.md`; manual tool testing in
+`docs/live-testing.md`.
 
 ## Testing
 
@@ -91,7 +93,9 @@ schema: `docs/mcp-metadata.md`.
 
 ## Documentation maintenance
 
-Any change to the tool surface syncs the `README.md` tool tables in the same PR.
+Any change to the tool surface syncs the tool tables in
+`docs/mcp-tools-reference.md` (and, if a whole namespace appears or disappears,
+the namespace list in the `README.md` "Available tools" section) in the same PR.
 Prose and section headers are deliberately count-free (no per-section
 `(N tools)` or global tool totals) — don't reintroduce hardcoded counts, they
 only go stale. Exact counts still live where they're load-bearing: namespace

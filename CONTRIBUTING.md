@@ -22,6 +22,46 @@ the mechanical issues; understanding the change is non-negotiable.
 
 External contributions follow the same standard.
 
+## Development setup
+
+### Toolchain
+
+| Tool | Version | Source of truth |
+| ---- | ------- | ---------------- |
+| Node | 24 | [`.nvmrc`](.nvmrc) — read by `nvm`, `fnm`, `mise`, `asdf`, `volta` |
+| pnpm | 11 | [`package.json#packageManager`](package.json) (pinned with a corepack integrity hash) |
+
+The toolchain (Node 24 + pnpm 11) is used to build, lint, type-check and
+test the project. The **published package** still runs on Node 20+ (see
+`engines.node`); a dedicated CI job installs the packed tarball on Node 20
+and runs the smoke test to keep that promise honest.
+
+```bash
+# Clone, install, build
+git clone https://github.com/fruggr/zendesk-mcp-server.git
+cd zendesk-mcp-server && pnpm install && pnpm build
+node dist/index.js <your-subdomain>
+
+# Dev mode, OAuth (browser opens on first tool call)
+pnpm dev -- <your-subdomain> --mode all
+
+# Dev mode, HTTP transport (OAuth bearer from the MCP client)
+pnpm dev -- <your-subdomain> --transport http --port 3000 --public-url http://localhost:3000
+
+# Build / typecheck / lint / test
+pnpm build && pnpm typecheck && pnpm check && pnpm test
+```
+
+To test a PR branch without publishing to npm — the `prepare` script builds on install:
+
+```bash
+npx -y github:fruggr/zendesk-mcp-server <your-subdomain>
+npx -y github:fruggr/zendesk-mcp-server#my-feature-branch <your-subdomain>
+```
+
+Architecture, code style, submission bar and release workflow live in
+[`AGENTS.md`](AGENTS.md).
+
 ## Opening a pull request
 
 1. Fork the repository.
@@ -49,7 +89,8 @@ The same checklist appears on the
 - [ ] Documentation is updated if behavior or the tool surface changed
       (see [Documentation maintenance](AGENTS.md#documentation-maintenance)
       in `AGENTS.md`).
-- [ ] If a new MCP tool was added, it is documented in `README.md`.
+- [ ] If a new MCP tool was added, it is documented in
+      `docs/mcp-tools-reference.md`.
 
 ## Code standards
 

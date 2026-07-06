@@ -60,7 +60,7 @@ How well the tools work together *as a set*. Four dimensions, weighted equally:
   (Behavioral Transparency), and when to use vs. avoid it (Usage Guidelines).
 - Name matches the existing verb/prefix convention (Naming Consistency).
 - Adding a param to an existing tool beats a near-duplicate tool (Tool Count).
-- Sync the `README.md` tool tables in the same PR.
+- Sync the `docs/mcp-tools-reference.md` tool tables in the same PR.
 
 ## How this is enforced (floor + ceiling)
 

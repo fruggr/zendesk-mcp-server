@@ -16,7 +16,7 @@
 - [ ] I have read the diff myself, line by line
 - [ ] I ran a Claude Code review on the diff and addressed its findings
 - [ ] Documentation is updated where needed
-- [ ] If this PR adds an MCP tool: it is documented in `README.md`
+- [ ] If this PR adds an MCP tool: it is documented in `docs/mcp-tools-reference.md`
 
 ## Notes for the reviewer (human or AI)
 <!-- Points worth attention, design choices to validate, alternatives ruled out -->
