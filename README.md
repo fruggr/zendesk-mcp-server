@@ -33,6 +33,9 @@ the right tools on your behalf:
   priority or assignee, or mark it solved.
 - **Summarize a ticket for reporting or a quick decision** — pull the details and
   the full comment thread and get the gist in a sentence.
+- **Read the screenshots and photos attached to a ticket** — error dialogs, UI
+  captures or product photos are handed to your assistant's own model as images,
+  so it can describe them or act on what they show.
 - **Search and triage your queue in plain language** — "show me my open tickets
   about billing from this week."
 - **Draft and maintain knowledge-base articles** — write a new article, or revise
@@ -53,12 +56,32 @@ differently:
 - **Two deployment shapes, same auth story** — Run it on your laptop as a stdio MCP server (Claude Desktop / Claude Code / VS Code) or deploy it as a private remote MCP server with one user, one Zendesk session per HTTP request.
 - **Context-friendly tool modes** — Expose every operation as its own tool, group them into namespace proxies, or collapse to a single unified tool. Tools are segmented into namespaces you can selectively enable, so each context loads only the surface it needs.
 - **Section-based article editing** — For large Help Center articles, read and rewrite one section at a time (parsed by h1/h2/h3 headings) instead of shuffling the full HTML body through the assistant. Reduces tokens by 10–100× on targeted edits.
+- **Native multimodal attachments** — ticket images are delivered as native MCP image content for the **client's own model** to analyze: no server-side vision model, **no extra API key**, fully vendor-neutral (see [Attachments & vision](#attachments--vision)).
 - **Read-only mode** — Restrict the server to read operations only, ideal for assistants that should never modify data.
 - **Lean stack** — Built on the official `@modelcontextprotocol/sdk` plus `zod`.
 
 Under the hood it speaks to the **Zendesk Support & Help Center (Guide) APIs**,
 runs locally over **stdio** or as a private **remote MCP server** over HTTP, and
 ships fine-grained tool-visibility controls — the specifics are below.
+
+### Attachments & vision
+
+Ticket image attachments are returned as **native MCP multimodal content**, so the
+assistant's own model (Claude, GPT, Gemini, …) sees the pixels directly. There is
+no server-side vision model and **no extra API key** — the opposite of servers
+that expose an `analyze_ticket_images`-style tool calling a vision model with the
+operator's own key.
+
+| | This server | Server-side-analysis alternatives |
+|---|---|---|
+| Who sees the image | The **client's own model** receives the pixels as multimodal input | The **server** calls a vision model with **its own API key** |
+| Extra dependencies | None | Vision-model API key + billing on the server |
+| Vendor neutrality | ✅ Full | ❌ Locked to one provider |
+
+Non-image attachments come back as text references. The per-image size cap and the
+number of embedded images are **configurable** — see
+[`ZENDESK_MAX_ATTACHMENT_BYTES`](docs/configuration.md#zendesk_max_attachment_bytes)
+and [`ZENDESK_MAX_EMBEDDED_IMAGES`](docs/configuration.md#zendesk_max_embedded_images).
 
 ## When to use this server
 
@@ -261,298 +284,39 @@ Add to your `.vscode/mcp.json`:
 
 ## Quick start: remote (HTTP)
 
-> 🧪 **Experimental.** The HTTP transport is shipped but has not yet been
-> exercised end-to-end against a real Zendesk tenant from every supported
-> MCP client. Local stdio is the supported path. Until this notice is
-> removed, expect rough edges around OAuth discovery behind reverse
-> proxies, CORS with browser clients, and 401 / refresh flows — please
-> open an issue with the symptoms you hit.
+> 🧪 **Experimental.** The HTTP transport is shipped but not yet exercised
+> end-to-end against a real Zendesk tenant from every MCP client — local stdio is
+> the supported path.
 
-Deploy a private MCP server for **one** Zendesk account. Every MCP client connecting to the server presents its **own** user's OAuth bearer in `Authorization:` — the server never sees a shared admin key.
+You can also deploy a private remote MCP server for **one** Zendesk account, where
+every MCP client presents its **own** user's OAuth bearer in `Authorization:` (the
+server never sees a shared admin key). The full guide — OAuth setup, `--public-url`
+behind a reverse proxy, per-platform config, discovery endpoints, MCP client
+wiring, CORS and operator responsibilities — is in
+**[docs/http-deployment.md](docs/http-deployment.md)**.
 
-### Zendesk OAuth setup
+## Configuration
 
-Same procedure as the [local quick start](#zendesk-oauth-setup), with one difference: the **Redirect URL** must match the callback your MCP client uses — provided by the client itself, e.g. `https://claude.ai/oauth/callback` for claude.ai on the web. Check your client's docs.
-
-### Run the server
-
-```bash
-zendesk-mcp-server <your-subdomain> --transport http --port 3000 \
-  --public-url https://mcp.example.com
-# stderr: Zendesk MCP server running via http on 0.0.0.0:3000
-```
-
-### Public URL
-
-`--public-url` (or `PUBLIC_URL=…`) is the URL **clients use to reach you**. It's what gets advertised in the OAuth discovery metadata as the canonical resource identifier (RFC 8707). When the server is behind a TLS reverse proxy — Azure App Service, Heroku, Fly.io, Cloudflare Tunnel, nginx, Caddy… — the bind host and the public URL differ, and spec-compliant MCP clients will refuse the connection if the metadata advertises the wrong resource. Without it the server boots in a degraded mode and prints a warning.
-
-| Platform | Recommended setup |
-|---|---|
-| **Azure App Service** | Startup command: `PUBLIC_URL="https://$WEBSITE_HOSTNAME" zendesk-mcp-server $ZENDESK_SUBDOMAIN --transport http --port $PORT` |
-| **Heroku / Fly / Cloud Run** | `PUBLIC_URL=https://<your-app>.<provider>.app` in the env / config |
-| **Caddy / nginx / Traefik in front of a VM** | `PUBLIC_URL=https://mcp.example.com` |
-| **Local dev (no proxy)** | `--host 127.0.0.1 --port 3000` — the resource URL is derived automatically (the wildcard `0.0.0.0` is what triggers the warning) |
-
-### Authentication on every request
-
-`Authorization: Bearer …` is required on **every** `/mcp` request — a session id alone is never accepted as a credential. The most recent bearer presented on a session is the one used for Zendesk calls, so a client refreshing its token mid-session just works.
-
-### Verify discovery endpoints
-
-Served by the HTTP transport in `src/transports/http.ts`:
-
-```bash
-curl -s http://localhost:3000/.well-known/oauth-protected-resource
-# → { "authorization_servers": ["https://<subdomain>.zendesk.com"], ... }
-
-curl -s http://localhost:3000/.well-known/oauth-authorization-server
-# → { "issuer": "https://<subdomain>.zendesk.com", "authorization_endpoint": "...", ... }
-
-curl -s -i http://localhost:3000/healthz   # → 200 OK
-```
-
-### MCP client wiring
-
-Every major MCP client supports remote servers over Streamable HTTP and handles the OAuth 2.1 PKCE discovery flow natively — paste the URL, sign in once, you're connected. Replace `https://mcp.example.com` below with your deployed origin.
-
-<details>
-<summary><strong>Claude Code (CLI)</strong></summary>
-
-```bash
-claude mcp add zendesk --transport http https://mcp.example.com/mcp
-```
-
-</details>
-
-<details>
-<summary><strong>Claude Desktop</strong></summary>
-
-**Settings → Connectors → + Add custom connector**, paste `https://mcp.example.com/mcp`, click **Connect**. Claude Desktop drives the OAuth flow in your browser on first call.
-
-</details>
-
-<details>
-<summary><strong>claude.ai (web)</strong></summary>
-
-**Settings → Connectors → Add custom connector**, same URL. The OAuth flow runs in the same tab.
-
-</details>
-
-<details>
-<summary><strong>VS Code (GitHub Copilot / Continue / Cline)</strong></summary>
-
-Add to your `.vscode/mcp.json`:
-
-```json
-{
-  "servers": {
-    "zendesk": {
-      "type": "http",
-      "url": "https://mcp.example.com/mcp"
-    }
-  }
-}
-```
-
-</details>
-
-<details>
-<summary><strong>Cursor, Windsurf</strong></summary>
-
-Both expose an MCP settings UI that accepts a remote URL. Paste `https://mcp.example.com/mcp` and sign in when prompted.
-
-</details>
-
-<details>
-<summary><strong>Zed</strong></summary>
-
-Zed added native OAuth 2.0 + PKCE for Streamable HTTP MCP servers in 2026 ([zed-industries/zed#51768](https://github.com/zed-industries/zed/pull/51768)). Configure the remote server in your Zed settings; on first use Zed opens a loopback browser callback to complete the flow.
-
-If you're on an older Zed build that predates that change, fall back to [`mcp-remote`](https://github.com/geelen/mcp-remote) as a local shim that does the OAuth flow on your machine and proxies the session:
-
-```json
-{
-  "context_servers": {
-    "zendesk": {
-      "command": "npx",
-      "args": ["-y", "mcp-remote", "https://mcp.example.com/mcp"]
-    }
-  }
-}
-```
-
-</details>
-
-On the first call the MCP client fetches the discovery metadata, performs the OAuth 2.1 PKCE flow against Zendesk on behalf of the **end user**, and sends the resulting access token as a `Bearer` to the server. Each subsequent tool call runs with that user's Zendesk permissions.
-
-### CORS
-
-The HTTP transport ships a default CORS allowlist that covers today's major **browser-based** MCP clients out of the box (ordered by user base): `chatgpt.com`, `claude.ai`, `gemini.google.com`, `copilot.microsoft.com`, `perplexity.ai`, `chat.mistral.ai`, `grok.com`, plus `chat.openai.com`. Localhost on any port (MCP Inspector, dev pages) is also always allowed.
-
-**Native MCP clients** (Claude Desktop / Claude Code CLI / Cursor / VS Code / Zed) send no `Origin` header — CORS doesn't apply to them, they work regardless.
-
-To allow an additional browser origin (custom dashboard, internal portal), pass `--cors-origin` (repeatable) or set `CORS_ORIGIN` as a comma-separated list:
-
-```bash
-zendesk-mcp-server acme --transport http --port 3000 \
-  --cors-origin https://internal-dashboard.example.com \
-  --cors-origin https://team-portal.example.com
-```
-
-The defaults are always applied — your additions extend them, they don't replace them.
-
-### Operator responsibilities
-
-This server provides the MCP transport and the OAuth discovery metadata. The operator is still responsible for:
-
-- **TLS termination** (put the server behind a reverse proxy like Caddy / nginx / Cloudflare Tunnel)
-- **Network exposure & firewall** (the server binds `0.0.0.0` by default — choose carefully)
-- **Process supervision** (systemd, Docker, fly.io, your hosting provider's runner — none is shipped here)
-
-## CLI reference
-
-```
-zendesk-mcp-server <subdomain> [options]
-
-Options:
-  --mode <mode>           single | namespace (default) | all
-  --namespace <ns>        Filter by namespace (repeatable): tickets, help_center, users
-  --tool <name>           Filter by tool name (repeatable, forces --mode all)
-  --read-only             Only expose read operations
-  --no-topology           Disable the Help Center structural context
-                          (instructions + zendesk-hc://topology resource)
-  --log-level <level>     debug | info (default) | warn | error
-  --transport <t>         stdio (default) | http
-  --host <host>           HTTP bind host (default: 0.0.0.0)
-  --port <port>           HTTP bind port (default: 3000; 0 = OS-assigned)
-  --public-url <url>      Public URL clients use to reach the server (HTTP mode,
-                          required behind a TLS reverse proxy)
-  --cors-origin <url>     Extra browser origin allowed by CORS (repeatable;
-                          adds to the default allowlist of major web MCP
-                          clients + localhost-any-port)
-  --callback-port <port>  Local OAuth callback port for stdio (default 27439)
-```
-
-`--namespace` and `--read-only` are applied before the proxies are registered, so they narrow the surface in every mode — in the default `namespace` mode, `--namespace help_center` registers a single proxy (`zendesk_help_center`) instead of three.
-
-**Examples:**
-
-```bash
-# Local single-tool mode — minimal context, every operation in one tool
-zendesk-mcp-server acme --mode single
-
-# Read-only tickets only
-zendesk-mcp-server acme --read-only --namespace tickets
-
-# Cherry-pick specific tools
-zendesk-mcp-server acme --tool get_ticket --tool search_tickets --tool get_current_user
-
-# Remote HTTP, read-only Help Center surface
-zendesk-mcp-server acme --transport http --port 8080 \
-  --namespace help_center --read-only
-```
-
-## Environment variables
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `ZENDESK_SUBDOMAIN` | yes (or CLI arg) | — | Zendesk subdomain (e.g., `acme` for acme.zendesk.com) |
-| `ZENDESK_OAUTH_CLIENT_ID` | no | `<subdomain>_zendesk` | OAuth client identifier |
-| `ZENDESK_OAUTH_CALLBACK_PORT` | no | `27439` | Local port for the OAuth browser callback (also `--callback-port`). Must match the redirect URL registered in Zendesk. **stdio only**. |
-| `ZENDESK_TOKEN_FILE` | no | OS config dir | Path to the persisted OAuth token file (`0600`). |
-| `TRANSPORT` | no | `stdio` | `stdio` or `http` |
-| `HOST` | no | `0.0.0.0` | HTTP bind host |
-| `PORT` | no | `3000` | HTTP bind port (`0` to let the OS pick) |
-| `PUBLIC_URL` | recommended in HTTP behind a proxy | derived from host:port | Public URL advertised in OAuth discovery metadata |
-| `CORS_ORIGIN` | no | — | Comma-separated browser origins added to the default CORS allowlist |
-| `LOG_LEVEL` | no | `info` | Log verbosity (`debug` surfaces the full OAuth flow trace) |
+The complete reference for the CLI flags (`--mode`, `--namespace`, `--read-only`,
+`--transport`, `--public-url`, …) and the environment variables (`ZENDESK_SUBDOMAIN`,
+`ZENDESK_TOKEN_FILE`, `PUBLIC_URL`, the attachment-vision caps, …) lives in
+**[docs/configuration.md](docs/configuration.md)** — with a per-variable anchor so
+you can deep-link a specific setting.
 
 The server uses per-user OAuth 2.1 PKCE for every transport (local stdio and remote HTTP). There is no static API-token mode — see [What this server does *not* do](#what-this-server-does-not-do).
 
 ## Troubleshooting
 
-### The browser doesn't open during OAuth login
-
-The OAuth flow opens your default browser on the first tool call. The first call
-fails fast with a message that includes the authorize URL, so even if the
-browser can't open (common in sandboxed or remote desktop environments) you can
-open that URL manually — it's also printed to the server's stderr. Sign in, then
-retry the request.
-
-To collect diagnostics, restart with `LOG_LEVEL=debug`. The server then emits
-structured logs through **two channels**, so they're reachable on any MCP client:
-
-- **stderr** — captured to a log file by every mainstream client.
-- **MCP logging notifications** (`notifications/message`) — surfaced by clients
-  that support the `logging` capability.
-
-When the browser fails to open, look for the `oauth_browser_open_failed` event:
-it reports the underlying error, the platform, and which environment markers are
-present (no secrets, tokens, or env values are ever logged).
-
-### The OAuth callback port is already in use
-
-The sign-in flow runs a short-lived local server on port `27439` to receive the
-callback. If that port is taken, the first tool call fails with a message saying
-so (and logs `oauth_callback_listen_failed`). Pick a free port with
-`ZENDESK_OAUTH_CALLBACK_PORT=<port>` (or `--callback-port <port>`), and register
-the matching `http://localhost:<port>/callback` redirect URL in your Zendesk
-OAuth client.
-
-### I have to re-authenticate every time
-
-The OAuth token is persisted to an owner-only file in your OS config dir and
-reused across restarts, so this shouldn't happen. If it does, check that the file
-is writable (`ZENDESK_TOKEN_FILE` to relocate it) and look for
-`token_persist_failed` in the logs.
-
-Where each client writes the server's stderr:
-
-| Client | Log location |
-|--------|--------------|
-| Claude Desktop (macOS) | `~/Library/Logs/Claude/mcp-server-*.log` |
-| Claude Desktop (Windows) | `%APPDATA%\Claude\logs\mcp-server-*.log` |
-| Claude Code | `claude --debug`, or the session logs |
-| Cursor / VS Code / Cline | the extension's MCP output/log panel |
+Browser not opening during OAuth login, the callback port already in use, having
+to re-authenticate every time, and where each client writes the server's stderr
+are covered in **[docs/troubleshooting.md](docs/troubleshooting.md)**. Restart
+with `LOG_LEVEL=debug` for the full OAuth flow trace.
 
 ## Development
 
-### Toolchain
-
-| Tool | Version | Source of truth |
-| ---- | ------- | ---------------- |
-| Node | 24 | [`.nvmrc`](.nvmrc) — read by `nvm`, `fnm`, `mise`, `asdf`, `volta` |
-| pnpm | 11 | [`package.json#packageManager`](package.json) (pinned with a corepack integrity hash) |
-
-The toolchain (Node 24 + pnpm 11) is used to build, lint, type-check and
-test the project. The **published package** still runs on Node 20+ (see
-`engines.node`); a dedicated CI job installs the packed tarball on Node 20
-and runs the smoke test to keep that promise honest.
-
-```bash
-# Clone, install, build
-git clone https://github.com/fruggr/zendesk-mcp-server.git
-cd zendesk-mcp-server && pnpm install && pnpm build
-node dist/index.js <your-subdomain>
-
-# Dev mode, OAuth (browser opens on first tool call)
-pnpm dev -- <your-subdomain> --mode all
-
-# Dev mode, HTTP transport (OAuth bearer from the MCP client)
-pnpm dev -- <your-subdomain> --transport http --port 3000 --public-url http://localhost:3000
-
-# Build / typecheck / lint / test
-pnpm build && pnpm typecheck && pnpm check && pnpm test
-```
-
-To test a PR branch without publishing to npm — the `prepare` script builds on install:
-
-```bash
-npx -y github:fruggr/zendesk-mcp-server <your-subdomain>
-npx -y github:fruggr/zendesk-mcp-server#my-feature-branch <your-subdomain>
-```
-
-Contributor conventions (architecture, code style, submission bar, release workflow) live in [`AGENTS.md`](AGENTS.md).
+Setting up the repo, the toolchain (Node 24 + pnpm 11), dev mode and how to test
+a PR branch are covered in **[CONTRIBUTING.md](CONTRIBUTING.md#development-setup)**.
+Architecture and code-style conventions live in [`AGENTS.md`](AGENTS.md).
 
 ## Inspiration & related projects
 

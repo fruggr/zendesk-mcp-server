@@ -39,8 +39,10 @@ browser PKCE via `token-store.ts`. HTTP: per-session bearer captured from
 credential — insufficiently secure, doesn't scale to multi-user/remote); the
 rationale lives in `README.md` ("What this server does *not* do").
 
-Setup, CLI flags, env vars and auth flows live in `README.md`; manual tool
-testing in `docs/live-testing.md`.
+Local setup and auth flows live in `README.md`; CLI flags and env vars in
+`docs/configuration.md`; remote HTTP deployment in `docs/http-deployment.md`;
+troubleshooting in `docs/troubleshooting.md`; manual tool testing in
+`docs/live-testing.md`.
 
 ## Testing
 
