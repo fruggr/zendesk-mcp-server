@@ -442,17 +442,7 @@ describe('ticket tools', () => {
         return tool;
       };
 
-      it('honors ZENDESK_MAX_EMBEDDED_IMAGES', async () => {
-        vi.resetModules();
-        vi.stubEnv('ZENDESK_MAX_EMBEDDED_IMAGES', '2');
-        const manyImages = Array.from({ length: 12 }, (_, i) => ({
-          id: 41000 + i,
-          file_name: `img-${i}.png`,
-          content_url: `https://testsubdomain.zendesk.com/attachments/token/abc/?name=img-${i}.png`,
-          content_type: 'image/png',
-          size: 1024,
-          inline: false,
-        }));
+      const mockCommentAttachments = (attachments: Array<Record<string, unknown>>) => {
         mswServer.use(
           http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/comments', () =>
             HttpResponse.json({
@@ -463,12 +453,28 @@ describe('ticket tools', () => {
                   author_id: 1,
                   public: true,
                   created_at: '2026-01-01T00:00:00Z',
-                  attachments: manyImages,
+                  attachments,
                 },
               ],
             }),
           ),
         );
+      };
+
+      const buildImages = (count: number) =>
+        Array.from({ length: count }, (_, i) => ({
+          id: 41000 + i,
+          file_name: `img-${i}.png`,
+          content_url: `https://testsubdomain.zendesk.com/attachments/token/abc/?name=img-${i}.png`,
+          content_type: 'image/png',
+          size: 1024,
+          inline: false,
+        }));
+
+      it('honors ZENDESK_MAX_EMBEDDED_IMAGES', async () => {
+        vi.resetModules();
+        vi.stubEnv('ZENDESK_MAX_EMBEDDED_IMAGES', '2');
+        mockCommentAttachments(buildImages(12));
         const tool = await loadAttachmentsTool();
         const result = await tool.handler({ ticket_id: 1 });
         const imageBlocks = result.content.filter((c) => c.type === 'image');
@@ -482,30 +488,7 @@ describe('ticket tools', () => {
         // skip every image. It must fall back to the 10-image default instead.
         vi.stubEnv('ZENDESK_MAX_EMBEDDED_IMAGES', '');
         vi.stubEnv('ZENDESK_MAX_ATTACHMENT_BYTES', 'not-a-number');
-        const manyImages = Array.from({ length: 12 }, (_, i) => ({
-          id: 42000 + i,
-          file_name: `img-${i}.png`,
-          content_url: `https://testsubdomain.zendesk.com/attachments/token/abc/?name=img-${i}.png`,
-          content_type: 'image/png',
-          size: 1024,
-          inline: false,
-        }));
-        mswServer.use(
-          http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/comments', () =>
-            HttpResponse.json({
-              comments: [
-                {
-                  id: 1,
-                  body: '',
-                  author_id: 1,
-                  public: true,
-                  created_at: '2026-01-01T00:00:00Z',
-                  attachments: manyImages,
-                },
-              ],
-            }),
-          ),
-        );
+        mockCommentAttachments(buildImages(12));
         const tool = await loadAttachmentsTool();
         const result = await tool.handler({ ticket_id: 1 });
         const imageBlocks = result.content.filter((c) => c.type === 'image');
@@ -516,30 +499,16 @@ describe('ticket tools', () => {
       it('honors ZENDESK_MAX_ATTACHMENT_BYTES (with a dynamic skip message)', async () => {
         vi.resetModules();
         vi.stubEnv('ZENDESK_MAX_ATTACHMENT_BYTES', String(2 * 1024 * 1024));
-        const midImage = {
-          id: 71000,
-          file_name: 'mid.png',
-          content_url: 'https://testsubdomain.zendesk.com/attachments/token/mid/?name=mid.png',
-          content_type: 'image/png',
-          size: 3 * 1024 * 1024,
-          inline: false,
-        };
-        mswServer.use(
-          http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/comments', () =>
-            HttpResponse.json({
-              comments: [
-                {
-                  id: 1,
-                  body: '',
-                  author_id: 1,
-                  public: true,
-                  created_at: '2026-01-01T00:00:00Z',
-                  attachments: [midImage],
-                },
-              ],
-            }),
-          ),
-        );
+        mockCommentAttachments([
+          {
+            id: 71000,
+            file_name: 'mid.png',
+            content_url: 'https://testsubdomain.zendesk.com/attachments/token/mid/?name=mid.png',
+            content_type: 'image/png',
+            size: 3 * 1024 * 1024,
+            inline: false,
+          },
+        ]);
         const tool = await loadAttachmentsTool();
         const result = await tool.handler({ ticket_id: 1 });
         const imageBlocks = result.content.filter((c) => c.type === 'image');
