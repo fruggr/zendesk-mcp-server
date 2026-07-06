@@ -103,7 +103,8 @@ const collectAttachmentBlocks = async (
 
     let skipReason: string | null = null;
     if (attachment.size > MAX_ATTACHMENT_BYTES) {
-      skipReason = 'skipped: exceeds 5 MB per-image limit';
+      const limitMb = +(MAX_ATTACHMENT_BYTES / (1024 * 1024)).toFixed(2);
+      skipReason = `skipped: exceeds ${limitMb} MB per-image limit`;
     } else if (embeddedCount >= MAX_EMBEDDED_IMAGE_COUNT) {
       skipReason = `skipped: max ${MAX_EMBEDDED_IMAGE_COUNT} embedded images reached`;
     }

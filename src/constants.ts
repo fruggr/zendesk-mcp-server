@@ -18,13 +18,16 @@ export const TOPOLOGY_TTL_MS = 5 * 60 * 1000;
 export const DEFAULT_CALLBACK_PORT = 27439;
 
 // Per-attachment cap for inline image content. Images larger than this are
-// returned as text references instead of base64 image content blocks.
-// Aligned with the Anthropic vision API per-image limit.
-export const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+// returned as text references instead of base64 image content blocks. The
+// default is aligned with the Anthropic vision API per-image limit; override
+// via ZENDESK_MAX_ATTACHMENT_BYTES (bytes).
+export const MAX_ATTACHMENT_BYTES = Number(
+  process.env['ZENDESK_MAX_ATTACHMENT_BYTES'] ?? 5 * 1024 * 1024,
+);
 
-// Maximum number of images embedded as base64 in a single tool call.
-// Remaining images are returned as text references.
-export const MAX_EMBEDDED_IMAGE_COUNT = 10;
+// Maximum number of images embedded as base64 in a single tool call. Remaining
+// images are returned as text references. Override via ZENDESK_MAX_EMBEDDED_IMAGES.
+export const MAX_EMBEDDED_IMAGE_COUNT = Number(process.env['ZENDESK_MAX_EMBEDDED_IMAGES'] ?? 10);
 
 // Hard cap on comment pages fetched when collecting ticket attachments.
 // Overridable via ZENDESK_MAX_COMMENT_PAGES for tickets with many comments.

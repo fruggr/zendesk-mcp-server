@@ -1,5 +1,5 @@
 import { HttpResponse, http } from 'msw';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ToolContext } from '../../../src/tools/definitions';
 import { createTicketTools } from '../../../src/tools/tickets';
 import { MOCK_SLA_SIDELOAD, MOCK_TICKET, MOCK_UPLOAD } from '../../msw-handlers';
@@ -425,6 +425,90 @@ describe('ticket tools', () => {
     it('has readOnly annotation', () => {
       const tool = findTool('get_ticket_attachments');
       expect(tool.annotations.readOnlyHint).toBe(true);
+    });
+
+    describe('env-configurable guardrails', () => {
+      // The caps are read from process.env at module load, so overrides must be
+      // stubbed before a fresh import of the tool module.
+      afterEach(() => {
+        vi.unstubAllEnvs();
+        vi.resetModules();
+      });
+
+      const loadAttachmentsTool = async () => {
+        const { createTicketTools } = await import('../../../src/tools/tickets');
+        const tool = createTicketTools(ctx).find((t) => t.name === 'get_ticket_attachments');
+        if (!tool) throw new Error('get_ticket_attachments not found');
+        return tool;
+      };
+
+      it('honors ZENDESK_MAX_EMBEDDED_IMAGES', async () => {
+        vi.resetModules();
+        vi.stubEnv('ZENDESK_MAX_EMBEDDED_IMAGES', '2');
+        const manyImages = Array.from({ length: 12 }, (_, i) => ({
+          id: 41000 + i,
+          file_name: `img-${i}.png`,
+          content_url: `https://testsubdomain.zendesk.com/attachments/token/abc/?name=img-${i}.png`,
+          content_type: 'image/png',
+          size: 1024,
+          inline: false,
+        }));
+        mswServer.use(
+          http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/comments', () =>
+            HttpResponse.json({
+              comments: [
+                {
+                  id: 1,
+                  body: '',
+                  author_id: 1,
+                  public: true,
+                  created_at: '2026-01-01T00:00:00Z',
+                  attachments: manyImages,
+                },
+              ],
+            }),
+          ),
+        );
+        const tool = await loadAttachmentsTool();
+        const result = await tool.handler({ ticket_id: 1 });
+        const imageBlocks = result.content.filter((c) => c.type === 'image');
+        expect(imageBlocks).toHaveLength(2);
+        expect(getAllText(result)).toContain('skipped: max 2 embedded images reached');
+      });
+
+      it('honors ZENDESK_MAX_ATTACHMENT_BYTES (with a dynamic skip message)', async () => {
+        vi.resetModules();
+        vi.stubEnv('ZENDESK_MAX_ATTACHMENT_BYTES', String(2 * 1024 * 1024));
+        const midImage = {
+          id: 71000,
+          file_name: 'mid.png',
+          content_url: 'https://testsubdomain.zendesk.com/attachments/token/mid/?name=mid.png',
+          content_type: 'image/png',
+          size: 3 * 1024 * 1024,
+          inline: false,
+        };
+        mswServer.use(
+          http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/comments', () =>
+            HttpResponse.json({
+              comments: [
+                {
+                  id: 1,
+                  body: '',
+                  author_id: 1,
+                  public: true,
+                  created_at: '2026-01-01T00:00:00Z',
+                  attachments: [midImage],
+                },
+              ],
+            }),
+          ),
+        );
+        const tool = await loadAttachmentsTool();
+        const result = await tool.handler({ ticket_id: 1 });
+        const imageBlocks = result.content.filter((c) => c.type === 'image');
+        expect(imageBlocks).toHaveLength(0);
+        expect(getAllText(result)).toContain('exceeds 2 MB per-image limit');
+      });
     });
   });
 
