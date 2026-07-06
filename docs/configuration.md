@@ -5,9 +5,11 @@ flags and the environment variables. Each variable has its own anchor, so you ca
 deep-link a specific setting (e.g.
 [`docs/configuration.md#zendesk_max_attachment_bytes`](#zendesk_max_attachment_bytes)).
 
-CLI flags take precedence over the matching environment variable. The server uses
-per-user OAuth 2.1 PKCE for every transport — there is no static API-token mode
-(see [What this server does *not* do](../README.md#what-this-server-does-not-do)).
+CLI flags generally take precedence over the matching environment variable; the
+exception is `--cors-origin`, which is additive and *extends* `CORS_ORIGIN`
+rather than replacing it. The server uses per-user OAuth 2.1 PKCE for every
+transport — there is no static API-token mode (see
+[What this server does *not* do](../README.md#what-this-server-does-not-do)).
 
 ## CLI reference
 
@@ -33,7 +35,7 @@ Options:
   --callback-port <port>  Local OAuth callback port for stdio (default 27439)
 ```
 
-`--namespace` and `--read-only` are applied before the proxies are registered, so they narrow the surface in every mode — in the default `namespace` mode, `--namespace help_center` registers a single proxy (`zendesk_help_center`) instead of three.
+`--namespace` and `--read-only` are applied before the proxies are registered, so they narrow the surface in every mode — in the default `namespace` mode, `--namespace help_center` registers a single proxy (`zendesk_help_center`) instead of the full set of namespace proxies.
 
 **Examples:**
 

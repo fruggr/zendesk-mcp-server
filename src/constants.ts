@@ -3,6 +3,17 @@ export const DEFAULT_PAGE_SIZE = 100;
 export const MAX_PAGE_SIZE = 100;
 export const TOKEN_CACHE_TTL_MS = 5 * 60 * 1000;
 
+// Read a positive-integer override from the environment, falling back to a safe
+// default. Unchecked Number() coercion is unsafe here: an empty string yields 0
+// and a typo yields NaN, either of which would silently break the guardrail that
+// relies on the value. Missing/empty/non-finite/non-positive values fall back.
+const positiveIntEnv = (name: string, fallback: number): number => {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === '') return fallback;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
 // TTL for the per-session Help Center topology cache (zendesk-hc://topology).
 // The tenant's structure (locales, category/section tree, segments) changes
 // rarely, so a short TTL keeps a session's repeated reads cheap without going
@@ -21,17 +32,15 @@ export const DEFAULT_CALLBACK_PORT = 27439;
 // returned as text references instead of base64 image content blocks. The
 // default is aligned with the Anthropic vision API per-image limit; override
 // via ZENDESK_MAX_ATTACHMENT_BYTES (bytes).
-export const MAX_ATTACHMENT_BYTES = Number(
-  process.env['ZENDESK_MAX_ATTACHMENT_BYTES'] ?? 5 * 1024 * 1024,
-);
+export const MAX_ATTACHMENT_BYTES = positiveIntEnv('ZENDESK_MAX_ATTACHMENT_BYTES', 5 * 1024 * 1024);
 
 // Maximum number of images embedded as base64 in a single tool call. Remaining
 // images are returned as text references. Override via ZENDESK_MAX_EMBEDDED_IMAGES.
-export const MAX_EMBEDDED_IMAGE_COUNT = Number(process.env['ZENDESK_MAX_EMBEDDED_IMAGES'] ?? 10);
+export const MAX_EMBEDDED_IMAGE_COUNT = positiveIntEnv('ZENDESK_MAX_EMBEDDED_IMAGES', 10);
 
 // Hard cap on comment pages fetched when collecting ticket attachments.
 // Overridable via ZENDESK_MAX_COMMENT_PAGES for tickets with many comments.
-export const MAX_COMMENT_PAGES = Number(process.env['ZENDESK_MAX_COMMENT_PAGES'] ?? 10);
+export const MAX_COMMENT_PAGES = positiveIntEnv('ZENDESK_MAX_COMMENT_PAGES', 10);
 
 // Thresholds used to nudge callers toward section-scoped article tools
 // (get_article_outline / get_article_section / update_article_section)
