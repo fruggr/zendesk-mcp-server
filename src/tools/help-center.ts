@@ -787,7 +787,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           .min(1)
           .optional()
           .describe(
-            'Return only content tags whose name starts with this prefix (case-insensitive, prefix match — not a substring or fuzzy search). Use the full name to check whether a specific tag already exists before creating it.',
+            'Return only content tags whose name starts with this prefix (prefix match — not a substring or fuzzy search). Use the full name to check whether a specific tag already exists before creating it.',
           ),
         sort: z
           .enum(['name', '-name', 'id', '-id'])

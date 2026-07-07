@@ -493,11 +493,13 @@ export const handlers = [
   // pagination the way the real endpoint does so the tool's params are exercised.
   http.get(`${BASE}/guide/content_tags`, ({ request }) => {
     const url = new URL(request.url);
-    const prefix = url.searchParams.get('filter[name_prefix]')?.toLowerCase();
+    // Prefix match kept case-sensitive: the real endpoint's casing is
+    // unverified, so the mock does not encode a case-insensitive assumption.
+    const prefix = url.searchParams.get('filter[name_prefix]');
     const sort = url.searchParams.get('sort') ?? 'name';
     let records = [...MOCK_CONTENT_TAGS];
     if (prefix) {
-      records = records.filter((t) => t.name.toLowerCase().startsWith(prefix));
+      records = records.filter((t) => t.name.startsWith(prefix));
     }
     const desc = sort.startsWith('-');
     const key = desc ? sort.slice(1) : sort;
