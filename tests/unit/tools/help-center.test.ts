@@ -257,22 +257,33 @@ describe('help center tools', () => {
   });
 
   describe('list_content_tags', () => {
-    it('lists content tags sorted by name', async () => {
+    it('lists content tags sorted by name ascending, spanning past the old cap', async () => {
       const tool = findTool('list_content_tags');
-      const result = await tool.handler({ sort: 'name', page_size: 100 });
+      const result = await tool.handler({ sort_by: 'name', sort_order: 'asc', page_size: 100 });
       const text = result.content[0]?.text ?? '';
       expect(text).toContain('scanner');
       expect(text).toContain('ct_001');
-      // The tags #132 could not confirm are now enumerable.
-      expect(text).toContain('ai');
-      expect(text).toContain('mistral');
-      // Ascending alphabetical order: `ai` sorts before `mistral`.
-      expect(text.indexOf('ai')).toBeLessThan(text.indexOf('mistral'));
+      // The tags #132 could not confirm are now enumerable, and the listing
+      // reaches past `debug mode` (the alphabetical point the old cap stopped at).
+      expect(text.indexOf('ai')).toBeLessThan(text.indexOf('debug mode'));
+      expect(text.indexOf('debug mode')).toBeLessThan(text.indexOf('mistral'));
+    });
+
+    it('reverses order for descending sort', async () => {
+      const tool = findTool('list_content_tags');
+      const result = await tool.handler({ sort_by: 'name', sort_order: 'desc', page_size: 100 });
+      const text = result.content[0]?.text ?? '';
+      expect(text.indexOf('mistral')).toBeLessThan(text.indexOf('ai'));
     });
 
     it('filters by name prefix', async () => {
       const tool = findTool('list_content_tags');
-      const result = await tool.handler({ name_prefix: 'mi', sort: 'name', page_size: 100 });
+      const result = await tool.handler({
+        name_prefix: 'mi',
+        sort_by: 'name',
+        sort_order: 'asc',
+        page_size: 100,
+      });
       const text = result.content[0]?.text ?? '';
       expect(text).toContain('mistral');
       expect(text).not.toContain('scanner');
@@ -281,7 +292,7 @@ describe('help center tools', () => {
     it('surfaces the pagination cursor when more results remain', async () => {
       mswServer.use(manyContentTagsHandler);
       const tool = findTool('list_content_tags');
-      const result = await tool.handler({ sort: 'name', page_size: 1 });
+      const result = await tool.handler({ sort_by: 'name', sort_order: 'asc', page_size: 1 });
       const text = result.content[0]?.text ?? '';
       expect(text).toContain('More available');
       expect(text).toContain('next-page-cursor');

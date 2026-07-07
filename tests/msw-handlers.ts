@@ -501,12 +501,11 @@ export const handlers = [
     if (prefix) {
       records = records.filter((t) => t.name.startsWith(prefix));
     }
-    const desc = sort.startsWith('-');
-    const key = desc ? sort.slice(1) : sort;
-    records.sort((a, b) =>
-      key === 'id' ? a.id.localeCompare(b.id) : a.name.localeCompare(b.name),
-    );
-    if (desc) records.reverse();
+    // The tool forwards `sort` to Zendesk untouched, so the mock only needs to
+    // order enough for tests to assert wiring: name ascending, reversed by the
+    // `-` prefix (covers the -name path). Other keys fall back to name order.
+    records.sort((a, b) => a.name.localeCompare(b.name));
+    if (sort.startsWith('-')) records.reverse();
     return HttpResponse.json({ records, meta: { has_more: false, after_cursor: '' } });
   }),
   http.post(`${BASE}/guide/content_tags`, async ({ request }) => {

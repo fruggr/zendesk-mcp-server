@@ -789,12 +789,14 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           .describe(
             'Return only content tags whose name starts with this prefix (prefix match — not a substring or fuzzy search). Use the full name to check whether a specific tag already exists before creating it.',
           ),
-        sort: z
-          .enum(['name', '-name', 'id', '-id'])
+        sort_by: z
+          .enum(['name', 'id'])
           .default('name')
-          .describe(
-            'Ordering of results: "name"/"id" ascending, "-name"/"-id" descending. Defaults to "name" so the referential lists alphabetically.',
-          ),
+          .describe('Field to sort by; "name" (the default) lists the referential alphabetically.'),
+        sort_order: z
+          .enum(['asc', 'desc'])
+          .default('asc')
+          .describe('Sort direction: ascending or descending.'),
         page_size: z
           .number()
           .int()
@@ -814,13 +816,18 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         openWorldHint: true,
       },
       handler: async (params) => {
-        const { name_prefix, sort, page_size, cursor } = params as {
+        const { name_prefix, sort_by, sort_order, page_size, cursor } = params as {
           name_prefix?: string;
-          sort: string;
+          sort_by: string;
+          sort_order: string;
           page_size: number;
           cursor?: string;
         };
         const token = await getToken();
+        // /guide/content_tags takes a single `sort` param, `-` prefix for
+        // descending; the tool surface keeps the sort_by/sort_order convention
+        // shared with the sibling list tools and translates to the wire format.
+        const sort = `${sort_order === 'desc' ? '-' : ''}${sort_by}`;
         const p: Record<string, string> = { ...buildCursorParams(page_size, cursor), sort };
         if (name_prefix) p['filter[name_prefix]'] = name_prefix;
         const response = await zendeskGet<ZendeskListResponse<ZendeskContentTag>>(
