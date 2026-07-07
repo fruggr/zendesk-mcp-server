@@ -43,7 +43,7 @@ out every `write` tool before the proxies are built.
 | `list_article_translations` | List available translations for an article | read |
 | `list_article_attachments` | List attachments on an article | read |
 | `list_permission_groups` | List Guide permission groups (needed to create articles) | read |
-| `list_content_tags` | List Guide content tags (end-user visible) | read |
+| `list_content_tags` | List Guide content tags (end-user visible), cursor-paginated with name-prefix filter and sort | read |
 | `list_labels` | List article labels (search ranking, not user-visible) | read |
 | `list_user_segments` | List user segments (article visibility) | read |
 | `compare_translations` | Section-level diff between two locales of an article | read |

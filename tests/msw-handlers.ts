@@ -154,6 +154,31 @@ export const MOCK_CONTENT_TAG = {
   updated_at: '2026-01-02T00:00:00Z',
 };
 
+// A small referential covering the sort/filter cases exercised by the tests:
+// `ai` and `mistral` are the tags whose absence #132 could not confirm, and the
+// listing spans past `debug mode` (the alphabetical point the old cap stopped at).
+export const MOCK_CONTENT_TAGS = [
+  {
+    id: 'ct_010',
+    name: 'ai',
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-02T00:00:00Z',
+  },
+  {
+    id: 'ct_011',
+    name: 'debug mode',
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-02T00:00:00Z',
+  },
+  {
+    id: 'ct_012',
+    name: 'mistral',
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-02T00:00:00Z',
+  },
+  MOCK_CONTENT_TAG,
+];
+
 export const MOCK_LABEL = {
   id: 9001,
   name: 'getting-started',
@@ -269,6 +294,15 @@ export const manyCategoriesHandler = http.get(`${HC_BASE}/categories`, () =>
     categories: [MOCK_CATEGORY],
     meta: { has_more: true, after_cursor: 'next-page-cursor' },
     count: 250,
+  }),
+);
+
+// Opt-in override: a content-tag referential larger than one page, so the tool's
+// cursor handling and the "More available" footer can be exercised (#132).
+export const manyContentTagsHandler = http.get(`${BASE}/guide/content_tags`, () =>
+  HttpResponse.json({
+    records: [MOCK_CONTENT_TAG],
+    meta: { has_more: true, after_cursor: 'next-page-cursor' },
   }),
 );
 
@@ -455,10 +489,24 @@ export const handlers = [
     HttpResponse.json({ permission_groups: [MOCK_PERMISSION_GROUP], count: 1 }),
   ),
 
-  // Guide - Content Tags
-  http.get(`${BASE}/guide/content_tags`, () =>
-    HttpResponse.json({ records: [MOCK_CONTENT_TAG], count: 1 }),
-  ),
+  // Guide - Content Tags. Honours filter[name_prefix], sort and cursor
+  // pagination the way the real endpoint does so the tool's params are exercised.
+  http.get(`${BASE}/guide/content_tags`, ({ request }) => {
+    const url = new URL(request.url);
+    const prefix = url.searchParams.get('filter[name_prefix]')?.toLowerCase();
+    const sort = url.searchParams.get('sort') ?? 'name';
+    let records = [...MOCK_CONTENT_TAGS];
+    if (prefix) {
+      records = records.filter((t) => t.name.toLowerCase().startsWith(prefix));
+    }
+    const desc = sort.startsWith('-');
+    const key = desc ? sort.slice(1) : sort;
+    records.sort((a, b) =>
+      key === 'id' ? a.id.localeCompare(b.id) : a.name.localeCompare(b.name),
+    );
+    if (desc) records.reverse();
+    return HttpResponse.json({ records, meta: { has_more: false, after_cursor: '' } });
+  }),
   http.post(`${BASE}/guide/content_tags`, async ({ request }) => {
     const body = (await request.json()) as Record<string, unknown>;
     const tag = body['content_tag'] as Record<string, unknown> | undefined;

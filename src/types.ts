@@ -216,6 +216,7 @@ export interface PaginationMeta {
 
 export interface ZendeskListResponse<T> {
   results?: T[];
+  records?: T[];
   tickets?: T[];
   users?: T[];
   organizations?: T[];

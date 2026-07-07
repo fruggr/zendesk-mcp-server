@@ -199,6 +199,31 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         expect(text).toContain('page_size');
       });
 
+      it('lists content tags with defaults applied and filters by name prefix (#132)', async () => {
+        connected = await harness.connect(makeConfig({ mode: 'all' }));
+
+        // No arguments: the schema defaults (sort=name, page_size=100) are
+        // applied by the SDK, so the full referential comes back enumerable.
+        const all = await connected.client.callTool({
+          name: 'list_content_tags',
+          arguments: {},
+        });
+        expect(all.isError).toBeFalsy();
+        const allText = textOf(all);
+        expect(allText).toContain('ai');
+        expect(allText).toContain('mistral');
+
+        // name_prefix narrows the listing to a single tag.
+        const filtered = await connected.client.callTool({
+          name: 'list_content_tags',
+          arguments: { name_prefix: 'mi' },
+        });
+        expect(filtered.isError).toBeFalsy();
+        const filteredText = textOf(filtered);
+        expect(filteredText).toContain('mistral');
+        expect(filteredText).not.toContain('scanner');
+      });
+
       it('surfaces a Zendesk API error as an MCP tool error', async () => {
         mswServer.use(errorHandlers.usersMeUnauthorized);
 
