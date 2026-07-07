@@ -263,12 +263,9 @@ describe('help center tools', () => {
       expect(result.content[0]?.text).toContain('Article #5000 archived');
     });
 
-    it('refuses and does not call the API when confirm is false', async () => {
-      mswServer.use(
-        http.delete(`${HC_BASE}/articles/:id`, () =>
-          HttpResponse.json({ error: 'should not be called' }, { status: 500 }),
-        ),
-      );
+    it('refuses without archiving when confirm is false', async () => {
+      // The default MSW handler returns 204, so a regressed guard would let the
+      // call succeed and this assertion would fail — no extra override needed.
       const tool = findTool('archive_article');
       await expect(tool.handler({ article_id: 5000, confirm: false })).rejects.toThrow(/confirm/i);
     });
