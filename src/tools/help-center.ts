@@ -780,7 +780,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: true,
       title: 'List Content Tags',
       description:
-        'List Guide content tags, which are end-user-visible labels that help readers find related articles. Results are cursor-paginated (follow the returned cursor to enumerate the full, deliberately small referential) and sorted by name by default. Pass name_prefix to look a tag up by the start of its name — do this before create_content_tag to reuse an existing tag rather than fragment the taxonomy. For internal, non-end-user search labels, see list_labels instead.',
+        'List Guide content tags, which are end-user-visible labels that help readers find related articles. Results are cursor-paginated (follow the returned cursor to enumerate the full list) and sorted by name by default. Pass name_prefix to look a tag up by the start of its name — do this before create_content_tag to reuse an existing tag rather than fragment the taxonomy. For internal, non-end-user search labels, see list_labels instead.',
       inputSchema: z.object({
         name_prefix: z
           .string()
@@ -792,7 +792,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         sort_by: z
           .enum(['name', 'id'])
           .default('name')
-          .describe('Field to sort by; "name" (the default) lists the referential alphabetically.'),
+          .describe('Field to sort by; "name" (the default) lists tags alphabetically.'),
         sort_order: z
           .enum(['asc', 'desc'])
           .default('asc')
