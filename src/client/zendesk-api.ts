@@ -142,6 +142,11 @@ export const helpCenterPut = <T>(
   return executeRequest<T>(url, token, { method: 'PUT', body });
 };
 
+export const helpCenterDelete = <T>(subdomain: string, token: string, path: string): Promise<T> => {
+  const url = buildUrl(getHelpCenterBaseUrl(subdomain), path);
+  return executeRequest<T>(url, token, { method: 'DELETE' });
+};
+
 export const fetchZendeskBinary = async (
   subdomain: string,
   token: string,
