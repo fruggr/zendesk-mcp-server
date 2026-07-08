@@ -1,3 +1,9 @@
+## [2.8.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.7.0...v2.8.0) (2026-07-08)
+
+### Features
+
+* **help-center:** add archive_article tool ([#133](https://github.com/fruggr/zendesk-mcp-server/issues/133)) ([#136](https://github.com/fruggr/zendesk-mcp-server/issues/136)) ([a23d36e](https://github.com/fruggr/zendesk-mcp-server/commit/a23d36ef9a24945d68c7c1115743bdec37fca995))
+
 ## [2.7.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.6.1...v2.7.0) (2026-07-08)
 
 ### Features
