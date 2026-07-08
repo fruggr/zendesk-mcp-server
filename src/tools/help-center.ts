@@ -1,5 +1,6 @@
 import * as z from 'zod/v4';
 import {
+  helpCenterDelete,
   helpCenterGet,
   helpCenterPost,
   helpCenterPut,
@@ -770,6 +771,46 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         return {
           content: [
             { type: 'text', text: `Article #${article.id} updated.\n\n${formatArticle(article)}` },
+          ],
+        };
+      },
+    },
+    {
+      name: 'archive_article',
+      namespace: 'help_center',
+      readOnly: false,
+      title: 'Archive Help Center Article',
+      description:
+        'Archive (soft-delete) a Help Center article: it is removed from the Help Center but can be restored from the Guide admin UI. Returns a confirmation message; the article and all its translations become invisible to end users. This is the only removal the Zendesk API offers — permanent deletion is not available via the API (do it from the Guide admin UI). To only hide an article temporarily while keeping it in the knowledge base, use update_article with draft: true (unpublish) instead. Guarded by a required confirm flag.',
+      inputSchema: z.object({
+        article_id: z.number().int().describe(ARTICLE_ID_DESC),
+        confirm: z
+          .boolean()
+          .describe(
+            'Explicit safety guard: must be set to true to archive the article. Any other value refuses the operation without calling Zendesk.',
+          ),
+      }),
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+      handler: async (params) => {
+        const { article_id, confirm } = params as { article_id: number; confirm: boolean };
+        if (confirm !== true) {
+          throw new Error(
+            'Archiving is guarded: pass confirm: true to archive (soft-delete) this article. No changes were made.',
+          );
+        }
+        const token = await getToken();
+        await helpCenterDelete(subdomain, token, `/articles/${article_id}`);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Article #${article_id} archived (soft-deleted). It is removed from the Help Center; restore it from the Guide admin UI if needed.`,
+            },
           ],
         };
       },

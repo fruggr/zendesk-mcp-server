@@ -134,6 +134,7 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         expect(names).toContain('get_current_user');
         expect(names).not.toContain('create_ticket');
         expect(names).not.toContain('update_ticket');
+        expect(names).not.toContain('archive_article');
       });
     });
 
@@ -222,6 +223,17 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         const filteredText = textOf(filtered);
         expect(filteredText).toContain('mistral');
         expect(filteredText).not.toContain('scanner');
+      });
+
+      it('archives a Help Center article over the wire when confirmed', async () => {
+        connected = await harness.connect(makeConfig({ mode: 'all' }));
+        const result = await connected.client.callTool({
+          name: 'archive_article',
+          arguments: { article_id: 5000, confirm: true },
+        });
+
+        expect(result.isError).toBeFalsy();
+        expect(textOf(result)).toContain('Article #5000 archived');
       });
 
       it('surfaces a Zendesk API error as an MCP tool error', async () => {

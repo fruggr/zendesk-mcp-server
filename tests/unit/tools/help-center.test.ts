@@ -16,8 +16,8 @@ const findTool = (name: string) => {
 };
 
 describe('help center tools', () => {
-  it('creates 21 tools', () => {
-    expect(createHelpCenterTools(ctx)).toHaveLength(21);
+  it('creates 22 tools', () => {
+    expect(createHelpCenterTools(ctx)).toHaveLength(22);
   });
 
   describe('search_articles', () => {
@@ -253,6 +253,40 @@ describe('help center tools', () => {
       expect(tool.inputSchema.parse({ article_id: 5000, position: 3 })).toMatchObject({
         position: 3,
       });
+    });
+  });
+
+  describe('archive_article', () => {
+    it('archives the article when confirm is true', async () => {
+      const tool = findTool('archive_article');
+      const result = await tool.handler({ article_id: 5000, confirm: true });
+      expect(result.content[0]?.text).toContain('Article #5000 archived');
+    });
+
+    it('refuses without archiving when confirm is false', async () => {
+      // The default MSW handler returns 204, so a regressed guard would let the
+      // call succeed and this assertion would fail — no extra override needed.
+      const tool = findTool('archive_article');
+      await expect(tool.handler({ article_id: 5000, confirm: false })).rejects.toThrow(/confirm/i);
+    });
+
+    it('requires confirm in the schema', () => {
+      const tool = findTool('archive_article');
+      expect(() => tool.inputSchema.parse({ article_id: 5000 })).toThrow();
+      expect(tool.inputSchema.parse({ article_id: 5000, confirm: true })).toMatchObject({
+        confirm: true,
+      });
+    });
+
+    it('is annotated as a destructive write operation', () => {
+      const tool = findTool('archive_article');
+      expect(tool.readOnly).toBe(false);
+      expect(tool.annotations.destructiveHint).toBe(true);
+    });
+
+    it('points callers to update_article draft for a plain unpublish', () => {
+      const tool = findTool('archive_article');
+      expect(tool.description).toContain('update_article');
     });
   });
 

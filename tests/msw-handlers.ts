@@ -483,6 +483,8 @@ export const handlers = [
       article: { ...MOCK_ARTICLE, id: Number(params['id']), ...update },
     });
   }),
+  // Archive Article (soft-delete): Zendesk responds 204 No Content.
+  http.delete(`${HC_BASE}/articles/:id`, () => new HttpResponse(null, { status: 204 })),
 
   // Guide - Permission Groups
   http.get(`${BASE}/guide/permission_groups`, () =>
