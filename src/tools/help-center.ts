@@ -780,23 +780,74 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: true,
       title: 'List Content Tags',
       description:
-        'List all Guide content tags. Content tags are visible to end users and help them find related articles.',
-      inputSchema: z.object({}),
+        'List Guide content tags, which are end-user-visible labels that help readers find related articles. Results are cursor-paginated (follow the returned cursor to enumerate the full list) and sorted by name by default. Pass name_prefix to look a tag up by the start of its name — do this before create_content_tag to reuse an existing tag rather than fragment the taxonomy. For internal, non-end-user search labels, see list_labels instead.',
+      inputSchema: z.object({
+        name_prefix: z
+          .string()
+          .min(1)
+          .optional()
+          .describe(
+            'Return only content tags whose name starts with this prefix (prefix match — not a substring or fuzzy search). Use the full name to check whether a specific tag already exists before creating it.',
+          ),
+        sort_by: z
+          .enum(['name', 'id'])
+          .default('name')
+          .describe('Field to sort by; "name" (the default) lists tags alphabetically.'),
+        sort_order: z
+          .enum(['asc', 'desc'])
+          .default('asc')
+          .describe('Sort direction: ascending or descending.'),
+        page_size: z
+          .number()
+          .int()
+          .min(1)
+          .max(MAX_PAGE_SIZE)
+          .default(DEFAULT_PAGE_SIZE)
+          .describe('Content tags per page (1-100, default 100).'),
+        cursor: z
+          .string()
+          .optional()
+          .describe('Pagination cursor from a previous response; omit for the first page.'),
+      }),
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async () => {
+      handler: async (params) => {
+        const { name_prefix, sort_by, sort_order, page_size, cursor } = params as {
+          name_prefix?: string;
+          sort_by: string;
+          sort_order: string;
+          page_size: number;
+          cursor?: string;
+        };
         const token = await getToken();
-        const response = await zendeskGet<{ records: ZendeskContentTag[]; count: number }>(
+        // /guide/content_tags takes a single `sort` param, `-` prefix for
+        // descending; the tool surface keeps the sort_by/sort_order convention
+        // shared with the sibling list tools and translates to the wire format.
+        const sort = `${sort_order === 'desc' ? '-' : ''}${sort_by}`;
+        const p: Record<string, string> = { ...buildCursorParams(page_size, cursor), sort };
+        if (name_prefix) p['filter[name_prefix]'] = name_prefix;
+        const response = await zendeskGet<ZendeskListResponse<ZendeskContentTag>>(
           subdomain,
           token,
           '/guide/content_tags',
+          p,
         );
+        const records = response.records ?? [];
         return {
-          content: [{ type: 'text', text: formatList(response.records ?? [], formatContentTag) }],
+          content: [
+            {
+              type: 'text',
+              text: formatList(
+                records,
+                formatContentTag,
+                extractPaginationMeta(response, records.length),
+              ),
+            },
+          ],
         };
       },
     },
@@ -806,7 +857,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: false,
       title: 'Create Content Tag',
       description:
-        'Create a new content tag for Guide articles. Content tags are end-user visible labels that help readers discover related articles; this returns the created tag with its id. Check list_content_tags first to avoid duplicates, then attach the new id via the content_tag_ids parameter of create_article or update_article. For internal search-ranking labels that are not shown to end users, use article labels (list_labels) instead.',
+        'Create a new content tag for Guide articles. Content tags are end-user visible labels that help readers discover related articles; this returns the created tag with its id. Check list_content_tags first (filter by name_prefix) to avoid duplicates, then attach the new id via the content_tag_ids parameter of create_article or update_article. For internal search-ranking labels that are not shown to end users, use article labels (list_labels) instead.',
       inputSchema: z.object({
         name: z
           .string()
