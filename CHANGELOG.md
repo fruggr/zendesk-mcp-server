@@ -1,3 +1,21 @@
+## [2.7.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.6.1...v2.7.0) (2026-07-08)
+
+### Features
+
+* **help-center:** paginate and filter list_content_tags ([#132](https://github.com/fruggr/zendesk-mcp-server/issues/132)) ([#137](https://github.com/fruggr/zendesk-mcp-server/issues/137)) ([ae5c7bb](https://github.com/fruggr/zendesk-mcp-server/commit/ae5c7bb6eec8515f1c352eb805a7ee06c65fabb5))
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Documentation
+
+* restructure README + extract reference docs + surface multimodal attachments ([#131](https://github.com/fruggr/zendesk-mcp-server/issues/131)) ([d2e17a9](https://github.com/fruggr/zendesk-mcp-server/commit/d2e17a9e6ad0d1bd7ef1bc2f4ab30dbd0c80fda1))
+
+### Chores
+
+* **deps:** update dependency @biomejs/biome to v2.5.2 ([#138](https://github.com/fruggr/zendesk-mcp-server/issues/138)) ([d120906](https://github.com/fruggr/zendesk-mcp-server/commit/d1209066fb7939c44db580bc340370ce260bf782))
+</details>
+
 ## [2.6.1](https://github.com/fruggr/zendesk-mcp-server/compare/v2.6.0...v2.6.1) (2026-07-05)
 
 ### Bug Fixes
