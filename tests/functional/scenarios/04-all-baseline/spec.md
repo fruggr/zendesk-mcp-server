@@ -35,7 +35,7 @@ own `annotations` object intact (PR #53 must not regress flat mode).
   "readOnly": false,
   "branch": "claude/laughing-lovelace-HmZOn",
   "assertions": [
-    { "id": "A1", "desc": "tools/list returns exactly 39 entries",                                   "pass": null, "actual": null },
+    { "id": "A1", "desc": "tools/list returns exactly 40 entries",                                   "pass": null, "actual": null },
     { "id": "A2", "desc": "every entry has a non-empty annotations object",                          "pass": null, "actual": null },
     { "id": "A3", "desc": "every entry has openWorldHint=true",                                      "pass": null, "actual": null },
     { "id": "A4", "desc": "get_current_user has readOnlyHint=true and destructiveHint=false",        "pass": null, "actual": null },

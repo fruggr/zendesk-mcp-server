@@ -404,7 +404,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: false,
       title: 'Create Zendesk Ticket',
       description:
-        'Create a new Zendesk support ticket with subject, description, and optional priority/type/assignee/tags. The description becomes the first public comment of the ticket, and the new ticket id is returned. After creation, use update_ticket to change status or assignee, add_public_comment or add_private_note to reply, and manage_tags to adjust tags. Look up valid assignee_id / group_id via search_users, and custom field ids and their accepted option values via list_ticket_fields.',
+        'Create a new Zendesk support ticket with subject, description, and optional priority/type/assignee/tags. The description becomes the first public comment of the ticket, and the new ticket id is returned. After creation, use update_ticket to change status or assignee, add_public_comment or add_private_note to reply, and manage_tags to adjust tags. Look up valid assignee_id / group_id and custom field ids via search_users or your Zendesk admin settings. Discover custom field ids and their accepted option values with list_ticket_fields.',
       inputSchema: z.object({
         subject: z
           .string()
