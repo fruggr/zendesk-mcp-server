@@ -9,10 +9,10 @@
 [![semantic-release](https://img.shields.io/badge/semantic--release-e10079?logo=semantic-release&logoColor=white)](https://github.com/semantic-release/semantic-release)
 
 **Bring Zendesk deep into your AI assistant.** A
-[Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for a
-two-way integration: find answers in the Help Center, **draft, update and
-translate** articles (keeping languages in sync), and **manage Support tickets**
-end to end — comments, triage and image attachments — all in plain language,
+[Model Context Protocol](https://modelcontextprotocol.io) (MCP) server: find
+answers in the Help Center, **draft, update and translate** articles (keeping
+languages in sync), and **manage Support tickets** end to end — comments, triage
+and image attachments — all in plain language,
 **without switching apps**.
 
 Think of it as the [Zendesk agent for Microsoft 365 Copilot](https://support.zendesk.com/hc/en-us/articles/9958331458458-Using-the-Zendesk-agent-in-Microsoft-365-Copilot),
