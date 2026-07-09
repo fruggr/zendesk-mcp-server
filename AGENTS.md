@@ -113,7 +113,7 @@ and AI authors).
 
 ## Release workflow
 
-Fully automated via semantic-release on push to `main`; never hand-bump the
-`version` in `package.json` (`server.json` is generated from it — never edit it
-by hand). Triggers, npm + official MCP registry publishing, and the generated
-manifest: `docs/release-automation.md`.
+Fully automated via semantic-release on push to `main`; never hand-bump
+`version` in `package.json` or the version-controlled `server.json` — release
+syncs both. Reseed `server.json` with `pnpm build:server-json` when its metadata
+changes. Details: `docs/release-automation.md`.

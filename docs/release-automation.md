@@ -48,14 +48,23 @@ each new version automatically.
   working tree only when it actually publishes. The job snapshots the version
   before and after semantic-release; the publish steps run **only** when it
   changed, so `chore:` / `docs:` pushes (no release) never touch the registry.
-- **Manifest.** `server.json` is **generated**, not committed:
-  [`scripts/build-server-json.mjs`](../scripts/build-server-json.mjs) derives
-  everything that already lives in `package.json` (name from `mcpName`, npm
-  identifier, version, repository, homepage) and declares only the
-  registry/launch specifics (schema, transport, subdomain argument, env). The
-  release job runs it (`node scripts/build-server-json.mjs > server.json`) right
-  before publishing; it is git-ignored so there is nothing to hand-maintain or
-  let drift. Regenerate locally with `pnpm build:server-json`.
+- **Manifest.** `server.json` is **version-controlled** at the repo root
+  (committed and reviewable). [`scripts/build-server-json.mjs`](../scripts/build-server-json.mjs)
+  *seeds* it from everything that already lives in `package.json` (name from
+  `mcpName`, npm identifier, version, repository, homepage) plus the
+  registry/launch specifics (schema, transport, subdomain argument, env);
+  regenerate the committed file with `pnpm build:server-json` whenever that
+  metadata changes. A unit test asserts the committed file equals what the
+  generator would seed, so it cannot drift from `package.json`.
+- **Version sync.** At release, semantic-release does **not** regenerate the
+  manifest; a `@semantic-release/exec` `prepareCmd` runs
+  [`scripts/sync-server-json-version.mjs`](../scripts/sync-server-json-version.mjs)
+  to update **only** the `version` fields to `${nextRelease.version}`, and
+  `@semantic-release/git` commits `server.json` alongside `CHANGELOG.md` and
+  `package.json`. The release commit therefore carries a clean one-line version
+  diff, and `package.json` / `server.json` versions can never diverge. The
+  MCP-registry publish step reads this committed, freshly-bumped file directly —
+  there is no generate-from-scratch step in the release job.
 - **Ownership.** The registry proves npm ownership via the `mcpName` field in
   `package.json` (which the generator uses as the `server.json` `name`).
 - **Auth.** `mcp-publisher login github-oidc` reuses the workflow's
