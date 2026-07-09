@@ -103,11 +103,11 @@ jobs:
             echo "No release this run; skipping MCP registry publish."
           fi
 
-      - name: Generate server.json for the released version
-        if: steps.released.outputs.published == 'true'
-        # Built from package.json (already bumped by semantic-release) plus the
-        # MCP-specific metadata in the script — never hand-maintained.
-        run: node scripts/build-server-json.mjs > server.json
+      # No server.json generation step: the manifest is version-controlled at
+      # the repo root and semantic-release has already synced its `version`
+      # (via @semantic-release/exec -> scripts/sync-server-json-version.mjs) and
+      # committed it. mcp-publisher below reads that committed, freshly-bumped
+      # file straight from the working tree.
 
       - name: Install mcp-publisher
         if: steps.released.outputs.published == 'true'

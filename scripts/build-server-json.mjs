@@ -1,11 +1,21 @@
 #!/usr/bin/env node
-// Generates the official MCP registry manifest (server.json) and prints it to
-// stdout. `package.json` is the single source of truth for everything that
-// already lives there (name, npm identifier, version, repository, homepage);
-// only the registry/launch metadata that has no other authoritative source is
-// declared below. server.json is a build artifact — never hand-edit it.
+// Seeds/validates the official MCP registry manifest (server.json) and prints it
+// to stdout. Unlike before, server.json is now version-controlled at the repo
+// root (committed, reviewable) — this generator no longer produces a throwaway
+// build artifact. Its role is twofold:
+//   - seed: `pnpm build:server-json` (re)writes the committed file when the
+//     package.json-derived metadata below changes;
+//   - validate: tests assert the committed file equals this output (no drift).
+// At release, only the `version` field of the committed file is synced (see
+// scripts/sync-server-json-version.mjs), so the release commit stays a clean
+// one-line diff and never re-derives metadata.
 //
-//   node scripts/build-server-json.mjs > server.json
+// `package.json` is the single source of truth for everything that already
+// lives there (name, npm identifier, version, repository, homepage); only the
+// registry/launch metadata that has no other authoritative source is declared
+// below.
+//
+//   node scripts/build-server-json.mjs > server.json   (or: pnpm build:server-json)
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 

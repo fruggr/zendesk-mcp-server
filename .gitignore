@@ -3,10 +3,6 @@ dist/
 .tsbuildinfo
 package-lock.json
 
-# Generated MCP registry manifest (built from package.json by
-# scripts/build-server-json.mjs at release time; see docs/release-automation.md)
-server.json
-
 # Environment
 .env
 .env.*
