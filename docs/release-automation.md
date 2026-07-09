@@ -64,6 +64,11 @@ each new version automatically.
   namespace is authorized because the workflow runs in the `fruggr` org's repo.
 - **Resilience.** The publish is retried a few times to absorb npm propagation
   lag (the registry validates by fetching the freshly published npm tarball).
+- **Namespace migration.** Moving the entry to the `io.fruggr/*` namespace
+  requires proving control of the `fruggr.io` domain (GitHub OIDC only
+  authorizes `io.github.fruggr/*`). The DNS-verification runbook — ed25519
+  keypair, TXT record and CI signing secret — lives in
+  [`mcp-registry-namespace-ownership.md`](mcp-registry-namespace-ownership.md).
 
 ## Release notes content
 
