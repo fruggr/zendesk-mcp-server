@@ -65,6 +65,42 @@ each new version automatically.
 - **Resilience.** The publish is retried a few times to absorb npm propagation
   lag (the registry validates by fetching the freshly published npm tarball).
 
+### Deprecating a registry entry (one-off)
+
+Deprecation is **not** a `server.json` field — the manifest schema has no
+publisher-settable `status`; `status` (`active` / `deprecated` / `deleted`) is
+registry-managed lifecycle metadata. It is set out-of-band with the `mcp-publisher`
+`status` subcommand (present in the pinned `1.7.9`), so this is a manual step, not part
+of `release.yml`.
+
+Retiring the `io.github.fruggr/zendesk-mcp-server` name in favour of
+`io.fruggr/zendesk-mcp-server` means the old entry must be flagged deprecated **before**
+`mcpName` changes in `package.json`: the registry proves npm ownership via `mcpName`, a
+package maps to exactly one name, so once `mcpName` flips the ownership proof for the old
+name is gone and its entry can no longer be edited.
+
+A `fruggr`-org member runs, locally:
+
+```sh
+# authenticate as the io.github.fruggr namespace owner (interactive, org-based;
+# release.yml's github-oidc login is CI-only and needs the Actions id-token)
+mcp-publisher login github
+
+# mark every version of the old entry deprecated, pointing at the new name
+mcp-publisher status \
+  --status deprecated \
+  --all-versions \
+  --message "Deprecated — republished as io.fruggr/zendesk-mcp-server. Same npm package (@fruggr/zendesk-mcp-server), nothing changes for existing installs." \
+  io.github.fruggr/zendesk-mcp-server
+```
+
+Verify:
+
+```sh
+curl "https://registry.modelcontextprotocol.io/v0/servers?search=io.github.fruggr"
+# expect the entry with lifecycle status "deprecated" and the pointer message above
+```
+
 ## Release notes content
 
 semantic-release generates the notes from **every** commit between the previous
