@@ -77,13 +77,10 @@ export const MOCK_TICKET_FIELD_SYSTEM = {
   description: 'Ticket priority',
   active: true,
   required: false,
-  position: 1,
   system_field_options: [
     { name: 'Low', value: 'low' },
     { name: 'High', value: 'high' },
   ],
-  created_at: '2026-01-01T00:00:00Z',
-  updated_at: '2026-01-02T00:00:00Z',
 };
 
 export const MOCK_TICKET_FIELD_CUSTOM = {
@@ -93,14 +90,11 @@ export const MOCK_TICKET_FIELD_CUSTOM = {
   description: 'Customer-facing severity',
   active: true,
   required: true,
-  position: 9,
   tag: null,
   custom_field_options: [
-    { id: 1, name: 'Sev-1', raw_name: 'Sev-1', value: 'severity_1', default: false },
-    { id: 2, name: 'Sev-2', raw_name: 'Sev-2', value: 'severity_2', default: true },
+    { name: 'Sev-1', value: 'severity_1' },
+    { name: 'Sev-2', value: 'severity_2' },
   ],
-  created_at: '2026-01-01T00:00:00Z',
-  updated_at: '2026-01-02T00:00:00Z',
 };
 
 export const MOCK_USER = {

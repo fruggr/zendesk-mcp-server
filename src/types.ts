@@ -63,15 +63,13 @@ export interface ZendeskSlaSideloadEntry {
   policy_metrics: ZendeskSlaLiveMetric[];
 }
 
-// A selectable option on a dropdown/multiselect custom field. `value` is the
-// tag written back via create_ticket / update_ticket custom_fields; `name` is
-// the human label shown in the Zendesk UI.
-export interface ZendeskCustomFieldOption {
-  id: number;
+// A selectable value on a ticket field. `value` is the tag written back via
+// create_ticket / update_ticket custom_fields; `name` is the human label shown
+// in the Zendesk UI. Shared by dropdown/multiselect custom fields
+// (`custom_field_options`) and system fields (`system_field_options`).
+export interface ZendeskFieldOption {
   name: string;
-  raw_name?: string;
   value: string;
-  default?: boolean;
 }
 
 // A ticket field definition (system or custom) from the Ticket Fields API. The
@@ -85,12 +83,9 @@ export interface ZendeskTicketField {
   description: string | null;
   active: boolean;
   required: boolean;
-  position?: number;
   tag?: string | null;
-  custom_field_options?: ZendeskCustomFieldOption[];
-  system_field_options?: Array<{ name: string; value: string }>;
-  created_at?: string;
-  updated_at?: string;
+  custom_field_options?: ZendeskFieldOption[];
+  system_field_options?: ZendeskFieldOption[];
 }
 
 export interface ZendeskTicketAttachment {

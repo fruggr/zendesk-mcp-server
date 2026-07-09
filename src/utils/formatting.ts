@@ -86,15 +86,17 @@ export const formatTicketField = (field: ZendeskTicketField): string => {
     field.active ? 'active' : 'inactive',
     field.required ? 'required' : 'optional',
   ].join(', ');
-  const lines = [`## ${field.title} (id ${field.id})`, `- **Type**: ${field.type} | **${flags}**`];
-  if (field.description) lines.push(`- **Description**: ${field.description}`);
-  if (field.tag) lines.push(`- **Tag**: ${field.tag}`);
-  const options = field.custom_field_options ?? field.system_field_options;
-  if (options && options.length > 0) {
-    lines.push('- **Options** (name → value):');
-    for (const o of options) lines.push(`  - ${o.name} → ${o.value}`);
-  }
-  return lines.join('\n');
+  const options = field.custom_field_options ?? field.system_field_options ?? [];
+  return [
+    `## ${field.title} (id ${field.id})`,
+    `- **Type**: ${field.type} | **${flags}**`,
+    field.description ? `- **Description**: ${field.description}` : '',
+    field.tag ? `- **Tag**: ${field.tag}` : '',
+    options.length > 0 ? '- **Options** (name → value):' : '',
+    ...options.map((o) => `  - ${o.name} → ${o.value}`),
+  ]
+    .filter(Boolean)
+    .join('\n');
 };
 
 const minutesUntil = (iso: string): number | null => {
