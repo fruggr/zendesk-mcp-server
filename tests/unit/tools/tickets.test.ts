@@ -21,9 +21,9 @@ const getAllText = (result: { content: Array<{ type: string; text?: string }> })
     .join('\n');
 
 describe('ticket tools', () => {
-  it('creates 11 tools (search_tickets lives here; the unified search is elsewhere)', () => {
+  it('creates 12 tools (search_tickets lives here; the unified search is elsewhere)', () => {
     const tools = createTicketTools(ctx);
-    expect(tools).toHaveLength(11);
+    expect(tools).toHaveLength(12);
   });
 
   describe('get_ticket', () => {
@@ -566,6 +566,39 @@ describe('ticket tools', () => {
       );
       expect(error.message).toMatch(/admin/i);
       expect(error.message).toMatch(/get_ticket|search_tickets/);
+    });
+  });
+
+  describe('list_ticket_fields', () => {
+    it('lists field definitions with ids, types, and option values', async () => {
+      const tool = findTool('list_ticket_fields');
+      const result = await tool.handler({ page_size: 100 });
+      const text = result.content[0]?.text ?? '';
+      // System field: title, id, and its system_field_options.
+      expect(text).toContain('Priority (id 10)');
+      expect(text).toContain('High → high');
+      // Custom dropdown: id and its custom_field_options tags.
+      expect(text).toContain('Severity (id 360000000001)');
+      expect(text).toContain('Sev-2 → severity_2');
+      expect(text).toContain('required');
+    });
+
+    it('is read-only and passes the cursor through to Zendesk', async () => {
+      let sawCursor: string | null = null;
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/ticket_fields', ({ request }) => {
+          sawCursor = new URL(request.url).searchParams.get('page[after]');
+          return HttpResponse.json({
+            ticket_fields: [],
+            meta: { has_more: false, after_cursor: '' },
+          });
+        }),
+      );
+      const tool = findTool('list_ticket_fields');
+      expect(tool.readOnly).toBe(true);
+      expect(tool.annotations.readOnlyHint).toBe(true);
+      await tool.handler({ page_size: 50, cursor: 'CURSOR123' });
+      expect(sawCursor).toBe('CURSOR123');
     });
   });
 

@@ -67,6 +67,42 @@ export const MOCK_SLA_SIDELOAD = {
   ],
 };
 
+// Two ticket field definitions: a system priority field (system_field_options)
+// and a custom dropdown (custom_field_options), mirroring the Ticket Fields API
+// so the tool's option rendering for both shapes is exercised.
+export const MOCK_TICKET_FIELD_SYSTEM = {
+  id: 10,
+  type: 'priority',
+  title: 'Priority',
+  description: 'Ticket priority',
+  active: true,
+  required: false,
+  position: 1,
+  system_field_options: [
+    { name: 'Low', value: 'low' },
+    { name: 'High', value: 'high' },
+  ],
+  created_at: '2026-01-01T00:00:00Z',
+  updated_at: '2026-01-02T00:00:00Z',
+};
+
+export const MOCK_TICKET_FIELD_CUSTOM = {
+  id: 360000000001,
+  type: 'tagger',
+  title: 'Severity',
+  description: 'Customer-facing severity',
+  active: true,
+  required: true,
+  position: 9,
+  tag: null,
+  custom_field_options: [
+    { id: 1, name: 'Sev-1', raw_name: 'Sev-1', value: 'severity_1', default: false },
+    { id: 2, name: 'Sev-2', raw_name: 'Sev-2', value: 'severity_2', default: true },
+  ],
+  created_at: '2026-01-01T00:00:00Z',
+  updated_at: '2026-01-02T00:00:00Z',
+};
+
 export const MOCK_USER = {
   id: 9999,
   name: 'Test User',
@@ -363,6 +399,14 @@ export const handlers = [
   // SLA policies — the real endpoint returns the full config list with no
   // `count` wrapper, so omit it here to exercise the array-length fallback.
   http.get(`${BASE}/slas/policies`, () => HttpResponse.json({ sla_policies: [MOCK_SLA_POLICY] })),
+
+  // Ticket field definitions (system + custom), cursor-paginated like /tickets.
+  http.get(`${BASE}/ticket_fields`, () =>
+    HttpResponse.json({
+      ticket_fields: [MOCK_TICKET_FIELD_SYSTEM, MOCK_TICKET_FIELD_CUSTOM],
+      meta: { has_more: false, after_cursor: '' },
+    }),
+  ),
 
   // Search
   http.get(`${BASE}/search`, ({ request }) => {

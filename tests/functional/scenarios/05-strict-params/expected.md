@@ -6,7 +6,7 @@ executor — it is the verdict criterion.
 
 | ID | Expected |
 | -- | -------- |
-| S1 | `tools/list` returns **38** entries, and **all 38** have `inputSchema.additionalProperties === false` — including zero-parameter tools such as `get_current_user` (`inputSchema: {type:"object", properties:{}, additionalProperties:false}`). A count below 38, or any entry missing the key / not `false`, is a FAIL. (Total is allowed to drift if the tool surface changed; the load-bearing part is **every** entry having `additionalProperties:false`.) |
+| S1 | `tools/list` returns **39** entries, and **all 39** have `inputSchema.additionalProperties === false` — including zero-parameter tools such as `get_current_user` (`inputSchema: {type:"object", properties:{}, additionalProperties:false}`). A count below 39, or any entry missing the key / not `false`, is a FAIL. (Total is allowed to drift if the tool surface changed; the load-bearing part is **every** entry having `additionalProperties:false`.) |
 | S2 | `list_tickets` → `inputSchema.properties.page_size.description` === `"Tickets per page (1-100, default 100)."` (non-empty is the bar; exact string here for reference). |
 | S3 | `list_tickets` → `inputSchema.properties.cursor.description` === `"Pagination cursor from a previous response; omit for the first page."` Must convey "omit for the first page"; the bare old value `"Pagination cursor"` is a FAIL. |
 | S4 | `list_tickets` → top-level `description` contains both the substring `page_size` and the substring `per_page`. Exact text: `"List tickets with cursor-based pagination, sorted by most recently updated. Page size is controlled by page_size (not per_page, which is the offset-based parameter used by search_tickets); paginate by passing the returned cursor."` |
