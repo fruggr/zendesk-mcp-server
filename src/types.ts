@@ -127,10 +127,18 @@ export interface ZendeskMacroApplyComment {
 // update_ticket / add_public_comment / add_private_note. Standard fields
 // (status, priority, assignee_id, group_id, tags, subject, type) appear as
 // top-level keys; custom fields arrive under `fields` (or `custom_fields`).
+// A single custom-field change in a macro-apply result.
+export interface ZendeskMacroApplyField {
+  id: number;
+  value: unknown;
+}
+
 export interface ZendeskMacroApplyTicket {
   comment?: ZendeskMacroApplyComment;
-  fields?: Array<{ id: number; value: unknown }>;
-  custom_fields?: Array<{ id: number; value: unknown }>;
+  // The apply endpoint renders one changed custom field as a bare object and
+  // several as an array, so both shapes are accepted (the handler normalizes).
+  fields?: ZendeskMacroApplyField[] | ZendeskMacroApplyField;
+  custom_fields?: ZendeskMacroApplyField[] | ZendeskMacroApplyField;
   [key: string]: unknown;
 }
 

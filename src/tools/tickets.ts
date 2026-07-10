@@ -193,7 +193,11 @@ const formatMacroApplyResult = (
   // cryptic "cannot read properties of undefined" tool error.
   const ticket = result?.ticket ?? {};
   const comment: ZendeskMacroApplyComment | undefined = ticket.comment ?? result?.comment;
-  const customFields = ticket.fields ?? ticket.custom_fields ?? [];
+  // The Zendesk docs render a single changed custom field as a bare `{id, value}`
+  // object rather than a one-element array, so normalize to an array before
+  // mapping — a lone object would otherwise blow up on `.map`.
+  const rawFields = ticket.fields ?? ticket.custom_fields;
+  const customFields = Array.isArray(rawFields) ? rawFields : rawFields ? [rawFields] : [];
 
   const scalarChanges = Object.entries(ticket)
     .filter(([key]) => key !== 'comment' && key !== 'fields' && key !== 'custom_fields')

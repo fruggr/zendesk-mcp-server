@@ -886,6 +886,24 @@ describe('ticket tools', () => {
       expect(text).toContain('Internal only');
     });
 
+    it('renders a single custom field returned as a bare object (not an array)', async () => {
+      // The Zendesk docs show one changed custom field as `fields: {id, value}`
+      // rather than a one-element array; the handler must not choke on it.
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/macros/:mid/apply', () =>
+          HttpResponse.json({
+            result: { ticket: { fields: { id: 27642, value: '745' } } },
+          }),
+        ),
+      );
+      const tool = findTool('apply_macro');
+      const result = await tool.handler({ ticket_id: 1, macro_id: 700 });
+      expect(result.isError).toBeFalsy();
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('custom field 27642');
+      expect(text).toContain('745');
+    });
+
     it('degrades to "no changes" when the apply response has no result body', async () => {
       mswServer.use(
         http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/macros/:mid/apply', () =>
