@@ -5,6 +5,7 @@ import {
   formatCategory,
   formatComment,
   formatList,
+  formatMacro,
   formatOrganization,
   formatSection,
   formatSlaBlock,
@@ -19,6 +20,7 @@ import {
   MOCK_ARTICLE,
   MOCK_CATEGORY,
   MOCK_COMMENT,
+  MOCK_MACRO,
   MOCK_ORGANIZATION,
   MOCK_SECTION,
   MOCK_SLA_POLICY,
@@ -284,6 +286,28 @@ describe('formatSection', () => {
     expect(result).toContain('FAQ');
     expect(result).toContain('600');
     expect(result).toContain('800');
+  });
+});
+
+describe('formatMacro', () => {
+  it('includes id, title, scope and the ordered actions', () => {
+    const result = formatMacro(MOCK_MACRO);
+    expect(result).toContain('Close and thank the customer (id 700)');
+    expect(result).toContain('Scope**: shared');
+    expect(result).toContain('status → solved');
+    expect(result).toContain('set_tags → resolved, macro_applied');
+    expect(result).toContain('comment_value → Thanks for your business!');
+  });
+
+  it('marks a restricted macro and previews an over-long action value', () => {
+    const result = formatMacro({
+      ...MOCK_MACRO,
+      restriction: { type: 'Group', id: 1 },
+      actions: [{ field: 'comment_value', value: 'x'.repeat(500) }],
+    });
+    expect(result).toContain('Scope**: restricted');
+    expect(result).toContain('…');
+    expect(result).not.toContain('x'.repeat(500));
   });
 });
 

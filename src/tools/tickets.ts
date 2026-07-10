@@ -17,6 +17,9 @@ import {
 import type {
   ZendeskComment,
   ZendeskListResponse,
+  ZendeskMacro,
+  ZendeskMacroApplyComment,
+  ZendeskMacroApplyResult,
   ZendeskSlaPolicy,
   ZendeskSlaSideloadEntry,
   ZendeskTicket,
@@ -27,6 +30,7 @@ import type {
 import {
   formatComment,
   formatList,
+  formatMacro,
   formatSlaBlock,
   formatSlaPolicy,
   formatTicket,
@@ -171,6 +175,55 @@ const fetchTicketSla = async (
     // SLA is supplementary — never fail get_ticket because the lookup faltered.
     return undefined;
   }
+};
+
+// Render the preview returned by the macro-apply endpoint into the concrete,
+// reviewable changes a macro would make, then spell out the commit step. The
+// apply endpoint mutates nothing, so the text ends by pointing at the write
+// tools that actually persist the change — the deliberate two-step from #120.
+const formatMacroApplyResult = (
+  ticketId: number,
+  macroId: number,
+  result: ZendeskMacroApplyResult,
+): string => {
+  const ticket = result.ticket ?? {};
+  const comment: ZendeskMacroApplyComment | undefined = ticket.comment ?? result.comment;
+  const customFields = ticket.fields ?? ticket.custom_fields ?? [];
+
+  const scalarChanges = Object.entries(ticket)
+    .filter(([key]) => key !== 'comment' && key !== 'fields' && key !== 'custom_fields')
+    .map(
+      ([key, value]) => `- **${key}**: ${Array.isArray(value) ? value.join(', ') : String(value)}`,
+    );
+
+  const customFieldChanges = customFields.map(
+    (f) =>
+      `- **custom field ${f.id}**: ${Array.isArray(f.value) ? f.value.join(', ') : String(f.value)}`,
+  );
+
+  const lines = [
+    `# Macro #${macroId} applied to ticket #${ticketId} (preview — nothing saved yet)`,
+    '',
+    '## Field changes',
+    ...(scalarChanges.length > 0 || customFieldChanges.length > 0
+      ? [...scalarChanges, ...customFieldChanges]
+      : ['- none']),
+  ];
+
+  if (comment?.body) {
+    const visibility = comment.public === false ? 'internal note' : 'public comment';
+    lines.push('', `## Reply (${visibility})`, '', comment.body);
+  } else {
+    lines.push('', '## Reply', '- none');
+  }
+
+  lines.push(
+    '',
+    '## To apply these changes',
+    'Nothing has been committed. Persist the field changes with `update_ticket` (or `manage_tags` for incremental tag edits), and post the reply with `add_public_comment` (public) or `add_private_note` (internal). Edit the reply text first if needed.',
+  );
+
+  return lines.join('\n');
 };
 
 export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
@@ -902,6 +955,97 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
                 formatTicketField,
                 extractPaginationMeta(response, fields.length),
               ),
+            },
+          ],
+        };
+      },
+    },
+    {
+      name: 'list_macros',
+      namespace: 'tickets',
+      readOnly: true,
+      title: 'List Zendesk Macros',
+      description:
+        'List the active macros available to the authenticated user. A macro bundles a canned reply and/or a set of field changes (status, priority, assignee, group, tags, custom fields) an agent applies to a ticket in one gesture; this returns each macro id, title, description, availability scope, and its ordered list of actions, offset-paginated. Results are scoped by per-user OAuth to what the current user can see, so no shared admin key is needed. Pass a macro id from here to apply_macro to preview its effect on a specific ticket.',
+      inputSchema: z.object({
+        per_page: z
+          .number()
+          .int()
+          .min(1)
+          .max(MAX_PAGE_SIZE)
+          .default(DEFAULT_PAGE_SIZE)
+          .describe(PER_PAGE_DESC),
+        page: z.number().int().min(1).default(1).describe(PAGE_DESC),
+      }),
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+      handler: async (params) => {
+        const { per_page, page } = params as { per_page: number; page: number };
+        const token = await getToken();
+        const response = await zendeskGet<ZendeskListResponse<ZendeskMacro>>(
+          subdomain,
+          token,
+          '/macros/active',
+          buildOffsetParams(per_page, page),
+        );
+        const macros = response.macros ?? [];
+        // Guard against the `count` wrapper being absent on some responses so the
+        // footer reflects the page rather than a misleading "Results: 0".
+        const meta =
+          response.count != null
+            ? extractSearchPaginationMeta(response, per_page, page)
+            : { count: macros.length, has_more: false, after_cursor: null };
+        return {
+          content: [{ type: 'text', text: formatList(macros, formatMacro, meta) }],
+        };
+      },
+    },
+    {
+      name: 'apply_macro',
+      namespace: 'tickets',
+      // Marked write (readOnly: false) even though the apply endpoint mutates
+      // nothing: it is the entry point of a mutation workflow whose commit step
+      // (update_ticket / add_*_comment) is filtered out by --read-only, so
+      // exposing apply_macro there would offer an "apply" the user cannot finish.
+      readOnly: false,
+      title: 'Apply Macro to Ticket (preview)',
+      description:
+        'Resolve a macro against a ticket and return the concrete changes it would make — the canned reply (with its public/internal flag) plus every field change (status, priority, assignee, tags, custom fields) — WITHOUT saving anything. Returns the proposed reply and field set for review; nothing is committed. To actually apply it, follow up with update_ticket for the field changes and add_public_comment or add_private_note for the reply. This deliberate two-step keeps the mutation explicit and reviewable rather than hidden. Find macro ids via list_macros and the ticket id via search_tickets or list_tickets.',
+      inputSchema: z.object({
+        ticket_id: z
+          .number()
+          .int()
+          .describe(
+            'Ticket ID — the numeric id of the ticket to preview the macro against. Obtain it from search_tickets or list_tickets.',
+          ),
+        macro_id: z
+          .number()
+          .int()
+          .describe('Macro ID — the numeric id of the macro to apply. Obtain it from list_macros.'),
+      }),
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+      handler: async (params) => {
+        const { ticket_id, macro_id } = params as { ticket_id: number; macro_id: number };
+        const token = await getToken();
+        const { result } = await zendeskGet<{ result: ZendeskMacroApplyResult }>(
+          subdomain,
+          token,
+          `/tickets/${ticket_id}/macros/${macro_id}/apply`,
+        );
+        return {
+          content: [
+            {
+              type: 'text',
+              text: truncateIfNeeded(formatMacroApplyResult(ticket_id, macro_id, result)),
             },
           ],
         };

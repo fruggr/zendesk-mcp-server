@@ -21,9 +21,9 @@ const getAllText = (result: { content: Array<{ type: string; text?: string }> })
     .join('\n');
 
 describe('ticket tools', () => {
-  it('creates 12 tools (search_tickets lives here; the unified search is elsewhere)', () => {
+  it('creates 14 tools (search_tickets lives here; the unified search is elsewhere)', () => {
     const tools = createTicketTools(ctx);
-    expect(tools).toHaveLength(12);
+    expect(tools).toHaveLength(14);
   });
 
   describe('get_ticket', () => {
@@ -821,6 +821,76 @@ describe('ticket tools', () => {
       const tool = findTool('manage_tags');
       expect(tool.description).toContain('update_ticket');
       expect(tool.description).toContain('idempotent');
+    });
+  });
+
+  describe('list_macros', () => {
+    it('lists active macros with their actions', async () => {
+      const tool = findTool('list_macros');
+      const result = await tool.handler({ per_page: 100, page: 1 });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('Close and thank the customer');
+      expect(text).toContain('(id 700)');
+      expect(text).toContain('status → solved');
+      expect(text).toContain('set_tags → resolved, macro_applied');
+    });
+
+    it('hits the active-macros endpoint (scoped to the current user)', async () => {
+      let requestedPath: string | null = null;
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/macros/active', ({ request }) => {
+          requestedPath = new URL(request.url).pathname;
+          return HttpResponse.json({ macros: [], count: 0 });
+        }),
+      );
+      const tool = findTool('list_macros');
+      await tool.handler({ per_page: 100, page: 1 });
+      expect(requestedPath).toBe('/api/v2/macros/active');
+    });
+
+    it('is read-only (survives --read-only)', () => {
+      const tool = findTool('list_macros');
+      expect(tool.readOnly).toBe(true);
+      expect(tool.annotations.readOnlyHint).toBe(true);
+    });
+  });
+
+  describe('apply_macro', () => {
+    it('previews the field changes and reply without committing', async () => {
+      const tool = findTool('apply_macro');
+      const result = await tool.handler({ ticket_id: 1, macro_id: 700 });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('preview — nothing saved yet');
+      expect(text).toContain('**status**: solved');
+      expect(text).toContain('resolved, macro_applied');
+      expect(text).toContain('custom field 360000000001');
+      expect(text).toContain('severity_2');
+      expect(text).toContain('Thanks for your business!');
+      // Steers the caller to the commit tools (the deliberate two-step).
+      expect(text).toContain('update_ticket');
+      expect(text).toContain('add_public_comment');
+    });
+
+    it('marks a macro comment with public=false as an internal note', async () => {
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/macros/:mid/apply', () =>
+          HttpResponse.json({
+            result: { ticket: { comment: { body: 'Internal only', public: false } } },
+          }),
+        ),
+      );
+      const tool = findTool('apply_macro');
+      const result = await tool.handler({ ticket_id: 1, macro_id: 700 });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('internal note');
+      expect(text).toContain('Internal only');
+    });
+
+    it('is a write tool so it is filtered out under --read-only', () => {
+      const tool = findTool('apply_macro');
+      expect(tool.readOnly).toBe(false);
+      expect(tool.annotations.readOnlyHint).toBe(false);
+      expect(tool.annotations.destructiveHint).toBe(false);
     });
   });
 });

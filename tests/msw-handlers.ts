@@ -97,6 +97,41 @@ export const MOCK_TICKET_FIELD_CUSTOM = {
   ],
 };
 
+// A macro from GET /macros/active: a canned reply (`comment_value`) plus field
+// changes, mirroring the real Macros API shape (actions are {field, value}).
+export const MOCK_MACRO = {
+  id: 700,
+  title: 'Close and thank the customer',
+  description: 'Solve the ticket and send a thank-you note',
+  active: true,
+  position: 9999,
+  restriction: null,
+  actions: [
+    { field: 'status', value: 'solved' },
+    { field: 'set_tags', value: ['resolved', 'macro_applied'] },
+    { field: 'comment_value', value: 'Thanks for your business! We hope to see you again soon.' },
+  ],
+  created_at: '2026-01-01T00:00:00Z',
+  updated_at: '2026-01-02T00:00:00Z',
+};
+
+// GET /tickets/{id}/macros/{macro_id}/apply — the ticket as it WOULD be after
+// the macro runs (only changed fields) plus the comment it would add, nested
+// under `result.ticket`. Nothing is persisted by this endpoint.
+export const MOCK_MACRO_APPLY = {
+  result: {
+    ticket: {
+      status: 'solved',
+      tags: ['resolved', 'macro_applied'],
+      fields: [{ id: 360000000001, value: 'severity_2' }],
+      comment: {
+        body: 'Thanks for your business! We hope to see you again soon.',
+        public: true,
+      },
+    },
+  },
+};
+
 export const MOCK_USER = {
   id: 9999,
   name: 'Test User',
@@ -389,6 +424,12 @@ export const handlers = [
     HttpResponse.json({ ticket: { ...MOCK_TICKET, id: Number(params['id']), status: 'solved' } }),
   ),
   http.post(`${BASE}/uploads`, () => HttpResponse.json({ upload: MOCK_UPLOAD })),
+
+  // Macros — active macros for the current user, and the per-ticket apply
+  // (preview) endpoint. The apply route sits under /tickets/:id/ but has extra
+  // path segments, so it does not collide with the Show Ticket handler above.
+  http.get(`${BASE}/macros/active`, () => HttpResponse.json({ macros: [MOCK_MACRO], count: 1 })),
+  http.get(`${BASE}/tickets/:id/macros/:mid/apply`, () => HttpResponse.json(MOCK_MACRO_APPLY)),
 
   // SLA policies — the real endpoint returns the full config list with no
   // `count` wrapper, so omit it here to exercise the array-length fallback.

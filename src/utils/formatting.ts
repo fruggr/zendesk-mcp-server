@@ -7,6 +7,8 @@ import type {
   ZendeskComment,
   ZendeskContentTag,
   ZendeskLabel,
+  ZendeskMacro,
+  ZendeskMacroAction,
   ZendeskOrganization,
   ZendeskPermissionGroup,
   ZendeskSection,
@@ -94,6 +96,45 @@ export const formatTicketField = (field: ZendeskTicketField): string => {
     field.tag ? `- **Tag**: ${field.tag}` : '',
     options.length > 0 ? '- **Options** (name → value):' : '',
     ...options.map((o) => `  - ${o.name} → ${o.value}`),
+  ]
+    .filter(Boolean)
+    .join('\n');
+};
+
+// One macro action rendered as `field → value`. Long values (a canned reply in
+// `comment_value`) are previewed rather than dumped whole, keeping a macro list
+// scannable; the full reply text is materialized by apply_macro against a
+// ticket, not here.
+const MACRO_VALUE_PREVIEW = 120;
+const formatMacroActionValue = (value: unknown): string => {
+  const rendered =
+    value === null || value === undefined
+      ? ''
+      : Array.isArray(value)
+        ? value.join(', ')
+        : typeof value === 'object'
+          ? JSON.stringify(value)
+          : String(value);
+  const oneLine = rendered.replace(/\s+/g, ' ').trim();
+  return oneLine.length > MACRO_VALUE_PREVIEW
+    ? `${oneLine.slice(0, MACRO_VALUE_PREVIEW)}…`
+    : oneLine;
+};
+
+const formatMacroAction = (action: ZendeskMacroAction): string =>
+  `  - ${action.field} → ${formatMacroActionValue(action.value)}`;
+
+// Render a macro definition for list_macros: its id (what apply_macro needs),
+// title, availability scope, and the ordered bundle of actions it applies so a
+// caller can judge a macro's effect before previewing it against a ticket.
+export const formatMacro = (macro: ZendeskMacro): string => {
+  const scope = macro.restriction ? 'restricted' : 'shared';
+  return [
+    `## ${macro.title} (id ${macro.id})`,
+    `- **${macro.active ? 'active' : 'inactive'}** | **Scope**: ${scope}`,
+    macro.description ? `- **Description**: ${macro.description}` : '',
+    macro.actions.length > 0 ? '- **Actions**:' : '- **Actions**: none',
+    ...macro.actions.map(formatMacroAction),
   ]
     .filter(Boolean)
     .join('\n');
