@@ -197,7 +197,7 @@ const formatMacroApplyResult = (
   // object rather than a one-element array, so normalize to an array before
   // mapping — a lone object would otherwise blow up on `.map`.
   const rawFields = ticket.fields ?? ticket.custom_fields;
-  const customFields = Array.isArray(rawFields) ? rawFields : rawFields ? [rawFields] : [];
+  const customFields = [rawFields ?? []].flat();
 
   const scalarChanges = Object.entries(ticket)
     .filter(([key]) => key !== 'comment' && key !== 'fields' && key !== 'custom_fields')

@@ -117,7 +117,6 @@ export interface ZendeskMacro {
 // public comment (emails the requester) from an internal note.
 export interface ZendeskMacroApplyComment {
   body?: string;
-  html_body?: string;
   public?: boolean;
 }
 
