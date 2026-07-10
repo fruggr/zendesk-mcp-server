@@ -886,6 +886,20 @@ describe('ticket tools', () => {
       expect(text).toContain('Internal only');
     });
 
+    it('degrades to "no changes" when the apply response has no result body', async () => {
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/macros/:mid/apply', () =>
+          HttpResponse.json({}),
+        ),
+      );
+      const tool = findTool('apply_macro');
+      const result = await tool.handler({ ticket_id: 1, macro_id: 700 });
+      expect(result.isError).toBeFalsy();
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('## Field changes');
+      expect(text).toContain('- none');
+    });
+
     it('is a write tool so it is filtered out under --read-only', () => {
       const tool = findTool('apply_macro');
       expect(tool.readOnly).toBe(false);

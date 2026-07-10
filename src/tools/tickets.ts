@@ -184,10 +184,13 @@ const fetchTicketSla = async (
 const formatMacroApplyResult = (
   ticketId: number,
   macroId: number,
-  result: ZendeskMacroApplyResult,
+  result: ZendeskMacroApplyResult | undefined,
 ): string => {
-  const ticket = result.ticket ?? {};
-  const comment: ZendeskMacroApplyComment | undefined = ticket.comment ?? result.comment;
+  // Zendesk always wraps the preview in `result.ticket`, but guard the whole
+  // path so a malformed body degrades to a clean "no changes" instead of a
+  // cryptic "cannot read properties of undefined" tool error.
+  const ticket = result?.ticket ?? {};
+  const comment: ZendeskMacroApplyComment | undefined = ticket.comment ?? result?.comment;
   const customFields = ticket.fields ?? ticket.custom_fields ?? [];
 
   const scalarChanges = Object.entries(ticket)
