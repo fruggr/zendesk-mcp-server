@@ -110,7 +110,9 @@ export const formatFieldValue = (value: unknown): string =>
   value === null || value === undefined
     ? ''
     : Array.isArray(value)
-      ? value.join(', ')
+      ? // Recurse per element so an array of objects renders as JSON tokens
+        // rather than the useless "[object Object]" that a bare join produces.
+        value.map(formatFieldValue).join(', ')
       : typeof value === 'object'
         ? JSON.stringify(value)
         : String(value);
@@ -134,13 +136,17 @@ const formatMacroAction = (action: ZendeskMacroAction): string =>
 // title, availability scope, and the ordered bundle of actions it applies so a
 // caller can judge a macro's effect before previewing it against a ticket.
 export const formatMacro = (macro: ZendeskMacro): string => {
-  const scope = macro.restriction ? 'restricted' : 'shared';
+  // A shared macro comes back with `restriction: null` — but the API also
+  // renders an unrestricted macro as an empty object `{}`, so key off a real
+  // `type` rather than mere truthiness to avoid mislabeling it "restricted".
+  const scope = macro.restriction?.type ? 'restricted' : 'shared';
+  const actions = macro.actions ?? [];
   return [
     `## ${macro.title} (id ${macro.id})`,
     `- **${macro.active ? 'active' : 'inactive'}** | **Scope**: ${scope}`,
     macro.description ? `- **Description**: ${macro.description}` : '',
-    macro.actions.length > 0 ? '- **Actions**:' : '- **Actions**: none',
-    ...macro.actions.map(formatMacroAction),
+    actions.length > 0 ? '- **Actions**:' : '- **Actions**: none',
+    ...actions.map(formatMacroAction),
   ]
     .filter(Boolean)
     .join('\n');

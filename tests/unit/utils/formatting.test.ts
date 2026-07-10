@@ -299,6 +299,10 @@ describe('formatFieldValue', () => {
     expect(formatFieldValue(0)).toBe('0');
     expect(formatFieldValue('solved')).toBe('solved');
   });
+
+  it('renders an array of objects as JSON tokens, not "[object Object]"', () => {
+    expect(formatFieldValue([{ id: 1 }, { id: 2 }])).toBe('{"id":1}, {"id":2}');
+  });
 });
 
 describe('formatMacro', () => {
@@ -320,6 +324,18 @@ describe('formatMacro', () => {
     expect(result).toContain('Scope**: restricted');
     expect(result).toContain('…');
     expect(result).not.toContain('x'.repeat(500));
+  });
+
+  it('treats an empty-object restriction as shared, not restricted', () => {
+    // The Zendesk list-macros response renders an unrestricted macro's
+    // `restriction` as `{}`; a truthiness check would mislabel it "restricted".
+    const result = formatMacro({ ...MOCK_MACRO, restriction: {} as never });
+    expect(result).toContain('Scope**: shared');
+  });
+
+  it('does not crash when a macro has no actions array', () => {
+    const result = formatMacro({ ...MOCK_MACRO, actions: undefined as never });
+    expect(result).toContain('**Actions**: none');
   });
 });
 
