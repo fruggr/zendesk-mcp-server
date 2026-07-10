@@ -14,6 +14,7 @@ import type {
   ZendeskSlaPolicy,
   ZendeskSlaSideloadEntry,
   ZendeskTicket,
+  ZendeskTicketField,
   ZendeskTranslation,
   ZendeskUser,
   ZendeskUserSegment,
@@ -71,6 +72,28 @@ export const formatSlaPolicy = (policy: ZendeskSlaPolicy): string => {
     conditions.length > 0 ? `- **Conditions**: ${conditions.join('; ')}` : '',
     targets.length > 0 ? '- **Targets**:' : '',
     ...targets,
+  ]
+    .filter(Boolean)
+    .join('\n');
+};
+
+// Render a ticket field definition. Surfaces the id (what custom_fields writes
+// need), the type, and — for dropdown/multiselect (custom_field_options) or
+// system fields (system_field_options) — the exact value tags accepted, so the
+// caller can map a natural-language intent to a valid write without guessing.
+export const formatTicketField = (field: ZendeskTicketField): string => {
+  const flags = [
+    field.active ? 'active' : 'inactive',
+    field.required ? 'required' : 'optional',
+  ].join(', ');
+  const options = field.custom_field_options ?? field.system_field_options ?? [];
+  return [
+    `## ${field.title} (id ${field.id})`,
+    `- **Type**: ${field.type} | **${flags}**`,
+    field.description ? `- **Description**: ${field.description}` : '',
+    field.tag ? `- **Tag**: ${field.tag}` : '',
+    options.length > 0 ? '- **Options** (name → value):' : '',
+    ...options.map((o) => `  - ${o.name} → ${o.value}`),
   ]
     .filter(Boolean)
     .join('\n');

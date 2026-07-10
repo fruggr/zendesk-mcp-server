@@ -21,6 +21,7 @@ import type {
   ZendeskSlaSideloadEntry,
   ZendeskTicket,
   ZendeskTicketAttachment,
+  ZendeskTicketField,
   ZendeskUpload,
 } from '../types';
 import {
@@ -29,6 +30,7 @@ import {
   formatSlaBlock,
   formatSlaPolicy,
   formatTicket,
+  formatTicketField,
   truncateIfNeeded,
 } from '../utils/formatting';
 import {
@@ -402,7 +404,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: false,
       title: 'Create Zendesk Ticket',
       description:
-        'Create a new Zendesk support ticket with subject, description, and optional priority/type/assignee/tags. The description becomes the first public comment of the ticket, and the new ticket id is returned. After creation, use update_ticket to change status or assignee, add_public_comment or add_private_note to reply, and manage_tags to adjust tags. Look up valid assignee_id / group_id and custom field ids via search_users or your Zendesk admin settings.',
+        'Create a new Zendesk support ticket with subject, description, and optional priority/type/assignee/tags. The description becomes the first public comment of the ticket, and the new ticket id is returned. After creation, use update_ticket to change status or assignee, add_public_comment or add_private_note to reply, and manage_tags to adjust tags. Look up valid assignee_id / group_id and custom field ids via search_users or your Zendesk admin settings. Discover custom field ids and their accepted option values with list_ticket_fields.',
       inputSchema: z.object({
         subject: z
           .string()
@@ -440,7 +442,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           .array(z.object({ id: z.number().int(), value: z.unknown() }))
           .optional()
           .describe(
-            'Custom field values as { id, value } pairs (field ids come from your Zendesk admin settings).',
+            'Custom field values as { id, value } pairs (field ids come from your Zendesk admin settings). Call list_ticket_fields first to discover the numeric field ids and, for dropdown/multiselect fields, the exact option values Zendesk accepts.',
           ),
       }),
       annotations: {
@@ -513,7 +515,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           .array(z.object({ id: z.number().int(), value: z.unknown() }))
           .optional()
           .describe(
-            'Custom field values as { id, value } pairs (field ids come from your Zendesk admin settings).',
+            'Custom field values as { id, value } pairs (field ids come from your Zendesk admin settings). Call list_ticket_fields first to discover the numeric field ids and, for dropdown/multiselect fields, the exact option values Zendesk accepts.',
           ),
       }),
       annotations: {
@@ -852,6 +854,56 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
             : { count: policies.length, has_more: false, after_cursor: null };
         return {
           content: [{ type: 'text', text: formatList(policies, formatSlaPolicy, meta) }],
+        };
+      },
+    },
+    {
+      name: 'list_ticket_fields',
+      namespace: 'tickets',
+      readOnly: true,
+      title: 'List Ticket Fields',
+      description:
+        'List the ticket field definitions configured on this Zendesk (both system fields and custom fields), returning each field\'s id, type, whether it is active/required, and — for dropdown and multiselect fields — the valid option values. Use this to discover the numeric field ids and accepted option tags that create_ticket and update_ticket expect in their custom_fields argument, so a natural-language intent ("set severity to High") maps to the right id and a value Zendesk will accept instead of a blind guess. Read-only reference lookup; cursor-paginated in Zendesk\'s default field order.',
+      inputSchema: z.object({
+        page_size: z
+          .number()
+          .int()
+          .min(1)
+          .max(MAX_PAGE_SIZE)
+          .default(DEFAULT_PAGE_SIZE)
+          .describe('Ticket field definitions per page (1-100, default 100).'),
+        cursor: z
+          .string()
+          .optional()
+          .describe('Pagination cursor from a previous response; omit for the first page.'),
+      }),
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+      handler: async (params) => {
+        const { page_size, cursor } = params as { page_size: number; cursor?: string };
+        const token = await getToken();
+        const response = await zendeskGet<ZendeskListResponse<ZendeskTicketField>>(
+          subdomain,
+          token,
+          '/ticket_fields',
+          buildCursorParams(page_size, cursor),
+        );
+        const fields = response.ticket_fields ?? [];
+        return {
+          content: [
+            {
+              type: 'text',
+              text: formatList(
+                fields,
+                formatTicketField,
+                extractPaginationMeta(response, fields.length),
+              ),
+            },
+          ],
         };
       },
     },
