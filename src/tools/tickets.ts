@@ -29,6 +29,7 @@ import type {
 } from '../types';
 import {
   formatComment,
+  formatFieldValue,
   formatList,
   formatMacro,
   formatSlaBlock,
@@ -40,6 +41,7 @@ import {
 import {
   buildCursorParams,
   buildOffsetParams,
+  extractOffsetPaginationMeta,
   extractPaginationMeta,
   extractSearchPaginationMeta,
   PAGE_DESC,
@@ -195,22 +197,19 @@ const formatMacroApplyResult = (
 
   const scalarChanges = Object.entries(ticket)
     .filter(([key]) => key !== 'comment' && key !== 'fields' && key !== 'custom_fields')
-    .map(
-      ([key, value]) => `- **${key}**: ${Array.isArray(value) ? value.join(', ') : String(value)}`,
-    );
+    .map(([key, value]) => `- **${key}**: ${formatFieldValue(value)}`);
 
   const customFieldChanges = customFields.map(
-    (f) =>
-      `- **custom field ${f.id}**: ${Array.isArray(f.value) ? f.value.join(', ') : String(f.value)}`,
+    (f) => `- **custom field ${f.id}**: ${formatFieldValue(f.value)}`,
   );
+
+  const fieldChanges = [...scalarChanges, ...customFieldChanges];
 
   const lines = [
     `# Macro #${macroId} applied to ticket #${ticketId} (preview — nothing saved yet)`,
     '',
     '## Field changes',
-    ...(scalarChanges.length > 0 || customFieldChanges.length > 0
-      ? [...scalarChanges, ...customFieldChanges]
-      : ['- none']),
+    ...(fieldChanges.length > 0 ? fieldChanges : ['- none']),
   ];
 
   if (comment?.body) {
@@ -902,12 +901,9 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         }
         const policies = response.sla_policies ?? [];
         // The SLA policies endpoint returns the full config list and, in
-        // practice, omits the `count` wrapper, so fall back to the array length
-        // rather than reporting "Results: 0".
-        const meta =
-          response.count != null
-            ? extractSearchPaginationMeta(response, per_page, page)
-            : { count: policies.length, has_more: false, after_cursor: null };
+        // practice, omits the `count` wrapper, so the shared helper falls back to
+        // the array length rather than reporting "Results: 0".
+        const meta = extractOffsetPaginationMeta(response, policies.length, per_page, page);
         return {
           content: [{ type: 'text', text: formatList(policies, formatSlaPolicy, meta) }],
         };
@@ -996,12 +992,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           buildOffsetParams(per_page, page),
         );
         const macros = response.macros ?? [];
-        // Guard against the `count` wrapper being absent on some responses so the
-        // footer reflects the page rather than a misleading "Results: 0".
-        const meta =
-          response.count != null
-            ? extractSearchPaginationMeta(response, per_page, page)
-            : { count: macros.length, has_more: false, after_cursor: null };
+        const meta = extractOffsetPaginationMeta(response, macros.length, per_page, page);
         return {
           content: [{ type: 'text', text: formatList(macros, formatMacro, meta) }],
         };

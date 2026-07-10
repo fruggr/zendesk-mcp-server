@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { buildCursorParams, extractPaginationMeta } from '../../../src/utils/pagination';
+import {
+  buildCursorParams,
+  extractOffsetPaginationMeta,
+  extractPaginationMeta,
+} from '../../../src/utils/pagination';
 
 describe('buildCursorParams', () => {
   it('builds params with page size only', () => {
@@ -16,6 +20,18 @@ describe('buildCursorParams', () => {
   it('omits cursor when undefined', () => {
     const params = buildCursorParams(50, undefined);
     expect(params).not.toHaveProperty('page[after]');
+  });
+});
+
+describe('extractOffsetPaginationMeta', () => {
+  it('uses offset math when the count wrapper is present', () => {
+    const meta = extractOffsetPaginationMeta({ macros: [], count: 150 }, 0, 100, 1);
+    expect(meta).toEqual({ count: 150, has_more: true, after_cursor: '2' });
+  });
+
+  it('falls back to the returned page length when count is absent', () => {
+    const meta = extractOffsetPaginationMeta({ sla_policies: [] }, 7, 100, 1);
+    expect(meta).toEqual({ count: 7, has_more: false, after_cursor: null });
   });
 });
 

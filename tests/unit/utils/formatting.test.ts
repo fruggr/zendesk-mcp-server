@@ -4,6 +4,7 @@ import {
   formatArticleSummary,
   formatCategory,
   formatComment,
+  formatFieldValue,
   formatList,
   formatMacro,
   formatOrganization,
@@ -286,6 +287,17 @@ describe('formatSection', () => {
     expect(result).toContain('FAQ');
     expect(result).toContain('600');
     expect(result).toContain('800');
+  });
+});
+
+describe('formatFieldValue', () => {
+  it('joins arrays, JSON-encodes objects, empties null/undefined, stringifies scalars', () => {
+    expect(formatFieldValue(['a', 'b'])).toBe('a, b');
+    expect(formatFieldValue({ x: 1 })).toBe('{"x":1}');
+    expect(formatFieldValue(null)).toBe('');
+    expect(formatFieldValue(undefined)).toBe('');
+    expect(formatFieldValue(0)).toBe('0');
+    expect(formatFieldValue('solved')).toBe('solved');
   });
 });
 

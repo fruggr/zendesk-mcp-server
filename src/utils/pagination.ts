@@ -45,6 +45,20 @@ export const extractPaginationMeta = <T>(
   count: response.count ?? itemCount,
 });
 
+// Offset-based list endpoints (e.g. /slas/policies, /macros/active) that
+// *usually* carry a `count` wrapper but occasionally omit it. When present, use
+// the normal offset math; when absent, fall back to the returned page length so
+// the footer reflects what came back rather than a misleading "Results: 0".
+export const extractOffsetPaginationMeta = <T>(
+  response: ZendeskListResponse<T>,
+  itemCount: number,
+  perPage: number,
+  page: number,
+): PaginationMeta =>
+  response.count != null
+    ? extractSearchPaginationMeta(response, perPage, page)
+    : { count: itemCount, has_more: false, after_cursor: null };
+
 // For search responses — offset-based, count is always present
 export const extractSearchPaginationMeta = <T>(
   response: ZendeskListResponse<T>,

@@ -101,21 +101,27 @@ export const formatTicketField = (field: ZendeskTicketField): string => {
     .join('\n');
 };
 
+// Render an arbitrary Zendesk field value — a macro action value, a macro-apply
+// field change — as a compact string: arrays as comma-joined tokens, objects as
+// JSON, null/undefined as empty. Shared by the macro formatters (here and in the
+// apply-result renderer) so list_macros and apply_macro stringify values the
+// same way instead of drifting apart.
+export const formatFieldValue = (value: unknown): string =>
+  value === null || value === undefined
+    ? ''
+    : Array.isArray(value)
+      ? value.join(', ')
+      : typeof value === 'object'
+        ? JSON.stringify(value)
+        : String(value);
+
 // One macro action rendered as `field → value`. Long values (a canned reply in
 // `comment_value`) are previewed rather than dumped whole, keeping a macro list
 // scannable; the full reply text is materialized by apply_macro against a
 // ticket, not here.
 const MACRO_VALUE_PREVIEW = 120;
 const formatMacroActionValue = (value: unknown): string => {
-  const rendered =
-    value === null || value === undefined
-      ? ''
-      : Array.isArray(value)
-        ? value.join(', ')
-        : typeof value === 'object'
-          ? JSON.stringify(value)
-          : String(value);
-  const oneLine = rendered.replace(/\s+/g, ' ').trim();
+  const oneLine = formatFieldValue(value).replace(/\s+/g, ' ').trim();
   return oneLine.length > MACRO_VALUE_PREVIEW
     ? `${oneLine.slice(0, MACRO_VALUE_PREVIEW)}…`
     : oneLine;
