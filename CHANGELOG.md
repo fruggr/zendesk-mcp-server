@@ -1,3 +1,25 @@
+## [2.9.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.8.0...v2.9.0) (2026-07-10)
+
+### Features
+
+* **tickets:** add read-only list_ticket_fields tool ([#143](https://github.com/fruggr/zendesk-mcp-server/issues/143)) ([4c9563f](https://github.com/fruggr/zendesk-mcp-server/commit/4c9563f836f30f1a5887bb7476261397b8578342))
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Documentation
+
+* lead npm description with the differentiator, fit npm snippet budget ([#139](https://github.com/fruggr/zendesk-mcp-server/issues/139)) ([b1673c9](https://github.com/fruggr/zendesk-mcp-server/commit/b1673c99f5c85c2b823c64c074ee5a360b11faf5))
+
+### Chores
+
+* **deps:** lock file maintenance ([#144](https://github.com/fruggr/zendesk-mcp-server/issues/144)) ([86e4660](https://github.com/fruggr/zendesk-mcp-server/commit/86e46609e2e2788d81b0496fa09bee9a651f8053))
+
+### Continuous Integration
+
+* version-control server.json, sync its version at release ([#142](https://github.com/fruggr/zendesk-mcp-server/issues/142)) ([71fd510](https://github.com/fruggr/zendesk-mcp-server/commit/71fd5107a6850e9ae5fa077f04d508af8e1d8e09))
+</details>
+
 ## [2.8.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.7.0...v2.8.0) (2026-07-08)
 
 ### Features
