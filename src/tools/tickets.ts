@@ -223,14 +223,14 @@ const resolveViewId = async (
   token: string,
   view: string | number,
 ): Promise<{ id: number } | { available: string[] }> => {
-  if (typeof view === 'number') return { id: view };
-  if (/^\d+$/.test(view.trim())) return { id: Number(view.trim()) };
+  const ref = String(view).trim();
+  if (/^\d+$/.test(ref)) return { id: Number(ref) };
   const response = await zendeskGet<ZendeskListResponse<ZendeskView>>(subdomain, token, '/views', {
     active: 'true',
     ...buildCursorParams(MAX_PAGE_SIZE),
   });
   const views = response.views ?? [];
-  const target = view.trim().toLowerCase();
+  const target = ref.toLowerCase();
   const match = views.find((v) => v.title.trim().toLowerCase() === target);
   return match ? { id: match.id } : { available: views.map((v) => v.title) };
 };
@@ -1065,14 +1065,13 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           token,
           views.map((v) => v.id),
         );
-        const rows = views.map((view) => ({ view, count: counts.get(view.id) }));
         return {
           content: [
             {
               type: 'text',
               text: formatList(
-                rows,
-                ({ view, count }) => formatView(view, count),
+                views,
+                (view) => formatView(view, counts.get(view.id)),
                 extractPaginationMeta(response, views.length),
               ),
             },
