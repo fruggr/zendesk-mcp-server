@@ -904,7 +904,9 @@ describe('ticket tools', () => {
                 id: 42,
                 url: 'https://testsubdomain.zendesk.com/api/v2/tickets/42.json',
                 status: 'pending',
-                via: { channel: 'web' },
+                // `via` DIFFERS from the before-read: a nested object is never a
+                // macro change, so the object-guard must drop it regardless.
+                via: { channel: 'api' },
                 generated_timestamp: 222,
                 tags: ['keep'],
                 fields: [{ id: 9, value: 'unchanged' }],

@@ -250,6 +250,7 @@ const formatMacroPreviewDiff = (
     if (key === 'tags') {
       const tagLine = formatTagDiff(beforeVal, afterVal);
       if (tagLine) changes.push(tagLine);
+    } else if (afterVal !== null && typeof afterVal === 'object' && !Array.isArray(afterVal)) {
     } else {
       changes.push(`- **${key}**: ${shownValue(beforeVal)} → ${shownValue(afterVal)}`);
     }
