@@ -2,7 +2,7 @@ import { HttpResponse, http } from 'msw';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ToolContext } from '../../../src/tools/definitions';
 import { createTicketTools } from '../../../src/tools/tickets';
-import { MOCK_SLA_SIDELOAD, MOCK_TICKET, MOCK_UPLOAD } from '../../msw-handlers';
+import { MOCK_SLA_SIDELOAD, MOCK_TICKET, MOCK_UPLOAD, MOCK_VIEW } from '../../msw-handlers';
 import { mswServer } from '../../setup';
 
 const ctx: ToolContext = { subdomain: 'testsubdomain', getToken: () => 'test-token' };
@@ -21,9 +21,9 @@ const getAllText = (result: { content: Array<{ type: string; text?: string }> })
     .join('\n');
 
 describe('ticket tools', () => {
-  it('creates 12 tools (search_tickets lives here; the unified search is elsewhere)', () => {
+  it('creates 14 tools (search_tickets lives here; the unified search is elsewhere)', () => {
     const tools = createTicketTools(ctx);
-    expect(tools).toHaveLength(12);
+    expect(tools).toHaveLength(14);
   });
 
   describe('get_ticket', () => {
@@ -821,6 +821,158 @@ describe('ticket tools', () => {
       const tool = findTool('manage_tags');
       expect(tool.description).toContain('update_ticket');
       expect(tool.description).toContain('idempotent');
+    });
+  });
+
+  describe('list_views', () => {
+    it('lists active views with their ticket counts', async () => {
+      const tool = findTool('list_views');
+      const result = await tool.handler({ page_size: 100 });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain(MOCK_VIEW.title);
+      expect(text).toContain(`(id ${MOCK_VIEW.id})`);
+      expect(text).toContain('298 ticket(s)');
+    });
+
+    it('marks a non-fresh count as updating instead of implying it is exact', async () => {
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/views/count_many', () =>
+          HttpResponse.json({
+            view_counts: [{ view_id: MOCK_VIEW.id, value: null, pretty: '...', fresh: false }],
+          }),
+        ),
+      );
+      const tool = findTool('list_views');
+      const result = await tool.handler({ page_size: 100 });
+      expect(result.content[0]?.text).toContain('(count updating)');
+    });
+
+    it('still lists views when the counts endpoint errors (best-effort counts)', async () => {
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/views/count_many', () =>
+          HttpResponse.json({}, { status: 500 }),
+        ),
+      );
+      const tool = findTool('list_views');
+      const result = await tool.handler({ page_size: 100 });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain(MOCK_VIEW.title);
+      expect(text).not.toContain('ticket(s)');
+    });
+
+    it('is read-only and passes the cursor through to Zendesk', async () => {
+      let sawCursor: string | null = null;
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/views', ({ request }) => {
+          sawCursor = new URL(request.url).searchParams.get('page[after]');
+          return HttpResponse.json({ views: [], meta: { has_more: false, after_cursor: '' } });
+        }),
+      );
+      const tool = findTool('list_views');
+      expect(tool.readOnly).toBe(true);
+      expect(tool.annotations.readOnlyHint).toBe(true);
+      await tool.handler({ page_size: 50, cursor: 'CURSOR123' });
+      expect(sawCursor).toBe('CURSOR123');
+    });
+  });
+
+  describe('get_view_tickets', () => {
+    it('resolves a view by title and returns its tickets', async () => {
+      const tool = findTool('get_view_tickets');
+      const result = await tool.handler({ view: MOCK_VIEW.title, page_size: 100 });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('Ticket #1');
+      expect(text).toContain('Test ticket');
+    });
+
+    it('accepts a numeric view id directly', async () => {
+      const tool = findTool('get_view_tickets');
+      const result = await tool.handler({ view: MOCK_VIEW.id, page_size: 100 });
+      expect(result.content[0]?.text).toContain('Ticket #1');
+    });
+
+    it("preserves the view's order after hydrating full tickets", async () => {
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/views/:id/execute', () =>
+          HttpResponse.json({
+            rows: [{ ticket: { id: 3 } }, { ticket: { id: 1 } }, { ticket: { id: 2 } }],
+            meta: { has_more: false, after_cursor: '' },
+          }),
+        ),
+        // show_many returns tickets in ascending id order, NOT the requested order.
+        http.get('https://testsubdomain.zendesk.com/api/v2/tickets/show_many', ({ request }) => {
+          const ids = (new URL(request.url).searchParams.get('ids') ?? '').split(',').map(Number);
+          const tickets = [...ids].sort((a, b) => a - b).map((id) => ({ ...MOCK_TICKET, id }));
+          return HttpResponse.json({ tickets });
+        }),
+      );
+      const tool = findTool('get_view_tickets');
+      const result = await tool.handler({ view: MOCK_VIEW.id, page_size: 100 });
+      const text = result.content[0]?.text ?? '';
+      const i3 = text.indexOf('Ticket #3');
+      const i1 = text.indexOf('Ticket #1');
+      const i2 = text.indexOf('Ticket #2');
+      expect(i3).toBeGreaterThanOrEqual(0);
+      expect(i3).toBeLessThan(i1);
+      expect(i1).toBeLessThan(i2);
+    });
+
+    it('passes sort_by/sort_order and the cursor through to the execute endpoint', async () => {
+      let sawSortBy: string | null = null;
+      let sawSortOrder: string | null = null;
+      let sawCursor: string | null = null;
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/views/:id/execute', ({ request }) => {
+          const url = new URL(request.url);
+          sawSortBy = url.searchParams.get('sort_by');
+          sawSortOrder = url.searchParams.get('sort_order');
+          sawCursor = url.searchParams.get('page[after]');
+          return HttpResponse.json({ rows: [], meta: { has_more: false, after_cursor: '' } });
+        }),
+      );
+      const tool = findTool('get_view_tickets');
+      await tool.handler({
+        view: MOCK_VIEW.id,
+        sort_by: 'priority',
+        sort_order: 'desc',
+        page_size: 50,
+        cursor: 'CUR',
+      });
+      expect(sawSortBy).toBe('priority');
+      expect(sawSortOrder).toBe('desc');
+      expect(sawCursor).toBe('CUR');
+    });
+
+    it('returns the available view titles when the title does not match', async () => {
+      const tool = findTool('get_view_tickets');
+      const result = await tool.handler({ view: 'Nonexistent queue', page_size: 100 });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('Available views');
+      expect(text).toContain(MOCK_VIEW.title);
+      expect(text).not.toContain('Ticket #');
+    });
+
+    it('rewrites a 403 on a restricted view into actionable guidance', async () => {
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/views/:id/execute', () =>
+          HttpResponse.json({ error: 'Forbidden' }, { status: 403 }),
+        ),
+      );
+      const tool = findTool('get_view_tickets');
+      const error = await tool.handler({ view: MOCK_VIEW.id, page_size: 100 }).then(
+        () => {
+          throw new Error('expected get_view_tickets to reject on 403');
+        },
+        (err: unknown) => err as Error,
+      );
+      expect(error.message).toMatch(/list_views/);
+      expect(error.message).toMatch(/403|restricted|denied/i);
+    });
+
+    it('has readOnly annotation', () => {
+      const tool = findTool('get_view_tickets');
+      expect(tool.readOnly).toBe(true);
+      expect(tool.annotations.readOnlyHint).toBe(true);
     });
   });
 });

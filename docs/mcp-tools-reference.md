@@ -21,6 +21,8 @@ out every `write` tool before the proxies are built.
 | `get_linked_incidents` | Get incidents linked to a problem ticket | read |
 | `list_sla_policies` | List SLA policies with filter conditions and per-priority targets (requires an admin token, or a custom role with the SLA-management permission) | read |
 | `list_ticket_fields` | List ticket field definitions (system + custom) with ids, types, and dropdown/multiselect option values, to resolve `custom_fields` ids and accepted values for create_ticket / update_ticket | read |
+| `list_views` | List the agent's active views (saved ticket queues) with their current ticket counts, to see where the workload sits before opening a queue | read |
+| `get_view_tickets` | Read the tickets inside a view — by title or id — in the view's own configured sort order, cursor-paginated (no live SLA block; use search_tickets for that) | read |
 | `create_ticket` | Create a new ticket with subject, description, priority, tags... | write |
 | `update_ticket` | Update ticket status, priority, assignee, tags, custom fields | write |
 | `add_private_note` | Add an internal note (not visible to requester), optionally with file attachments | write |

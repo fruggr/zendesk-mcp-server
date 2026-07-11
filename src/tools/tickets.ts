@@ -15,6 +15,7 @@ import {
   MAX_PAGE_SIZE,
 } from '../constants';
 import type {
+  PaginationMeta,
   ZendeskComment,
   ZendeskListResponse,
   ZendeskSlaPolicy,
@@ -23,6 +24,11 @@ import type {
   ZendeskTicketAttachment,
   ZendeskTicketField,
   ZendeskUpload,
+  ZendeskView,
+  ZendeskViewCount,
+  ZendeskViewCountManyResponse,
+  ZendeskViewExecuteResponse,
+  ZendeskViewExecuteRow,
 } from '../types';
 import {
   formatComment,
@@ -31,6 +37,7 @@ import {
   formatSlaPolicy,
   formatTicket,
   formatTicketField,
+  formatView,
   truncateIfNeeded,
 } from '../utils/formatting';
 import {
@@ -171,6 +178,116 @@ const fetchTicketSla = async (
     // SLA is supplementary — never fail get_ticket because the lookup faltered.
     return undefined;
   }
+};
+
+// count_many accepts at most 20 view ids per request; larger listings are
+// chunked. Kept low deliberately — Zendesk rate-limits this endpoint tightly.
+const VIEW_COUNT_BATCH = 20;
+
+const chunk = <T>(items: T[], size: number): T[][] => {
+  const groups: T[][] = [];
+  for (let i = 0; i < items.length; i += size) groups.push(items.slice(i, i + size));
+  return groups;
+};
+
+// Fetch cached ticket counts for a page of views, best-effort. count_many is
+// batched (<=20 ids) and heavily rate-limited, so a failed batch degrades to
+// "no count" for those views rather than failing the whole listing.
+const fetchViewCounts = async (
+  subdomain: string,
+  token: string,
+  viewIds: number[],
+): Promise<Map<number, ZendeskViewCount>> => {
+  const counts = new Map<number, ZendeskViewCount>();
+  for (const group of chunk(viewIds, VIEW_COUNT_BATCH)) {
+    try {
+      const { view_counts } = await zendeskGet<ZendeskViewCountManyResponse>(
+        subdomain,
+        token,
+        '/views/count_many',
+        { ids: group.join(',') },
+      );
+      for (const c of view_counts ?? []) counts.set(c.view_id, c);
+    } catch {
+      // Best-effort: leave these views without a count rather than failing.
+    }
+  }
+  return counts;
+};
+
+// Resolve a view reference (title or numeric id) to an id. A numeric reference is
+// used as-is; a title is matched case-insensitively against the agent's active
+// views. Returns the available titles on no match so the caller can self-correct.
+const resolveViewId = async (
+  subdomain: string,
+  token: string,
+  view: string | number,
+): Promise<{ id: number } | { available: string[] }> => {
+  if (typeof view === 'number') return { id: view };
+  if (/^\d+$/.test(view.trim())) return { id: Number(view.trim()) };
+  const response = await zendeskGet<ZendeskListResponse<ZendeskView>>(subdomain, token, '/views', {
+    active: 'true',
+    ...buildCursorParams(MAX_PAGE_SIZE),
+  });
+  const views = response.views ?? [];
+  const target = view.trim().toLowerCase();
+  const match = views.find((v) => v.title.trim().toLowerCase() === target);
+  return match ? { id: match.id } : { available: views.map((v) => v.title) };
+};
+
+// Read the ticket id off an execute row. The row's `ticket` object is partial but
+// carries the id; fall back to an inlined id/ticket_id column just in case.
+const extractRowTicketId = (row: ZendeskViewExecuteRow): number | undefined => {
+  if (typeof row.ticket?.id === 'number') return row.ticket.id;
+  for (const key of ['id', 'ticket_id']) {
+    if (typeof row[key] === 'number') return row[key] as number;
+  }
+  return undefined;
+};
+
+// Execute a view (its own column set + configured sort) and return the ordered
+// rows plus pagination meta. sort_by/sort_order override the view's sort.
+const executeView = async (
+  subdomain: string,
+  token: string,
+  viewId: number,
+  opts: {
+    sort_by?: string | undefined;
+    sort_order?: string | undefined;
+    page_size: number;
+    cursor?: string | undefined;
+  },
+): Promise<{ rows: ZendeskViewExecuteRow[]; meta: PaginationMeta }> => {
+  const params = buildCursorParams(opts.page_size, opts.cursor);
+  if (opts.sort_by) params['sort_by'] = opts.sort_by;
+  if (opts.sort_order) params['sort_order'] = opts.sort_order;
+  const response = await zendeskGet<ZendeskViewExecuteResponse>(
+    subdomain,
+    token,
+    `/views/${viewId}/execute`,
+    params,
+  );
+  const rows = response.rows ?? [];
+  return { rows, meta: extractPaginationMeta(response, rows.length) };
+};
+
+// Hydrate full tickets for the view-ordered ids and restore that order (show_many
+// returns tickets in id order, not the requested order). /execute yields only
+// partial tickets, so full, consistent detail comes from here — one batched call.
+const hydrateViewTickets = async (
+  subdomain: string,
+  token: string,
+  ids: number[],
+): Promise<ZendeskTicket[]> => {
+  if (ids.length === 0) return [];
+  const { tickets } = await zendeskGet<{ tickets: ZendeskTicket[] }>(
+    subdomain,
+    token,
+    '/tickets/show_many',
+    { ids: ids.join(',') },
+  );
+  const byId = new Map((tickets ?? []).map((t) => [t.id, t]));
+  return ids.map((id) => byId.get(id)).filter((t): t is ZendeskTicket => t !== undefined);
 };
 
 export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
@@ -904,6 +1021,152 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
               ),
             },
           ],
+        };
+      },
+    },
+    {
+      name: 'list_views',
+      namespace: 'tickets',
+      readOnly: true,
+      title: 'List Zendesk Views',
+      description:
+        'List the agent\'s active Zendesk views — the saved ticket queues ("Unassigned tickets", "My open tickets", "Breaching today") the agent sees in the Zendesk UI — each with its current ticket count so you can tell at a glance where the workload sits. Views are per-agent scoped, so per-user auth returns exactly the queues this agent can see, with no shared key. Counts come from Zendesk\'s cache and can lag by up to about an hour (shown as "(count updating)" while a fresh value is still being computed); pass a view\'s title or id to get_view_tickets to read the tickets inside it.',
+      inputSchema: z.object({
+        page_size: z
+          .number()
+          .int()
+          .min(1)
+          .max(MAX_PAGE_SIZE)
+          .default(DEFAULT_PAGE_SIZE)
+          .describe('Views per page (1-100, default 100).'),
+        cursor: z
+          .string()
+          .optional()
+          .describe('Pagination cursor from a previous response; omit for the first page.'),
+      }),
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+      handler: async (params) => {
+        const { page_size, cursor } = params as { page_size: number; cursor?: string };
+        const token = await getToken();
+        const response = await zendeskGet<ZendeskListResponse<ZendeskView>>(
+          subdomain,
+          token,
+          '/views',
+          { active: 'true', ...buildCursorParams(page_size, cursor) },
+        );
+        const views = response.views ?? [];
+        const counts = await fetchViewCounts(
+          subdomain,
+          token,
+          views.map((v) => v.id),
+        );
+        const rows = views.map((view) => ({ view, count: counts.get(view.id) }));
+        return {
+          content: [
+            {
+              type: 'text',
+              text: formatList(
+                rows,
+                ({ view, count }) => formatView(view, count),
+                extractPaginationMeta(response, views.length),
+              ),
+            },
+          ],
+        };
+      },
+    },
+    {
+      name: 'get_view_tickets',
+      namespace: 'tickets',
+      readOnly: true,
+      title: 'Get Tickets In A View',
+      description:
+        'Read the tickets inside a Zendesk view, in the view\'s own configured sort order — the same order the agent sees in the Zendesk UI — which is the natural way to work a named queue like "Unassigned tickets" or "Breaching today". Accepts the view by title or by numeric id (discover both with list_views); a title is matched case-insensitively against the agent\'s active views, and on no match the available titles are returned so you can retry in one step. Tickets come back with the same fields as list_tickets and are cursor-paginated; there is no live SLA block here (use search_tickets when you need per-ticket SLA state), and sort_by/sort_order override the view\'s order when you want a different cut.',
+      inputSchema: z.object({
+        view: z
+          .union([z.string().min(1), z.number().int().positive()])
+          .describe(
+            'The view to read: its exact title as shown in Zendesk (e.g. "Unassigned tickets") or its numeric id from list_views. A title is matched case-insensitively against your active views; on no match the tool returns the available titles instead of erroring, so you can retry with a correct one.',
+          ),
+        sort_by: z
+          .string()
+          .optional()
+          .describe(
+            'Optional column to sort by, overriding the view\'s own sort. Must be one of the view\'s columns (e.g. "status", "priority", "updated_at", or a custom field id); "subject" and "submitter" are not sortable. Omit to keep the view\'s configured order.',
+          ),
+        sort_order: z
+          .enum(['asc', 'desc'])
+          .optional()
+          .describe(
+            'Sort direction applied to sort_by: "asc" (oldest/lowest first) or "desc" (newest/highest first). Only meaningful together with sort_by; omit to keep the view\'s configured direction.',
+          ),
+        page_size: z
+          .number()
+          .int()
+          .min(1)
+          .max(MAX_PAGE_SIZE)
+          .default(DEFAULT_PAGE_SIZE)
+          .describe('Tickets per page (1-100, default 100).'),
+        cursor: z
+          .string()
+          .optional()
+          .describe('Pagination cursor from a previous response; omit for the first page.'),
+      }),
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+      handler: async (params) => {
+        const { view, sort_by, sort_order, page_size, cursor } = params as {
+          view: string | number;
+          sort_by?: string;
+          sort_order?: 'asc' | 'desc';
+          page_size: number;
+          cursor?: string;
+        };
+        const token = await getToken();
+        const resolved = await resolveViewId(subdomain, token, view);
+        if ('available' in resolved) {
+          const text =
+            resolved.available.length > 0
+              ? `No active view matches "${view}". Available views: ${resolved.available.join(', ')}.`
+              : `No active view matches "${view}", and no active views were found for this agent.`;
+          return { content: [{ type: 'text', text }] };
+        }
+        let rows: ZendeskViewExecuteRow[];
+        let meta: PaginationMeta;
+        try {
+          ({ rows, meta } = await executeView(subdomain, token, resolved.id, {
+            sort_by,
+            sort_order,
+            page_size,
+            cursor,
+          }));
+        } catch (error) {
+          // Views can be restricted to specific groups; a 403 means this agent
+          // cannot see that view. Rewrite the generic "Permission denied" into
+          // guidance the LLM can act on.
+          if (error instanceof ZendeskApiError && error.status === 403) {
+            throw new Error(
+              `Access denied to view ${resolved.id} (HTTP 403). Zendesk views can be restricted to specific groups, and this agent is not allowed to read this one. Call list_views to see the queues available to this agent.`,
+              { cause: error },
+            );
+          }
+          throw error;
+        }
+        const ids = rows
+          .map(extractRowTicketId)
+          .filter((id): id is number => typeof id === 'number');
+        const tickets = await hydrateViewTickets(subdomain, token, ids);
+        return {
+          content: [{ type: 'text', text: formatList(tickets, formatTicket, meta) }],
         };
       },
     },

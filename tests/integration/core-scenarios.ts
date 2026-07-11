@@ -89,6 +89,8 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         expect(names).toContain('get_ticket');
         expect(names).toContain('create_ticket');
         expect(names).toContain('list_sla_policies');
+        expect(names).toContain('list_views');
+        expect(names).toContain('get_view_tickets');
       });
 
       it('reaches list_sla_policies over the wire and returns the policy matrix', async () => {
@@ -148,6 +150,17 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
 
         expect(result.isError).toBeFalsy();
         expect(textOf(result)).toContain('Test User');
+      });
+
+      it('reads a view by title and returns its tickets over the wire', async () => {
+        connected = await harness.connect(makeConfig({ mode: 'all' }));
+        const result = await connected.client.callTool({
+          name: 'get_view_tickets',
+          arguments: { view: 'Unassigned tickets' },
+        });
+
+        expect(result.isError).toBeFalsy();
+        expect(textOf(result)).toContain('Ticket #1');
       });
 
       it('uploads and attaches a file when posting a public comment', async () => {
