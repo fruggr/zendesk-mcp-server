@@ -178,25 +178,30 @@ const main = async (): Promise<void> => {
   const extractedIds = rows
     .map((r) => extractRowTicketId(r))
     .filter((id): id is number => typeof id === 'number');
-  if (extractedIds.length === 0 && rows.length > 0) {
-    console.log(
-      '\n!!! NO ticket id extractable from any row — get_view_tickets would return EMPTY for ' +
-        'this non-empty view. The row shape differs from the assumption; full first row below ' +
-        '(may contain a ticket subject — REDACT before pasting):',
-    );
-    dump('execute rows[0] — FULL (diagnosis only)', rows[0]);
-    dump('execute meta / pagination keys', {
-      meta: exec['meta'],
-      count: exec['count'],
-      next_page: exec['next_page'],
-    });
-    return;
-  }
   dump('execute meta / pagination keys', {
     meta: exec['meta'],
     count: exec['count'],
     next_page: exec['next_page'],
   });
+  // No ids to hydrate — exit cleanly instead of calling show_many with an empty
+  // `ids` list. Two distinct causes, distinguished so the reader knows which:
+  if (extractedIds.length === 0) {
+    if (rows.length === 0) {
+      console.log(
+        `\nView ${targetId} returned 0 rows (empty view). The hydration step needs a ` +
+          'non-empty view — re-run with an explicit non-empty view id: ' +
+          'pnpm tsx scripts/probe-views-shape.ts <view_id>',
+      );
+    } else {
+      console.log(
+        '\n!!! NO ticket id extractable from any row — get_view_tickets would return EMPTY for ' +
+          'this non-empty view. The row shape differs from the assumption; full first row below ' +
+          '(may contain a ticket subject — REDACT before pasting):',
+      );
+      dump('execute rows[0] — FULL (diagnosis only)', rows[0]);
+    }
+    return;
+  }
 
   // (4) show_many hydration — confirm it returns FULL tickets for those ids, and
   // whether the returned order matches the requested order (the tool re-sorts, so
