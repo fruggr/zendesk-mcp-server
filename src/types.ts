@@ -208,7 +208,7 @@ export interface ZendeskLocalesResponse {
   default_locale: string;
 }
 
-// GET /api/v2/ticket_fields.json — a ticket field definition (system or custom)
+// GET /api/v2/ticket_fields.json: a ticket field definition (system or custom)
 // with the valid option values for dropdown/tagger and system fields.
 export interface ZendeskTicketFieldOption {
   name: string;

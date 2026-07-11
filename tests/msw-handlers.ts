@@ -366,7 +366,7 @@ export const handlers = [
   // `count` wrapper, so omit it here to exercise the array-length fallback.
   http.get(`${BASE}/slas/policies`, () => HttpResponse.json({ sla_policies: [MOCK_SLA_POLICY] })),
 
-  // Ticket field definitions — the real endpoint returns system and custom
+  // Ticket field definitions: the real endpoint returns system and custom
   // fields (active and inactive) with no `count` wrapper.
   http.get(`${BASE}/ticket_fields`, () =>
     HttpResponse.json({
