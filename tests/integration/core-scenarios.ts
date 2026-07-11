@@ -101,6 +101,16 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         expect(textOf(result)).toContain('SLA contractuels fruggr - Bugs/Incidents');
       });
 
+      it('reaches list_ticket_fields over the wire and returns option values', async () => {
+        connected = await harness.connect(makeConfig({ mode: 'all' }));
+        const result = await connected.client.callTool({
+          name: 'list_ticket_fields',
+          arguments: {},
+        });
+        expect(result.isError).toBeFalsy();
+        expect(textOf(result)).toContain('fruggr_classic');
+      });
+
       it('exposes one proxy per namespace in "namespace" mode', async () => {
         connected = await harness.connect(makeConfig({ mode: 'namespace' }));
         const { tools } = await connected.client.listTools();
@@ -132,6 +142,7 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         const names = toolNames((await connected.client.listTools()).tools);
 
         expect(names).toContain('get_current_user');
+        expect(names).toContain('list_ticket_fields');
         expect(names).not.toContain('create_ticket');
         expect(names).not.toContain('update_ticket');
       });

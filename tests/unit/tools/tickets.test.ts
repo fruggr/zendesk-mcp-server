@@ -21,9 +21,9 @@ const getAllText = (result: { content: Array<{ type: string; text?: string }> })
     .join('\n');
 
 describe('ticket tools', () => {
-  it('creates 11 tools (search_tickets lives here; the unified search is elsewhere)', () => {
+  it('creates 12 tools (search_tickets lives here; the unified search is elsewhere)', () => {
     const tools = createTicketTools(ctx);
-    expect(tools).toHaveLength(11);
+    expect(tools).toHaveLength(12);
   });
 
   describe('get_ticket', () => {
@@ -476,6 +476,40 @@ describe('ticket tools', () => {
       );
       expect(error.message).toMatch(/admin/i);
       expect(error.message).toMatch(/get_ticket|search_tickets/);
+    });
+  });
+
+  describe('list_ticket_fields', () => {
+    it('returns system and custom fields with their option values', async () => {
+      const tool = findTool('list_ticket_fields');
+      const result = await tool.handler({ active_only: true });
+      const text = result.content[0]?.text ?? '';
+      // Custom dropdown options (custom_field_options)
+      expect(text).toContain('Product');
+      expect(text).toContain('fruggr_classic');
+      // System field options (system_field_options)
+      expect(text).toContain('Priority');
+      expect(text).toContain('urgent');
+    });
+
+    it('hides inactive fields by default', async () => {
+      const tool = findTool('list_ticket_fields');
+      const result = await tool.handler({ active_only: true });
+      const text = result.content[0]?.text ?? '';
+      expect(text).not.toContain('Legacy reference');
+    });
+
+    it('includes inactive fields when active_only is false', async () => {
+      const tool = findTool('list_ticket_fields');
+      const result = await tool.handler({ active_only: false });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('Legacy reference');
+    });
+
+    it('has readOnly annotation', () => {
+      const tool = findTool('list_ticket_fields');
+      expect(tool.readOnly).toBe(true);
+      expect(tool.annotations.readOnlyHint).toBe(true);
     });
   });
 

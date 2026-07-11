@@ -21,6 +21,7 @@ import type {
   ZendeskSlaSideloadEntry,
   ZendeskTicket,
   ZendeskTicketAttachment,
+  ZendeskTicketField,
   ZendeskUpload,
 } from '../types';
 import {
@@ -29,6 +30,7 @@ import {
   formatSlaBlock,
   formatSlaPolicy,
   formatTicket,
+  formatTicketField,
   truncateIfNeeded,
 } from '../utils/formatting';
 import {
@@ -379,7 +381,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: false,
       title: 'Create Zendesk Ticket',
       description:
-        'Create a new Zendesk support ticket with subject, description, and optional priority/type/assignee/tags. The description becomes the first public comment of the ticket, and the new ticket id is returned. After creation, use update_ticket to change status or assignee, add_public_comment or add_private_note to reply, and manage_tags to adjust tags. Look up valid assignee_id / group_id and custom field ids via search_users or your Zendesk admin settings.',
+        'Create a new Zendesk support ticket with subject, description, and optional priority/type/assignee/tags. The description becomes the first public comment of the ticket, and the new ticket id is returned. After creation, use update_ticket to change status or assignee, add_public_comment or add_private_note to reply, and manage_tags to adjust tags. Look up valid assignee_id / group_id via search_users, and custom field ids and their accepted values via list_ticket_fields.',
       inputSchema: z.object({
         subject: z.string().min(1).describe('Ticket subject'),
         description: z.string().min(1).describe('Ticket description'),
@@ -402,7 +404,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           .array(z.object({ id: z.number().int(), value: z.unknown() }))
           .optional()
           .describe(
-            'Custom field values as { id, value } pairs (field ids come from your Zendesk admin settings).',
+            'Custom field values as { id, value } pairs. Discover valid field ids and their accepted values with list_ticket_fields.',
           ),
       }),
       annotations: {
@@ -467,7 +469,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           .array(z.object({ id: z.number().int(), value: z.unknown() }))
           .optional()
           .describe(
-            'Custom field values as { id, value } pairs (field ids come from your Zendesk admin settings).',
+            'Custom field values as { id, value } pairs. Discover valid field ids and their accepted values with list_ticket_fields.',
           ),
       }),
       annotations: {
@@ -764,6 +766,45 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
             : { count: policies.length, has_more: false, after_cursor: null };
         return {
           content: [{ type: 'text', text: formatList(policies, formatSlaPolicy, meta) }],
+        };
+      },
+    },
+    {
+      name: 'list_ticket_fields',
+      namespace: 'tickets',
+      readOnly: true,
+      title: 'List Ticket Fields',
+      description:
+        'List ticket field definitions (system and custom) with their valid dropdown/tagger option values. Use this to discover the field id and the exact value to pass in the custom_fields of create_ticket / update_ticket, instead of guessing. Read-only; returns active fields by default (pass active_only: false to include archived/deactivated fields).',
+      inputSchema: z.object({
+        active_only: z
+          .boolean()
+          .default(true)
+          .describe(
+            'Return only active fields (default true). Set false to include inactive ones.',
+          ),
+      }),
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+      handler: async (params) => {
+        const { active_only } = params as { active_only: boolean };
+        const token = await getToken();
+        const response = await zendeskGet<ZendeskListResponse<ZendeskTicketField>>(
+          subdomain,
+          token,
+          '/ticket_fields',
+          buildOffsetParams(MAX_PAGE_SIZE, 1),
+        );
+        const fields = (response.ticket_fields ?? []).filter((f) => !active_only || f.active);
+        // The ticket_fields endpoint returns the full list with no `count`
+        // wrapper, so report the array length rather than "Results: 0".
+        const meta = { count: fields.length, has_more: false, after_cursor: null };
+        return {
+          content: [{ type: 'text', text: formatList(fields, formatTicketField, meta) }],
         };
       },
     },

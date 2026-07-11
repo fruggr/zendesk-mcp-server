@@ -67,6 +67,42 @@ export const MOCK_SLA_SIDELOAD = {
   ],
 };
 
+// Ticket field definitions (GET /api/v2/ticket_fields). One active custom
+// dropdown (carries custom_field_options), one active system field (carries
+// system_field_options), and one inactive field to exercise the active_only
+// filter.
+export const MOCK_TICKET_FIELD_CUSTOM = {
+  id: 360000123,
+  type: 'tagger',
+  title: 'Product',
+  active: true,
+  required: false,
+  custom_field_options: [
+    { name: 'Fruggr Classic', value: 'fruggr_classic' },
+    { name: 'Fruggr IT', value: 'fruggr_it' },
+  ],
+};
+
+export const MOCK_TICKET_FIELD_SYSTEM = {
+  id: 25,
+  type: 'priority',
+  title: 'Priority',
+  active: true,
+  required: false,
+  system_field_options: [
+    { name: 'Low', value: 'low' },
+    { name: 'Urgent', value: 'urgent' },
+  ],
+};
+
+export const MOCK_TICKET_FIELD_INACTIVE = {
+  id: 360000999,
+  type: 'text',
+  title: 'Legacy reference',
+  active: false,
+  required: false,
+};
+
 export const MOCK_USER = {
   id: 9999,
   name: 'Test User',
@@ -329,6 +365,18 @@ export const handlers = [
   // SLA policies — the real endpoint returns the full config list with no
   // `count` wrapper, so omit it here to exercise the array-length fallback.
   http.get(`${BASE}/slas/policies`, () => HttpResponse.json({ sla_policies: [MOCK_SLA_POLICY] })),
+
+  // Ticket field definitions — the real endpoint returns system and custom
+  // fields (active and inactive) with no `count` wrapper.
+  http.get(`${BASE}/ticket_fields`, () =>
+    HttpResponse.json({
+      ticket_fields: [
+        MOCK_TICKET_FIELD_CUSTOM,
+        MOCK_TICKET_FIELD_SYSTEM,
+        MOCK_TICKET_FIELD_INACTIVE,
+      ],
+    }),
+  ),
 
   // Search
   http.get(`${BASE}/search`, ({ request }) => {

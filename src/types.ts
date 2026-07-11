@@ -208,6 +208,25 @@ export interface ZendeskLocalesResponse {
   default_locale: string;
 }
 
+// GET /api/v2/ticket_fields.json — a ticket field definition (system or custom)
+// with the valid option values for dropdown/tagger and system fields.
+export interface ZendeskTicketFieldOption {
+  name: string;
+  value: string;
+}
+
+export interface ZendeskTicketField {
+  id: number;
+  type: string;
+  title: string | null;
+  active: boolean;
+  required: boolean;
+  // Valid values for custom dropdown/tagger fields.
+  custom_field_options?: ZendeskTicketFieldOption[];
+  // Valid values for system fields (e.g. priority, type).
+  system_field_options?: ZendeskTicketFieldOption[];
+}
+
 export interface PaginationMeta {
   has_more: boolean;
   after_cursor: string | null;
@@ -226,6 +245,7 @@ export interface ZendeskListResponse<T> {
   translations?: T[];
   permission_groups?: T[];
   sla_policies?: T[];
+  ticket_fields?: T[];
   meta?: {
     has_more: boolean;
     after_cursor: string;

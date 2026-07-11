@@ -14,6 +14,7 @@ import type {
   ZendeskSlaPolicy,
   ZendeskSlaSideloadEntry,
   ZendeskTicket,
+  ZendeskTicketField,
   ZendeskTranslation,
   ZendeskUser,
   ZendeskUserSegment,
@@ -71,6 +72,21 @@ export const formatSlaPolicy = (policy: ZendeskSlaPolicy): string => {
     conditions.length > 0 ? `- **Conditions**: ${conditions.join('; ')}` : '',
     targets.length > 0 ? '- **Targets**:' : '',
     ...targets,
+  ]
+    .filter(Boolean)
+    .join('\n');
+};
+
+export const formatTicketField = (field: ZendeskTicketField): string => {
+  // A field carries either custom_field_options (custom dropdowns/taggers) or
+  // system_field_options (system fields like priority); merge whichever applies.
+  const options = [...(field.custom_field_options ?? []), ...(field.system_field_options ?? [])];
+  return [
+    `## Ticket field: ${field.title ?? '(untitled)'} (${field.id}) [${field.type}]`,
+    `- **Active**: ${field.active ? 'yes' : 'no'} | **Required**: ${field.required ? 'yes' : 'no'}`,
+    options.length > 0
+      ? `- **Options**: ${options.map((o) => `${o.name} → ${o.value}`).join('; ')}`
+      : '',
   ]
     .filter(Boolean)
     .join('\n');
