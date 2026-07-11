@@ -115,14 +115,30 @@ export const MOCK_MACRO = {
   updated_at: '2026-01-02T00:00:00Z',
 };
 
-// GET /tickets/{id}/macros/{macro_id}/apply — the ticket as it WOULD be after
-// the macro runs (only changed fields) plus the comment it would add, nested
-// under `result.ticket`. Nothing is persisted by this endpoint.
+// GET /tickets/{id}/macros/{macro_id}/apply — the WHOLE ticket as it would be
+// after the macro runs (not just the changed fields — confirmed against the live
+// tenant), plus the comment it would add, nested under `result.ticket`. Nothing
+// is persisted. Modelled on MOCK_TICKET (the "before") with the macro's changes
+// applied: status open→solved, two tags added, one custom field set. The
+// identity fields (id/url/created_at/updated_at) match the before so the diff
+// correctly drops them; preview_macro_diff surfaces only the real changes.
 export const MOCK_MACRO_APPLY = {
   result: {
     ticket: {
+      id: 1,
+      url: 'https://testsubdomain.zendesk.com/api/v2/tickets/1.json',
+      subject: 'Test ticket',
+      description: 'A test ticket',
+      type: 'incident',
+      priority: 'normal',
       status: 'solved',
-      tags: ['resolved', 'macro_applied'],
+      assignee_id: 100,
+      requester_id: 200,
+      group_id: 300,
+      organization_id: 400,
+      tags: ['test', 'mock', 'resolved', 'macro_applied'],
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-02T00:00:00Z',
       fields: [{ id: 360000000001, value: 'severity_2' }],
       comment: {
         body: 'Thanks for your business! We hope to see you again soon.',

@@ -179,41 +179,93 @@ const fetchTicketSla = async (
   }
 };
 
-// Render the preview returned by the macro-apply endpoint into the concrete,
-// reviewable changes a macro would make, then spell out the commit step. The
-// apply endpoint mutates nothing, so the text ends by pointing at the write
-// tools that actually persist the change — the deliberate two-step from #120.
-const formatMacroApplyResult = (
+// Non-actionable ticket keys: structural (handled on their own) or identity /
+// server-recomputed fields a macro never meaningfully sets. Excluded from the
+// field diff so the preview surfaces only what the macro actually changes,
+// never `url`/`id`/`created_at` noise or a spuriously-bumped timestamp.
+const DIFF_SKIP_KEYS = new Set([
+  'comment',
+  'fields',
+  'custom_fields',
+  'id',
+  'url',
+  'created_at',
+  'updated_at',
+  'generated_timestamp',
+  'encoded_id',
+]);
+
+// Value equality that also handles arrays/objects (tags, `via`, …) by structure
+// rather than reference, so unchanged nested fields drop out of the diff.
+const valuesEqual = (a: unknown, b: unknown): boolean =>
+  a === b || JSON.stringify(a) === JSON.stringify(b);
+
+// Render a value for the diff, marking an absent/empty side so a `→` line never
+// reads as "(blank) → x".
+const shownValue = (v: unknown): string => {
+  const s = formatFieldValue(v);
+  return s === '' ? '(empty)' : s;
+};
+
+// Tags diff as added/removed tokens rather than a full before/after list — that
+// is what a macro's `set_tags`/`remove_tags` actions actually express. Returns
+// null when the tag set is unchanged.
+const formatTagDiff = (before: unknown, after: unknown): string | null => {
+  const b = new Set(Array.isArray(before) ? before.map(String) : []);
+  const a = new Set(Array.isArray(after) ? after.map(String) : []);
+  const added = [...a].filter((t) => !b.has(t)).map((t) => `+${t}`);
+  const removed = [...b].filter((t) => !a.has(t)).map((t) => `-${t}`);
+  return added.length + removed.length === 0
+    ? null
+    : `- **tags**: ${[...added, ...removed].join(', ')}`;
+};
+
+// Preview a macro's effect on a ticket as a real before → after diff. The apply
+// endpoint returns the WHOLE resulting ticket (not just the macro's changes), so
+// diffing it against the ticket's current state is what isolates the macro's
+// actual effect; everything unchanged (identity fields, untouched custom fields)
+// drops out. The apply endpoint mutates nothing, so the text ends by pointing at
+// the write tools that persist the change — the deliberate two-step from #120.
+const formatMacroPreviewDiff = (
   ticketId: number,
   macroId: number,
+  before: ZendeskTicket | undefined,
   result: ZendeskMacroApplyResult | undefined,
 ): string => {
-  // Zendesk always wraps the preview in `result.ticket`, but guard the whole
-  // path so a malformed body degrades to a clean "no changes" instead of a
-  // cryptic "cannot read properties of undefined" tool error.
-  const ticket = result?.ticket ?? {};
-  const comment: ZendeskMacroApplyComment | undefined = ticket.comment ?? result?.comment;
-  // The Zendesk docs render a single changed custom field as a bare `{id, value}`
-  // object rather than a one-element array, so normalize to an array before
-  // mapping — a lone object would otherwise blow up on `.map`.
-  const rawFields = ticket.fields ?? ticket.custom_fields;
-  const customFields = [rawFields ?? []].flat();
+  // Guard the whole path so a malformed body degrades to a clean "no changes"
+  // instead of a cryptic "cannot read properties of undefined" tool error.
+  const after = result?.ticket ?? {};
+  const beforeObj = (before ?? {}) as unknown as Record<string, unknown>;
+  const comment: ZendeskMacroApplyComment | undefined = after.comment ?? result?.comment;
 
-  const scalarChanges = Object.entries(ticket)
-    .filter(([key]) => key !== 'comment' && key !== 'fields' && key !== 'custom_fields')
-    .map(([key, value]) => `- **${key}**: ${formatFieldValue(value)}`);
+  const changes: string[] = [];
+  for (const [key, afterVal] of Object.entries(after)) {
+    if (DIFF_SKIP_KEYS.has(key)) continue;
+    const beforeVal = beforeObj[key];
+    if (valuesEqual(beforeVal, afterVal)) continue;
+    if (key === 'tags') {
+      const tagLine = formatTagDiff(beforeVal, afterVal);
+      if (tagLine) changes.push(tagLine);
+    } else {
+      changes.push(`- **${key}**: ${shownValue(beforeVal)} → ${shownValue(afterVal)}`);
+    }
+  }
 
-  const customFieldChanges = customFields.map(
-    (f) => `- **custom field ${f.id}**: ${formatFieldValue(f.value)}`,
-  );
-
-  const fieldChanges = [...scalarChanges, ...customFieldChanges];
+  // Custom fields diff by id: the apply response carries every custom field, so
+  // compare each against the ticket's current value and keep only what changed.
+  const afterFields = [after.fields ?? after.custom_fields ?? []].flat();
+  const beforeById = new Map((before?.custom_fields ?? []).map((f) => [f.id, f.value] as const));
+  for (const f of afterFields) {
+    const prev = beforeById.get(f.id);
+    if (valuesEqual(prev, f.value)) continue;
+    changes.push(`- **custom field ${f.id}**: ${shownValue(prev)} → ${shownValue(f.value)}`);
+  }
 
   const lines = [
-    `# Macro #${macroId} applied to ticket #${ticketId} (preview — nothing saved yet)`,
+    `# Macro #${macroId} preview on ticket #${ticketId} (diff — nothing saved yet)`,
     '',
     '## Field changes',
-    ...(fieldChanges.length > 0 ? fieldChanges : ['- none']),
+    ...(changes.length > 0 ? changes : ['- none']),
   ];
 
   if (comment?.body) {
@@ -969,7 +1021,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: true,
       title: 'List Zendesk Macros',
       description:
-        'List the active macros available to the authenticated user. A macro bundles a canned reply and/or a set of field changes (status, priority, assignee, group, tags, custom fields) an agent applies to a ticket in one gesture; this returns each macro id, title, description, availability scope, and its ordered list of actions, offset-paginated. Results are scoped by per-user OAuth to what the current user can see, so no shared admin key is needed. Pass a macro id from here to apply_macro to preview its effect on a specific ticket.',
+        'List the active macros available to the authenticated user. A macro bundles a canned reply and/or a set of field changes (status, priority, assignee, group, tags, custom fields) an agent applies to a ticket in one gesture; this returns each macro id, title, description, availability scope, and its ordered list of actions, offset-paginated. Results are scoped by per-user OAuth to what the current user can see, so no shared admin key is needed. Pass a macro id from here to preview_macro_diff to preview its effect on a specific ticket.',
       inputSchema: z.object({
         per_page: z
           .number()
@@ -1003,16 +1055,16 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       },
     },
     {
-      name: 'apply_macro',
+      name: 'preview_macro_diff',
       namespace: 'tickets',
-      // Marked write (readOnly: false) even though the apply endpoint mutates
-      // nothing: it is the entry point of a mutation workflow whose commit step
-      // (update_ticket / add_*_comment) is filtered out by --read-only, so
-      // exposing apply_macro there would offer an "apply" the user cannot finish.
+      // Marked write (readOnly: false) even though both reads mutate nothing: it
+      // is the entry point of a mutation workflow whose commit step (update_ticket
+      // / add_*_comment) is filtered out by --read-only, so exposing it there would
+      // offer a preview the user cannot act on.
       readOnly: false,
-      title: 'Apply Macro to Ticket (preview)',
+      title: 'Preview a Macro Diff on a Ticket',
       description:
-        'Resolve a macro against a ticket and return the concrete changes it would make — the canned reply (with its public/internal flag) plus every field change (status, priority, assignee, tags, custom fields) — WITHOUT saving anything. Returns the proposed reply and field set for review; nothing is committed. To actually apply it, follow up with update_ticket for the field changes and add_public_comment or add_private_note for the reply. This deliberate two-step keeps the mutation explicit and reviewable rather than hidden. Find macro ids via list_macros and the ticket id via search_tickets or list_tickets.',
+        "Preview the exact changes a macro would make to a specific ticket, as a before → after diff, WITHOUT saving anything. Orchestrates two reads — the ticket's current state and Zendesk's macro-apply preview (which returns the whole resulting ticket) — and returns only the fields the macro actually changes (status, priority, assignee, group, tags, custom fields) plus the canned reply with its public/internal flag; unchanged and identity fields are omitted. Nothing is committed: to apply it, follow up with update_ticket for the field changes and add_public_comment or add_private_note for the reply. This deliberate two-step keeps the mutation explicit and reviewable rather than hidden. Find macro ids via list_macros and the ticket id via search_tickets or list_tickets.",
       inputSchema: z.object({
         ticket_id: z
           .number()
@@ -1023,7 +1075,9 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         macro_id: z
           .number()
           .int()
-          .describe('Macro ID — the numeric id of the macro to apply. Obtain it from list_macros.'),
+          .describe(
+            'Macro ID — the numeric id of the macro to preview. Obtain it from list_macros.',
+          ),
       }),
       annotations: {
         readOnlyHint: false,
@@ -1034,16 +1088,21 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       handler: async (params) => {
         const { ticket_id, macro_id } = params as { ticket_id: number; macro_id: number };
         const token = await getToken();
-        const { result } = await zendeskGet<{ result: ZendeskMacroApplyResult }>(
-          subdomain,
-          token,
-          `/tickets/${ticket_id}/macros/${macro_id}/apply`,
-        );
+        // Two reads in parallel: the ticket as it is now, and the ticket as the
+        // macro would leave it. Diffing them isolates the macro's actual effect.
+        const [{ ticket: before }, { result }] = await Promise.all([
+          zendeskGet<{ ticket: ZendeskTicket }>(subdomain, token, `/tickets/${ticket_id}`),
+          zendeskGet<{ result: ZendeskMacroApplyResult }>(
+            subdomain,
+            token,
+            `/tickets/${ticket_id}/macros/${macro_id}/apply`,
+          ),
+        ]);
         return {
           content: [
             {
               type: 'text',
-              text: truncateIfNeeded(formatMacroApplyResult(ticket_id, macro_id, result)),
+              text: truncateIfNeeded(formatMacroPreviewDiff(ticket_id, macro_id, before, result)),
             },
           ],
         };

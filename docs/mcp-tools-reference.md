@@ -27,7 +27,7 @@ out every `write` tool before the proxies are built.
 | `add_private_note` | Add an internal note (not visible to requester), optionally with file attachments | write |
 | `add_public_comment` | Add a public comment (visible to requester), optionally with file attachments | write |
 | `manage_tags` | Add or remove tags on a ticket | write |
-| `apply_macro` | Preview a macro's effect on a ticket (field changes + reply) without saving; commit the result via update_ticket / add_public_comment / add_private_note | write |
+| `preview_macro_diff` | Preview a macro's changes to a ticket as a before → after diff (only changed fields + reply), without saving; commit via update_ticket / add_public_comment / add_private_note | write |
 
 </details>
 

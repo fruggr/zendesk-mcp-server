@@ -104,8 +104,8 @@ export const formatTicketField = (field: ZendeskTicketField): string => {
 // Render an arbitrary Zendesk field value — a macro action value, a macro-apply
 // field change — as a compact string: arrays as comma-joined tokens, objects as
 // JSON, null/undefined as empty. Shared by the macro formatters (here and in the
-// apply-result renderer) so list_macros and apply_macro stringify values the
-// same way instead of drifting apart.
+// preview-diff renderer) so list_macros and preview_macro_diff stringify values
+// the same way instead of drifting apart.
 export const formatFieldValue = (value: unknown): string =>
   value === null || value === undefined
     ? ''
@@ -119,7 +119,7 @@ export const formatFieldValue = (value: unknown): string =>
 
 // One macro action rendered as `field → value`. Long values (a canned reply in
 // `comment_value`) are previewed rather than dumped whole, keeping a macro list
-// scannable; the full reply text is materialized by apply_macro against a
+// scannable; the full reply text is materialized by preview_macro_diff against a
 // ticket, not here.
 const MACRO_VALUE_PREVIEW = 120;
 const formatMacroActionValue = (value: unknown): string => {
@@ -132,7 +132,7 @@ const formatMacroActionValue = (value: unknown): string => {
 const formatMacroAction = (action: ZendeskMacroAction): string =>
   `  - ${action.field} → ${formatMacroActionValue(action.value)}`;
 
-// Render a macro definition for list_macros: its id (what apply_macro needs),
+// Render a macro definition for list_macros: its id (what preview_macro_diff needs),
 // title, availability scope, and the ordered bundle of actions it applies so a
 // caller can judge a macro's effect before previewing it against a ticket.
 export const formatMacro = (macro: ZendeskMacro): string => {
