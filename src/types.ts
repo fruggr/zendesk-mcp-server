@@ -138,6 +138,68 @@ export interface ZendeskViewExecuteResponse {
   next_page?: string | null;
 }
 
+// A single action a macro performs: `field` is the target (e.g. "status",
+// "priority", "set_tags", or "comment_value" for the canned reply) and `value`
+// the value to set — a string, an array (multi-value fields), or a number,
+// depending on the field.
+export interface ZendeskMacroAction {
+  field: string;
+  value: unknown;
+}
+
+// A macro definition from GET /macros/active — the active macros available to
+// the authenticated user. `actions` is the ordered bundle of field changes and
+// the optional canned reply the macro applies; `restriction` scopes who may use
+// it (null = shared with everyone in the account).
+export interface ZendeskMacro {
+  id: number;
+  title: string;
+  description: string | null;
+  active: boolean;
+  actions: ZendeskMacroAction[];
+  position?: number;
+  restriction?: { type: string; id?: number; ids?: number[] } | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// The canned reply carried by a macro-apply result. `public` distinguishes a
+// public comment (emails the requester) from an internal note.
+export interface ZendeskMacroApplyComment {
+  body?: string;
+  public?: boolean;
+}
+
+// A single custom-field change in a macro-apply result.
+export interface ZendeskMacroApplyField {
+  id: number;
+  value: unknown;
+}
+
+// GET /tickets/{id}/macros/{macro_id}/apply returns the WHOLE ticket as it would
+// be after the macro runs (not just the changed fields — confirmed against the
+// live tenant), plus the comment it would add. Nothing is persisted; the caller
+// commits via update_ticket / add_public_comment / add_private_note.
+// preview_macro_diff isolates the macro's actual effect by diffing this against
+// the ticket's current state. Standard fields (status, priority, assignee_id,
+// group_id, tags, subject, type, …) appear as top-level keys; custom fields
+// arrive under `fields` (or `custom_fields`).
+export interface ZendeskMacroApplyTicket {
+  comment?: ZendeskMacroApplyComment;
+  // The apply endpoint renders one changed custom field as a bare object and
+  // several as an array, so both shapes are accepted (the handler normalizes).
+  fields?: ZendeskMacroApplyField[] | ZendeskMacroApplyField;
+  custom_fields?: ZendeskMacroApplyField[] | ZendeskMacroApplyField;
+  [key: string]: unknown;
+}
+
+export interface ZendeskMacroApplyResult {
+  ticket: ZendeskMacroApplyTicket;
+  // Some API versions surface the comment as a sibling of `ticket` rather than
+  // nested inside it; the handler reads both locations.
+  comment?: ZendeskMacroApplyComment;
+}
+
 export interface ZendeskTicketAttachment {
   id: number;
   file_name: string;
@@ -304,6 +366,7 @@ export interface ZendeskListResponse<T> {
   permission_groups?: T[];
   sla_policies?: T[];
   ticket_fields?: T[];
+  macros?: T[];
   meta?: {
     has_more: boolean;
     after_cursor: string;

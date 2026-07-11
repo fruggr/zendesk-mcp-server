@@ -7,6 +7,8 @@ import type {
   ZendeskComment,
   ZendeskContentTag,
   ZendeskLabel,
+  ZendeskMacro,
+  ZendeskMacroAction,
   ZendeskOrganization,
   ZendeskPermissionGroup,
   ZendeskSection,
@@ -96,6 +98,54 @@ export const formatTicketField = (field: ZendeskTicketField): string => {
     field.tag ? `- **Tag**: ${field.tag}` : '',
     options.length > 0 ? '- **Options** (name → value):' : '',
     ...options.map((o) => `  - ${o.name} → ${o.value}`),
+  ]
+    .filter(Boolean)
+    .join('\n');
+};
+
+// Render an arbitrary Zendesk field value — a macro action value, a macro-apply
+// field change — as a compact string: arrays as comma-joined tokens, scalars and
+// objects via the shared `formatConditionValue` ladder (null/undefined → empty,
+// object → JSON, else String). Shared by the macro formatters (here and in the
+// preview-diff renderer) so list_macros and preview_macro_diff stringify values
+// the same way instead of drifting apart.
+export const formatFieldValue = (value: unknown): string =>
+  // Recurse per element so an array of objects renders as JSON tokens rather than
+  // the useless "[object Object]" a bare join produces; scalars/objects reuse the
+  // existing condition-value stringifier (which encodes arrays as JSON, hence the
+  // array case stays here rather than delegating).
+  Array.isArray(value) ? value.map(formatFieldValue).join(', ') : formatConditionValue(value);
+
+// One macro action rendered as `field → value`. Long values (a canned reply in
+// `comment_value`) are previewed rather than dumped whole, keeping a macro list
+// scannable; the full reply text is materialized by preview_macro_diff against a
+// ticket, not here.
+const MACRO_VALUE_PREVIEW = 120;
+const formatMacroActionValue = (value: unknown): string => {
+  const oneLine = formatFieldValue(value).replace(/\s+/g, ' ').trim();
+  return oneLine.length > MACRO_VALUE_PREVIEW
+    ? `${oneLine.slice(0, MACRO_VALUE_PREVIEW)}…`
+    : oneLine;
+};
+
+const formatMacroAction = (action: ZendeskMacroAction): string =>
+  `  - ${action.field} → ${formatMacroActionValue(action.value)}`;
+
+// Render a macro definition for list_macros: its id (what preview_macro_diff needs),
+// title, availability scope, and the ordered bundle of actions it applies so a
+// caller can judge a macro's effect before previewing it against a ticket.
+export const formatMacro = (macro: ZendeskMacro): string => {
+  // A shared macro comes back with `restriction: null` — but the API also
+  // renders an unrestricted macro as an empty object `{}`, so key off a real
+  // `type` rather than mere truthiness to avoid mislabeling it "restricted".
+  const scope = macro.restriction?.type ? 'restricted' : 'shared';
+  const actions = macro.actions ?? [];
+  return [
+    `## ${macro.title} (id ${macro.id})`,
+    `- **${macro.active ? 'active' : 'inactive'}** | **Scope**: ${scope}`,
+    macro.description ? `- **Description**: ${macro.description}` : '',
+    actions.length > 0 ? '- **Actions**:' : '- **Actions**: none',
+    ...actions.map(formatMacroAction),
   ]
     .filter(Boolean)
     .join('\n');

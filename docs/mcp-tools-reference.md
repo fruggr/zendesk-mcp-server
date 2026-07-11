@@ -23,11 +23,13 @@ out every `write` tool before the proxies are built.
 | `list_ticket_fields` | List ticket field definitions (system + custom) with ids, types, and dropdown/multiselect option values, to resolve `custom_fields` ids and accepted values for create_ticket / update_ticket | read |
 | `list_views` | List the agent's active views (saved ticket queues) with their current ticket counts, to see where the workload sits before opening a queue | read |
 | `get_view_tickets` | Read the tickets inside a view — by title or id — in the view's own configured sort order, cursor-paginated (no live SLA block; use search_tickets for that) | read |
+| `list_macros` | List the active macros available to the authenticated user, with each macro's id, title, scope, and ordered actions | read |
 | `create_ticket` | Create a new ticket with subject, description, priority, tags... | write |
 | `update_ticket` | Update ticket status, priority, assignee, tags, custom fields | write |
 | `add_private_note` | Add an internal note (not visible to requester), optionally with file attachments | write |
 | `add_public_comment` | Add a public comment (visible to requester), optionally with file attachments | write |
 | `manage_tags` | Add or remove tags on a ticket | write |
+| `preview_macro_diff` | Preview a macro's changes to a ticket as a before → after diff (only changed fields + reply), without saving; commit via update_ticket / add_public_comment / add_private_note | write |
 
 </details>
 

@@ -4,7 +4,9 @@ import {
   formatArticleSummary,
   formatCategory,
   formatComment,
+  formatFieldValue,
   formatList,
+  formatMacro,
   formatOrganization,
   formatSection,
   formatSlaBlock,
@@ -19,6 +21,7 @@ import {
   MOCK_ARTICLE,
   MOCK_CATEGORY,
   MOCK_COMMENT,
+  MOCK_MACRO,
   MOCK_ORGANIZATION,
   MOCK_SECTION,
   MOCK_SLA_POLICY,
@@ -284,6 +287,55 @@ describe('formatSection', () => {
     expect(result).toContain('FAQ');
     expect(result).toContain('600');
     expect(result).toContain('800');
+  });
+});
+
+describe('formatFieldValue', () => {
+  it('joins arrays, JSON-encodes objects, empties null/undefined, stringifies scalars', () => {
+    expect(formatFieldValue(['a', 'b'])).toBe('a, b');
+    expect(formatFieldValue({ x: 1 })).toBe('{"x":1}');
+    expect(formatFieldValue(null)).toBe('');
+    expect(formatFieldValue(undefined)).toBe('');
+    expect(formatFieldValue(0)).toBe('0');
+    expect(formatFieldValue('solved')).toBe('solved');
+  });
+
+  it('renders an array of objects as JSON tokens, not "[object Object]"', () => {
+    expect(formatFieldValue([{ id: 1 }, { id: 2 }])).toBe('{"id":1}, {"id":2}');
+  });
+});
+
+describe('formatMacro', () => {
+  it('includes id, title, scope and the ordered actions', () => {
+    const result = formatMacro(MOCK_MACRO);
+    expect(result).toContain('Close and thank the customer (id 700)');
+    expect(result).toContain('Scope**: shared');
+    expect(result).toContain('status → solved');
+    expect(result).toContain('set_tags → resolved, macro_applied');
+    expect(result).toContain('comment_value → Thanks for your business!');
+  });
+
+  it('marks a restricted macro and previews an over-long action value', () => {
+    const result = formatMacro({
+      ...MOCK_MACRO,
+      restriction: { type: 'Group', id: 1 },
+      actions: [{ field: 'comment_value', value: 'x'.repeat(500) }],
+    });
+    expect(result).toContain('Scope**: restricted');
+    expect(result).toContain('…');
+    expect(result).not.toContain('x'.repeat(500));
+  });
+
+  it('treats an empty-object restriction as shared, not restricted', () => {
+    // The Zendesk list-macros response renders an unrestricted macro's
+    // `restriction` as `{}`; a truthiness check would mislabel it "restricted".
+    const result = formatMacro({ ...MOCK_MACRO, restriction: {} as never });
+    expect(result).toContain('Scope**: shared');
+  });
+
+  it('does not crash when a macro has no actions array', () => {
+    const result = formatMacro({ ...MOCK_MACRO, actions: undefined as never });
+    expect(result).toContain('**Actions**: none');
   });
 });
 

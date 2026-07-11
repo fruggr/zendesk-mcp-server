@@ -1,3 +1,9 @@
+## [2.10.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.9.0...v2.10.0) (2026-07-11)
+
+### Features
+
+* **tickets:** add list_macros and apply_macro tools ([#120](https://github.com/fruggr/zendesk-mcp-server/issues/120)) ([#145](https://github.com/fruggr/zendesk-mcp-server/issues/145)) ([bd40dc6](https://github.com/fruggr/zendesk-mcp-server/commit/bd40dc640eb33c06ebe944ed69ada31be305e69b))
+
 ## [2.9.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.8.0...v2.9.0) (2026-07-10)
 
 ### Features
