@@ -20,6 +20,14 @@ export const MOCK_TICKET = {
   custom_fields: [],
 };
 
+export const MOCK_VIEW = {
+  id: 25,
+  title: 'Unassigned tickets',
+  active: true,
+  description: 'Tickets with no assignee',
+  position: 1,
+};
+
 // Shape mirrors the official SLA Policies API reference: condition values can be
 // arrays (e.g. `includes`), policy_metrics carry target_in_seconds, and the
 // record has a `url`. The resolution metric is `total_resolution_time`.
@@ -388,6 +396,42 @@ export const manyContentTagsHandler = http.get(`${BASE}/guide/content_tags`, () 
 );
 
 export const handlers = [
+  // Views (issue #121). Registered before `/tickets/:id` so `/tickets/show_many`
+  // hits its own handler instead of being captured as an `:id`.
+  http.get(`${BASE}/tickets/show_many`, ({ request }) => {
+    const ids = (new URL(request.url).searchParams.get('ids') ?? '')
+      .split(',')
+      .filter(Boolean)
+      .map(Number);
+    return HttpResponse.json({ tickets: ids.map((id) => ({ ...MOCK_TICKET, id })) });
+  }),
+  http.get(`${BASE}/views/count_many`, ({ request }) => {
+    const ids = (new URL(request.url).searchParams.get('ids') ?? '')
+      .split(',')
+      .filter(Boolean)
+      .map(Number);
+    return HttpResponse.json({
+      view_counts: ids.map((id) => ({
+        view_id: id,
+        value: 298,
+        pretty: '298',
+        fresh: true,
+        url: `${BASE}/views/${id}/count.json`,
+      })),
+    });
+  }),
+  http.get(`${BASE}/views/:id/execute`, ({ params }) =>
+    HttpResponse.json({
+      columns: [{ id: 'subject', title: 'Subject' }],
+      rows: [{ ticket: { id: MOCK_TICKET.id } }],
+      view: { id: Number(params['id']) },
+      meta: { has_more: false, after_cursor: '' },
+    }),
+  ),
+  http.get(`${BASE}/views`, () =>
+    HttpResponse.json({ views: [MOCK_VIEW], meta: { has_more: false, after_cursor: '' } }),
+  ),
+
   // Tickets
   http.get(`${BASE}/tickets/:id`, ({ params }) => {
     if (params['id'] === '404') return HttpResponse.json({}, { status: 404 });

@@ -20,6 +20,8 @@ import type {
   ZendeskTranslation,
   ZendeskUser,
   ZendeskUserSegment,
+  ZendeskView,
+  ZendeskViewCount,
 } from '../types.js';
 
 export const truncateIfNeeded = (text: string): string => {
@@ -256,6 +258,19 @@ export const formatCategory = (category: ZendeskCategory): string =>
 
 export const formatSection = (section: ZendeskSection): string =>
   `- **${section.name}** (${section.id}) — Category: ${section.category_id} — ${section.description || 'No description'}`;
+
+// Compact one-line view entry for list_views: title, id, and — when a count was
+// resolved — the queue size. Counts are cached by Zendesk; a non-fresh one is
+// marked "(count updating)" so the caller does not treat a stale/estimated value
+// (or "...") as exact. Rendered via `count.pretty`, which already carries the
+// exact/approximate/"not yet computed" form.
+export const formatView = (view: ZendeskView, count?: ZendeskViewCount): string => {
+  const countText = count
+    ? ` — ${count.pretty} ticket(s)${count.fresh ? '' : ' (count updating)'}`
+    : '';
+  const description = view.description ? ` — ${view.description}` : '';
+  return `- **${view.title}** (id ${view.id})${countText}${description}`;
+};
 
 export const formatPermissionGroup = (group: ZendeskPermissionGroup): string =>
   `- **${group.name}** (${group.id})${group.built_in ? ' — Built-in' : ''}`;

@@ -44,6 +44,19 @@ Local setup and auth flows live in `README.md`; CLI flags and env vars in
 troubleshooting in `docs/troubleshooting.md`; manual tool testing in
 `docs/live-testing.md`.
 
+## Design principle — usage-first, not API-shaped
+
+Design every tool for what an LLM needs to accomplish a real task, not for what
+the Zendesk API happens to expose. The API's endpoints, names, pagination and
+data shapes are an implementation detail, not a template — they may be awkward or
+built for a use case that isn't ours. Don't mirror them 1:1, and don't copy other
+MCP servers just because they exist; neither is evidence of what serves the LLM.
+A single tool may fan out to several Zendesk calls and join, reshape or drop the
+result to hand back exactly what the use case needs — that cross-calling is
+expected, not a smell. When API shape and usage pull apart, follow the usage. (This
+never overrides the multi-agent rule below: internal naming coherence and the
+quality bar still hold — the freedom is from Zendesk's shape, not from craft.)
+
 ## Testing
 
 - New features: TDD — failing test first. Bug fixes: reproduce with a test first.

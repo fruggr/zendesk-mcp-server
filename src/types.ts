@@ -88,6 +88,56 @@ export interface ZendeskTicketField {
   system_field_options?: ZendeskFieldOption[];
 }
 
+// GET /api/v2/views — a Zendesk view: a saved, per-agent ticket queue
+// ("Unassigned tickets", "Breaching today"). We surface title/id/description for
+// list_views; `execution`/`conditions`/`restriction` are read by the API but not
+// rendered (the usage is the queue, not its filter definition).
+export interface ZendeskView {
+  id: number;
+  title: string;
+  active: boolean;
+  description: string | null;
+  position?: number;
+}
+
+// GET /api/v2/views/count_many — a view's cached ticket count. Zendesk caches
+// these heavily (up to ~an hour for large views): while it recomputes, `fresh`
+// is false and `value` may be null. `pretty` is the display form ("298", "~700",
+// or "..." when not yet computed), so prefer it for rendering.
+export interface ZendeskViewCount {
+  view_id: number;
+  value: number | null;
+  pretty: string;
+  fresh: boolean;
+  url?: string;
+}
+
+export interface ZendeskViewCountManyResponse {
+  view_counts?: ZendeskViewCount[];
+}
+
+// GET /api/v2/views/{id}/execute — a view executed with its own column set and
+// configured sort order. Each row carries the view's column values inlined plus a
+// *partial* ticket object; we use the rows only for the view-ordered ticket ids,
+// then hydrate full tickets via /tickets/show_many (the partial ticket and the
+// view-dependent columns are not a reliable full ticket, see #121).
+export interface ZendeskViewExecuteRow {
+  ticket?: { id?: number };
+  [key: string]: unknown;
+}
+
+export interface ZendeskViewExecuteResponse {
+  columns?: Array<{ id: string | number; title: string }>;
+  rows?: ZendeskViewExecuteRow[];
+  view?: { id: number };
+  meta?: {
+    has_more: boolean;
+    after_cursor: string;
+  };
+  count?: number;
+  next_page?: string | null;
+}
+
 // A single action a macro performs: `field` is the target (e.g. "status",
 // "priority", "set_tags", or "comment_value" for the canned reply) and `value`
 // the value to set — a string, an array (multi-value fields), or a number,
@@ -305,6 +355,7 @@ export interface ZendeskListResponse<T> {
   results?: T[];
   records?: T[];
   tickets?: T[];
+  views?: T[];
   users?: T[];
   organizations?: T[];
   articles?: T[];
