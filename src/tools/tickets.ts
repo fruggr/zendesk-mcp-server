@@ -211,6 +211,16 @@ const shownValue = (v: unknown): string => {
   return s === '' ? '(empty)' : s;
 };
 
+// A single `label: before → after` change line, or null when the two sides
+// render identically. The null case also drops a field the apply response
+// returns as `null` where the current ticket omits the key: both render as
+// "(empty)", so it is a no-op and must not appear as a change.
+const diffLine = (label: string, before: unknown, after: unknown): string | null => {
+  const b = shownValue(before);
+  const a = shownValue(after);
+  return b === a ? null : `- **${label}**: ${b} → ${a}`;
+};
+
 // Tags diff as added/removed tokens rather than a full before/after list — that
 // is what a macro's `set_tags`/`remove_tags` actions actually express. Returns
 // null when the tag set is unchanged.
@@ -250,10 +260,14 @@ const formatMacroPreviewDiff = (
     if (key === 'tags') {
       const tagLine = formatTagDiff(beforeVal, afterVal);
       if (tagLine) changes.push(tagLine);
-    } else if (afterVal !== null && typeof afterVal === 'object' && !Array.isArray(afterVal)) {
-    } else {
-      changes.push(`- **${key}**: ${shownValue(beforeVal)} → ${shownValue(afterVal)}`);
+      continue;
     }
+    // No macro-settable standard field is a nested object; via /
+    // satisfaction_rating and the like only differ incidentally between the two
+    // reads, so skip them rather than dumping raw JSON.
+    if (afterVal !== null && typeof afterVal === 'object' && !Array.isArray(afterVal)) continue;
+    const line = diffLine(key, beforeVal, afterVal);
+    if (line) changes.push(line);
   }
 
   // Custom fields diff by id: the apply response carries every custom field, so
@@ -261,9 +275,8 @@ const formatMacroPreviewDiff = (
   const afterFields = [after.fields ?? after.custom_fields ?? []].flat();
   const beforeById = new Map((before?.custom_fields ?? []).map((f) => [f.id, f.value] as const));
   for (const f of afterFields) {
-    const prev = beforeById.get(f.id);
-    if (valuesEqual(prev, f.value)) continue;
-    changes.push(`- **custom field ${f.id}**: ${shownValue(prev)} → ${shownValue(f.value)}`);
+    const line = diffLine(`custom field ${f.id}`, beforeById.get(f.id), f.value);
+    if (line) changes.push(line);
   }
 
   const lines = [

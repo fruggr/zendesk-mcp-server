@@ -909,6 +909,9 @@ describe('ticket tools', () => {
                 via: { channel: 'api' },
                 generated_timestamp: 222,
                 tags: ['keep'],
+                // Present as `null` here but absent from the before-read: a no-op
+                // that used to leak as "(empty) → (empty)" — must be dropped.
+                deleted_ticket_form_id: null,
                 fields: [{ id: 9, value: 'unchanged' }],
               },
             },
@@ -924,6 +927,9 @@ describe('ticket tools', () => {
       expect(text).not.toContain('generated_timestamp');
       expect(text).not.toContain('custom field 9');
       expect(text).not.toContain('**tags**');
+      // The no-op null-vs-absent field must not render at all.
+      expect(text).not.toContain('deleted_ticket_form_id');
+      expect(text).not.toContain('(empty) → (empty)');
     });
 
     it('marks a macro comment with public=false as an internal note', async () => {
