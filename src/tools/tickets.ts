@@ -221,24 +221,38 @@ const fetchViewCounts = async (
   return counts;
 };
 
-// Resolve a view reference (title or numeric id) to an id. A numeric reference is
-// used as-is; a title is matched case-insensitively against the agent's active
-// views. Returns the available titles on no match so the caller can self-correct.
+// Resolve a view reference to an id. A numeric reference is used as-is; a string
+// is always treated as a title (even an all-digits one — the numeric-id path is
+// `typeof view === 'number'` only) and matched case-insensitively against the
+// agent's active views. The active-views list is cursor-paginated to completion
+// so a title on a later page still resolves; on no match the full set of
+// available titles is returned so the caller can self-correct.
 const resolveViewId = async (
   subdomain: string,
   token: string,
   view: string | number,
 ): Promise<{ id: number } | { available: string[] }> => {
-  const ref = String(view).trim();
-  if (/^\d+$/.test(ref)) return { id: Number(ref) };
-  const response = await zendeskGet<ZendeskListResponse<ZendeskView>>(subdomain, token, '/views', {
-    active: 'true',
-    ...buildCursorParams(MAX_PAGE_SIZE),
-  });
-  const views = response.views ?? [];
-  const target = ref.toLowerCase();
-  const match = views.find((v) => v.title.trim().toLowerCase() === target);
-  return match ? { id: match.id } : { available: views.map((v) => v.title) };
+  if (typeof view === 'number') return { id: view };
+  const target = view.trim().toLowerCase();
+  const available: string[] = [];
+  let cursor: string | undefined;
+  do {
+    const response = await zendeskGet<ZendeskListResponse<ZendeskView>>(
+      subdomain,
+      token,
+      '/views',
+      {
+        active: 'true',
+        ...buildCursorParams(MAX_PAGE_SIZE, cursor),
+      },
+    );
+    const views = response.views ?? [];
+    const match = views.find((v) => v.title.trim().toLowerCase() === target);
+    if (match) return { id: match.id };
+    available.push(...views.map((v) => v.title));
+    cursor = response.meta?.has_more ? (response.meta.after_cursor ?? undefined) : undefined;
+  } while (cursor);
+  return { available };
 };
 
 // Read the ticket id off an execute row. The row's `ticket` object is partial but
@@ -1290,8 +1304,17 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           .map(extractRowTicketId)
           .filter((id): id is number => typeof id === 'number');
         const tickets = await hydrateViewTickets(subdomain, token, ids);
+        // Count reflects the tickets actually rendered, not the raw execute rows:
+        // a row whose id can't be extracted or that show_many can't resolve is
+        // dropped, so rows.length would overstate the list. Pagination (has_more /
+        // after_cursor) is preserved from the execute response.
         return {
-          content: [{ type: 'text', text: formatList(tickets, formatTicket, meta) }],
+          content: [
+            {
+              type: 'text',
+              text: formatList(tickets, formatTicket, { ...meta, count: tickets.length }),
+            },
+          ],
         };
       },
     },

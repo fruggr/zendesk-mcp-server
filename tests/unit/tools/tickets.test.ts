@@ -891,6 +891,48 @@ describe('ticket tools', () => {
       expect(result.content[0]?.text).toContain('Ticket #1');
     });
 
+    it('paginates the active-views lookup to resolve a title on a later page', async () => {
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/views', ({ request }) => {
+          const cursor = new URL(request.url).searchParams.get('page[after]');
+          if (!cursor) {
+            return HttpResponse.json({
+              views: [{ ...MOCK_VIEW, id: 11, title: 'Some other queue' }],
+              meta: { has_more: true, after_cursor: 'PAGE2' },
+            });
+          }
+          return HttpResponse.json({
+            views: [{ ...MOCK_VIEW, id: 77, title: 'Breaching today' }],
+            meta: { has_more: false, after_cursor: '' },
+          });
+        }),
+      );
+      const tool = findTool('get_view_tickets');
+      const result = await tool.handler({ view: 'Breaching today', page_size: 100 });
+      // Resolved to id 77 on page 2, then executed + hydrated to a ticket.
+      expect(result.content[0]?.text).toContain('Ticket #1');
+    });
+
+    it('treats a digit-only string as a title, not an id', async () => {
+      let executedViewId: string | null = null;
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/views', () =>
+          HttpResponse.json({
+            views: [{ ...MOCK_VIEW, id: 55, title: '2024' }],
+            meta: { has_more: false, after_cursor: '' },
+          }),
+        ),
+        http.get('https://testsubdomain.zendesk.com/api/v2/views/:id/execute', ({ params }) => {
+          executedViewId = params['id'] as string;
+          return HttpResponse.json({ rows: [], meta: { has_more: false, after_cursor: '' } });
+        }),
+      );
+      const tool = findTool('get_view_tickets');
+      await tool.handler({ view: '2024', page_size: 100 });
+      // "2024" is matched as a title (view id 55), not used directly as id 2024.
+      expect(executedViewId).toBe('55');
+    });
+
     it("preserves the view's order after hydrating full tickets", async () => {
       mswServer.use(
         http.get('https://testsubdomain.zendesk.com/api/v2/views/:id/execute', () =>
