@@ -120,18 +120,20 @@ export interface ZendeskMacroApplyComment {
   public?: boolean;
 }
 
-// GET /tickets/{id}/macros/{macro_id}/apply returns the ticket as it WOULD be
-// after the macro runs — only the fields the macro changes, plus the comment it
-// would add. Nothing is persisted: the caller commits the changes with
-// update_ticket / add_public_comment / add_private_note. Standard fields
-// (status, priority, assignee_id, group_id, tags, subject, type) appear as
-// top-level keys; custom fields arrive under `fields` (or `custom_fields`).
 // A single custom-field change in a macro-apply result.
 export interface ZendeskMacroApplyField {
   id: number;
   value: unknown;
 }
 
+// GET /tickets/{id}/macros/{macro_id}/apply returns the WHOLE ticket as it would
+// be after the macro runs (not just the changed fields — confirmed against the
+// live tenant), plus the comment it would add. Nothing is persisted; the caller
+// commits via update_ticket / add_public_comment / add_private_note.
+// preview_macro_diff isolates the macro's actual effect by diffing this against
+// the ticket's current state. Standard fields (status, priority, assignee_id,
+// group_id, tags, subject, type, …) appear as top-level keys; custom fields
+// arrive under `fields` (or `custom_fields`).
 export interface ZendeskMacroApplyTicket {
   comment?: ZendeskMacroApplyComment;
   // The apply endpoint renders one changed custom field as a bare object and

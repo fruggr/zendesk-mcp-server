@@ -179,10 +179,14 @@ const fetchTicketSla = async (
   }
 };
 
-// Non-actionable ticket keys: structural (handled on their own) or identity /
-// server-recomputed fields a macro never meaningfully sets. Excluded from the
-// field diff so the preview surfaces only what the macro actually changes,
-// never `url`/`id`/`created_at` noise or a spuriously-bumped timestamp.
+// Keys the generic field diff must not emit. Two reasons, both in this set:
+//   - `comment`/`fields`/`custom_fields` are routed to their own render paths, so
+//     the scalar loop skips them regardless of whether they changed.
+//   - `updated_at`/`generated_timestamp`/`encoded_id` are server-recomputed, so a
+//     no-op preview can bump them and they'd surface as spurious changes.
+// `id`/`url`/`created_at` are byte-identical across the two fetches and already
+// drop out via the diff; they're listed as belt-and-suspenders. Erring toward
+// over-suppression is the safe direction for a preview that precedes a real write.
 const DIFF_SKIP_KEYS = new Set([
   'comment',
   'fields',

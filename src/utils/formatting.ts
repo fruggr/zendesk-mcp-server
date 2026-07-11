@@ -102,20 +102,17 @@ export const formatTicketField = (field: ZendeskTicketField): string => {
 };
 
 // Render an arbitrary Zendesk field value — a macro action value, a macro-apply
-// field change — as a compact string: arrays as comma-joined tokens, objects as
-// JSON, null/undefined as empty. Shared by the macro formatters (here and in the
+// field change — as a compact string: arrays as comma-joined tokens, scalars and
+// objects via the shared `formatConditionValue` ladder (null/undefined → empty,
+// object → JSON, else String). Shared by the macro formatters (here and in the
 // preview-diff renderer) so list_macros and preview_macro_diff stringify values
 // the same way instead of drifting apart.
 export const formatFieldValue = (value: unknown): string =>
-  value === null || value === undefined
-    ? ''
-    : Array.isArray(value)
-      ? // Recurse per element so an array of objects renders as JSON tokens
-        // rather than the useless "[object Object]" that a bare join produces.
-        value.map(formatFieldValue).join(', ')
-      : typeof value === 'object'
-        ? JSON.stringify(value)
-        : String(value);
+  // Recurse per element so an array of objects renders as JSON tokens rather than
+  // the useless "[object Object]" a bare join produces; scalars/objects reuse the
+  // existing condition-value stringifier (which encodes arrays as JSON, hence the
+  // array case stays here rather than delegating).
+  Array.isArray(value) ? value.map(formatFieldValue).join(', ') : formatConditionValue(value);
 
 // One macro action rendered as `field → value`. Long values (a canned reply in
 // `comment_value`) are previewed rather than dumped whole, keeping a macro list
