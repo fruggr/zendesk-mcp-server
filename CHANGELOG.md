@@ -1,3 +1,9 @@
+## [2.11.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.10.0...v2.11.0) (2026-07-11)
+
+### Features
+
+* **tickets:** Views access — list_views + get_view_tickets ([#121](https://github.com/fruggr/zendesk-mcp-server/issues/121)) ([#146](https://github.com/fruggr/zendesk-mcp-server/issues/146)) ([4db7405](https://github.com/fruggr/zendesk-mcp-server/commit/4db7405dea883dc0332fb57e1d747cc0e763c63e))
+
 ## [2.10.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.9.0...v2.10.0) (2026-07-11)
 
 ### Features
