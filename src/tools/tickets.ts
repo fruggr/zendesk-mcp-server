@@ -17,6 +17,9 @@ import {
 import type {
   ZendeskComment,
   ZendeskListResponse,
+  ZendeskMacro,
+  ZendeskMacroApplyComment,
+  ZendeskMacroApplyResult,
   ZendeskSlaPolicy,
   ZendeskSlaSideloadEntry,
   ZendeskTicket,
@@ -26,7 +29,9 @@ import type {
 } from '../types';
 import {
   formatComment,
+  formatFieldValue,
   formatList,
+  formatMacro,
   formatSlaBlock,
   formatSlaPolicy,
   formatTicket,
@@ -36,6 +41,7 @@ import {
 import {
   buildCursorParams,
   buildOffsetParams,
+  extractOffsetPaginationMeta,
   extractPaginationMeta,
   extractSearchPaginationMeta,
   PAGE_DESC,
@@ -171,6 +177,129 @@ const fetchTicketSla = async (
     // SLA is supplementary — never fail get_ticket because the lookup faltered.
     return undefined;
   }
+};
+
+// Keys the generic field diff must not emit. Two reasons, both in this set:
+//   - `comment`/`fields`/`custom_fields` are routed to their own render paths, so
+//     the scalar loop skips them regardless of whether they changed.
+//   - `updated_at`/`generated_timestamp`/`encoded_id` are server-recomputed, so a
+//     no-op preview can bump them and they'd surface as spurious changes.
+// `id`/`url`/`created_at` are byte-identical across the two fetches and already
+// drop out via the diff; they're listed as belt-and-suspenders. Erring toward
+// over-suppression is the safe direction for a preview that precedes a real write.
+const DIFF_SKIP_KEYS = new Set([
+  'comment',
+  'fields',
+  'custom_fields',
+  'id',
+  'url',
+  'created_at',
+  'updated_at',
+  'generated_timestamp',
+  'encoded_id',
+]);
+
+// Value equality that also handles arrays/objects (tags, `via`, …) by structure
+// rather than reference, so unchanged nested fields drop out of the diff.
+const valuesEqual = (a: unknown, b: unknown): boolean =>
+  a === b || JSON.stringify(a) === JSON.stringify(b);
+
+// Render a value for the diff, marking an absent/empty side so a `→` line never
+// reads as "(blank) → x".
+const shownValue = (v: unknown): string => {
+  const s = formatFieldValue(v);
+  return s === '' ? '(empty)' : s;
+};
+
+// A single `label: before → after` change line, or null when the two sides
+// render identically. The null case also drops a field the apply response
+// returns as `null` where the current ticket omits the key: both render as
+// "(empty)", so it is a no-op and must not appear as a change.
+const diffLine = (label: string, before: unknown, after: unknown): string | null => {
+  const b = shownValue(before);
+  const a = shownValue(after);
+  return b === a ? null : `- **${label}**: ${b} → ${a}`;
+};
+
+// Tags diff as added/removed tokens rather than a full before/after list — that
+// is what a macro's `set_tags`/`remove_tags` actions actually express. Returns
+// null when the tag set is unchanged.
+const formatTagDiff = (before: unknown, after: unknown): string | null => {
+  const b = new Set(Array.isArray(before) ? before.map(String) : []);
+  const a = new Set(Array.isArray(after) ? after.map(String) : []);
+  const added = [...a].filter((t) => !b.has(t)).map((t) => `+${t}`);
+  const removed = [...b].filter((t) => !a.has(t)).map((t) => `-${t}`);
+  return added.length + removed.length === 0
+    ? null
+    : `- **tags**: ${[...added, ...removed].join(', ')}`;
+};
+
+// Preview a macro's effect on a ticket as a real before → after diff. The apply
+// endpoint returns the WHOLE resulting ticket (not just the macro's changes), so
+// diffing it against the ticket's current state is what isolates the macro's
+// actual effect; everything unchanged (identity fields, untouched custom fields)
+// drops out. The apply endpoint mutates nothing, so the text ends by pointing at
+// the write tools that persist the change — the deliberate two-step from #120.
+const formatMacroPreviewDiff = (
+  ticketId: number,
+  macroId: number,
+  before: ZendeskTicket | undefined,
+  result: ZendeskMacroApplyResult | undefined,
+): string => {
+  // Guard the whole path so a malformed body degrades to a clean "no changes"
+  // instead of a cryptic "cannot read properties of undefined" tool error.
+  const after = result?.ticket ?? {};
+  const beforeObj = (before ?? {}) as unknown as Record<string, unknown>;
+  const comment: ZendeskMacroApplyComment | undefined = after.comment ?? result?.comment;
+
+  const changes: string[] = [];
+  for (const [key, afterVal] of Object.entries(after)) {
+    if (DIFF_SKIP_KEYS.has(key)) continue;
+    const beforeVal = beforeObj[key];
+    if (valuesEqual(beforeVal, afterVal)) continue;
+    if (key === 'tags') {
+      const tagLine = formatTagDiff(beforeVal, afterVal);
+      if (tagLine) changes.push(tagLine);
+      continue;
+    }
+    // No macro-settable standard field is a nested object; via /
+    // satisfaction_rating and the like only differ incidentally between the two
+    // reads, so skip them rather than dumping raw JSON.
+    if (afterVal !== null && typeof afterVal === 'object' && !Array.isArray(afterVal)) continue;
+    const line = diffLine(key, beforeVal, afterVal);
+    if (line) changes.push(line);
+  }
+
+  // Custom fields diff by id: the apply response carries every custom field, so
+  // compare each against the ticket's current value and keep only what changed.
+  const afterFields = [after.fields ?? after.custom_fields ?? []].flat();
+  const beforeById = new Map((before?.custom_fields ?? []).map((f) => [f.id, f.value] as const));
+  for (const f of afterFields) {
+    const line = diffLine(`custom field ${f.id}`, beforeById.get(f.id), f.value);
+    if (line) changes.push(line);
+  }
+
+  const lines = [
+    `# Macro #${macroId} preview on ticket #${ticketId} (diff — nothing saved yet)`,
+    '',
+    '## Field changes',
+    ...(changes.length > 0 ? changes : ['- none']),
+  ];
+
+  if (comment?.body) {
+    const visibility = comment.public === false ? 'internal note' : 'public comment';
+    lines.push('', `## Reply (${visibility})`, '', comment.body);
+  } else {
+    lines.push('', '## Reply', '- none');
+  }
+
+  lines.push(
+    '',
+    '## To apply these changes',
+    'Nothing has been committed. Persist the field changes with `update_ticket` (or `manage_tags` for incremental tag edits), and post the reply with `add_public_comment` (public) or `add_private_note` (internal). Edit the reply text first if needed.',
+  );
+
+  return lines.join('\n');
 };
 
 export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
@@ -846,12 +975,9 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         }
         const policies = response.sla_policies ?? [];
         // The SLA policies endpoint returns the full config list and, in
-        // practice, omits the `count` wrapper, so fall back to the array length
-        // rather than reporting "Results: 0".
-        const meta =
-          response.count != null
-            ? extractSearchPaginationMeta(response, per_page, page)
-            : { count: policies.length, has_more: false, after_cursor: null };
+        // practice, omits the `count` wrapper, so the shared helper falls back to
+        // the array length rather than reporting "Results: 0".
+        const meta = extractOffsetPaginationMeta(response, policies.length, per_page, page);
         return {
           content: [{ type: 'text', text: formatList(policies, formatSlaPolicy, meta) }],
         };
@@ -902,6 +1028,99 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
                 formatTicketField,
                 extractPaginationMeta(response, fields.length),
               ),
+            },
+          ],
+        };
+      },
+    },
+    {
+      name: 'list_macros',
+      namespace: 'tickets',
+      readOnly: true,
+      title: 'List Zendesk Macros',
+      description:
+        'List the active macros available to the authenticated user. A macro bundles a canned reply and/or a set of field changes (status, priority, assignee, group, tags, custom fields) an agent applies to a ticket in one gesture; this returns each macro id, title, description, availability scope, and its ordered list of actions, offset-paginated. Results are scoped by per-user OAuth to what the current user can see, so no shared admin key is needed. Pass a macro id from here to preview_macro_diff to preview its effect on a specific ticket.',
+      inputSchema: z.object({
+        per_page: z
+          .number()
+          .int()
+          .min(1)
+          .max(MAX_PAGE_SIZE)
+          .default(DEFAULT_PAGE_SIZE)
+          .describe(PER_PAGE_DESC),
+        page: z.number().int().min(1).default(1).describe(PAGE_DESC),
+      }),
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+      handler: async (params) => {
+        const { per_page, page } = params as { per_page: number; page: number };
+        const token = await getToken();
+        const response = await zendeskGet<ZendeskListResponse<ZendeskMacro>>(
+          subdomain,
+          token,
+          '/macros/active',
+          buildOffsetParams(per_page, page),
+        );
+        const macros = response.macros ?? [];
+        const meta = extractOffsetPaginationMeta(response, macros.length, per_page, page);
+        return {
+          content: [{ type: 'text', text: formatList(macros, formatMacro, meta) }],
+        };
+      },
+    },
+    {
+      name: 'preview_macro_diff',
+      namespace: 'tickets',
+      // Marked write (readOnly: false) even though both reads mutate nothing: it
+      // is the entry point of a mutation workflow whose commit step (update_ticket
+      // / add_*_comment) is filtered out by --read-only, so exposing it there would
+      // offer a preview the user cannot act on.
+      readOnly: false,
+      title: 'Preview a Macro Diff on a Ticket',
+      description:
+        "Preview the exact changes a macro would make to a specific ticket, as a before → after diff, WITHOUT saving anything. Orchestrates two reads — the ticket's current state and Zendesk's macro-apply preview (which returns the whole resulting ticket) — and returns only the fields the macro actually changes (status, priority, assignee, group, tags, custom fields) plus the canned reply with its public/internal flag; unchanged and identity fields are omitted. Nothing is committed: to apply it, follow up with update_ticket for the field changes and add_public_comment or add_private_note for the reply. This deliberate two-step keeps the mutation explicit and reviewable rather than hidden. Find macro ids via list_macros and the ticket id via search_tickets or list_tickets.",
+      inputSchema: z.object({
+        ticket_id: z
+          .number()
+          .int()
+          .describe(
+            'Ticket ID — the numeric id of the ticket to preview the macro against. Obtain it from search_tickets or list_tickets.',
+          ),
+        macro_id: z
+          .number()
+          .int()
+          .describe(
+            'Macro ID — the numeric id of the macro to preview. Obtain it from list_macros.',
+          ),
+      }),
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+      handler: async (params) => {
+        const { ticket_id, macro_id } = params as { ticket_id: number; macro_id: number };
+        const token = await getToken();
+        // Two reads in parallel: the ticket as it is now, and the ticket as the
+        // macro would leave it. Diffing them isolates the macro's actual effect.
+        const [{ ticket: before }, { result }] = await Promise.all([
+          zendeskGet<{ ticket: ZendeskTicket }>(subdomain, token, `/tickets/${ticket_id}`),
+          zendeskGet<{ result: ZendeskMacroApplyResult }>(
+            subdomain,
+            token,
+            `/tickets/${ticket_id}/macros/${macro_id}/apply`,
+          ),
+        ]);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: truncateIfNeeded(formatMacroPreviewDiff(ticket_id, macro_id, before, result)),
             },
           ],
         };

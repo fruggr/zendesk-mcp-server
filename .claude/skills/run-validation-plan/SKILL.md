@@ -97,7 +97,32 @@ GitHub MCP is connected, `mcp__github__add_issue_comment`. If neither is availab
 ```
 
 Per-row evidence must be concrete enough that the author can verify it without
-re-running: name the log event, the field that changed, the error string.
+re-running: name the log event, the field that changed, the error string. "Concrete"
+means the **structure** — field names, formatting markers (headings, footers,
+counts), types, the shape of the payload — *not* the live values (see next).
+
+### Redact real data — the server hits a production tenant
+
+The MCP server under test is wired to a **real, live Zendesk tenant with
+production data**, not a fixture or sandbox. Every tool output can carry live
+customer PII and confidential business data: requester/agent names, email
+addresses and phone numbers, organization names, ticket subjects / descriptions /
+comment bodies, attachment contents, custom-field values, and the tenant
+subdomain / API URLs. The report is posted to a **public GitHub PR** — so **never
+paste real data into it**.
+
+- **Expunge every real value before it leaves a tool result for the report.**
+  Replace it with a placeholder that preserves only what the scenario tests:
+  `<redacted>`, `<requester name>`, `<tenant url>`, `<int>`, etc. Keep the
+  structural evidence the author actually needs — field *names*, headings,
+  footers, counts, types, formatting markers — and drop the customer *values*.
+- Numeric IDs (ticket/macro/user ids) are lower-risk and may be kept when a
+  scenario needs them for reproduction, but never pair them with the name,
+  email, subject or body they belong to.
+- This applies to **every** outbound channel, not just the PR comment: pasted
+  output for a human, any scratch file you write, and any log excerpt you quote.
+- If the harness blocks a post for sensitive content, treat that as a correct
+  catch — redact and repost, don't try to force the original through.
 
 ## Hard rules
 
@@ -105,5 +130,8 @@ re-running: name the log event, the field that changed, the error string.
 - Independent: validate behaviour against the plan's expectations, not against the
   implementer's explanation of why it should work.
 - Real tools only (`mcp__<server>__*`), throwaway copies of any mutable state.
+- The tenant is **production**: never let a real value (PII, org, ticket
+  content, subdomain) reach the report or any other output — redact to
+  structure-only placeholders (see "Redact real data").
 - One report per run, naming the commit SHA. On a re-run after a fix, post a fresh
   report against the new SHA rather than editing the old one.

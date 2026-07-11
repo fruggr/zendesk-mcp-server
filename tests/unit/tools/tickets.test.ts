@@ -21,9 +21,9 @@ const getAllText = (result: { content: Array<{ type: string; text?: string }> })
     .join('\n');
 
 describe('ticket tools', () => {
-  it('creates 12 tools (search_tickets lives here; the unified search is elsewhere)', () => {
+  it('creates 14 tools (search_tickets lives here; the unified search is elsewhere)', () => {
     const tools = createTicketTools(ctx);
-    expect(tools).toHaveLength(12);
+    expect(tools).toHaveLength(14);
   });
 
   describe('get_ticket', () => {
@@ -821,6 +821,190 @@ describe('ticket tools', () => {
       const tool = findTool('manage_tags');
       expect(tool.description).toContain('update_ticket');
       expect(tool.description).toContain('idempotent');
+    });
+  });
+
+  describe('list_macros', () => {
+    it('lists active macros with their actions', async () => {
+      const tool = findTool('list_macros');
+      const result = await tool.handler({ per_page: 100, page: 1 });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('Close and thank the customer');
+      expect(text).toContain('(id 700)');
+      expect(text).toContain('status → solved');
+      expect(text).toContain('set_tags → resolved, macro_applied');
+    });
+
+    it('hits the active-macros endpoint (scoped to the current user)', async () => {
+      let requestedPath: string | null = null;
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/macros/active', ({ request }) => {
+          requestedPath = new URL(request.url).pathname;
+          return HttpResponse.json({ macros: [], count: 0 });
+        }),
+      );
+      const tool = findTool('list_macros');
+      await tool.handler({ per_page: 100, page: 1 });
+      expect(requestedPath).toBe('/api/v2/macros/active');
+    });
+
+    it('is read-only (survives --read-only)', () => {
+      const tool = findTool('list_macros');
+      expect(tool.readOnly).toBe(true);
+      expect(tool.annotations.readOnlyHint).toBe(true);
+    });
+  });
+
+  describe('preview_macro_diff', () => {
+    it('diffs the ticket before/after the macro, showing only what changes', async () => {
+      const tool = findTool('preview_macro_diff');
+      const result = await tool.handler({ ticket_id: 1, macro_id: 700 });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('diff — nothing saved yet');
+      // Changed fields render as before → after; tags as added/removed tokens.
+      expect(text).toContain('**status**: open → solved');
+      expect(text).toContain('**tags**: +resolved, +macro_applied');
+      expect(text).toContain('custom field 360000000001');
+      expect(text).toContain('(empty) → severity_2');
+      expect(text).toContain('Thanks for your business!');
+      // Steers the caller to the commit tools (the deliberate two-step).
+      expect(text).toContain('update_ticket');
+      expect(text).toContain('add_public_comment');
+      // Unchanged and identity fields are omitted (the bug this fixes): the
+      // ticket's untouched fields and its url/id/created_at must not appear.
+      expect(text).not.toContain('**priority**');
+      expect(text).not.toContain('**assignee_id**');
+      expect(text).not.toContain('**url**');
+      expect(text).not.toContain('**id**');
+      expect(text).not.toContain('**created_at**');
+    });
+
+    it('omits identity/volatile fields and unchanged custom fields from the diff', async () => {
+      // The apply endpoint returns the WHOLE ticket; only the macro's real
+      // change (status) must surface — not url/via (identity), not a bumped
+      // generated_timestamp (volatile), not an unchanged custom field.
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id', () =>
+          HttpResponse.json({
+            ticket: {
+              id: 42,
+              url: 'https://testsubdomain.zendesk.com/api/v2/tickets/42.json',
+              status: 'open',
+              via: { channel: 'web' },
+              generated_timestamp: 111,
+              tags: ['keep'],
+              custom_fields: [{ id: 9, value: 'unchanged' }],
+            },
+          }),
+        ),
+        http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/macros/:mid/apply', () =>
+          HttpResponse.json({
+            result: {
+              ticket: {
+                id: 42,
+                url: 'https://testsubdomain.zendesk.com/api/v2/tickets/42.json',
+                status: 'pending',
+                // `via` DIFFERS from the before-read: a nested object is never a
+                // macro change, so the object-guard must drop it regardless.
+                via: { channel: 'api' },
+                generated_timestamp: 222,
+                tags: ['keep'],
+                // Present as `null` here but absent from the before-read: a no-op
+                // that used to leak as "(empty) → (empty)" — must be dropped.
+                deleted_ticket_form_id: null,
+                fields: [{ id: 9, value: 'unchanged' }],
+              },
+            },
+          }),
+        ),
+      );
+      const tool = findTool('preview_macro_diff');
+      const result = await tool.handler({ ticket_id: 42, macro_id: 700 });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('**status**: open → pending');
+      expect(text).not.toContain('**url**');
+      expect(text).not.toContain('**via**');
+      expect(text).not.toContain('generated_timestamp');
+      expect(text).not.toContain('custom field 9');
+      expect(text).not.toContain('**tags**');
+      // The no-op null-vs-absent field must not render at all.
+      expect(text).not.toContain('deleted_ticket_form_id');
+      expect(text).not.toContain('(empty) → (empty)');
+    });
+
+    it('marks a macro comment with public=false as an internal note', async () => {
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/macros/:mid/apply', () =>
+          HttpResponse.json({
+            result: { ticket: { comment: { body: 'Internal only', public: false } } },
+          }),
+        ),
+      );
+      const tool = findTool('preview_macro_diff');
+      const result = await tool.handler({ ticket_id: 1, macro_id: 700 });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('internal note');
+      expect(text).toContain('Internal only');
+    });
+
+    it('renders a single custom field returned as a bare object (not an array)', async () => {
+      // The Zendesk docs show one changed custom field as `fields: {id, value}`
+      // rather than a one-element array; the diff must not choke on it.
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/macros/:mid/apply', () =>
+          HttpResponse.json({
+            result: { ticket: { fields: { id: 27642, value: '745' } } },
+          }),
+        ),
+      );
+      const tool = findTool('preview_macro_diff');
+      const result = await tool.handler({ ticket_id: 1, macro_id: 700 });
+      expect(result.isError).toBeFalsy();
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('custom field 27642');
+      expect(text).toContain('745');
+    });
+
+    it('degrades to "no changes" when the apply response has no result body', async () => {
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/macros/:mid/apply', () =>
+          HttpResponse.json({}),
+        ),
+      );
+      const tool = findTool('preview_macro_diff');
+      const result = await tool.handler({ ticket_id: 1, macro_id: 700 });
+      expect(result.isError).toBeFalsy();
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('## Field changes');
+      expect(text).toContain('- none');
+    });
+
+    it('reads the ticket state as well as the apply preview (two GETs)', async () => {
+      const paths: string[] = [];
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id', ({ request }) => {
+          paths.push(new URL(request.url).pathname);
+          return HttpResponse.json({ ticket: { id: 1, status: 'open' } });
+        }),
+        http.get(
+          'https://testsubdomain.zendesk.com/api/v2/tickets/:id/macros/:mid/apply',
+          ({ request }) => {
+            paths.push(new URL(request.url).pathname);
+            return HttpResponse.json({ result: { ticket: { status: 'solved' } } });
+          },
+        ),
+      );
+      const tool = findTool('preview_macro_diff');
+      await tool.handler({ ticket_id: 1, macro_id: 700 });
+      expect(paths).toContain('/api/v2/tickets/1');
+      expect(paths).toContain('/api/v2/tickets/1/macros/700/apply');
+    });
+
+    it('is a write tool so it is filtered out under --read-only', () => {
+      const tool = findTool('preview_macro_diff');
+      expect(tool.readOnly).toBe(false);
+      expect(tool.annotations.readOnlyHint).toBe(false);
+      expect(tool.annotations.destructiveHint).toBe(false);
     });
   });
 });
