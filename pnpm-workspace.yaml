@@ -3,27 +3,6 @@ allowBuilds:
   msw: true
 
 minimumReleaseAge: 10080
-# TEMPORARY (PR #151 / branch claude/pr-151-tsc-v7-impact): exclude the TypeScript 7
-# build chain from the 7-day supply-chain age gate so we can install, typecheck and
-# build against TypeScript 7 before these releases have aged past minimumReleaseAge.
-# This lets us measure the tsc v7 build/typecheck impact and catch regressions ahead
-# of the delay elapsing. The gate stays enforced for every other package.
-#   - typescript / @typescript/*: TS 7 is the native compiler (per-platform binaries).
-#   - tsdown / rolldown-plugin-dts / rolldown: the build tool; only rolldown-plugin-dts
-#     >= 0.27.2 (shipped by tsdown >= 0.22.4) supports the TS 7 compiler API.
-# MUST be reverted (drop this whole block) before merging. Note: the newest packages
-# here were published 2026-07-11, so the branch cannot be merged with the gate
-# re-enabled until they have aged 7 days (~2026-07-18).
-minimumReleaseAgeExclude:
-  - typescript
-  - "@typescript/*"
-  - tsdown
-  - rolldown-plugin-dts
-  - rolldown
-  - "yuku-*"
-  - "@yuku-*/*"
-  - "@rolldown/*"
-  - "@oxc-project/*"
 
 overrides:
   ip-address: ^10.2.0
