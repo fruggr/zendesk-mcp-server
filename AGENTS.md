@@ -17,24 +17,12 @@ Toolchain (Node 24 + pnpm 11) is the dev floor; the published package still runs
 
 ## Claim before you build — no duplicate work
 
-Before writing a single line for an issue, confirm nobody already did. Two
-contributors (or agents) shipping the same feature in parallel is pure waste and
-has happened here. Pre-flight, in order:
-
-1. **Re-read the issue live.** If it is closed as `completed` or carries a
-   `released` label, the work is done — stop. A merged PR already shipped it; do
-   not reopen the same ground.
-2. **Search PRs for the issue number** — open *and* closed/merged (`is:pr #<n>`,
-   plus the `Closes #<n>` / `Fixes #<n>` links on the issue). A merged PR means
-   ship-ed; an open PR means someone is mid-flight — coordinate, don't fork.
-3. **Claim it visibly.** Self-assign the issue and drop a one-line "picking this
-   up" comment, so the next person sees it is taken.
-4. **Open your PR as a draft early** — the earliest public WIP signal others can
-   see. This repo already defaults PRs to draft.
-
-If a merged/released PR already closed the issue and a follow-up is genuinely
-needed, open a *new* issue describing the delta rather than duplicating the old
-one.
+Parallel duplicate work has happened here. Before coding an issue: re-read it
+live (closed `completed` / `released` → it already shipped, stop); search open
+*and* merged PRs for its number (`is:pr #<n>`) — coordinate on an open one,
+don't fork; then self-assign, drop a "picking this up" comment, and open your PR
+as a draft early. Need a follow-up on already-shipped work? Open a *new* issue
+for the delta. Fuller checklist in `CONTRIBUTING.md`.
 
 ## Architecture
 
