@@ -9,6 +9,7 @@
 - [ ] Tooling / CI
 
 ## Author checklist
+- [ ] I checked no open or merged PR already addresses the linked issue, and the issue is not already closed as completed / `released`
 - [ ] `pnpm test` passes locally
 - [ ] `pnpm test:coverage` meets the thresholds
 - [ ] `pnpm check` is clean (lint + format)

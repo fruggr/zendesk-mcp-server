@@ -15,6 +15,15 @@ documentation.
 
 Toolchain (Node 24 + pnpm 11) is the dev floor; the published package still runs on Node 20+ (a CI job exercises the packed tarball on Node 20).
 
+## Claim before you build — no duplicate work
+
+Parallel duplicate work has happened here. Before coding an issue: re-read it
+live (closed `completed` / `released` → it already shipped, stop); search open
+*and* merged PRs for its number (`is:pr #<n>`) — coordinate on an open one,
+don't fork; then self-assign, drop a "picking this up" comment, and open your PR
+as a draft early. Need a follow-up on already-shipped work? Open a *new* issue
+for the delta. Fuller checklist in `CONTRIBUTING.md`.
+
 ## Architecture
 
 Standard MCP server under `src/` (entry `index.ts` → `server.ts`). Auth in
