@@ -2,7 +2,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { ToolListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
 import { describe, expect, it } from 'vitest';
-import { createReloadableServer } from '../../src/dev/watch';
+import { createReloadableServer, registerReloadTool } from '../../src/dev/reload';
 import { createServerShell, registerToolset } from '../../src/server';
 import { createAllTools } from '../../src/tools/index';
 import { makeConfig } from './harness';
@@ -16,7 +16,7 @@ const getToken = () => 'test-token';
 const connect = async (server: Awaited<ReturnType<typeof createServerShell>>) => {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await server.connect(serverTransport);
-  const client = new Client({ name: 'watch-reload-test', version: '0.0.0' });
+  const client = new Client({ name: 'dev-reload-test', version: '0.0.0' });
   let listChanged = 0;
   client.setNotificationHandler(ToolListChangedNotificationSchema, () => {
     listChanged += 1;
@@ -26,7 +26,7 @@ const connect = async (server: Awaited<ReturnType<typeof createServerShell>>) =>
   return { client, names, listChanged: () => listChanged };
 };
 
-describe('watch-mode hot reload', () => {
+describe('dev-mode tool reload', () => {
   it('swaps the exposed toolset in place and notifies the client', async () => {
     const config = makeConfig({ mode: 'all' });
     const ctx = { subdomain: config.subdomain, getToken };
@@ -60,21 +60,28 @@ describe('watch-mode hot reload', () => {
     generation.dispose();
   });
 
-  it('reload() re-imports tool modules and preserves the surface', async () => {
+  it('exposes reload_tools which re-imports modules and keeps the surface', async () => {
     const config = makeConfig({ mode: 'all' });
     const { server, reload } = createReloadableServer(config, getToken);
+    registerReloadTool(server, reload);
 
-    const { names, listChanged } = await connect(server);
+    const { client, names, listChanged } = await connect(server);
     const before = await names();
+    // The dev tool is present alongside the Zendesk tools.
+    expect(before).toContain('reload_tools');
     const changesAfterConnect = listChanged();
 
     // No source edited between generations, so re-importing the leaf modules
     // and recomposing must yield the identical tool surface — proving the
     // dynamic-import + reconcile pipeline runs cleanly end to end.
-    await reload();
+    const result = await client.callTool({ name: 'reload_tools', arguments: {} });
+    expect(result.isError).toBeFalsy();
 
     const after = await names();
     expect(after).toEqual(before);
+    // reload_tools survives its own reload (it is not part of the disposable
+    // generation), so it can be called again.
+    expect(after).toContain('reload_tools');
     expect(listChanged()).toBeGreaterThan(changesAfterConnect);
   });
 });

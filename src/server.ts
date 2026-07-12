@@ -218,7 +218,7 @@ export const registerToolset = (
   server: McpServer,
   { config, getToken, onUnauthorized, logger = silentLogger }: ToolsetParams,
   tools: ToolDefinition[],
-): { dispose(): void } => {
+): { dispose(): void; count: number } => {
   const registered: Removable[] = [];
 
   // Apply filters (--read-only, --namespace, --tool)
@@ -311,6 +311,7 @@ export const registerToolset = (
   logger.info('tools_registered', { count: filteredTools.length, mode: config.mode });
 
   return {
+    count: filteredTools.length,
     dispose: () => {
       for (const handle of registered) handle.remove();
     },

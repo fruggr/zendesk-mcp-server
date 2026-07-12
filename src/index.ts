@@ -1,7 +1,7 @@
 import { createTokenStore } from './auth/token-store';
 import type { Config } from './config';
 import { loadConfig } from './config';
-import { startWatchMode } from './dev/watch';
+import { startDevServer } from './dev/reload';
 import { createMcpServer } from './server';
 import { startHttpTransport } from './transports/http';
 import { startStdioTransport } from './transports/stdio';
@@ -25,8 +25,8 @@ const main = async (): Promise<void> => {
 
   if (config.transport === 'stdio') {
     const tokenStore = buildStdioTokenStore(config, logger);
-    if (config.watch) {
-      await startWatchMode(config, tokenStore.getToken, logger, tokenStore.invalidate);
+    if (config.dev) {
+      await startDevServer(config, tokenStore.getToken, logger, tokenStore.invalidate);
       return;
     }
     const server = createMcpServer(config, tokenStore.getToken, logger, tokenStore.invalidate);
@@ -34,11 +34,10 @@ const main = async (): Promise<void> => {
     return;
   }
 
-  if (config.watch) {
-    // Watch mode hot-swaps a single long-lived server; HTTP builds one per
-    // request, so there is nothing to reload. Fail loudly rather than silently
-    // ignore the flag.
-    logger.warn('watch_mode_ignored_http');
+  if (config.dev) {
+    // Dev mode hot-reloads a single long-lived server; HTTP builds one per
+    // request, so there is nothing to reload. Warn rather than silently ignore.
+    logger.warn('dev_mode_ignored_http');
   }
 
   // HTTP mode: the HTTP transport creates a per-session McpServer with the
