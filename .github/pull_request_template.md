@@ -8,7 +8,7 @@
      A bare "#123", "Implements #123" or "Part of #123" references the issue
      but does NOT close it. Keep the keyword in this description (GitHub reads
      the PR body on squash merge). If this PR isn't tied to an issue, write "None". -->
-Closes #
+Closes #<n>
 
 ## Type of change
 - [ ] Bug fix

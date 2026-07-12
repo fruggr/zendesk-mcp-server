@@ -93,7 +93,7 @@ happened here. Before writing any code for an issue:
 If the PR resolves an issue, link it in the PR **description** with a GitHub
 closing keyword so the issue closes automatically when the PR merges to `main`:
 
-```
+```text
 Closes #123
 ```
 
