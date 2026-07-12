@@ -87,12 +87,19 @@ jobs:
             }
 
             const marker = '<!-- duplicate-issue-guard -->';
-            const { data: comments } = await github.rest.issues.listComments({
-              owner,
-              repo,
-              issue_number: pr.number,
-              per_page: 100,
-            });
+            let comments;
+            try {
+              const result = await github.rest.issues.listComments({
+                owner,
+                repo,
+                issue_number: pr.number,
+                per_page: 100,
+              });
+              comments = result.data;
+            } catch (err) {
+              core.info(`Could not list comments: ${err.message}`);
+              return;
+            }
             if (comments.some((c) => (c.body || '').includes(marker))) {
               core.info('Already warned on this PR; not commenting again.');
               return;
@@ -110,9 +117,13 @@ jobs:
                 '`AGENTS.md`). If a follow-up is genuinely needed, open a new issue ' +
                 'describing the delta and link that instead.',
             ].join('\n');
-            await github.rest.issues.createComment({
-              owner,
-              repo,
-              issue_number: pr.number,
-              body,
-            });
+            try {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: pr.number,
+                body,
+              });
+            } catch (err) {
+              core.info(`Could not post warning comment: ${err.message}`);
+            }
