@@ -163,7 +163,7 @@ const registerProxyTool = (
 /**
  * Build the bare `McpServer` — identity, capabilities, `instructions` and the
  * logging sink — with no tools or resources registered yet. Split out from
- * `createMcpServer` so the watch-mode reload (`dev/watch.ts`) can keep this
+ * `createMcpServer` so the dev reload (`dev/reload.ts`) can keep this
  * long-lived shell (and its transport/session) alive while swapping the toolset
  * underneath it via `registerToolset`.
  */
@@ -210,9 +210,9 @@ export interface ToolsetParams {
  * whose `dispose()` removes exactly what this call added. When the SDK server
  * is already connected, each `registerTool`/`remove` emits `list_changed`, so a
  * dispose-then-register cycle hot-swaps the exposed tools in place — this is the
- * mechanism watch mode uses to reflect edited tool code without dropping the
- * transport. `tools` is passed in (not built here) so the reload path can hand
- * over freshly re-imported definitions.
+ * mechanism the dev reload (`dev/reload.ts`) uses to reflect edited tool code
+ * without dropping the transport. `tools` is passed in (not built here) so the
+ * reload path can hand over freshly re-imported definitions.
  */
 export const registerToolset = (
   server: McpServer,
@@ -220,6 +220,9 @@ export const registerToolset = (
   tools: ToolDefinition[],
 ): { dispose(): void; count: number } => {
   const registered: Removable[] = [];
+  const dispose = (): void => {
+    for (const handle of registered) handle.remove();
+  };
 
   // Apply filters (--read-only, --namespace, --tool)
   const filteredTools = filterTools(tools, {
@@ -228,94 +231,98 @@ export const registerToolset = (
     tools: config.tools,
   });
 
-  switch (config.mode) {
-    case 'all': {
-      for (const tool of filteredTools) {
-        registered.push(
-          server.registerTool(
-            tool.name,
-            {
-              title: tool.title,
-              // Register the strict schema (not just `.shape`) so the SDK rejects
-              // unknown keys instead of silently stripping them, and advertises
-              // additionalProperties:false to clients (#100).
-              description: tool.description,
-              inputSchema: tool.inputSchema.strict(),
-              annotations: tool.annotations,
-            },
-            async (params) => runHandler(tool, params as Record<string, unknown>, onUnauthorized),
-          ),
-        );
-      }
-      break;
-    }
-    case 'namespace': {
-      const grouped = groupByNamespace(filteredTools);
-      for (const [namespace, nsTools] of grouped) {
-        const label = NAMESPACE_LABELS[namespace];
-        if (label) {
+  // Registration is atomic: if any registerTool/registerResource throws partway
+  // (e.g. a hot-reloaded module introduced a duplicate tool name), roll back the
+  // handles already registered. Otherwise the orphaned partial generation would
+  // wedge the next reload with "Tool X is already registered".
+  try {
+    switch (config.mode) {
+      case 'all': {
+        for (const tool of filteredTools) {
           registered.push(
-            registerProxyTool(
-              server,
-              label.toolName,
-              label.title,
-              nsTools,
-              config.readOnly,
-              onUnauthorized,
+            server.registerTool(
+              tool.name,
+              {
+                title: tool.title,
+                // Register the strict schema (not just `.shape`) so the SDK rejects
+                // unknown keys instead of silently stripping them, and advertises
+                // additionalProperties:false to clients (#100).
+                description: tool.description,
+                inputSchema: tool.inputSchema.strict(),
+                annotations: tool.annotations,
+              },
+              async (params) => runHandler(tool, params as Record<string, unknown>, onUnauthorized),
             ),
           );
         }
+        break;
       }
-      break;
+      case 'namespace': {
+        const grouped = groupByNamespace(filteredTools);
+        for (const [namespace, nsTools] of grouped) {
+          const label = NAMESPACE_LABELS[namespace];
+          if (label) {
+            registered.push(
+              registerProxyTool(
+                server,
+                label.toolName,
+                label.title,
+                nsTools,
+                config.readOnly,
+                onUnauthorized,
+              ),
+            );
+          }
+        }
+        break;
+      }
+      case 'single': {
+        registered.push(
+          registerProxyTool(
+            server,
+            'zendesk',
+            'Zendesk',
+            filteredTools,
+            config.readOnly,
+            onUnauthorized,
+          ),
+        );
+        break;
+      }
     }
-    case 'single': {
+
+    // Pull-only Help Center topology resource. Read on demand with the caller's
+    // token (resolved at read time via getToken), so auth timing and ACL are
+    // both correct. Registered only when the context is enabled; this also
+    // advertises the `resources` capability (merged with `logging`).
+    if (helpCenterContextEnabled(config)) {
+      const topology = createTopologyProvider(getToken, config.subdomain, onUnauthorized);
       registered.push(
-        registerProxyTool(
-          server,
-          'zendesk',
-          'Zendesk',
-          filteredTools,
-          config.readOnly,
-          onUnauthorized,
+        server.registerResource(
+          'help-center-topology',
+          TOPOLOGY_RESOURCE_URI,
+          {
+            title: 'Zendesk Help Center topology',
+            description:
+              'Active locales, category → section tree, visibility segments, permission groups, and your role. Read before creating or editing content.',
+            mimeType: 'text/markdown',
+          },
+          async (uri) => ({
+            contents: [
+              { uri: uri.toString(), mimeType: 'text/markdown', text: await topology.read() },
+            ],
+          }),
         ),
       );
-      break;
     }
-  }
-
-  // Pull-only Help Center topology resource. Read on demand with the caller's
-  // token (resolved at read time via getToken), so auth timing and ACL are
-  // both correct. Registered only when the context is enabled; this also
-  // advertises the `resources` capability (merged with `logging`).
-  if (helpCenterContextEnabled(config)) {
-    const topology = createTopologyProvider(getToken, config.subdomain, onUnauthorized);
-    registered.push(
-      server.registerResource(
-        'help-center-topology',
-        TOPOLOGY_RESOURCE_URI,
-        {
-          title: 'Zendesk Help Center topology',
-          description:
-            'Active locales, category → section tree, visibility segments, permission groups, and your role. Read before creating or editing content.',
-          mimeType: 'text/markdown',
-        },
-        async (uri) => ({
-          contents: [
-            { uri: uri.toString(), mimeType: 'text/markdown', text: await topology.read() },
-          ],
-        }),
-      ),
-    );
+  } catch (err) {
+    dispose();
+    throw err;
   }
 
   logger.info('tools_registered', { count: filteredTools.length, mode: config.mode });
 
-  return {
-    count: filteredTools.length,
-    dispose: () => {
-      for (const handle of registered) handle.remove();
-    },
-  };
+  return { count: filteredTools.length, dispose };
 };
 
 export const createMcpServer = (

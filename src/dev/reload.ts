@@ -28,16 +28,20 @@ const TOOL_MODULES = [
 
 type ToolFactory = (ctx: ToolContext) => ToolDefinition[];
 
+// Bumped on every reload so each dynamic-import specifier (`?v=N`) is unique —
+// Node caches modules by specifier, so a repeated query would serve stale code.
+let importVersion = 0;
+
 /**
  * Re-import every leaf tool-factory module with a fresh cache-busting query
  * (`?v=N`, monotonic) so the running process sees edited tool code, then
- * recompose the definitions exactly as `createAllTools` does. Each call MUST
- * use a version not seen before or Node serves the cached module.
+ * recompose the definitions exactly as `createAllTools` does.
  */
-const loadFreshTools = async (ctx: ToolContext, version: number): Promise<ToolDefinition[]> => {
+const loadFreshTools = async (ctx: ToolContext): Promise<ToolDefinition[]> => {
+  importVersion += 1;
   const modules = await Promise.all(
     TOOL_MODULES.map(async ({ file, factory }) => {
-      const specifier = `${pathToFileURL(join(toolsDir, file)).href}?v=${version}`;
+      const specifier = `${pathToFileURL(join(toolsDir, file)).href}?v=${importVersion}`;
       const mod = (await import(specifier)) as Record<string, ToolFactory | undefined>;
       const create = mod[factory];
       if (!create) throw new Error(`Tool module ${file} has no export ${factory}`);
@@ -65,23 +69,33 @@ export const createReloadableServer = (
   const ctx: ToolContext = { subdomain: config.subdomain, getToken };
   const params = { config, getToken, onUnauthorized, logger };
 
-  // Initial generation from the static import (fast; reload only matters after
-  // an edit). Reassigned on every reload.
-  let current = registerToolset(server, params, createAllTools(ctx));
-  let version = 0;
+  // The last generation registered successfully — both the handle (to dispose)
+  // and its definitions (to restore if a reload's re-registration fails).
+  // Initial generation is the static import (fast; reload only matters after an
+  // edit).
+  let currentTools = createAllTools(ctx);
+  let current = registerToolset(server, params, currentTools);
 
   const reload = async (): Promise<number> => {
-    version += 1;
     // Import fresh code BEFORE touching the live registration, so a syntax
     // error in an edited file rejects here and leaves the current generation
     // untouched.
-    const tools = await loadFreshTools(ctx, version);
+    const tools = await loadFreshTools(ctx);
     // Dispose the old generation BEFORE registering the new one: both share the
     // same tool names, and the SDK rejects registering a name that is still
     // registered. Safe to do so — JS is single-threaded, so no tool call can
     // interleave in the gap between dispose and re-register.
     current.dispose();
-    current = registerToolset(server, params, tools);
+    try {
+      current = registerToolset(server, params, tools);
+      currentTools = tools;
+    } catch (err) {
+      // The fresh generation failed to register (e.g. an edit introduced a
+      // duplicate tool name). Restore the last-good set so the live session is
+      // never left without its tools, then surface the error to the caller.
+      current = registerToolset(server, params, currentTools);
+      throw err;
+    }
     return current.count;
   };
 
@@ -106,7 +120,7 @@ export const registerReloadTool = (
       title: 'Reload tools from source (dev)',
       description:
         'Dev only. Re-imports the Zendesk tool modules from source and re-registers them on this live session, so tool code you just edited takes effect without restarting the server or reconnecting the client. Call it once at the end of an edit cycle, before testing your changes; the refreshed tool list is announced via tools/list_changed. Only the tool modules (tickets, search, help_center, users) are reloaded — edits to shared infrastructure (HTTP client, shared definitions, server wiring) still require a full restart. Takes no arguments and makes no Zendesk API calls.',
-      inputSchema: z.object({}),
+      inputSchema: z.object({}).strict(),
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,

@@ -29,14 +29,11 @@ export const ConfigSchema = z.object({
    */
   topology: z.boolean().default(true),
   /**
-   * Dev-only mode. When set (stdio only), the server exposes an extra
-   * `reload_tools` tool that re-imports the tool modules from source and
-   * re-registers them on the live session on demand — so tool code edited
-   * during a dev cycle takes effect (via `tools/list_changed`) without
-   * restarting the process or reconnecting. CLI-only, off by default: it has no
-   * place in a deployed server, and the published package ships compiled JS
-   * with no sources to reload. Edits below the tool layer (client, shared
-   * infra, server wiring) still need a full restart.
+   * Dev-only (stdio): expose the `reload_tools` tool, which re-imports the tool
+   * modules from source and re-registers them on the live session on demand, so
+   * tool code edited during a dev cycle takes effect without a restart. CLI-only
+   * and off by default — it has no place in a deployed server. Fuller notes in
+   * the "Dev mode" section of docs/configuration.md.
    */
   dev: z.boolean().default(false),
   transport: Transport,
