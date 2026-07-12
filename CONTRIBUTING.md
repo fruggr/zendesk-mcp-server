@@ -90,6 +90,20 @@ happened here. Before writing any code for an issue:
 5. Make the author checklist below pass locally.
 6. Push your branch and open a PR against `main`.
 
+If the PR resolves an issue, link it in the PR **description** with a GitHub
+closing keyword so the issue closes automatically when the PR merges to `main`:
+
+```text
+Closes #123
+```
+
+`close` / `closes` / `closed`, `fix` / `fixes` / `fixed` and
+`resolve` / `resolves` / `resolved` all work. A bare `#123`, `Implements #123`
+or `Part of #123` only *references* the issue — it does not close it. Keep the
+keyword in the PR body (not just the title): the default squash merge discards
+individual commit messages, but GitHub still reads closing keywords from the PR
+description.
+
 ## Author checklist
 
 The same checklist appears on the
@@ -97,6 +111,8 @@ The same checklist appears on the
 
 - [ ] No open or merged PR already addresses the linked issue, and it is not
       already closed as completed / `released`.
+- [ ] If the PR resolves an issue, its description links it with a closing
+      keyword (`Closes #<n>`) so it auto-closes on merge to `main`.
 - [ ] `pnpm test` passes locally.
 - [ ] `pnpm test:coverage` meets the thresholds.
 - [ ] `pnpm check` is clean (Biome lint + format).
