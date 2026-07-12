@@ -1,9 +1,22 @@
 name: Package-manager benchmark
 
-# Manual, on-demand benchmark of dependency install speed:
-# pnpm (JS) vs pnpm + pacquet (Rust) vs nub. Never runs on push/PR — it's a
-# tool comparison, not a gate. Trigger from the Actions tab.
+# On-demand benchmark of dependency install speed:
+# pnpm (JS) vs pnpm + pacquet (Rust) vs nub. It's a tool comparison, not a gate.
+#
+# Two ways to run it:
+#  - `push` to the benchmark branch below — lets the workflow run on GitHub even
+#    though it lives only on that feature branch (a push always uses the workflow
+#    file from the pushed commit), so you never have to merge it into `main`.
+#    Delete the branch when done and `main` stays untouched.
+#  - `workflow_dispatch` from the Actions tab — only available once the file is on
+#    the default branch; kept here for that eventual case.
 on:
+  push:
+    branches:
+      - "claude/pnpm-rust-nubjs-benchmark-**"
+    paths:
+      - "benchmarks/package-managers/**"
+      - ".github/workflows/pm-benchmark.yml"
   workflow_dispatch:
     inputs:
       tools:
