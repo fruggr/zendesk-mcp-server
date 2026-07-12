@@ -21,8 +21,10 @@ Parallel duplicate work has happened here. Before coding an issue: re-read it
 live (closed `completed` / `released` → it already shipped, stop); search open
 *and* merged PRs for its number (`is:pr #<n>`) — coordinate on an open one,
 don't fork; then self-assign, drop a "picking this up" comment, and open your PR
-as a draft early. Need a follow-up on already-shipped work? Open a *new* issue
-for the delta. Fuller checklist in `CONTRIBUTING.md`.
+as a draft early. Link the issue in the PR **description** with a closing keyword
+(`Closes #<n>` — not `Implements`/bare `#<n>`, which don't close it) so it
+auto-closes on squash-merge to `main`. Need a follow-up on already-shipped work?
+Open a *new* issue for the delta. Fuller checklist in `CONTRIBUTING.md`.
 
 ## Architecture
 
