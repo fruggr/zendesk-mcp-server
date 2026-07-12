@@ -180,6 +180,29 @@ record_manifest() {
     "$1" "$2" "$3" "$4" "$5" "$6" >> "$OUT_DIR/manifest.jsonl"
 }
 
+# --- Prime the lockfile with pacquet (pnpm-rust only) ------------------------
+# A --frozen-lockfile install refuses to add a config dependency that isn't yet
+# recorded in pnpm-lock.yaml ("Cannot update configDependencies with
+# frozen-lockfile because the lockfile is not up to date"). The inline integrity
+# in PACQUET_SPEC is accepted, but the entry still has to land in the lockfile
+# first. So run ONE non-frozen, non-timed install: it writes @pnpm/pacquet into
+# the copy's lockfile and fetches the engine. Every timed frozen run afterwards
+# is then valid. Timeout-guarded so a wedged fetch can't hang the whole job.
+prime_pacquet_lockfile() {
+  local tool="$1" tdir="$2"
+  local repo="$tdir/repo" store="$tdir/store" cache="$tdir/cache" home="$tdir/home"
+  log "$tool: priming lockfile with @pnpm/pacquet (one-time non-frozen install)…"
+  if ( cd "$repo" && HOME="$home" XDG_CACHE_HOME="$cache" XDG_CONFIG_HOME="$cache" \
+        timeout "${PACQUET_PRIME_TIMEOUT:-420}" \
+        pnpm install --ignore-scripts --store-dir="$store" ) \
+        > "$OUT_DIR/pacquet-prime.log" 2>&1; then
+    return 0
+  fi
+  warn "$tool: pacquet prime install failed — last lines:"
+  tail -n 20 "$OUT_DIR/pacquet-prime.log" >&2
+  return 1
+}
+
 # --- Run one (tool, scenario) cell -------------------------------------------
 run_cell() {
   local tool="$1" scenario="$2" tdir="$3"
@@ -252,6 +275,14 @@ for tool in $TOOLS; do
     continue
   fi
   tdir="$(setup_tool_dir "$tool")"
+  # pnpm-rust: pacquet must be written into the lockfile before any frozen run.
+  if [ "$tool" = "pnpm-rust" ] && ! prime_pacquet_lockfile "$tool" "$tdir"; then
+    warn "$tool: skipping all scenarios (pacquet could not be primed)."
+    for scenario in $SCENARIOS; do
+      record_manifest "$tool" "$scenario" "$(engine_label "$tool")" "failed" "-" "-"
+    done
+    continue
+  fi
   for scenario in $SCENARIOS; do
     run_cell "$tool" "$scenario" "$tdir"
   done
