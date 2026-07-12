@@ -60,6 +60,16 @@ describe('loadConfig', () => {
     expect(config.topology).toBe(false);
   });
 
+  it('defaults watch mode to off', () => {
+    const config = loadConfig(['mycompany']);
+    expect(config.watch).toBe(false);
+  });
+
+  it('parses --watch flag', () => {
+    const config = loadConfig(['mycompany', '--watch']);
+    expect(config.watch).toBe(true);
+  });
+
   it('parses multiple --namespace flags', () => {
     const config = loadConfig(['mycompany', '--namespace', 'tickets', '--namespace', 'users']);
     expect(config.namespaces).toEqual(['tickets', 'users']);

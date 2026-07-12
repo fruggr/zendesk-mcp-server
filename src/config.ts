@@ -28,6 +28,16 @@ export const ConfigSchema = z.object({
    * `help_center` namespace itself is active.
    */
   topology: z.boolean().default(true),
+  /**
+   * Dev-only hot reload. When set (stdio only), the server watches `src/` and
+   * re-registers the toolset in place on a `.ts` change — edited tool code is
+   * reflected over the live session (via `tools/list_changed`) without dropping
+   * the transport. CLI-only, off by default: it has no place in a deployed
+   * server, and the published package ships compiled JS with no sources to
+   * watch. Edits below the tool layer (client, shared infra, server wiring)
+   * still need a full restart.
+   */
+  watch: z.boolean().default(false),
   transport: Transport,
   host: z.string().min(1),
   port: z.number().int().min(0).max(65535),
@@ -66,6 +76,7 @@ interface CliResult {
   namespaces?: string[];
   tools?: string[];
   topology?: boolean;
+  watch?: boolean;
   logLevel?: string;
   transport?: string;
   host?: string;
@@ -112,6 +123,8 @@ const parseCliArgs = (args: string[]): CliResult => {
       result.readOnly = true;
     } else if (arg === '--no-topology') {
       result.topology = false;
+    } else if (arg === '--watch') {
+      result.watch = true;
     } else if (arg === '--namespace' && next) {
       result.namespaces = result.namespaces ?? [];
       result.namespaces.push(next);
@@ -187,6 +200,7 @@ export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
     namespaces: cli.namespaces,
     tools: cli.tools,
     topology: cli.topology ?? true,
+    watch: cli.watch ?? false,
     transport,
     host,
     port,

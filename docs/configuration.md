@@ -33,6 +33,8 @@ Options:
                           adds to the default allowlist of major web MCP
                           clients + localhost-any-port)
   --callback-port <port>  Local OAuth callback port for stdio (default 27439)
+  --watch                 Dev-only: hot-reload edited tool code over the live
+                          session (stdio only; see "Watch mode" below)
 ```
 
 `--namespace` and `--read-only` are applied before the proxies are registered, so they narrow the surface in every mode — in the default `namespace` mode, `--namespace help_center` registers a single proxy (`zendesk_help_center`) instead of the full set of namespace proxies.
@@ -53,6 +55,36 @@ zendesk-mcp-server acme --tool get_ticket --tool search_tickets --tool get_curre
 zendesk-mcp-server acme --transport http --port 8080 \
   --namespace help_center --read-only
 ```
+
+## Watch mode (`--watch`)
+
+A development-loop convenience for iterating on tool code. With `--watch` the
+server watches `src/` and, on any `.ts` change, re-registers the toolset **in
+place** on the running server: the client is notified via
+`notifications/tools/list_changed` and refetches, so edited tool descriptions,
+schemas and handlers take effect **without restarting the process or dropping
+the MCP session**. Point an MCP client's server command at the source and add
+the flag:
+
+```jsonc
+// .mcp.json
+{
+  "command": "pnpm",
+  "args": ["exec", "tsx", "src/index.ts", "--mode", "all", "--watch"],
+  "env": { "ZENDESK_SUBDOMAIN": "acme" }
+}
+```
+
+Scope and limits, by design:
+
+- **stdio only.** HTTP builds a fresh server per request, so there is nothing
+  long-lived to hot-swap; the flag is ignored (with a warning) in HTTP mode.
+- **Tool code only.** Reload re-imports the leaf tool modules
+  (`src/tools/{tickets,search,help-center,users}.ts`). Edits to shared
+  infrastructure below them (the HTTP client, `definitions.ts`, guidance, or the
+  server wiring itself) still require a full restart.
+- **Dev-only.** The published package ships compiled JS with no sources to
+  watch; `--watch` is meant for `tsx`-from-source development.
 
 ## Environment variables
 

@@ -10,7 +10,10 @@ export default defineConfig({
       reporter: ['text', 'text-summary', 'html', 'lcov', 'json-summary'],
       include: ['src/**/*.ts'],
       // index.ts/stdio.ts are thin runtime bootstraps; types.ts is type-only.
-      exclude: ['src/index.ts', 'src/transports/stdio.ts', 'src/types.ts'],
+      // dev/watch.ts is a dev-only bootstrap (fs.watch + stdio wiring); its
+      // reconciliation logic (createReloadableServer/reload/registerToolset) is
+      // covered end-to-end by tests/integration/watch-reload.test.ts.
+      exclude: ['src/index.ts', 'src/transports/stdio.ts', 'src/types.ts', 'src/dev/watch.ts'],
       // Quality gate: fail the run if coverage drops below these baselines.
       // Ratchet these up as coverage improves; never lower them silently.
       thresholds: {
