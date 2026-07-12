@@ -1,0 +1,78 @@
+name: Package-manager benchmark
+
+# Manual, on-demand benchmark of dependency install speed:
+# pnpm (JS) vs pnpm + pacquet (Rust) vs nub. Never runs on push/PR — it's a
+# tool comparison, not a gate. Trigger from the Actions tab.
+on:
+  workflow_dispatch:
+    inputs:
+      tools:
+        description: "Tools to benchmark (space-separated)"
+        default: "pnpm pnpm-rust nub"
+      scenarios:
+        description: "Cache scenarios (space-separated: cold warm repeat)"
+        default: "cold warm repeat"
+      cold_runs:
+        description: "Timed runs for the cold scenario"
+        default: "3"
+      warm_runs:
+        description: "Timed runs for the warm scenario"
+        default: "8"
+      repeat_runs:
+        description: "Timed runs for the repeat scenario"
+        default: "8"
+  # Uncomment to also run weekly and catch drift as pacquet/nub evolve:
+  # schedule:
+  #   - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install hyperfine
+        run: |
+          set -euo pipefail
+          if ! { sudo apt-get update && sudo apt-get install -y hyperfine; }; then
+            echo "apt install failed; downloading a pinned release .deb"
+            ver="1.19.0"
+            url="https://github.com/sharkdp/hyperfine/releases/download/v${ver}/hyperfine_${ver}_amd64.deb"
+            curl -fsSL -o /tmp/hyperfine.deb "$url"
+            sudo dpkg -i /tmp/hyperfine.deb
+          fi
+          hyperfine --version
+
+      # nub is optional: if install fails the harness reports it as N/A and the
+      # rest of the benchmark still runs, so don't fail the job here.
+      - name: Install nub
+        continue-on-error: true
+        run: npm install -g --ignore-scripts=false @nubjs/nub && nub --version
+
+      - name: Run benchmark
+        env:
+          TOOLS: ${{ inputs.tools }}
+          SCENARIOS: ${{ inputs.scenarios }}
+          COLD_RUNS: ${{ inputs.cold_runs }}
+          WARM_RUNS: ${{ inputs.warm_runs }}
+          REPEAT_RUNS: ${{ inputs.repeat_runs }}
+        run: benchmarks/package-managers/run.sh
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pm-benchmark-results
+          path: benchmarks/package-managers/results/
+          retention-days: 30
+          if-no-files-found: warn
