@@ -84,4 +84,49 @@ describe('dev-mode tool reload', () => {
     expect(after).toContain('reload_tools');
     expect(listChanged()).toBeGreaterThan(changesAfterConnect);
   });
+
+  it('reports a reload failure as a tool error without crashing', async () => {
+    const server = createServerShell(makeConfig({ mode: 'all', topology: false }));
+    // Inject a reload that fails, as a hot-reloaded module with a broken import
+    // would.
+    const failing = async (): Promise<number> => {
+      throw new Error('boom: import failed');
+    };
+    registerReloadTool(server, failing);
+
+    const { client } = await connect(server);
+    const result = await client.callTool({ name: 'reload_tools', arguments: {} });
+
+    expect(result.isError).toBe(true);
+    const text = (result.content as Array<{ type: string; text: string }>)[0]?.text ?? '';
+    expect(text).toContain('boom: import failed');
+    expect(text).toMatch(/previously loaded tools are still live/i);
+  });
+
+  it('restores the previous generation when re-registration fails', async () => {
+    const config = makeConfig({ mode: 'all' });
+    const ctx = { subdomain: config.subdomain, getToken };
+    // A reload whose fresh definitions collide on name: registering the second
+    // copy throws mid-way, which must trigger a restore of the last-good set.
+    const [dup] = createAllTools(ctx);
+    if (!dup) throw new Error('expected at least one tool');
+    const loadColliding = async () => [dup, dup];
+
+    const { server, reload } = createReloadableServer(
+      config,
+      getToken,
+      undefined,
+      undefined,
+      loadColliding,
+    );
+    const { names } = await connect(server);
+    const before = await names();
+    expect(before).toContain(dup.name);
+
+    await expect(reload()).rejects.toThrow(/already registered/);
+
+    // The failed reload left the previous generation live, not an empty or
+    // partial surface.
+    expect(await names()).toEqual(before);
+  });
 });

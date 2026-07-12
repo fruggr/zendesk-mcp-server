@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -28,22 +29,21 @@ const TOOL_MODULES = [
 
 type ToolFactory = (ctx: ToolContext) => ToolDefinition[];
 
-// Bumped on every reload so each dynamic-import specifier (`?v=N`) is unique —
-// Node caches modules by specifier, so a repeated query would serve stale code.
-let importVersion = 0;
-
 /**
- * Re-import every leaf tool-factory module with a fresh cache-busting query
- * (`?v=N`, monotonic) so the running process sees edited tool code, then
- * recompose the definitions exactly as `createAllTools` does.
+ * Re-import every leaf tool-factory module with a fresh cache-busting query so
+ * the running process sees edited tool code, then recompose the definitions
+ * exactly as `createAllTools` does. A per-call `randomUUID()` nonce keeps the
+ * import specifier unique (Node caches modules by specifier, so a repeated
+ * query would serve stale code) without any shared module state.
  */
 const loadFreshTools = async (ctx: ToolContext): Promise<ToolDefinition[]> => {
-  importVersion += 1;
+  const nonce = randomUUID();
   const modules = await Promise.all(
     TOOL_MODULES.map(async ({ file, factory }) => {
-      const specifier = `${pathToFileURL(join(toolsDir, file)).href}?v=${importVersion}`;
+      const specifier = `${pathToFileURL(join(toolsDir, file)).href}?v=${nonce}`;
       const mod = (await import(specifier)) as Record<string, ToolFactory | undefined>;
       const create = mod[factory];
+      /* v8 ignore next 2 -- defensive guard: only hit if a factory export is renamed */
       if (!create) throw new Error(`Tool module ${file} has no export ${factory}`);
       return create(ctx);
     }),
@@ -64,6 +64,10 @@ export const createReloadableServer = (
   getToken: () => string | Promise<string>,
   logger: Logger = silentLogger,
   onUnauthorized?: () => void,
+  // Test seam: how a reload obtains the fresh tool definitions. Defaults to
+  // re-importing the leaf modules from disk; tests inject a stub to drive the
+  // re-registration failure/rollback path deterministically.
+  loadTools: (ctx: ToolContext) => Promise<ToolDefinition[]> = loadFreshTools,
 ): { server: McpServer; reload: () => Promise<number> } => {
   const server = createServerShell(config, logger);
   const ctx: ToolContext = { subdomain: config.subdomain, getToken };
@@ -80,7 +84,7 @@ export const createReloadableServer = (
     // Import fresh code BEFORE touching the live registration, so a syntax
     // error in an edited file rejects here and leaves the current generation
     // untouched.
-    const tools = await loadFreshTools(ctx);
+    const tools = await loadTools(ctx);
     // Dispose the old generation BEFORE registering the new one: both share the
     // same tool names, and the SDK rejects registering a name that is still
     // registered. Safe to do so — JS is single-threaded, so no tool call can
@@ -163,6 +167,8 @@ export const registerReloadTool = (
  * HTTP builds a per-session server per request, so there is no long-lived
  * server to hot-swap.
  */
+/* v8 ignore start -- runtime bootstrap: binds the reload tool to a real stdio
+   transport; the reload machinery it wires up is covered by dev-reload.test.ts */
 export const startDevServer = async (
   config: Config,
   getToken: () => string | Promise<string>,
@@ -174,3 +180,4 @@ export const startDevServer = async (
   await startStdioTransport(server, logger);
   logger.info('dev_mode_enabled');
 };
+/* v8 ignore stop */
