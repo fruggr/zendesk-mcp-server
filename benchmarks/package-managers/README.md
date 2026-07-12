@@ -68,7 +68,7 @@ Results land in `benchmarks/package-managers/results/`:
 | `TOOLS` | `pnpm pnpm-rust nub` | Which tools to run. |
 | `SCENARIOS` | `cold warm repeat` | Which cache scenarios to run. |
 | `COLD_RUNS` / `WARM_RUNS` / `REPEAT_RUNS` | `3` / `8` / `8` | Timed runs per scenario. |
-| `PACQUET_RANGE` | `^0.1.0` | Version range added to `configDependencies`. |
+| `PACQUET_SPEC` | `0.11.12+sha512-…` | `@pnpm/pacquet` config-dependency spec (version **plus inlined integrity** — pnpm rejects a bare version). Regenerate with `npm view @pnpm/pacquet@<v> dist.integrity`. |
 | `NUB_INSTALL_ARGS` | `--frozen-lockfile --ignore-scripts` | Extra args for `nub install`. |
 | `OUT_DIR` | `./results` | Where results are written. |
 | `WORKDIR` | a fresh `mktemp -d` | Scratch dir for the isolated repo copies. |
@@ -93,9 +93,12 @@ pick tools, scenarios and run counts. The tables are written to the job
   laptop pull from different mirrors at different speeds; compare cold results
   within a single run, not across machines. `warm` and `repeat` are the stable,
   reproducible signals.
-- **pacquet is a preview.** It may not materialize every install and can fall
-  back to the JS engine; when that happens the two pnpm columns converge (or
-  `pnpm-rust` shows N/A). That's a real finding, not a harness bug.
+- **pacquet is a preview.** It's enabled via a pinned `@pnpm/pacquet`
+  config-dependency spec with an inlined integrity checksum (`PACQUET_SPEC`); a
+  bare version is rejected by pnpm. It may not materialize every install and can
+  fall back to the JS engine; when that happens the two pnpm columns converge
+  (or `pnpm-rust` shows N/A). That's a real finding, not a harness bug. Bump
+  `PACQUET_SPEC` to try a newer pacquet.
 - **nub reads but does not own the lockfile.** It consumes `pnpm-lock.yaml` in
   compatibility mode; behaviour and available flags may change — override with
   `NUB_INSTALL_ARGS` if a flag is renamed.

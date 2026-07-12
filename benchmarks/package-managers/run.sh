@@ -28,8 +28,11 @@ COLD_RUNS="${COLD_RUNS:-3}"
 WARM_RUNS="${WARM_RUNS:-8}"
 REPEAT_RUNS="${REPEAT_RUNS:-8}"
 
-# pacquet version range added to configDependencies for the pnpm-rust variant.
-PACQUET_RANGE="${PACQUET_RANGE:-^0.1.0}"
+# The @pnpm/pacquet config-dependency spec for the pnpm-rust variant. pnpm
+# requires the integrity checksum inlined in the version specifier
+# ("<version>+<sha512-…>") — a bare version is rejected. Regenerate for another
+# version with:  npm view @pnpm/pacquet@<v> dist.integrity
+PACQUET_SPEC="${PACQUET_SPEC:-0.11.12+sha512-/1mL6IEu3EiVhGc5vpispCjkmtTlOgLrTOuS4H6qcngoyB5ISHDg8Ops19nPU7vbl3aF2ER8+EVj4nZ4oPw+WA==}"
 
 # Extra args passed to `nub install` (nub is a drop-in; adjust if flags differ).
 NUB_INSTALL_ARGS="${NUB_INSTALL_ARGS:---frozen-lockfile --ignore-scripts}"
@@ -100,11 +103,13 @@ setup_tool_dir() {
 
   # pnpm-rust: enable the pacquet Rust engine for --frozen-lockfile installs by
   # adding it to configDependencies (see pnpm 11.2 release notes / issue #11723).
+  # The integrity is inlined in PACQUET_SPEC, so a frozen install accepts it
+  # directly — no lockfile edit needed.
   if [ "$tool" = "pnpm-rust" ]; then
     {
       echo ""
       echo "configDependencies:"
-      echo "  pacquet: \"$PACQUET_RANGE\""
+      echo "  \"@pnpm/pacquet\": \"$PACQUET_SPEC\""
       echo "usePacquet: true"
     } >> "$tdir/repo/pnpm-workspace.yaml"
   fi
