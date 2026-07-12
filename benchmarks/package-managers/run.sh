@@ -193,8 +193,11 @@ run_cell() {
   log "$tool / $scenario  (runs=$runs, warmup=$warmup)"
 
   # Sanity: one throwaway install so a broken tool fails loudly here, not mid-run.
-  if ! ( cd "$repo" && eval "$prep" && eval "$cmd" ) >/dev/null 2>&1; then
-    warn "$tool: install failed for scenario '$scenario' — recording N/A."
+  # Capture output so a failure's reason is visible (printed below + kept on disk).
+  local sanity_log="$OUT_DIR/sanity-$tool-$scenario.log"
+  if ! ( cd "$repo" && eval "$prep" && eval "$cmd" ) > "$sanity_log" 2>&1; then
+    warn "$tool: install failed for scenario '$scenario' — recording N/A. Last lines:"
+    tail -n 25 "$sanity_log" >&2
     record_manifest "$tool" "$scenario" "$engine" "failed" "-" "-"
     return 0
   fi
