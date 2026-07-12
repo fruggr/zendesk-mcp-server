@@ -62,6 +62,22 @@ npx -y github:fruggr/zendesk-mcp-server#my-feature-branch <your-subdomain>
 Architecture, code style, submission bar and release workflow live in
 [`AGENTS.md`](AGENTS.md).
 
+## Before you start — avoid duplicate work
+
+Two people building the same feature in parallel is wasted effort, and it has
+happened here. Before writing any code for an issue:
+
+1. **Check the issue is still live.** If it is closed as *completed* or labelled
+   `released`, it already shipped — stop and, if a follow-up is needed, open a
+   new issue for the delta.
+2. **Search open *and* merged PRs for the issue number** (`is:pr #<n>`). A merged
+   PR means it is done; an open PR means someone is mid-flight — comment there
+   and coordinate instead of starting your own.
+3. **Claim it.** Self-assign the issue and leave a short "I'm picking this up"
+   comment so others see it is taken.
+4. **Open your PR as a draft as early as possible** — the earliest signal to
+   others that the work is in flight.
+
 ## Opening a pull request
 
 1. Fork the repository.
@@ -79,6 +95,8 @@ Architecture, code style, submission bar and release workflow live in
 The same checklist appears on the
 [PR template](.github/pull_request_template.md):
 
+- [ ] No open or merged PR already addresses the linked issue, and it is not
+      already closed as completed / `released`.
 - [ ] `pnpm test` passes locally.
 - [ ] `pnpm test:coverage` meets the thresholds.
 - [ ] `pnpm check` is clean (Biome lint + format).

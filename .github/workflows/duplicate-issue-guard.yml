@@ -1,0 +1,124 @@
+name: Duplicate issue guard
+
+# Flags a PR whose linked issue is already closed as completed — the signature of
+# work done twice in parallel (see the "Claim before you build" rule in AGENTS.md).
+# It only warns; it never blocks a merge. `pull_request_target` runs with the base
+# repo's token so it can comment on PRs from forks; no PR head code is checked out
+# or executed here, so this stays safe.
+
+on:
+  pull_request_target:
+    types: [opened, edited, reopened]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const text = `${pr.title || ''}\n${pr.body || ''}`;
+
+            // GitHub closing keywords, same-repo `#<n>` references only.
+            const keyword = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\b[:\s]+#(\d+)/gi;
+            const referenced = [...new Set(
+              [...text.matchAll(keyword)].map((m) => Number(m[1])),
+            )];
+            if (referenced.length === 0) {
+              core.info('No "Closes #<n>" reference found; nothing to check.');
+              return;
+            }
+
+            const { owner, repo } = context.repo;
+            const alreadyShipped = [];
+            for (const number of referenced) {
+              try {
+                const { data: issue } = await github.rest.issues.get({
+                  owner,
+                  repo,
+                  issue_number: number,
+                });
+                // Skip PRs (the issues API returns them too) and only flag issues
+                // closed as *completed* — "not planned" is not a duplicate signal.
+                if (
+                  !issue.pull_request &&
+                  issue.state === 'closed' &&
+                  issue.state_reason === 'completed'
+                ) {
+                  alreadyShipped.push(number);
+                }
+              } catch (err) {
+                core.info(`Could not read #${number}: ${err.message}`);
+              }
+            }
+
+            if (alreadyShipped.length === 0) {
+              core.info('No linked issue is already closed as completed.');
+              return;
+            }
+
+            const label = 'possible-duplicate';
+            try {
+              await github.rest.issues.addLabels({
+                owner,
+                repo,
+                issue_number: pr.number,
+                labels: [label],
+              });
+            } catch (err) {
+              // Label may not exist yet — create it once, then retry.
+              try {
+                await github.rest.issues.createLabel({
+                  owner,
+                  repo,
+                  name: label,
+                  color: 'd93f0b',
+                  description: 'Linked issue is already closed as completed',
+                });
+                await github.rest.issues.addLabels({
+                  owner,
+                  repo,
+                  issue_number: pr.number,
+                  labels: [label],
+                });
+              } catch (inner) {
+                core.info(`Could not apply label: ${inner.message}`);
+              }
+            }
+
+            const marker = '<!-- duplicate-issue-guard -->';
+            const { data: comments } = await github.rest.issues.listComments({
+              owner,
+              repo,
+              issue_number: pr.number,
+              per_page: 100,
+            });
+            if (comments.some((c) => (c.body || '').includes(marker))) {
+              core.info('Already warned on this PR; not commenting again.');
+              return;
+            }
+
+            const list = alreadyShipped.map((n) => `#${n}`).join(', ');
+            const body = [
+              marker,
+              `⚠️ **Possible duplicate work.** This PR references ${list}, which ` +
+                'is already **closed as completed** — a merged PR likely shipped ' +
+                'it already.',
+              '',
+              'Before continuing, please confirm this is not redoing work that has ' +
+                'already landed (see the *Claim before you build* rule in ' +
+                '`AGENTS.md`). If a follow-up is genuinely needed, open a new issue ' +
+                'describing the delta and link that instead.',
+            ].join('\n');
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: pr.number,
+              body,
+            });
