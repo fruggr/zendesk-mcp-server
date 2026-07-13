@@ -37,9 +37,8 @@ import type {
   ZendeskViewExecuteRow,
 } from '../types';
 import {
-  AUDIT_USER_VALUE_FIELDS,
+  AUDIT_ENTITY_FIELDS,
   type AuditNames,
-  auditHasMeaningfulEvent,
   formatAudit,
   formatComment,
   formatFieldValue,
@@ -332,15 +331,11 @@ const collectAuditIds = (audits: ZendeskAudit[]): { userIds: number[]; groupIds:
     addId(userIds, audit.author_id);
     for (const event of audit.events) {
       if (event.type !== 'Change' && event.type !== 'Create') continue;
-      const field = event.field_name;
-      if (!field) continue;
-      if (AUDIT_USER_VALUE_FIELDS.has(field)) {
-        addId(userIds, event.value);
-        addId(userIds, event.previous_value);
-      } else if (field === 'group_id') {
-        addId(groupIds, event.value);
-        addId(groupIds, event.previous_value);
-      }
+      const entity = event.field_name ? AUDIT_ENTITY_FIELDS[event.field_name] : undefined;
+      if (!entity) continue;
+      const set = entity === 'user' ? userIds : groupIds;
+      addId(set, event.value);
+      addId(set, event.previous_value);
     }
   }
   return { userIds: [...userIds], groupIds: [...groupIds] };
@@ -355,34 +350,32 @@ const resolveAuditNames = async (
   userIds: number[],
   groupIds: number[],
 ): Promise<AuditNames> => {
-  const users = new Map<number, string>();
-  const groups = new Map<number, string>();
-  for (const batch of chunk(userIds, 100)) {
-    try {
-      const { users: list } = await zendeskGet<{ users: ZendeskUser[] }>(
-        subdomain,
-        token,
-        '/users/show_many',
-        { ids: batch.join(',') },
-      );
-      for (const u of list ?? []) users.set(u.id, u.name);
-    } catch {
-      // Best-effort: leave these ids unresolved (rendered as bare ids).
+  // Resolve one entity kind to an id->name map via batched show_many (chunked to
+  // the 100-id endpoint cap). Best-effort: a failed batch leaves those ids
+  // unresolved (rendered as bare ids) rather than failing the whole history.
+  const resolve = async <T extends { id: number; name: string }>(
+    path: string,
+    key: 'users' | 'groups',
+    ids: number[],
+  ): Promise<Map<number, string>> => {
+    const map = new Map<number, string>();
+    for (const batch of chunk(ids, 100)) {
+      try {
+        const res = await zendeskGet<Record<string, T[]>>(subdomain, token, path, {
+          ids: batch.join(','),
+        });
+        for (const entity of res[key] ?? []) map.set(entity.id, entity.name);
+      } catch {
+        // Best-effort: leave these ids unresolved.
+      }
     }
-  }
-  for (const batch of chunk(groupIds, 100)) {
-    try {
-      const { groups: list } = await zendeskGet<{ groups: ZendeskGroup[] }>(
-        subdomain,
-        token,
-        '/groups/show_many',
-        { ids: batch.join(',') },
-      );
-      for (const g of list ?? []) groups.set(g.id, g.name);
-    } catch {
-      // Best-effort: leave these ids unresolved (rendered as bare ids).
-    }
-  }
+    return map;
+  };
+  // The two look-ups hit independent endpoints — run them concurrently.
+  const [users, groups] = await Promise.all([
+    resolve<ZendeskUser>('/users/show_many', 'users', userIds),
+    resolve<ZendeskGroup>('/groups/show_many', 'groups', groupIds),
+  ]);
   return { users, groups };
 };
 
@@ -637,12 +630,12 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         );
         const audits = response.audits ?? [];
         const meta = extractPaginationMeta(response, audits.length);
-        // Drop all-noise audits before resolving names and rendering, so a
-        // trigger-only update never triggers a look-up or an empty block.
-        const visible = audits.filter(auditHasMeaningfulEvent);
-        const { userIds, groupIds } = collectAuditIds(visible);
+        const { userIds, groupIds } = collectAuditIds(audits);
         const names = await resolveAuditNames(subdomain, token, userIds, groupIds);
-        const blocks = visible
+        // formatAudit returns null for an all-noise update (e.g. a trigger that
+        // only sent a notification), so this single filter both drops those and
+        // yields the rendered blocks.
+        const blocks = audits
           .map((audit) => formatAudit(audit, names))
           .filter((block): block is string => block !== null);
         if (blocks.length === 0) {
@@ -651,6 +644,8 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
             : `No change history to show for ticket #${ticket_id}.`;
           return { content: [{ type: 'text', text }] };
         }
+        // Count reflects rendered entries, not raw audits (all-noise updates drop
+        // out); pagination is preserved from the response. Same as get_view_tickets.
         const list = formatList(blocks, (block) => block, { ...meta, count: blocks.length });
         return {
           content: [{ type: 'text', text: `# Change history for ticket #${ticket_id}\n\n${list}` }],

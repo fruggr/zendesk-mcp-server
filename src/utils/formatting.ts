@@ -221,28 +221,15 @@ export const formatTagDiff = (before: unknown, after: unknown): string | null =>
     : `- **tags**: ${[...added, ...removed].join(', ')}`;
 };
 
-// A ticket audit's meaningful event types — the human/agent-driven changes worth
-// putting on a timeline. Everything else (Notification, Cc, Push, SmsNotification,
-// OrganizationActivity, Error, and other system bookkeeping) is noise and is
-// dropped so the history reads as a narrative, not a log.
-const MEANINGFUL_AUDIT_EVENTS = new Set([
-  'Create',
-  'Change',
-  'Comment',
-  'VoiceComment',
-  'CommentPrivacyChange',
-  'SatisfactionRating',
-  'FollowersChange',
-  'EmailCcChange',
-]);
-
-// Whether an audit carries at least one meaningful event — the cheap predicate
-// used to collect id look-ups and to drop all-noise audits before rendering.
-export const auditHasMeaningfulEvent = (audit: ZendeskAudit): boolean =>
-  audit.events.some((e) => MEANINGFUL_AUDIT_EVENTS.has(e.type));
-
-// Change fields whose value is a user id and reads far better as a name.
-export const AUDIT_USER_VALUE_FIELDS = new Set(['assignee_id', 'requester_id', 'submitter_id']);
+// Audit Change/Create fields whose value is an entity id, and which entity kind
+// it resolves to. The single source of truth for both id collection (what to
+// look up) and rendering (which name map to use), so the two never drift.
+export const AUDIT_ENTITY_FIELDS: Record<string, 'user' | 'group'> = {
+  assignee_id: 'user',
+  requester_id: 'user',
+  submitter_id: 'user',
+  group_id: 'group',
+};
 
 // On a Create audit, render only these founding facts instead of every column
 // Zendesk sets at creation (which would bury the timeline). Post-creation Changes
@@ -280,8 +267,9 @@ const withName = (id: unknown, names: Map<number, string>): string => {
 // formatFieldValue. Returns '' for an empty/absent side.
 const renderAuditValue = (field: string, value: unknown, names: AuditNames): string => {
   if (value === null || value === undefined || value === '') return '';
-  if (AUDIT_USER_VALUE_FIELDS.has(field)) return withName(value, names.users);
-  if (field === 'group_id') return withName(value, names.groups);
+  const entity = AUDIT_ENTITY_FIELDS[field];
+  if (entity === 'user') return withName(value, names.users);
+  if (entity === 'group') return withName(value, names.groups);
   if (typeof value === 'object' && !Array.isArray(value) && 'minutes' in value) {
     const { minutes } = value as { minutes?: unknown };
     if (typeof minutes === 'number') return `${minutes} min`;
@@ -289,28 +277,37 @@ const renderAuditValue = (field: string, value: unknown, names: AuditNames): str
   return formatFieldValue(value);
 };
 
+// A Create event's founding fact: only whitelisted fields, rendered single-sided
+// (there is no "before"). Returns null for a non-whitelisted or empty field.
+const renderCreateEvent = (event: ZendeskAuditEvent, names: AuditNames): string | null => {
+  const field = event.field_name;
+  if (!field || !AUDIT_CREATE_FIELDS.has(field)) return null;
+  if (field === 'tags') {
+    const tags = Array.isArray(event.value) ? event.value.map(String) : [];
+    return tags.length > 0 ? `- **tags**: ${tags.join(', ')}` : null;
+  }
+  const value = renderAuditValue(field, event.value, names);
+  return value === '' ? null : `- **${AUDIT_FIELD_LABELS[field] ?? field}**: ${value}`;
+};
+
+// A post-creation Change: any field, rendered as before → after. Returns null
+// when the value did not actually change after rendering.
+const renderChangeEvent = (event: ZendeskAuditEvent, names: AuditNames): string | null => {
+  const field = event.field_name;
+  if (!field) return null;
+  if (field === 'tags') return formatTagDiff(event.previous_value, event.value);
+  const after = renderAuditValue(field, event.value, names);
+  const before = renderAuditValue(field, event.previous_value, names);
+  if (before === after) return null;
+  return `- **${AUDIT_FIELD_LABELS[field] ?? field}**: ${before || '(none)'} → ${after || '(none)'}`;
+};
+
 const renderAuditEvent = (event: ZendeskAuditEvent, names: AuditNames): string | null => {
   switch (event.type) {
     case 'Create':
-    case 'Change': {
-      const field = event.field_name;
-      if (!field) return null;
-      const isCreate = event.type === 'Create';
-      if (isCreate && !AUDIT_CREATE_FIELDS.has(field)) return null;
-      if (field === 'tags') {
-        if (isCreate) {
-          const tags = Array.isArray(event.value) ? event.value.map(String) : [];
-          return tags.length > 0 ? `- **tags**: ${tags.join(', ')}` : null;
-        }
-        return formatTagDiff(event.previous_value, event.value);
-      }
-      const label = AUDIT_FIELD_LABELS[field] ?? field;
-      const after = renderAuditValue(field, event.value, names);
-      if (isCreate) return after === '' ? null : `- **${label}**: ${after}`;
-      const before = renderAuditValue(field, event.previous_value, names);
-      if (before === after) return null;
-      return `- **${label}**: ${before || '(none)'} → ${after || '(none)'}`;
-    }
+      return renderCreateEvent(event, names);
+    case 'Change':
+      return renderChangeEvent(event, names);
     case 'Comment':
     case 'VoiceComment':
       // Presence only — the body lives on get_ticket(include_comments), so the
