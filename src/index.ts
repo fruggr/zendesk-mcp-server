@@ -1,15 +1,16 @@
 import { createTokenStore } from './auth/token-store';
 import type { Config } from './config';
 import { loadConfig } from './config';
+import { startDevServer } from './dev/reload';
 import { createMcpServer } from './server';
 import { startHttpTransport } from './transports/http';
 import { startStdioTransport } from './transports/stdio';
 import { createLogger, type Logger } from './utils/logger';
 
-const buildStdioServer = (config: Config, logger: Logger) => {
-  // OAuth mode — browser-based auth on first tool call. `invalidate` drops the
-  // dead access token on a 401 so the next call refreshes/re-authenticates.
-  const tokenStore = createTokenStore(
+// OAuth mode — browser-based auth on first tool call. `invalidate` drops the
+// dead access token on a 401 so the next call refreshes/re-authenticates.
+const buildStdioTokenStore = (config: Config, logger: Logger) =>
+  createTokenStore(
     {
       subdomain: config.subdomain,
       oauthClientId: config.oauthClientId,
@@ -17,17 +18,26 @@ const buildStdioServer = (config: Config, logger: Logger) => {
     },
     logger,
   );
-  return createMcpServer(config, tokenStore.getToken, logger, tokenStore.invalidate);
-};
 
 const main = async (): Promise<void> => {
   const config = loadConfig();
   const logger = createLogger(config.logLevel);
 
   if (config.transport === 'stdio') {
-    const server = buildStdioServer(config, logger);
+    const tokenStore = buildStdioTokenStore(config, logger);
+    if (config.dev) {
+      await startDevServer(config, tokenStore.getToken, logger, tokenStore.invalidate);
+      return;
+    }
+    const server = createMcpServer(config, tokenStore.getToken, logger, tokenStore.invalidate);
     await startStdioTransport(server, logger);
     return;
+  }
+
+  if (config.dev) {
+    // Dev mode hot-reloads a single long-lived server; HTTP builds one per
+    // request, so there is nothing to reload. Warn rather than silently ignore.
+    logger.warn('dev_mode_ignored_http');
   }
 
   // HTTP mode: the HTTP transport creates a per-session McpServer with the

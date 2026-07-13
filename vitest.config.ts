@@ -10,6 +10,8 @@ export default defineConfig({
       reporter: ['text', 'text-summary', 'html', 'lcov', 'json-summary'],
       include: ['src/**/*.ts'],
       // index.ts/stdio.ts are thin runtime bootstraps; types.ts is type-only.
+      // dev/reload.ts stays included: its reload machinery is tested; only the
+      // startDevServer stdio bootstrap inside it is `v8 ignore`d.
       exclude: ['src/index.ts', 'src/transports/stdio.ts', 'src/types.ts'],
       // Quality gate: fail the run if coverage drops below these baselines.
       // Ratchet these up as coverage improves; never lower them silently.

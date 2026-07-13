@@ -28,6 +28,14 @@ export const ConfigSchema = z.object({
    * `help_center` namespace itself is active.
    */
   topology: z.boolean().default(true),
+  /**
+   * Dev-only (stdio): expose the `reload_tools` tool, which re-imports the tool
+   * modules from source and re-registers them on the live session on demand, so
+   * tool code edited during a dev cycle takes effect without a restart. CLI-only
+   * and off by default — it has no place in a deployed server. Fuller notes in
+   * the "Dev mode" section of docs/configuration.md.
+   */
+  dev: z.boolean().default(false),
   transport: Transport,
   host: z.string().min(1),
   port: z.number().int().min(0).max(65535),
@@ -66,6 +74,7 @@ interface CliResult {
   namespaces?: string[];
   tools?: string[];
   topology?: boolean;
+  dev?: boolean;
   logLevel?: string;
   transport?: string;
   host?: string;
@@ -112,6 +121,8 @@ const parseCliArgs = (args: string[]): CliResult => {
       result.readOnly = true;
     } else if (arg === '--no-topology') {
       result.topology = false;
+    } else if (arg === '--dev') {
+      result.dev = true;
     } else if (arg === '--namespace' && next) {
       result.namespaces = result.namespaces ?? [];
       result.namespaces.push(next);
@@ -187,6 +198,7 @@ export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
     namespaces: cli.namespaces,
     tools: cli.tools,
     topology: cli.topology ?? true,
+    dev: cli.dev ?? false,
     transport,
     host,
     port,

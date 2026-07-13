@@ -7,6 +7,8 @@ import {
   buildOperationList,
   buildProxyDispatch,
   createMcpServer,
+  createServerShell,
+  registerToolset,
   summarizeDescription,
 } from '../../src/server';
 import type { ToolAnnotations } from '../../src/tools/definitions';
@@ -298,5 +300,24 @@ describe('buildOperationList', () => {
     const out = buildOperationList(sample);
     expect(out).toMatch(/update_thing\*\*.*\(write\)/);
     expect(out).not.toMatch(/get_thing\*\*.*\(write\)/);
+  });
+});
+
+describe('registerToolset atomicity', () => {
+  it('rolls back partial registration when a later tool fails to register', () => {
+    const server = createServerShell(baseConfig);
+    const [first] = createAllTools({ subdomain: baseConfig.subdomain, getToken });
+    if (!first) throw new Error('expected at least one tool');
+
+    // Two definitions sharing a name: the second registerTool throws
+    // "already registered" mid-loop. The first must not be left behind.
+    expect(() =>
+      registerToolset(server, { config: { ...baseConfig, topology: false }, getToken }, [
+        first,
+        first,
+      ]),
+    ).toThrow(/already registered/);
+
+    expect(registeredToolNames(server)).toEqual([]);
   });
 });

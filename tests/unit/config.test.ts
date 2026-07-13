@@ -60,6 +60,16 @@ describe('loadConfig', () => {
     expect(config.topology).toBe(false);
   });
 
+  it('defaults dev mode to off', () => {
+    const config = loadConfig(['mycompany']);
+    expect(config.dev).toBe(false);
+  });
+
+  it('parses --dev flag', () => {
+    const config = loadConfig(['mycompany', '--dev']);
+    expect(config.dev).toBe(true);
+  });
+
   it('parses multiple --namespace flags', () => {
     const config = loadConfig(['mycompany', '--namespace', 'tickets', '--namespace', 'users']);
     expect(config.namespaces).toEqual(['tickets', 'users']);
