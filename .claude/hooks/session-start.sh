@@ -13,10 +13,12 @@ cd "$CLAUDE_PROJECT_DIR"
 # pnpm is pinned via package.json "packageManager"; Corepack selects that exact
 # version rather than trusting whatever pnpm happens to be on PATH.
 #
-# --ignore-scripts: install dependencies only, never run lifecycle scripts. This
-# deliberately skips the repo's own `prepare` (which builds via tsdown) and any
-# dependency install scripts, so a session start never executes branch or
-# package code — the dev/test loop runs from source via tsx, and CI builds
-# separately. It also keeps the hook cheap when node_modules is already cached.
+# Plain install (not --frozen-lockfile): this is a dev bootstrap, so if a session
+# adds or bumps a dependency the install should reconcile the lockfile rather
+# than fail the way a frozen/CI install would. --ignore-scripts installs
+# dependencies only, never running lifecycle scripts — it deliberately skips the
+# repo's own `prepare` (tsdown build) and any dependency install scripts, so a
+# session start never executes branch or package code (the dev/test loop runs
+# from source via tsx, and CI builds separately).
 corepack enable >/dev/null 2>&1 || true
-corepack pnpm install --frozen-lockfile --ignore-scripts
+corepack pnpm install --ignore-scripts

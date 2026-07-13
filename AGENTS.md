@@ -15,7 +15,9 @@ documentation.
 
 Toolchain (Node 24 + pnpm 11) is the dev floor; the published package still runs on Node 20+ (a CI job exercises the packed tarball on Node 20).
 
-On **Claude Code on the web**, dependencies are installed automatically at session start by the `SessionStart` hook (`.claude/hooks/session-start.sh`, web-only) — you can run tests/linters right away. Locally the hook is a no-op; run `pnpm install` yourself.
+On **Claude Code on the web**, the Node environment is set up automatically at session start (dependencies installed), so tests and linters work right away.
+
+**Iterating on tool code?** Start the server with `--dev` (stdio) to expose a `reload_tools` tool. After editing a `src/tools/*.ts` file, call `reload_tools` to re-register the whole toolset over the live session — the edit takes effect with no restart and no client reconnect. Details in `docs/configuration.md` (Dev mode).
 
 ## Claim before you build — no duplicate work
 
