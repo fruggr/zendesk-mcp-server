@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   formatArticle,
   formatArticleSummary,
+  formatAudit,
   formatCategory,
   formatComment,
   formatFieldValue,
@@ -19,6 +20,9 @@ import {
 } from '../../../src/utils/formatting';
 import {
   MOCK_ARTICLE,
+  MOCK_AUDIT_CHANGE,
+  MOCK_AUDIT_CREATE,
+  MOCK_AUDIT_NOISE,
   MOCK_CATEGORY,
   MOCK_COMMENT,
   MOCK_MACRO,
@@ -159,6 +163,96 @@ describe('formatComment', () => {
   it('omits the Attachments line when the attachments array is empty', () => {
     const result = formatComment({ ...MOCK_COMMENT, attachments: [] });
     expect(result).not.toContain('Attachments:');
+  });
+});
+
+describe('formatAudit', () => {
+  const names = {
+    users: new Map([
+      [100, 'Agent Smith'],
+      [200, 'Requester Jane'],
+    ]),
+    groups: new Map([[300, 'Support']]),
+  };
+
+  it('renders a Create audit as founding facts with actor, channel and comment presence', () => {
+    const result = formatAudit(MOCK_AUDIT_CREATE, names) ?? '';
+    expect(result).toContain('Requester Jane (200)');
+    expect(result).toContain('via web');
+    expect(result).toContain('**status**: new');
+    expect(result).toContain('**priority**: normal');
+    expect(result).toContain('Public comment added');
+    // Comment bodies never leak into the timeline.
+    expect(result).not.toContain('Initial request body');
+    // Non-whitelisted Create fields are dropped from the founding block.
+    expect(result).not.toContain('custom_status_id');
+  });
+
+  it('renders changes as before → after with resolved names and a tag diff', () => {
+    const result = formatAudit(MOCK_AUDIT_CHANGE, names) ?? '';
+    expect(result).toContain('Agent Smith (100)');
+    expect(result).toContain('**status**: new → open');
+    expect(result).toContain('**assignee**: (none) → Agent Smith (100)');
+    expect(result).toContain('**group**: (none) → Support (300)');
+    expect(result).toContain('**tags**: +urgent');
+    expect(result).toContain('Internal note added');
+    // System noise and comment bodies are filtered out.
+    expect(result).not.toContain('email sent');
+    expect(result).not.toContain('internal note body');
+  });
+
+  it('returns null for an audit carrying only system-noise events', () => {
+    expect(formatAudit(MOCK_AUDIT_NOISE, names)).toBeNull();
+  });
+
+  it('falls back to bare ids when names are unresolved', () => {
+    const result = formatAudit(MOCK_AUDIT_CHANGE, { users: new Map(), groups: new Map() }) ?? '';
+    expect(result).toContain('**assignee**: (none) → 100');
+    expect(result).toContain('**group**: (none) → 300');
+  });
+
+  it('renders SLA-metric changes as minutes and summarises secondary events', () => {
+    const audit = {
+      id: 9100,
+      ticket_id: 1,
+      created_at: '2026-01-04T00:00:00Z',
+      author_id: 100,
+      via: { channel: 'api' },
+      events: [
+        {
+          id: 1,
+          type: 'Change',
+          field_name: 'requester_wait_time',
+          value: { minutes: 45, in_business_hours: false },
+          previous_value: { minutes: 150, in_business_hours: false },
+        },
+        { id: 2, type: 'CommentPrivacyChange' },
+        { id: 3, type: 'FollowersChange' },
+        { id: 4, type: 'EmailCcChange' },
+        { id: 5, type: 'SatisfactionRating' },
+      ],
+    };
+    const result = formatAudit(audit, names) ?? '';
+    expect(result).toContain('150 min → 45 min');
+    expect(result).toContain('Comment visibility changed');
+    expect(result).toContain('Followers changed');
+    expect(result).toContain('Email CCs changed');
+    expect(result).toContain('Satisfaction rating recorded');
+  });
+
+  it('omits a change whose value is unchanged after rendering', () => {
+    const audit = {
+      id: 9101,
+      ticket_id: 1,
+      created_at: '2026-01-05T00:00:00Z',
+      author_id: 100,
+      via: {},
+      events: [
+        { id: 1, type: 'Change', field_name: 'status', value: 'open', previous_value: 'open' },
+      ],
+    };
+    // Only a no-op change → nothing meaningful to show → null.
+    expect(formatAudit(audit, names)).toBeNull();
   });
 });
 

@@ -2,7 +2,13 @@ import { HttpResponse, http } from 'msw';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ToolContext } from '../../../src/tools/definitions';
 import { createTicketTools } from '../../../src/tools/tickets';
-import { MOCK_SLA_SIDELOAD, MOCK_TICKET, MOCK_UPLOAD, MOCK_VIEW } from '../../msw-handlers';
+import {
+  auditsMorePageHandler,
+  MOCK_SLA_SIDELOAD,
+  MOCK_TICKET,
+  MOCK_UPLOAD,
+  MOCK_VIEW,
+} from '../../msw-handlers';
 import { mswServer } from '../../setup';
 
 const ctx: ToolContext = { subdomain: 'testsubdomain', getToken: () => 'test-token' };
@@ -21,9 +27,9 @@ const getAllText = (result: { content: Array<{ type: string; text?: string }> })
     .join('\n');
 
 describe('ticket tools', () => {
-  it('creates 16 tools (search_tickets lives here; the unified search is elsewhere)', () => {
+  it('creates 17 tools (search_tickets lives here; the unified search is elsewhere)', () => {
     const tools = createTicketTools(ctx);
-    expect(tools).toHaveLength(16);
+    expect(tools).toHaveLength(17);
   });
 
   describe('get_ticket', () => {
@@ -93,6 +99,79 @@ describe('ticket tools', () => {
 
     it('has readOnly annotation', () => {
       const tool = findTool('get_ticket');
+      expect(tool.annotations.readOnlyHint).toBe(true);
+    });
+  });
+
+  describe('get_ticket_history', () => {
+    it('renders a chronological timeline with resolved actor names', async () => {
+      const tool = findTool('get_ticket_history');
+      const result = await tool.handler({ ticket_id: 1, page_size: 100 });
+      const text = getAllText(result);
+      expect(text).toContain('Change history for ticket #1');
+      // Actors resolved to name (id) via the batched show_many look-up.
+      expect(text).toContain('User 200 (200)');
+      expect(text).toContain('**status**: new → open');
+      expect(text).toContain('**assignee**: (none) → User 100 (100)');
+      expect(text).toContain('**group**: (none) → Group 300 (300)');
+      expect(text).toContain('**tags**: +urgent');
+    });
+
+    it('shows comment presence without leaking comment bodies', async () => {
+      const tool = findTool('get_ticket_history');
+      const text = getAllText(await tool.handler({ ticket_id: 1, page_size: 100 }));
+      expect(text).toContain('Public comment added');
+      expect(text).toContain('Internal note added');
+      expect(text).not.toContain('Initial request body');
+      expect(text).not.toContain('internal note body');
+    });
+
+    it('filters out system-noise events and all-noise audits', async () => {
+      const tool = findTool('get_ticket_history');
+      const text = getAllText(await tool.handler({ ticket_id: 1, page_size: 100 }));
+      // The Notification/Push audit (author 999) produces no block.
+      expect(text).not.toContain('email sent');
+      expect(text).not.toContain('999');
+    });
+
+    it('surfaces the pagination cursor when more audits remain', async () => {
+      mswServer.use(auditsMorePageHandler);
+      const tool = findTool('get_ticket_history');
+      const text = getAllText(await tool.handler({ ticket_id: 1, page_size: 1 }));
+      expect(text).toContain('More available');
+      expect(text).toContain('next-audit-cursor');
+    });
+
+    it('still renders when name resolution fails, falling back to bare ids', async () => {
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/users/show_many', () =>
+          HttpResponse.json({}, { status: 500 }),
+        ),
+        http.get('https://testsubdomain.zendesk.com/api/v2/groups/show_many', () =>
+          HttpResponse.json({}, { status: 500 }),
+        ),
+      );
+      const tool = findTool('get_ticket_history');
+      const result = await tool.handler({ ticket_id: 1, page_size: 100 });
+      const text = getAllText(result);
+      expect(result.isError).toBeFalsy();
+      expect(text).toContain('**assignee**: (none) → 100');
+      expect(text).toContain('**group**: (none) → 300');
+    });
+
+    it('returns a clear message when the ticket has no change history', async () => {
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/audits', () =>
+          HttpResponse.json({ audits: [], meta: { has_more: false, after_cursor: '' } }),
+        ),
+      );
+      const tool = findTool('get_ticket_history');
+      const text = getAllText(await tool.handler({ ticket_id: 1, page_size: 100 }));
+      expect(text).toContain('No change history to show for ticket #1');
+    });
+
+    it('has readOnly annotation', () => {
+      const tool = findTool('get_ticket_history');
       expect(tool.annotations.readOnlyHint).toBe(true);
     });
   });

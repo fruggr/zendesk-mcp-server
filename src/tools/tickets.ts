@@ -16,7 +16,9 @@ import {
 } from '../constants';
 import type {
   PaginationMeta,
+  ZendeskAudit,
   ZendeskComment,
+  ZendeskGroup,
   ZendeskListResponse,
   ZendeskMacro,
   ZendeskMacroApplyComment,
@@ -27,6 +29,7 @@ import type {
   ZendeskTicketAttachment,
   ZendeskTicketField,
   ZendeskUpload,
+  ZendeskUser,
   ZendeskView,
   ZendeskViewCount,
   ZendeskViewCountManyResponse,
@@ -34,12 +37,17 @@ import type {
   ZendeskViewExecuteRow,
 } from '../types';
 import {
+  AUDIT_USER_VALUE_FIELDS,
+  type AuditNames,
+  auditHasMeaningfulEvent,
+  formatAudit,
   formatComment,
   formatFieldValue,
   formatList,
   formatMacro,
   formatSlaBlock,
   formatSlaPolicy,
+  formatTagDiff,
   formatTicket,
   formatTicketField,
   formatView,
@@ -310,6 +318,74 @@ const hydrateViewTickets = async (
   return ids.map((id) => byId.get(id)).filter((t): t is ZendeskTicket => t !== undefined);
 };
 
+// Collect the user and group ids referenced across a page of audits so their
+// names can be resolved in one batched call each: users = every audit author plus
+// assignee/requester/submitter change values; groups = group_id change values.
+const collectAuditIds = (audits: ZendeskAudit[]): { userIds: number[]; groupIds: number[] } => {
+  const userIds = new Set<number>();
+  const groupIds = new Set<number>();
+  const addId = (set: Set<number>, raw: unknown): void => {
+    const n = Number(raw);
+    if (Number.isInteger(n) && n > 0) set.add(n);
+  };
+  for (const audit of audits) {
+    addId(userIds, audit.author_id);
+    for (const event of audit.events) {
+      if (event.type !== 'Change' && event.type !== 'Create') continue;
+      const field = event.field_name;
+      if (!field) continue;
+      if (AUDIT_USER_VALUE_FIELDS.has(field)) {
+        addId(userIds, event.value);
+        addId(userIds, event.previous_value);
+      } else if (field === 'group_id') {
+        addId(groupIds, event.value);
+        addId(groupIds, event.previous_value);
+      }
+    }
+  }
+  return { userIds: [...userIds], groupIds: [...groupIds] };
+};
+
+// Resolve user and group ids to names via batched show_many look-ups (chunked to
+// the 100-id endpoint cap). Best-effort: a failed look-up degrades to id-only
+// rendering rather than failing the whole history — names are supplementary.
+const resolveAuditNames = async (
+  subdomain: string,
+  token: string,
+  userIds: number[],
+  groupIds: number[],
+): Promise<AuditNames> => {
+  const users = new Map<number, string>();
+  const groups = new Map<number, string>();
+  for (const batch of chunk(userIds, 100)) {
+    try {
+      const { users: list } = await zendeskGet<{ users: ZendeskUser[] }>(
+        subdomain,
+        token,
+        '/users/show_many',
+        { ids: batch.join(',') },
+      );
+      for (const u of list ?? []) users.set(u.id, u.name);
+    } catch {
+      // Best-effort: leave these ids unresolved (rendered as bare ids).
+    }
+  }
+  for (const batch of chunk(groupIds, 100)) {
+    try {
+      const { groups: list } = await zendeskGet<{ groups: ZendeskGroup[] }>(
+        subdomain,
+        token,
+        '/groups/show_many',
+        { ids: batch.join(',') },
+      );
+      for (const g of list ?? []) groups.set(g.id, g.name);
+    } catch {
+      // Best-effort: leave these ids unresolved (rendered as bare ids).
+    }
+  }
+  return { users, groups };
+};
+
 // Keys the generic field diff must not emit. Two reasons, both in this set:
 //   - `comment`/`fields`/`custom_fields` are routed to their own render paths, so
 //     the scalar loop skips them regardless of whether they changed.
@@ -350,19 +426,6 @@ const diffLine = (label: string, before: unknown, after: unknown): string | null
   const b = shownValue(before);
   const a = shownValue(after);
   return b === a ? null : `- **${label}**: ${b} → ${a}`;
-};
-
-// Tags diff as added/removed tokens rather than a full before/after list — that
-// is what a macro's `set_tags`/`remove_tags` actions actually express. Returns
-// null when the tag set is unchanged.
-const formatTagDiff = (before: unknown, after: unknown): string | null => {
-  const b = new Set(Array.isArray(before) ? before.map(String) : []);
-  const a = new Set(Array.isArray(after) ? after.map(String) : []);
-  const added = [...a].filter((t) => !b.has(t)).map((t) => `+${t}`);
-  const removed = [...b].filter((t) => !a.has(t)).map((t) => `-${t}`);
-  return added.length + removed.length === 0
-    ? null
-    : `- **tags**: ${[...added, ...removed].join(', ')}`;
 };
 
 // Preview a macro's effect on a ticket as a real before → after diff. The apply
@@ -476,7 +539,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: true,
       title: 'Get Zendesk Ticket',
       description:
-        'Retrieve a Zendesk ticket by ID, including its live SLA state (per-metric stage and breach countdown) when an SLA policy applies, plus its comments if requested. Returns ticket details (subject, status, priority, assignee, tags, description) and optionally all comments/internal notes. The per-ticket Show endpoint exposes no SLA, so the SLA block is resolved via a scoped search and may be absent for a very high-volume requester or a just-updated ticket; SLA targets and policy conditions live in list_sla_policies.',
+        'Retrieve a Zendesk ticket by ID, including its live SLA state (per-metric stage and breach countdown) when an SLA policy applies, plus its comments if requested. Returns ticket details (subject, status, priority, assignee, tags, description) and optionally all comments/internal notes. The per-ticket Show endpoint exposes no SLA, so the SLA block is resolved via a scoped search and may be absent for a very high-volume requester or a just-updated ticket; SLA targets and policy conditions live in list_sla_policies. This returns the ticket as it stands now; for the history of changes behind that state (who changed what, and when), use get_ticket_history.',
       inputSchema: z.object({
         ticket_id: z
           .number()
@@ -521,6 +584,77 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           text += `\n\n---\n# Comments\n\n${comments.map(formatComment).join('\n\n')}`;
         }
         return { content: [{ type: 'text', text: truncateIfNeeded(text) }] };
+      },
+    },
+    {
+      name: 'get_ticket_history',
+      namespace: 'tickets',
+      readOnly: true,
+      title: 'Get Zendesk Ticket History',
+      description:
+        'Read a ticket\'s change history — its audit trail — as a chronological, oldest-first timeline of who changed what and when. Each entry shows the actor (name and id) and the channel, then the field changes that update carried (status, priority, assignee, group, tags, custom fields) as before → after, with assignee/requester/group ids resolved to names. Comments appear as one-line presence markers (public comment vs internal note added), not their text — fetch the bodies with get_ticket(include_comments=true). Purely system-generated events (trigger notifications, CCs, pushes) are filtered out, and an update carrying only those produces no entry, so the timeline stays a readable narrative rather than a raw log. Use it to answer "what happened on this ticket?", "why was it reassigned?" or "when did it go to pending?", reading oldest-first so the founding context is not missed. Read-only, and cursor-paginated oldest-first: pass the returned cursor to page a long-lived ticket toward its most recent changes.',
+      inputSchema: z.object({
+        ticket_id: z
+          .number()
+          .int()
+          .describe(
+            'Ticket ID — the numeric id of the ticket whose change history to read. Obtain it from search_tickets or list_tickets.',
+          ),
+        page_size: z
+          .number()
+          .int()
+          .min(1)
+          .max(MAX_PAGE_SIZE)
+          .default(DEFAULT_PAGE_SIZE)
+          .describe(
+            'Audits (ticket updates) per page (1-100, default 100). Each audit is one update to the ticket and may expand to several change lines; audits carrying only system events are dropped, so a page can render fewer entries than this.',
+          ),
+        cursor: z
+          .string()
+          .optional()
+          .describe(
+            'Pagination cursor from a previous response; omit for the first page. The timeline is ordered oldest-first, so paging forward moves toward the most recent changes.',
+          ),
+      }),
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+      handler: async (params) => {
+        const { ticket_id, page_size, cursor } = params as {
+          ticket_id: number;
+          page_size: number;
+          cursor?: string;
+        };
+        const token = await getToken();
+        const response = await zendeskGet<ZendeskListResponse<ZendeskAudit>>(
+          subdomain,
+          token,
+          `/tickets/${ticket_id}/audits`,
+          buildCursorParams(page_size, cursor),
+        );
+        const audits = response.audits ?? [];
+        const meta = extractPaginationMeta(response, audits.length);
+        // Drop all-noise audits before resolving names and rendering, so a
+        // trigger-only update never triggers a look-up or an empty block.
+        const visible = audits.filter(auditHasMeaningfulEvent);
+        const { userIds, groupIds } = collectAuditIds(visible);
+        const names = await resolveAuditNames(subdomain, token, userIds, groupIds);
+        const blocks = visible
+          .map((audit) => formatAudit(audit, names))
+          .filter((block): block is string => block !== null);
+        if (blocks.length === 0) {
+          const text = meta.has_more
+            ? `No changes to show on this page of ticket #${ticket_id}'s history (system events only). More available (cursor: ${meta.after_cursor}).`
+            : `No change history to show for ticket #${ticket_id}.`;
+          return { content: [{ type: 'text', text }] };
+        }
+        const list = formatList(blocks, (block) => block, { ...meta, count: blocks.length });
+        return {
+          content: [{ type: 'text', text: `# Change history for ticket #${ticket_id}\n\n${list}` }],
+        };
       },
     },
     {

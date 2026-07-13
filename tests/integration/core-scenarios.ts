@@ -163,6 +163,18 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         expect(textOf(result)).toContain('Ticket #1');
       });
 
+      it("reads a ticket's change history over the wire", async () => {
+        connected = await harness.connect(makeConfig({ mode: 'all' }));
+        const result = await connected.client.callTool({
+          name: 'get_ticket_history',
+          arguments: { ticket_id: 1 },
+        });
+
+        expect(result.isError).toBeFalsy();
+        expect(textOf(result)).toContain('Change history for ticket #1');
+        expect(textOf(result)).toContain('**status**: new → open');
+      });
+
       it('uploads and attaches a file when posting a public comment', async () => {
         connected = await harness.connect(makeConfig({ mode: 'all' }));
         const result = await connected.client.callTool({
