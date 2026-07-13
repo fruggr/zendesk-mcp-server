@@ -3,6 +3,8 @@ import type {
   PaginationMeta,
   ZendeskArticle,
   ZendeskArticleAttachment,
+  ZendeskAudit,
+  ZendeskAuditEvent,
   ZendeskCategory,
   ZendeskComment,
   ZendeskContentTag,
@@ -203,6 +205,143 @@ export const formatComment = (comment: ZendeskComment): string => {
   }
   lines.push('', comment.body);
   return lines.join('\n');
+};
+
+// Tags rendered as added/removed tokens (`+new`, `-gone`) rather than a full
+// before/after list — that is what tag changes actually express. Returns null
+// when the set is unchanged. Shared by the macro preview diff and the audit
+// history timeline.
+export const formatTagDiff = (before: unknown, after: unknown): string | null => {
+  const b = new Set(Array.isArray(before) ? before.map(String) : []);
+  const a = new Set(Array.isArray(after) ? after.map(String) : []);
+  const added = [...a].filter((t) => !b.has(t)).map((t) => `+${t}`);
+  const removed = [...b].filter((t) => !a.has(t)).map((t) => `-${t}`);
+  return added.length + removed.length === 0
+    ? null
+    : `- **tags**: ${[...added, ...removed].join(', ')}`;
+};
+
+// Audit Change/Create fields whose value is an entity id, and which entity kind
+// it resolves to. The single source of truth for both id collection (what to
+// look up) and rendering (which name map to use), so the two never drift.
+export const AUDIT_ENTITY_FIELDS: Record<string, 'user' | 'group'> = {
+  assignee_id: 'user',
+  requester_id: 'user',
+  submitter_id: 'user',
+  group_id: 'group',
+};
+
+// On a Create audit, render only these founding facts instead of every column
+// Zendesk sets at creation (which would bury the timeline). Post-creation Changes
+// are never filtered this way — every field change is shown.
+const AUDIT_CREATE_FIELDS = new Set([
+  'status',
+  'priority',
+  'type',
+  'assignee_id',
+  'group_id',
+  'subject',
+  'tags',
+]);
+
+const AUDIT_FIELD_LABELS: Record<string, string> = {
+  assignee_id: 'assignee',
+  requester_id: 'requester',
+  submitter_id: 'submitter',
+  group_id: 'group',
+};
+
+// id -> display name maps resolved by the caller (batched user/group look-ups).
+export interface AuditNames {
+  users: Map<number, string>;
+  groups: Map<number, string>;
+}
+
+const withName = (id: unknown, names: Map<number, string>): string => {
+  const n = Number(id);
+  // Zendesk attributes automation/trigger-driven updates to the system actor
+  // (author_id -1), which has no user record to resolve — label it plainly.
+  if (n === -1) return 'System (-1)';
+  const name = names.get(n);
+  return name ? `${name} (${id})` : String(id);
+};
+
+// A Change/Create field value rendered for the timeline: user/group ids resolved
+// to "Name (id)", SLA-metric objects reduced to their minutes, everything else via
+// formatFieldValue. Returns '' for an empty/absent side.
+const renderAuditValue = (field: string, value: unknown, names: AuditNames): string => {
+  if (value === null || value === undefined || value === '') return '';
+  const entity = AUDIT_ENTITY_FIELDS[field];
+  if (entity === 'user') return withName(value, names.users);
+  if (entity === 'group') return withName(value, names.groups);
+  if (typeof value === 'object' && !Array.isArray(value) && 'minutes' in value) {
+    const { minutes } = value as { minutes?: unknown };
+    if (typeof minutes === 'number') return `${minutes} min`;
+  }
+  return formatFieldValue(value);
+};
+
+// A Create event's founding fact: only whitelisted fields, rendered single-sided
+// (there is no "before"). Returns null for a non-whitelisted or empty field.
+const renderCreateEvent = (event: ZendeskAuditEvent, names: AuditNames): string | null => {
+  const field = event.field_name;
+  if (!field || !AUDIT_CREATE_FIELDS.has(field)) return null;
+  if (field === 'tags') {
+    const tags = Array.isArray(event.value) ? event.value.map(String) : [];
+    return tags.length > 0 ? `- **tags**: ${tags.join(', ')}` : null;
+  }
+  const value = renderAuditValue(field, event.value, names);
+  return value === '' ? null : `- **${AUDIT_FIELD_LABELS[field] ?? field}**: ${value}`;
+};
+
+// A post-creation Change: any field, rendered as before → after. Returns null
+// when the value did not actually change after rendering.
+const renderChangeEvent = (event: ZendeskAuditEvent, names: AuditNames): string | null => {
+  const field = event.field_name;
+  if (!field) return null;
+  if (field === 'tags') return formatTagDiff(event.previous_value, event.value);
+  const after = renderAuditValue(field, event.value, names);
+  const before = renderAuditValue(field, event.previous_value, names);
+  if (before === after) return null;
+  return `- **${AUDIT_FIELD_LABELS[field] ?? field}**: ${before || '(none)'} → ${after || '(none)'}`;
+};
+
+const renderAuditEvent = (event: ZendeskAuditEvent, names: AuditNames): string | null => {
+  switch (event.type) {
+    case 'Create':
+      return renderCreateEvent(event, names);
+    case 'Change':
+      return renderChangeEvent(event, names);
+    case 'Comment':
+    case 'VoiceComment':
+      // Presence only — the body lives on get_ticket(include_comments), so the
+      // timeline attributes the reply without duplicating (or bloating with) it.
+      return `- ${event.public === false ? 'Internal note' : 'Public comment'} added`;
+    case 'CommentPrivacyChange':
+      return '- Comment visibility changed';
+    case 'FollowersChange':
+      return '- Followers changed';
+    case 'EmailCcChange':
+      return '- Email CCs changed';
+    case 'SatisfactionRating':
+      return '- Satisfaction rating recorded';
+    default:
+      return null;
+  }
+};
+
+// One audit rendered as a timeline block: a heading (when — who — channel) plus a
+// line per meaningful change. Returns null when the audit carries only filtered
+// system-noise events, so an all-noise update (e.g. a trigger that just sent a
+// notification) produces no block rather than an empty one.
+export const formatAudit = (audit: ZendeskAudit, names: AuditNames): string | null => {
+  const lines = audit.events
+    .map((e) => renderAuditEvent(e, names))
+    .filter((l): l is string => l !== null);
+  if (lines.length === 0) return null;
+  const channel = audit.via?.channel ? ` via ${audit.via.channel}` : '';
+  const heading = `### ${audit.created_at} — ${withName(audit.author_id, names.users)}${channel}`;
+  return [heading, ...lines].join('\n');
 };
 
 export const formatUser = (user: ZendeskUser): string =>

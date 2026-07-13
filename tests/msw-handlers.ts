@@ -340,6 +340,65 @@ export const MOCK_COMMENT = {
 
 // Uploads API response (POST /uploads). The token is what gets carried on a
 // comment via comment.uploads; subsequent files aggregate under it via ?token=.
+// A group, minimal shape used to resolve a group_id change to a name.
+export const MOCK_GROUP = { id: 300, name: 'Support' };
+
+// Ticket audits (GET /tickets/:id/audits). Three updates that together exercise
+// the timeline: a Create audit (founding facts + initial comment presence), a
+// Change audit (status/assignee/group/tags before→after + an internal note + a
+// system Notification that must be filtered), and an all-noise audit that must
+// render no block at all.
+export const MOCK_AUDIT_CREATE = {
+  id: 9001,
+  ticket_id: 1,
+  created_at: '2026-01-01T00:00:00Z',
+  author_id: 200,
+  via: { channel: 'web' },
+  events: [
+    { id: 1, type: 'Create', field_name: 'status', value: 'new' },
+    { id: 2, type: 'Create', field_name: 'priority', value: 'normal' },
+    { id: 3, type: 'Create', field_name: 'subject', value: 'Test ticket' },
+    { id: 4, type: 'Comment', body: 'Initial request body', public: true, author_id: 200 },
+    // Not in the Create whitelist — must be dropped from the founding block.
+    { id: 5, type: 'Create', field_name: 'custom_status_id', value: '1' },
+  ],
+};
+
+export const MOCK_AUDIT_CHANGE = {
+  id: 9002,
+  ticket_id: 1,
+  created_at: '2026-01-02T00:00:00Z',
+  author_id: 100,
+  via: { channel: 'web' },
+  events: [
+    { id: 6, type: 'Change', field_name: 'status', value: 'open', previous_value: 'new' },
+    { id: 7, type: 'Change', field_name: 'assignee_id', value: '100', previous_value: null },
+    { id: 8, type: 'Change', field_name: 'group_id', value: '300', previous_value: null },
+    {
+      id: 9,
+      type: 'Change',
+      field_name: 'tags',
+      value: ['test', 'mock', 'urgent'],
+      previous_value: ['test', 'mock'],
+    },
+    { id: 10, type: 'Comment', body: 'internal note body', public: false, author_id: 100 },
+    // System noise — must not surface on the timeline.
+    { id: 11, type: 'Notification', body: 'email sent to requester' },
+  ],
+};
+
+export const MOCK_AUDIT_NOISE = {
+  id: 9003,
+  ticket_id: 1,
+  created_at: '2026-01-03T00:00:00Z',
+  author_id: 999,
+  via: { channel: 'rule' },
+  events: [
+    { id: 12, type: 'Notification', body: 'trigger fired' },
+    { id: 13, type: 'Push', value: 'external' },
+  ],
+};
+
 export const MOCK_UPLOAD = {
   token: 'mock-upload-token',
   expires_at: '2026-01-01T01:00:00Z',
@@ -349,6 +408,15 @@ export const MOCK_UPLOAD = {
 
 // OAuth token endpoint used by the browser PKCE flow. Opt-in per test via
 // mswServer.use() so the OAuth roundtrip mock stays centralized here too.
+// Opt-in via mswServer.use(): a ticket-audits page that reports more to come, so
+// the cursor/"More available" footer of get_ticket_history can be asserted.
+export const auditsMorePageHandler = http.get(`${BASE}/tickets/:id/audits`, () =>
+  HttpResponse.json({
+    audits: [MOCK_AUDIT_CHANGE],
+    meta: { has_more: true, after_cursor: 'next-audit-cursor' },
+  }),
+);
+
 export const oauthTokenHandler = http.post('https://testsubdomain.zendesk.com/oauth/tokens', () =>
   HttpResponse.json({ access_token: 'token-abc', token_type: 'bearer', scope: 'read write' }),
 );
@@ -441,6 +509,13 @@ export const handlers = [
     return HttpResponse.json({ ticket: { ...MOCK_TICKET, id } });
   }),
   http.get(`${BASE}/tickets/:id/comments`, () => HttpResponse.json({ comments: [MOCK_COMMENT] })),
+  http.get(`${BASE}/tickets/:id/audits`, ({ params }) => {
+    if (params['id'] === '404') return HttpResponse.json({}, { status: 404 });
+    return HttpResponse.json({
+      audits: [MOCK_AUDIT_CREATE, MOCK_AUDIT_CHANGE, MOCK_AUDIT_NOISE],
+      meta: { has_more: false, after_cursor: '' },
+    });
+  }),
   http.get(`${BASE}/attachments/:id`, ({ params }) => {
     const id = Number(params['id']);
     if (id === MOCK_TICKET_ATTACHMENT_IMAGE.id) {
@@ -526,8 +601,26 @@ export const handlers = [
     });
   }),
 
-  // Users
+  // Users. show_many is registered before `/users/:id` so it hits its own
+  // handler instead of matching `:id` = 'show_many'. Both show_many endpoints
+  // echo a deterministic `<Entity> <id>` name so name resolution is assertable.
   http.get(`${BASE}/users/me`, () => HttpResponse.json({ user: MOCK_USER })),
+  http.get(`${BASE}/users/show_many`, ({ request }) => {
+    const ids = (new URL(request.url).searchParams.get('ids') ?? '')
+      .split(',')
+      .filter(Boolean)
+      .map(Number);
+    return HttpResponse.json({
+      users: ids.map((id) => ({ ...MOCK_USER, id, name: `User ${id}` })),
+    });
+  }),
+  http.get(`${BASE}/groups/show_many`, ({ request }) => {
+    const ids = (new URL(request.url).searchParams.get('ids') ?? '')
+      .split(',')
+      .filter(Boolean)
+      .map(Number);
+    return HttpResponse.json({ groups: ids.map((id) => ({ id, name: `Group ${id}` })) });
+  }),
   http.get(`${BASE}/users/:id`, ({ params }) =>
     HttpResponse.json({ user: { ...MOCK_USER, id: Number(params['id']) } }),
   ),

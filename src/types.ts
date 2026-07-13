@@ -218,6 +218,40 @@ export interface ZendeskComment {
   attachments?: ZendeskTicketAttachment[];
 }
 
+// GET /api/v2/tickets/{id}/audits — the immutable, chronological record of every
+// update to a ticket. Each audit is one update; its `events` list the individual
+// changes/comments that update carried. `Change`/`Create` events expose
+// `field_name`/`value`/`previous_value` (the before→after of a field); comment
+// events carry `public` (and a body we deliberately do not render — see
+// get_ticket_history). Values are strings, except `tags` (array) and SLA-metric
+// fields (object). Many event types are system noise and are filtered out.
+export interface ZendeskAuditEvent {
+  id: number;
+  type: string;
+  field_name?: string;
+  value?: unknown;
+  previous_value?: unknown;
+  public?: boolean;
+  author_id?: number;
+  body?: string;
+}
+
+export interface ZendeskAudit {
+  id: number;
+  ticket_id: number;
+  created_at: string;
+  author_id: number;
+  via?: { channel?: string };
+  events: ZendeskAuditEvent[];
+}
+
+// Minimal Group shape — only what get_ticket_history needs to resolve a
+// group_id change to a readable name (GET /api/v2/groups/show_many).
+export interface ZendeskGroup {
+  id: number;
+  name: string;
+}
+
 export interface ZendeskUpload {
   token: string;
   expires_at: string;
@@ -362,6 +396,7 @@ export interface ZendeskListResponse<T> {
   categories?: T[];
   sections?: T[];
   comments?: T[];
+  audits?: T[];
   translations?: T[];
   permission_groups?: T[];
   sla_policies?: T[];
