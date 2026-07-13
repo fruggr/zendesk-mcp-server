@@ -97,7 +97,16 @@ export const createReloadableServer = (
       // The fresh generation failed to register (e.g. an edit introduced a
       // duplicate tool name). Restore the last-good set so the live session is
       // never left without its tools, then surface the error to the caller.
-      current = registerToolset(server, params, currentTools);
+      try {
+        current = registerToolset(server, params, currentTools);
+      } catch (rollbackErr) {
+        // Restoring the last-good set also failed — the session may now have no
+        // tools (the old generation was already disposed). Log it so the state
+        // is diagnosable; still surface the original reload error to the caller.
+        logger.error('tools_rollback_failed', {
+          error: rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr),
+        });
+      }
       throw err;
     }
     return current.count;

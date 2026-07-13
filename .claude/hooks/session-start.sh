@@ -10,11 +10,13 @@ fi
 
 cd "$CLAUDE_PROJECT_DIR"
 
-# pnpm ships via Corepack (bundled with Node); enable it if pnpm isn't on PATH.
-if ! command -v pnpm >/dev/null 2>&1; then
-  corepack enable >/dev/null 2>&1 || true
-fi
-
-# Idempotent and fast when node_modules is already cached; --frozen-lockfile
-# keeps the install faithful to the committed pnpm-lock.yaml.
-pnpm install --frozen-lockfile
+# pnpm is pinned via package.json "packageManager"; Corepack selects that exact
+# version rather than trusting whatever pnpm happens to be on PATH.
+#
+# --ignore-scripts: install dependencies only, never run lifecycle scripts. This
+# deliberately skips the repo's own `prepare` (which builds via tsdown) and any
+# dependency install scripts, so a session start never executes branch or
+# package code — the dev/test loop runs from source via tsx, and CI builds
+# separately. It also keeps the hook cheap when node_modules is already cached.
+corepack enable >/dev/null 2>&1 || true
+corepack pnpm install --frozen-lockfile --ignore-scripts
