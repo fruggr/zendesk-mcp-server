@@ -15,6 +15,8 @@ documentation.
 
 Toolchain (Node 24 + pnpm 11) is the dev floor; the published package still runs on Node 20+ (a CI job exercises the packed tarball on Node 20).
 
+On **Claude Code on the web**, dependencies are installed automatically at session start by the `SessionStart` hook (`.claude/hooks/session-start.sh`, web-only) — you can run tests/linters right away. Locally the hook is a no-op; run `pnpm install` yourself.
+
 ## Claim before you build — no duplicate work
 
 Parallel duplicate work has happened here. Before coding an issue: re-read it
