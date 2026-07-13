@@ -11,14 +11,14 @@ fi
 cd "$CLAUDE_PROJECT_DIR"
 
 # pnpm is pinned via package.json "packageManager"; Corepack selects that exact
-# version rather than trusting whatever pnpm happens to be on PATH.
+# version rather than trusting whatever pnpm is on PATH.
 #
-# Plain install (not --frozen-lockfile): this is a dev bootstrap, so if a session
-# adds or bumps a dependency the install should reconcile the lockfile rather
-# than fail the way a frozen/CI install would. --ignore-scripts installs
-# dependencies only, never running lifecycle scripts — it deliberately skips the
-# repo's own `prepare` (tsdown build) and any dependency install scripts, so a
-# session start never executes branch or package code (the dev/test loop runs
-# from source via tsx, and CI builds separately).
+# Plain install (not --frozen-lockfile): this is a dev bootstrap, so a session
+# that adds or bumps a dependency should reconcile the lockfile rather than fail
+# the way a frozen/CI install would. Dependency lifecycle scripts are already
+# governed by pnpm-workspace.yaml (the `allowBuilds` whitelist + the
+# `minimumReleaseAge` cooldown), so we do NOT pass --ignore-scripts — that would
+# skip whitelisted builds that packages need to work (e.g. esbuild's native
+# binary, which tsx/tsdown depend on).
 corepack enable >/dev/null 2>&1 || true
-corepack pnpm install --ignore-scripts
+corepack pnpm install
