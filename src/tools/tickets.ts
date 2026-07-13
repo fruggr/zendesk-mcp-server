@@ -585,7 +585,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: true,
       title: 'Get Zendesk Ticket History',
       description:
-        'Read a ticket\'s change history — its audit trail — as a chronological, oldest-first timeline of who changed what and when. Each entry shows the actor (name and id) and the channel, then the field changes that update carried (status, priority, assignee, group, tags, custom fields) as before → after, with assignee/requester/group ids resolved to names. Comments appear as one-line presence markers (public comment vs internal note added), not their text — fetch the bodies with get_ticket(include_comments=true). Purely system-generated events (trigger notifications, CCs, pushes) are filtered out, and an update carrying only those produces no entry, so the timeline stays a readable narrative rather than a raw log. Use it to answer "what happened on this ticket?", "why was it reassigned?" or "when did it go to pending?", reading oldest-first so the founding context is not missed. Read-only, and cursor-paginated oldest-first: pass the returned cursor to page a long-lived ticket toward its most recent changes.',
+        'Read a ticket\'s change history — its audit trail — as a chronological, oldest-first timeline of who changed what and when. Each entry shows the actor (name and id) and the channel, then the field changes that update carried (status, priority, assignee, group, tags, custom fields) as before → after, with assignee/requester/group ids resolved to names. Comments appear as one-line presence markers (public comment vs internal note added), not their text — fetch the bodies with get_ticket(include_comments=true). Purely system-generated notification events (trigger emails, collaborator/CC notifications, pushes) are filtered out — note this filters notification delivery, not CC-list edits, which are shown as changes — and an update carrying only such events produces no entry, so the timeline stays a readable narrative rather than a raw log. Use it to answer "what happened on this ticket?", "why was it reassigned?" or "when did it go to pending?", reading oldest-first so the founding context is not missed. Read-only, and cursor-paginated oldest-first: pass the returned cursor to page a long-lived ticket toward its most recent changes.',
       inputSchema: z.object({
         ticket_id: z
           .number()
@@ -622,12 +622,27 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           cursor?: string;
         };
         const token = await getToken();
-        const response = await zendeskGet<ZendeskListResponse<ZendeskAudit>>(
-          subdomain,
-          token,
-          `/tickets/${ticket_id}/audits`,
-          buildCursorParams(page_size, cursor),
-        );
+        let response: ZendeskListResponse<ZendeskAudit>;
+        try {
+          response = await zendeskGet<ZendeskListResponse<ZendeskAudit>>(
+            subdomain,
+            token,
+            `/tickets/${ticket_id}/audits`,
+            buildCursorParams(page_size, cursor),
+          );
+        } catch (error) {
+          // The Ticket Audits API requires the global `read` OAuth scope; a
+          // narrower scope (e.g. tickets:read) returns 403 here even though it
+          // works for the other ticket tools. Rewrite the generic error into
+          // guidance the user can act on, mirroring the SLA/view handlers.
+          if (error instanceof ZendeskApiError && error.status === 403) {
+            throw new Error(
+              "get_ticket_history reads the Ticket Audits API (GET /tickets/{id}/audits), which Zendesk gates behind the global 'read' OAuth scope. The current token lacks it (HTTP 403) -- a narrower scope such as tickets:read can read tickets and comments but not their audit history. Re-authenticate with the global read scope to use this tool.",
+              { cause: error },
+            );
+          }
+          throw error;
+        }
         const audits = response.audits ?? [];
         const meta = extractPaginationMeta(response, audits.length);
         const { userIds, groupIds } = collectAuditIds(audits);

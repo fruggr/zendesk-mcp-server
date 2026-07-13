@@ -88,18 +88,50 @@ const dump = (label: string, value: unknown): void => {
   console.log(JSON.stringify(value, null, 2));
 };
 
-// Redact free-text bodies from an event so the shape is visible without PII.
+// Free-text Change/Create fields whose value carries content (not shape) — their
+// before/after values are redacted so a captured payload never leaks them.
+const FREE_TEXT_FIELDS = new Set(['subject', 'description']);
+
+// Redact free-text content from an event so the shape stays visible without PII:
+// comment bodies/recipients, and the value/previous_value of free-text fields.
 const redactEvent = (ev: unknown): unknown => {
   const e = { ...(ev as Record<string, unknown>) };
   for (const key of ['body', 'html_body', 'plain_body', 'recipients']) {
     if (key in e) e[key] = '[redacted]';
   }
+  if (
+    (e['type'] === 'Change' || e['type'] === 'Create') &&
+    FREE_TEXT_FIELDS.has(String(e['field_name']))
+  ) {
+    if ('value' in e) e['value'] = '[redacted]';
+    if ('previous_value' in e) e['previous_value'] = '[redacted]';
+  }
   return e;
+};
+
+// Redact the audit `via.source` email addresses (from/to) that email-channel
+// tickets carry, while keeping `via.channel` and the rest of the shape.
+const redactVia = (via: unknown): unknown => {
+  if (!via || typeof via !== 'object') return via;
+  const v = { ...(via as Record<string, unknown>) };
+  const source = v['source'];
+  if (source && typeof source === 'object') {
+    const s = { ...(source as Record<string, unknown>) };
+    for (const dir of ['from', 'to']) {
+      const entry = s[dir];
+      if (entry && typeof entry === 'object' && 'address' in entry) {
+        s[dir] = { ...(entry as Record<string, unknown>), address: '[redacted]' };
+      }
+    }
+    v['source'] = s;
+  }
+  return v;
 };
 
 const redactAudit = (audit: unknown): unknown => {
   const a = { ...(audit as Record<string, unknown>) };
   if (Array.isArray(a['events'])) a['events'] = a['events'].map(redactEvent);
+  if ('via' in a) a['via'] = redactVia(a['via']);
   return a;
 };
 

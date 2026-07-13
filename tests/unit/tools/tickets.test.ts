@@ -159,6 +159,16 @@ describe('ticket tools', () => {
       expect(text).toContain('**group**: (none) → 300');
     });
 
+    it('rewrites a 403 into actionable OAuth-scope guidance', async () => {
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/audits', () =>
+          HttpResponse.json({}, { status: 403 }),
+        ),
+      );
+      const tool = findTool('get_ticket_history');
+      await expect(tool.handler({ ticket_id: 1, page_size: 100 })).rejects.toThrow(/global 'read'/);
+    });
+
     it('returns a clear message when the ticket has no change history', async () => {
       mswServer.use(
         http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/audits', () =>
