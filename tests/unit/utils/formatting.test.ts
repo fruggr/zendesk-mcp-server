@@ -205,6 +205,22 @@ describe('formatAudit', () => {
     expect(formatAudit(MOCK_AUDIT_NOISE, names)).toBeNull();
   });
 
+  it('labels the Zendesk system actor (author_id -1) instead of a bare id', () => {
+    const audit = {
+      id: 9200,
+      ticket_id: 1,
+      created_at: '2026-01-06T00:00:00Z',
+      author_id: -1,
+      via: { channel: 'rule' },
+      events: [
+        { id: 1, type: 'Change', field_name: 'status', value: 'solved', previous_value: 'open' },
+      ],
+    };
+    const result = formatAudit(audit, names) ?? '';
+    expect(result).toContain('System (-1)');
+    expect(result).toContain('**status**: open → solved');
+  });
+
   it('falls back to bare ids when names are unresolved', () => {
     const result = formatAudit(MOCK_AUDIT_CHANGE, { users: new Map(), groups: new Map() }) ?? '';
     expect(result).toContain('**assignee**: (none) → 100');

@@ -258,7 +258,11 @@ export interface AuditNames {
 }
 
 const withName = (id: unknown, names: Map<number, string>): string => {
-  const name = names.get(Number(id));
+  const n = Number(id);
+  // Zendesk attributes automation/trigger-driven updates to the system actor
+  // (author_id -1), which has no user record to resolve — label it plainly.
+  if (n === -1) return 'System (-1)';
+  const name = names.get(n);
   return name ? `${name} (${id})` : String(id);
 };
 
