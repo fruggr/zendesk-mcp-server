@@ -1,3 +1,23 @@
+## [2.12.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.11.0...v2.12.0) (2026-07-13)
+
+### Features
+
+* **tickets:** add get_ticket_history for a ticket's change timeline ([#157](https://github.com/fruggr/zendesk-mcp-server/issues/157)) ([69cd8cd](https://github.com/fruggr/zendesk-mcp-server/commit/69cd8cd29fa8605ae3e266dcdca3e06b89e160aa))
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Documentation
+
+* require closing keyword to auto-close issues on merge ([#153](https://github.com/fruggr/zendesk-mcp-server/issues/153)) ([ad94712](https://github.com/fruggr/zendesk-mcp-server/commit/ad94712de76a0dc3027c9418e1b2581a62fb9ef7))
+
+### Chores
+
+* add guardrails against duplicate issue work ([#149](https://github.com/fruggr/zendesk-mcp-server/issues/149)) ([b711de2](https://github.com/fruggr/zendesk-mcp-server/commit/b711de27828c93c493d7eb812ee7e9f16216c20f))
+* allow in-session tool hot-reload with --dev mode ([#154](https://github.com/fruggr/zendesk-mcp-server/issues/154)) ([99a1cac](https://github.com/fruggr/zendesk-mcp-server/commit/99a1caca61886eaaa0863c15b0586bcf75727ed9))
+* **deps:** update pnpm to v11.10.0 ([#148](https://github.com/fruggr/zendesk-mcp-server/issues/148)) ([5cc107a](https://github.com/fruggr/zendesk-mcp-server/commit/5cc107af97becb89802523db5eff4a489560dc7c))
+</details>
+
 ## [2.11.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.10.0...v2.11.0) (2026-07-11)
 
 ### Features
