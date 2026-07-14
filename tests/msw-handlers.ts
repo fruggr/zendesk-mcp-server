@@ -705,6 +705,13 @@ export const handlers = [
       count: 1,
     }),
   ),
+  http.get(`${HC_BASE}/:locale/sections/:sid/articles`, () =>
+    HttpResponse.json({
+      articles: [MOCK_ARTICLE],
+      meta: { has_more: false, after_cursor: '' },
+      count: 1,
+    }),
+  ),
   http.post(`${HC_BASE}/sections/:sid/articles`, () =>
     HttpResponse.json({ article: MOCK_ARTICLE }),
   ),

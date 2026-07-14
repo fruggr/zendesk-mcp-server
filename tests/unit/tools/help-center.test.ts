@@ -275,6 +275,7 @@ describe('help center tools', () => {
     ) => {
       const state = new Map(articles.map((a) => [a.id, a.position]));
       const writes: Array<{ id: number; position: number }> = [];
+      const listPaths: string[] = [];
       const article = (id: number, secId: number) => ({
         ...MOCK_ARTICLE,
         id,
@@ -289,7 +290,11 @@ describe('help center tools', () => {
             article: article(id, opts.foreignSections?.[id] ?? sectionId),
           });
         }),
-        http.get(`${HC_BASE}/sections/${sectionId}/articles`, () => {
+        // Locale-scoped path: reorder_article lists the section under the
+        // article's locale (Zendesk 400s the locale-less endpoint when the
+        // section's default sort is locale-dependent).
+        http.get(`${HC_BASE}/:locale/sections/${sectionId}/articles`, ({ request }) => {
+          listPaths.push(new URL(request.url).pathname);
           const ids = opts.fixedOrder
             ? opts.fixedOrder
             : [...state.entries()].sort((a, b) => a[1] - b[1] || a[0] - b[0]).map(([id]) => id);
@@ -314,11 +319,22 @@ describe('help center tools', () => {
           return HttpResponse.json({ article: { ...MOCK_ARTICLE, id, position } });
         }),
       );
-      return { writes };
+      return { writes, listPaths };
     };
 
     const seq = (n: number, position: number) =>
       Array.from({ length: n }, (_, i) => ({ id: i + 1, position }));
+
+    it('lists the section scoped to the article locale (avoids the locale-less 400)', async () => {
+      const { listPaths } = seedSection(600, [
+        { id: 1, position: 0 },
+        { id: 2, position: 1 },
+      ]);
+      await findTool('reorder_article').handler({ article_id: 1, target: 'bottom' });
+      // MOCK_ARTICLE.source_locale is "en-us"; every section listing must carry it.
+      expect(listPaths.length).toBeGreaterThan(0);
+      expect(listPaths.every((p) => p.includes('/en-us/sections/600/articles'))).toBe(true);
+    });
 
     it('moves an article to the bottom in a single write', async () => {
       const { writes } = seedSection(600, [

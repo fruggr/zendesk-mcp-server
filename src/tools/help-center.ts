@@ -104,14 +104,25 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
   // Fetch a section's articles in their EFFECTIVE display order (no sort_by), the
   // order an end user sees. Fully paginated so reorder decisions and verification
   // see every article, not just the first page. Used by reorder_article.
-  const fetchSectionOrder = async (sectionId: number, token: string): Promise<OrderedArticle[]> => {
+  //
+  // The listing MUST be locale-scoped: without sort_by the endpoint falls back to
+  // the section's configured "Order articles by", and a locale-dependent mode
+  // (title / recent activity / edited_at) makes the non-locale endpoint reject the
+  // request with HTTP 400 ("must specify a locale in order to sort by title…").
+  // Scoping by the article's locale both satisfies that requirement and still
+  // surfaces the auto-sorted order so the inversion probe can detect it.
+  const fetchSectionOrder = async (
+    sectionId: number,
+    locale: string,
+    token: string,
+  ): Promise<OrderedArticle[]> => {
     const order: OrderedArticle[] = [];
     let cursor: string | undefined;
     do {
       const response = await helpCenterGet<ZendeskListResponse<ZendeskArticle>>(
         subdomain,
         token,
-        `/sections/${sectionId}/articles`,
+        `/${locale}/sections/${sectionId}/articles`,
         buildCursorParams(MAX_PAGE_SIZE, cursor),
       );
       const articles = response.articles ?? [];
@@ -906,8 +917,12 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           `/articles/${article_id}`,
         );
         const sectionId = article.section_id;
+        // Scope every section listing to the article's locale — the endpoint
+        // rejects a locale-less request when the section's default sort is
+        // locale-dependent (see fetchSectionOrder).
+        const locale = article.source_locale;
 
-        const effective = await fetchSectionOrder(sectionId, token);
+        const effective = await fetchSectionOrder(sectionId, locale, token);
 
         // For before/after, the reference must be in the same section. Disambiguate
         // not-found vs wrong-section so the caller gets an actionable message.
@@ -984,7 +999,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         }
 
         // Verify the move took effect (the definitive auto-sort check).
-        const after = await fetchSectionOrder(sectionId, token);
+        const after = await fetchSectionOrder(sectionId, locale, token);
         if (!isPlacedAsRequested(after, article_id, target, reference_article_id)) {
           return { content: [{ type: 'text', text: autoSortNotice(sectionId, applied) }] };
         }
