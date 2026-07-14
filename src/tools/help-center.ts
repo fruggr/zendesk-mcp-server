@@ -944,11 +944,12 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           };
         }
 
-        // If the section provably ignores position (its effective order is not
-        // sorted by position) and the reorder would be large, refuse up front
-        // rather than fire many writes that will be silently ignored.
-        const autoSorted = hasPositionInversion(effective);
-        if (autoSorted && writes.length > REORDER_CONFIRM_THRESHOLD) {
+        // A strict inversion in the effective order is definitive proof the
+        // section ignores `position` (it is auto-sorted). Short-circuit before any
+        // write, at any size — writing would be silently ignored regardless. The
+        // post-write verification below still backstops the cases an inversion
+        // cannot reveal up front (e.g. an auto order that happens to be ascending).
+        if (hasPositionInversion(effective)) {
           return { content: [{ type: 'text', text: autoSortNotice(sectionId) }] };
         }
 

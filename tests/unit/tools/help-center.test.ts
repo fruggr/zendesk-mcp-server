@@ -426,15 +426,20 @@ describe('help center tools', () => {
       expect(done.content[0]?.text).toContain('moved to top');
     });
 
-    it('refuses up front when the section is auto-sorted and the reorder is large', async () => {
-      // Inverted + tied tail so the write set is large AND an inversion is present.
-      const articles = [
-        ...Array.from({ length: 24 }, (_, i) => ({ id: i + 1, position: i })), // 1..24 at 0..23
-        { id: 25, position: 0 }, // tail tie -> boundary inversion (23 > 0)
-      ];
-      const { writes } = seedSection(600, articles, { fixedOrder: articles.map((a) => a.id) });
-      const result = await findTool('reorder_article').handler({ article_id: 25, target: 'top' });
-      expect(writes).toEqual([]); // refused before any write
+    it('short-circuits an auto-sorted section up front without writing, at any size', async () => {
+      // A strict inversion in the effective order is proof the section ignores
+      // position; the tool must refuse before writing regardless of the write count.
+      const { writes } = seedSection(
+        600,
+        [
+          { id: 1, position: 5 },
+          { id: 2, position: 3 },
+          { id: 3, position: 8 },
+        ],
+        { fixedOrder: [1, 2, 3] }, // positions 5,3,8 along the display order → inversion
+      );
+      const result = await findTool('reorder_article').handler({ article_id: 3, target: 'top' });
+      expect(writes).toEqual([]); // refused before any write, even though it's a small reorder
       expect(result.content[0]?.text).toContain('sorted automatically');
     });
 
