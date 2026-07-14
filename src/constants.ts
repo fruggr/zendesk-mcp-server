@@ -42,6 +42,13 @@ export const MAX_EMBEDDED_IMAGE_COUNT = positiveIntEnv('ZENDESK_MAX_EMBEDDED_IMA
 // Overridable via ZENDESK_MAX_COMMENT_PAGES for tickets with many comments.
 export const MAX_COMMENT_PAGES = positiveIntEnv('ZENDESK_MAX_COMMENT_PAGES', 10);
 
+// Blast-radius guard for reorder_article. Reordering an article can require
+// rewriting the `position` of several neighbours (to break ties or shift a run);
+// if that write set exceeds this many articles the tool refuses unless the caller
+// passes confirm:true, so a single "move to top" can't silently rewrite hundreds
+// of articles. Override via ZENDESK_REORDER_CONFIRM_THRESHOLD.
+export const REORDER_CONFIRM_THRESHOLD = positiveIntEnv('ZENDESK_REORDER_CONFIRM_THRESHOLD', 20);
+
 // Thresholds used to nudge callers toward section-scoped article tools
 // (get_article_outline / get_article_section / update_article_section)
 // instead of fetching/rewriting the full body.

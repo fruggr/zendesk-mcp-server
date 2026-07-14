@@ -160,6 +160,11 @@ Maximum number of images embedded as native image content in a single tool call.
 
 Hard cap on the number of comment pages fetched when collecting a ticket's attachments (raise it for tickets with very long comment threads).
 
+### `ZENDESK_REORDER_CONFIRM_THRESHOLD`
+**Required:** no · **Default:** `20`
+
+Safety threshold for `reorder_article`. When moving an article would rewrite more than this many article positions (for example moving an article to the top of a large or heavily tied section), the tool refuses and reports the count until the call is retried with `confirm: true`. Lower it to be prompted sooner, raise it to reorder large sections without confirmation.
+
 ---
 
 ← Back to the [README](../README.md).

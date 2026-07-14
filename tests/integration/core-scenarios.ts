@@ -261,6 +261,17 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         expect(textOf(result)).toContain('Article #5000 archived');
       });
 
+      it('reorders a Help Center article over the wire', async () => {
+        connected = await harness.connect(makeConfig({ mode: 'all' }));
+        const result = await connected.client.callTool({
+          name: 'reorder_article',
+          arguments: { article_id: 5000, target: 'bottom' },
+        });
+
+        expect(result.isError).toBeFalsy();
+        expect(textOf(result)).toContain('section #600');
+      });
+
       it('surfaces a Zendesk API error as an MCP tool error', async () => {
         mswServer.use(errorHandlers.usersMeUnauthorized);
 

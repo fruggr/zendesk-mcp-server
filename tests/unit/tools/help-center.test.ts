@@ -16,8 +16,8 @@ const findTool = (name: string) => {
 };
 
 describe('help center tools', () => {
-  it('creates 22 tools', () => {
-    expect(createHelpCenterTools(ctx)).toHaveLength(22);
+  it('creates 23 tools', () => {
+    expect(createHelpCenterTools(ctx)).toHaveLength(23);
   });
 
   describe('search_articles', () => {
@@ -252,6 +252,254 @@ describe('help center tools', () => {
       expect(field.description).toContain('P + 1');
       expect(tool.inputSchema.parse({ article_id: 5000, position: 3 })).toMatchObject({
         position: 3,
+      });
+    });
+  });
+
+  describe('reorder_article', () => {
+    // Stateful section mock: GET returns the section's articles in effective order,
+    // PUT mutates positions and records the write sequence. This lets the tool's
+    // post-write verification observe the effect, the way a real manual section
+    // behaves. Pass fixedOrder to simulate an auto-sorted section (GET ignores the
+    // written positions). Pass foreignSections to place a looked-up article in
+    // another section.
+    const seedSection = (
+      sectionId: number,
+      articles: Array<{ id: number; position: number }>,
+      opts: {
+        fixedOrder?: number[];
+        foreignSections?: Record<number, number>;
+        missing?: number[];
+        failPutOn?: number;
+      } = {},
+    ) => {
+      const state = new Map(articles.map((a) => [a.id, a.position]));
+      const writes: Array<{ id: number; position: number }> = [];
+      const article = (id: number, secId: number) => ({
+        ...MOCK_ARTICLE,
+        id,
+        section_id: secId,
+        position: state.get(id) ?? 0,
+      });
+      mswServer.use(
+        http.get(`${HC_BASE}/articles/:id`, ({ params }) => {
+          const id = Number(params['id']);
+          if (opts.missing?.includes(id)) return new HttpResponse(null, { status: 404 });
+          return HttpResponse.json({
+            article: article(id, opts.foreignSections?.[id] ?? sectionId),
+          });
+        }),
+        http.get(`${HC_BASE}/sections/${sectionId}/articles`, () => {
+          const ids = opts.fixedOrder
+            ? opts.fixedOrder
+            : [...state.entries()].sort((a, b) => a[1] - b[1] || a[0] - b[0]).map(([id]) => id);
+          const ordered = ids.map((id) => article(id, sectionId));
+          return HttpResponse.json({
+            articles: ordered,
+            meta: { has_more: false, after_cursor: '' },
+            count: ordered.length,
+          });
+        }),
+        http.put(`${HC_BASE}/articles/:id`, async ({ request, params }) => {
+          const id = Number(params['id']);
+          if (opts.failPutOn === id) return new HttpResponse(null, { status: 500 });
+          const body = (await request.json().catch(() => ({}))) as {
+            article?: { position?: number };
+          };
+          const position = body.article?.position;
+          if (typeof position === 'number') {
+            state.set(id, position);
+            writes.push({ id, position });
+          }
+          return HttpResponse.json({ article: { ...MOCK_ARTICLE, id, position } });
+        }),
+      );
+      return { writes };
+    };
+
+    const seq = (n: number, position: number) =>
+      Array.from({ length: n }, (_, i) => ({ id: i + 1, position }));
+
+    it('moves an article to the bottom in a single write', async () => {
+      const { writes } = seedSection(600, [
+        { id: 1, position: 0 },
+        { id: 2, position: 1 },
+        { id: 3, position: 2 },
+      ]);
+      const result = await findTool('reorder_article').handler({ article_id: 1, target: 'bottom' });
+      expect(writes).toEqual([{ id: 1, position: 3 }]);
+      expect(result.content[0]?.text).toContain('moved to bottom');
+      expect(result.content[0]?.text).toContain('1 article repositioned');
+    });
+
+    it('moves an article before a reference using an existing gap (single write)', async () => {
+      const { writes } = seedSection(600, [
+        { id: 1, position: 0 },
+        { id: 2, position: 10 },
+        { id: 3, position: 20 },
+      ]);
+      const result = await findTool('reorder_article').handler({
+        article_id: 3,
+        target: 'before',
+        reference_article_id: 2,
+      });
+      expect(writes).toEqual([{ id: 3, position: 1 }]);
+      expect(result.content[0]?.text).toContain('before article #2');
+    });
+
+    it('breaks ties to move a tied article to the top (the #134 case)', async () => {
+      const { writes } = seedSection(600, [
+        { id: 1, position: 0 },
+        { id: 2, position: 0 },
+        { id: 3, position: 0 },
+        { id: 4, position: 0 },
+      ]);
+      const result = await findTool('reorder_article').handler({ article_id: 4, target: 'top' });
+      // id 4 already at 0 is left alone; siblings bumped so it is uniquely first.
+      expect(writes).toEqual([
+        { id: 1, position: 1 },
+        { id: 2, position: 2 },
+        { id: 3, position: 3 },
+      ]);
+      expect(result.content[0]?.text).toContain('moved to top');
+    });
+
+    it('renumbers the section contiguously when normalize is true', async () => {
+      const { writes } = seedSection(600, [
+        { id: 1, position: 0 },
+        { id: 2, position: 5 },
+        { id: 3, position: 9 },
+      ]);
+      await findTool('reorder_article').handler({
+        article_id: 3,
+        target: 'top',
+        normalize: true,
+      });
+      expect(writes).toEqual([
+        { id: 3, position: 0 },
+        { id: 1, position: 1 },
+        { id: 2, position: 2 },
+      ]);
+    });
+
+    it('reports a no-op when the article is already in place', async () => {
+      const { writes } = seedSection(600, [
+        { id: 1, position: 0 },
+        { id: 2, position: 1 },
+      ]);
+      const result = await findTool('reorder_article').handler({ article_id: 1, target: 'top' });
+      expect(writes).toEqual([]);
+      expect(result.content[0]?.text).toContain('already positioned');
+    });
+
+    it('detects an auto-sorted section after writing and returns guidance', async () => {
+      // GET always returns the same order regardless of written positions.
+      const { writes } = seedSection(
+        600,
+        [
+          { id: 1, position: 0 },
+          { id: 2, position: 1 },
+          { id: 3, position: 2 },
+        ],
+        { fixedOrder: [1, 2, 3] },
+      );
+      const result = await findTool('reorder_article').handler({ article_id: 3, target: 'top' });
+      expect(writes.length).toBeGreaterThan(0); // writes were attempted
+      expect(result.content[0]?.text).toContain('sorted automatically');
+      expect(result.content[0]?.text).toContain('Order articles by');
+    });
+
+    it('refuses a large reorder without confirm, then proceeds with confirm', async () => {
+      const seeded = seedSection(600, seq(25, 0)); // 25 articles tied at 0
+      const tool = findTool('reorder_article');
+      const refused = await tool.handler({ article_id: 25, target: 'top' });
+      expect(seeded.writes).toEqual([]); // nothing written
+      expect(refused.content[0]?.text).toContain('above the safety threshold');
+
+      const seeded2 = seedSection(600, seq(25, 0));
+      const done = await findTool('reorder_article').handler({
+        article_id: 25,
+        target: 'top',
+        confirm: true,
+      });
+      expect(seeded2.writes.length).toBe(24); // 24 siblings bumped, id 25 stays at 0
+      expect(done.content[0]?.text).toContain('moved to top');
+    });
+
+    it('refuses up front when the section is auto-sorted and the reorder is large', async () => {
+      // Inverted + tied tail so the write set is large AND an inversion is present.
+      const articles = [
+        ...Array.from({ length: 24 }, (_, i) => ({ id: i + 1, position: i })), // 1..24 at 0..23
+        { id: 25, position: 0 }, // tail tie -> boundary inversion (23 > 0)
+      ];
+      const { writes } = seedSection(600, articles, { fixedOrder: articles.map((a) => a.id) });
+      const result = await findTool('reorder_article').handler({ article_id: 25, target: 'top' });
+      expect(writes).toEqual([]); // refused before any write
+      expect(result.content[0]?.text).toContain('sorted automatically');
+    });
+
+    it('reports how far it got and that a re-run is safe when a write fails midway', async () => {
+      const { writes } = seedSection(
+        600,
+        [
+          { id: 1, position: 0 },
+          { id: 2, position: 0 },
+          { id: 3, position: 0 },
+          { id: 4, position: 0 },
+        ],
+        { failPutOn: 2 },
+      );
+      // Moving id 4 to top writes 1->1, 2->2, 3->3; the write to id 2 fails.
+      await expect(
+        findTool('reorder_article').handler({ article_id: 4, target: 'top' }),
+      ).rejects.toThrow(/failed after 1\/3 position write\(s\) \(on article #2\)[\s\S]*re-running/);
+      expect(writes).toEqual([{ id: 1, position: 1 }]); // only the write before the failure applied
+    });
+
+    it('rejects target before/after without a reference', async () => {
+      await expect(
+        findTool('reorder_article').handler({ article_id: 1, target: 'before' }),
+      ).rejects.toThrow(/requires reference_article_id/);
+    });
+
+    it('rejects a reference on top/bottom targets', async () => {
+      await expect(
+        findTool('reorder_article').handler({
+          article_id: 1,
+          target: 'top',
+          reference_article_id: 2,
+        }),
+      ).rejects.toThrow(/must be omitted/);
+    });
+
+    it('rejects a reference equal to the moved article', async () => {
+      await expect(
+        findTool('reorder_article').handler({
+          article_id: 1,
+          target: 'before',
+          reference_article_id: 1,
+        }),
+      ).rejects.toThrow(/must differ/);
+    });
+
+    it('reports when the reference is in a different section', async () => {
+      seedSection(600, [{ id: 1, position: 0 }], { foreignSections: { 2: 700 } });
+      await expect(
+        findTool('reorder_article').handler({
+          article_id: 1,
+          target: 'after',
+          reference_article_id: 2,
+        }),
+      ).rejects.toThrow(/section #700/);
+    });
+
+    it('validates the target enum via the schema', () => {
+      const tool = findTool('reorder_article');
+      expect(() => tool.inputSchema.parse({ article_id: 1, target: 'sideways' })).toThrow();
+      expect(tool.inputSchema.parse({ article_id: 1, target: 'top' })).toMatchObject({
+        target: 'top',
+        normalize: false,
+        confirm: false,
       });
     });
   });
