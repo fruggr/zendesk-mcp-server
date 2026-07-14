@@ -6,12 +6,14 @@ export const TOKEN_CACHE_TTL_MS = 5 * 60 * 1000;
 // Read a positive-integer override from the environment, falling back to a safe
 // default. Unchecked Number() coercion is unsafe here: an empty string yields 0
 // and a typo yields NaN, either of which would silently break the guardrail that
-// relies on the value. Missing/empty/non-finite/non-positive values fall back.
+// relies on the value. Missing/empty/non-positive values and anything that is not
+// a positive safe integer (fractions like "1.5", values beyond 2^53) fall back —
+// these constants are all counts/sizes, so a fractional or unsafe value is a typo.
 const positiveIntEnv = (name: string, fallback: number): number => {
   const raw = process.env[name];
   if (raw === undefined || raw.trim() === '') return fallback;
   const parsed = Number(raw);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
 };
 
 // TTL for the per-session Help Center topology cache (zendesk-hc://topology).

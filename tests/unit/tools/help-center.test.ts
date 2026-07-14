@@ -498,6 +498,17 @@ describe('help center tools', () => {
       ).rejects.toThrow(/section #700/);
     });
 
+    it('reports when the reference article does not exist', async () => {
+      seedSection(600, [{ id: 1, position: 0 }], { missing: [2] });
+      await expect(
+        findTool('reorder_article').handler({
+          article_id: 1,
+          target: 'before',
+          reference_article_id: 2,
+        }),
+      ).rejects.toThrow(/#2 was not found/);
+    });
+
     it('validates the target enum via the schema', () => {
       const tool = findTool('reorder_article');
       expect(() => tool.inputSchema.parse({ article_id: 1, target: 'sideways' })).toThrow();
