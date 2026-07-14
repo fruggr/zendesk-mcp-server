@@ -96,12 +96,16 @@ export const computePositionWrites = (
   const moved = desired[movedIndex];
   if (!moved) return writes;
 
-  // bottom: no right neighbour. Anchor above the section maximum (not just the
-  // left neighbour) so the article lands last even if positions are unsorted.
+  // bottom: no right neighbour. Anchor above the maximum of the OTHER articles
+  // (not the whole section — that includes the moved article's own position) so
+  // an article that is already last is a no-op, and the move stays idempotent
+  // instead of bumping the position higher on every call.
   if (movedIndex === desired.length - 1) {
-    const maxPos = desired.reduce((max, a) => Math.max(max, a.position), 0);
-    const target = maxPos + 1;
-    if (moved.position !== target) writes.push({ id: moved.id, position: target });
+    const maxOthers = desired
+      .slice(0, movedIndex)
+      .reduce((max, a) => Math.max(max, a.position), -1);
+    if (moved.position > maxOthers) return writes; // already strictly last
+    writes.push({ id: moved.id, position: maxOthers + 1 });
     return writes;
   }
 
@@ -123,6 +127,13 @@ export const computePositionWrites = (
 // After the writes, re-read the effective order and confirm the article landed at
 // the requested spot. A failure here (writes accepted but order unchanged) means
 // the section is auto-sorted and `position` is being ignored.
+//
+// before/after are checked by SIDE (moved comes before/after the reference), not
+// strict index adjacency: when the reference shares a position with another
+// article (the tie case this tool exists to fix), Zendesk breaks the display tie
+// arbitrarily, so an adjacent placement can legitimately show a co-tied sibling
+// between the two. Side ordering is the property we actually control and is
+// enough to tell a manual section (writes honoured) from an auto-sorted one.
 export const isPlacedAsRequested = (
   effectiveAfter: readonly OrderedArticle[],
   movedId: number,
@@ -135,5 +146,5 @@ export const isPlacedAsRequested = (
   if (target === 'bottom') return movedIndex === effectiveAfter.length - 1;
   const refIndex = effectiveAfter.findIndex((a) => a.id === referenceId);
   if (refIndex === -1) return false;
-  return target === 'before' ? movedIndex === refIndex - 1 : movedIndex === refIndex + 1;
+  return target === 'before' ? movedIndex < refIndex : movedIndex > refIndex;
 };

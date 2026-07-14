@@ -107,6 +107,22 @@ describe('computePositionWrites (gap-aware, default)', () => {
     expect(computePositionWrites(desired, 2, false)).toEqual([{ id: 2, position: 11 }]);
   });
 
+  it('bottom is a no-op when the article is already last (idempotent)', () => {
+    const section = ord([
+      [1, 0],
+      [2, 1],
+      [3, 5],
+    ]);
+    const desired = arrangeDesiredOrder(section, 3, 'bottom');
+    expect(computePositionWrites(desired, 3, false)).toEqual([]);
+  });
+
+  it('bottom on a single-article section is a no-op', () => {
+    const section = ord([[1, 4]]);
+    const desired = arrangeDesiredOrder(section, 1, 'bottom');
+    expect(computePositionWrites(desired, 1, false)).toEqual([]);
+  });
+
   it('top with slack below is a single write (position 0)', () => {
     const section = ord([
       [1, 5],
@@ -224,10 +240,12 @@ describe('isPlacedAsRequested', () => {
     expect(isPlacedAsRequested(after, 2, 'bottom')).toBe(false);
   });
 
-  it('confirms before/after placements', () => {
-    expect(isPlacedAsRequested(after, 1, 'after', 3)).toBe(true);
-    expect(isPlacedAsRequested(after, 1, 'before', 2)).toBe(true);
-    expect(isPlacedAsRequested(after, 1, 'before', 4)).toBe(false);
+  it('confirms before/after placements by side, not strict adjacency', () => {
+    // after = [3, 1, 2, 4]; article 1 is at index 1.
+    expect(isPlacedAsRequested(after, 1, 'after', 3)).toBe(true); // 1 is after 3
+    expect(isPlacedAsRequested(after, 1, 'before', 2)).toBe(true); // 1 is before 2
+    expect(isPlacedAsRequested(after, 1, 'before', 4)).toBe(true); // 1 is before 4 (not adjacent, still before)
+    expect(isPlacedAsRequested(after, 1, 'after', 2)).toBe(false); // 1 is NOT after 2
   });
 
   it('is false when the article or reference is missing', () => {
