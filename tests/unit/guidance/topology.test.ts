@@ -40,6 +40,36 @@ describe('fetchTopology', () => {
     const data = await fetchTopology(SUBDOMAIN, TOKEN);
     expect(data.categoriesHasMore).toBe(true);
   });
+
+  it('degrades gracefully when permission_groups is forbidden (403), keeping the rest', async () => {
+    mswServer.use(errorHandlers.permissionGroupsForbidden);
+    const data = await fetchTopology(SUBDOMAIN, TOKEN);
+
+    expect(data.permissionGroups).toEqual([]);
+    expect(data.permissionGroupsDenied).toBe(true);
+    // Everything the content-editor token *can* read still comes back.
+    expect(data.userSegmentsDenied).toBe(false);
+    expect(data.userSegments.map((s) => s.id)).toEqual([15001]);
+    expect(data.categories.map((c) => c.id)).toEqual([800]);
+    expect(data.sections.map((s) => s.id)).toEqual([600]);
+    expect(data.currentUser.id).toBe(9999);
+  });
+
+  it('degrades gracefully when user_segments is forbidden (403), keeping the rest', async () => {
+    mswServer.use(errorHandlers.userSegmentsForbidden);
+    const data = await fetchTopology(SUBDOMAIN, TOKEN);
+
+    expect(data.userSegments).toEqual([]);
+    expect(data.userSegmentsDenied).toBe(true);
+    expect(data.permissionGroupsDenied).toBe(false);
+    expect(data.permissionGroups.map((g) => g.id)).toEqual([12001]);
+    expect(data.currentUser.id).toBe(9999);
+  });
+
+  it('still hard-fails on a 401 from an admin endpoint (not swallowed as degradation)', async () => {
+    mswServer.use(errorHandlers.permissionGroupsUnauthorized);
+    await expect(fetchTopology(SUBDOMAIN, TOKEN)).rejects.toBeInstanceOf(ZendeskApiError);
+  });
 });
 
 const baseData = (): TopologyData => ({
@@ -70,6 +100,8 @@ const baseData = (): TopologyData => ({
   ],
   sectionsHasMore: false,
   categoriesHasMore: false,
+  userSegmentsDenied: false,
+  permissionGroupsDenied: false,
   userSegments: [
     {
       id: 15001,
@@ -125,6 +157,32 @@ describe('formatTopology', () => {
     expect(text).toContain('list_categories');
     // Tree is omitted (categories list is itself partial), so the section is not shown.
     expect(text).not.toContain('FAQ');
+  });
+
+  it('marks permission groups as unavailable (not empty) when denied by permissions', () => {
+    const text = formatTopology({
+      ...baseData(),
+      permissionGroups: [],
+      permissionGroupsDenied: true,
+    });
+    // The section must read as "you cannot see this" rather than "there are none".
+    expect(text).toMatch(/Guide.?admin/i);
+    expect(text).toContain('get_article');
+    // The tree and role the token *can* read are still rendered.
+    expect(text).toContain('General');
+    expect(text).toContain('admin');
+    // "_(none)_" would falsely tell the LLM there are zero permission groups.
+    expect(text).not.toContain('## Permission groups\n_(none)_');
+  });
+
+  it('marks user segments as unavailable (not empty) when denied by permissions', () => {
+    const text = formatTopology({
+      ...baseData(),
+      userSegments: [],
+      userSegmentsDenied: true,
+    });
+    expect(text).toMatch(/Guide.?admin/i);
+    expect(text).not.toContain('## Visibility (user segments)\n_(none)_');
   });
 });
 

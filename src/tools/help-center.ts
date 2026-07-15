@@ -5,6 +5,7 @@ import {
   helpCenterPost,
   helpCenterPut,
   helpCenterUpload,
+  ZendeskApiError,
   zendeskGet,
   zendeskPost,
 } from '../client/zendesk-api';
@@ -586,10 +587,24 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       },
       handler: async () => {
         const token = await getToken();
-        const response = await zendeskGet<{
-          permission_groups: ZendeskPermissionGroup[];
-          count: number;
-        }>(subdomain, token, '/guide/permission_groups');
+        let response: { permission_groups: ZendeskPermissionGroup[]; count: number };
+        try {
+          response = await zendeskGet<{
+            permission_groups: ZendeskPermissionGroup[];
+            count: number;
+          }>(subdomain, token, '/guide/permission_groups');
+        } catch (error) {
+          // GET /guide/permission_groups requires Guide-admin / Help Center manager
+          // rights, a tier above per-article editing. Rewrite the generic 403 into
+          // guidance the LLM can act on, pointing at the content-editor fallback.
+          if (error instanceof ZendeskApiError && error.status === 403) {
+            throw new Error(
+              'list_permission_groups reads Guide permission groups (GET /guide/permission_groups), which Zendesk restricts to Guide admins / Help Center managers. The current token lacks that role (HTTP 403). To obtain a permission_group_id without it, read an existing article with get_article and reuse its permission_group_id.',
+              { cause: error },
+            );
+          }
+          throw error;
+        }
         return {
           content: [
             {
@@ -620,13 +635,15 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         permission_group_id: z
           .number()
           .int()
-          .describe('Permission group ID (use list_permission_groups to find it)'),
+          .describe(
+            'Permission group ID (use list_permission_groups to find it; if that is forbidden because the token is not a Guide admin, reuse the permission_group_id of an existing article from get_article).',
+          ),
         user_segment_id: z
           .number()
           .int()
           .optional()
           .describe(
-            'User segment ID for visibility (use list_user_segments to find it). Defaults to everyone.',
+            'User segment ID for visibility (use list_user_segments to find it; if that is forbidden because the token is not a Guide admin, reuse the user_segment_id of an existing article from get_article). Defaults to everyone.',
           ),
         author_id: z
           .number()
@@ -722,7 +739,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           .int()
           .optional()
           .describe(
-            'User segment that controls who can see the article (id from list_user_segments).',
+            'User segment that controls who can see the article (id from list_user_segments; if that is forbidden because the token is not a Guide admin, reuse the user_segment_id of an existing article from get_article).',
           ),
         author_id: z
           .number()
@@ -734,7 +751,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           .int()
           .optional()
           .describe(
-            'Guide permission group controlling who can edit (id from list_permission_groups).',
+            'Guide permission group controlling who can edit (id from list_permission_groups; if that is forbidden because the token is not a Guide admin, reuse the permission_group_id of an existing article from get_article).',
           ),
         section_id: z
           .number()
@@ -969,10 +986,24 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       },
       handler: async () => {
         const token = await getToken();
-        const response = await helpCenterGet<{
-          user_segments: ZendeskUserSegment[];
-          count: number;
-        }>(subdomain, token, '/user_segments');
+        let response: { user_segments: ZendeskUserSegment[]; count: number };
+        try {
+          response = await helpCenterGet<{
+            user_segments: ZendeskUserSegment[];
+            count: number;
+          }>(subdomain, token, '/user_segments');
+        } catch (error) {
+          // GET /help_center/user_segments requires Guide-admin / Help Center manager
+          // rights. Rewrite the generic 403 into actionable guidance with the
+          // content-editor fallback for setting article visibility.
+          if (error instanceof ZendeskApiError && error.status === 403) {
+            throw new Error(
+              "list_user_segments reads Help Center user segments (GET /help_center/user_segments), which Zendesk restricts to Guide admins / Help Center managers. The current token lacks that role (HTTP 403). To set an article's visibility without it, reuse the user_segment_id of an existing article (get_article), or omit user_segment_id when creating/updating to default to everyone.",
+              { cause: error },
+            );
+          }
+          throw error;
+        }
         return {
           content: [
             { type: 'text', text: formatList(response.user_segments ?? [], formatUserSegment) },

@@ -291,6 +291,8 @@ export interface ZendeskArticle {
   author_id: number;
   section_id: number;
   permission_group_id: number;
+  /** Visibility segment; null/absent means the article is visible to everyone. */
+  user_segment_id?: number | null;
   draft: boolean;
   promoted: boolean;
   position: number;

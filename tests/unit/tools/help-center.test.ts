@@ -215,6 +215,23 @@ describe('help center tools', () => {
       expect(result.content[0]?.text).toContain('Editors');
       expect(result.content[0]?.text).toContain('12001');
     });
+
+    it('explains the Guide-admin requirement (and the fallback) on a 403', async () => {
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/guide/permission_groups', () =>
+          HttpResponse.json({ error: 'Forbidden' }, { status: 403 }),
+        ),
+      );
+      const tool = findTool('list_permission_groups');
+      const error = await tool.handler({}).then(
+        () => {
+          throw new Error('expected list_permission_groups to reject on 403');
+        },
+        (err: unknown) => err as Error,
+      );
+      expect(error.message).toMatch(/Guide.?admin|admin/i);
+      expect(error.message).toMatch(/get_article/);
+    });
   });
 
   describe('create_article', () => {
@@ -356,6 +373,23 @@ describe('help center tools', () => {
       const result = await tool.handler({});
       expect(result.content[0]?.text).toContain('Signed-in users');
       expect(result.content[0]?.text).toContain('15001');
+    });
+
+    it('explains the Guide-admin requirement (and the fallback) on a 403', async () => {
+      mswServer.use(
+        http.get(`${HC_BASE}/user_segments`, () =>
+          HttpResponse.json({ error: 'Forbidden' }, { status: 403 }),
+        ),
+      );
+      const tool = findTool('list_user_segments');
+      const error = await tool.handler({}).then(
+        () => {
+          throw new Error('expected list_user_segments to reject on 403');
+        },
+        (err: unknown) => err as Error,
+      );
+      expect(error.message).toMatch(/Guide.?admin|admin/i);
+      expect(error.message).toMatch(/get_article/);
     });
   });
 

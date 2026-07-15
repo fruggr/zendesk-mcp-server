@@ -39,6 +39,19 @@ reused across restarts, so this shouldn't happen. If it does, check that the fil
 is writable (`ZENDESK_TOKEN_FILE` to relocate it) and look for
 `token_persist_failed` in the logs.
 
+## `Permission denied` on `list_permission_groups`, `list_user_segments`, or the topology resource
+
+Enumerating Guide permission groups and Help Center user segments requires
+**Guide-admin / Help Center manager** rights — a tier above the per-article edit
+rights an agent may already have. A content-editor token gets HTTP `403` on those
+two endpoints. This does **not** block content editing: the `zendesk-hc://topology`
+resource degrades gracefully (the two admin-only sections are marked *unavailable*
+rather than failing the whole resource), and the two tools return guidance instead
+of a bare error. When you need a `permission_group_id` or `user_segment_id` without
+those rights, read an existing article with `get_article` and reuse the IDs it
+reports; omitting `user_segment_id` on create/update keeps the default visibility
+(everyone).
+
 Where each client writes the server's stderr:
 
 | Client | Log location |
