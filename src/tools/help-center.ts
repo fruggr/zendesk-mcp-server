@@ -10,6 +10,7 @@ import {
   zendeskPost,
 } from '../client/zendesk-api';
 import {
+  CONTENT_TAGS_MAX_PAGE_SIZE,
   DEFAULT_PAGE_SIZE,
   LARGE_ARTICLE_BODY_CHARS,
   LARGE_ARTICLE_SECTION_COUNT,
@@ -859,9 +860,11 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           .number()
           .int()
           .min(1)
-          .max(MAX_PAGE_SIZE)
-          .default(DEFAULT_PAGE_SIZE)
-          .describe('Content tags per page (1-100, default 100).'),
+          .max(CONTENT_TAGS_MAX_PAGE_SIZE)
+          .default(CONTENT_TAGS_MAX_PAGE_SIZE)
+          .describe(
+            'Content tags per page (1-30, default 30). The Guide content-tags endpoint caps each page at 30; follow the returned cursor to enumerate the full list.',
+          ),
         cursor: z
           .string()
           .optional()

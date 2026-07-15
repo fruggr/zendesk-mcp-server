@@ -244,7 +244,7 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
       it('lists content tags with defaults applied and filters by name prefix (#132)', async () => {
         connected = await harness.connect(makeConfig({ mode: 'all' }));
 
-        // No arguments: the schema defaults (sort=name, page_size=100) are
+        // No arguments: the schema defaults (sort=name, page_size=30) are
         // applied by the SDK, so the full referential comes back enumerable.
         const all = await connected.client.callTool({
           name: 'list_content_tags',
