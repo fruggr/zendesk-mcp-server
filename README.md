@@ -165,9 +165,12 @@ disabled together with `--no-topology`):
   read on demand, it returns Markdown describing the active locales (and the
   default), the category → section tree with IDs, the visibility user segments,
   the permission groups, and the calling user's role. It is fetched **with the
-  caller's own token**, so it respects that user's read permissions. On a very
-  large Help Center the section tree is summarized (per-category, with a pointer
-  to `list_sections`) to stay concise.
+  caller's own token**, so it respects that user's read permissions. Listing the
+  permission groups and user segments needs Guide-admin / Help Center manager
+  rights; with a content-editor token those two sections are marked *unavailable*
+  (not empty) and the rest still renders — reuse those IDs from an existing
+  article (`get_article`) instead. On a very large Help Center the section tree is
+  summarized (per-category, with a pointer to `list_sections`) to stay concise.
 
 Clients that don't consume `instructions` or `resources` simply ignore them —
 the feature degrades silently. Use `--no-topology` to turn both off server-wide.

@@ -187,6 +187,8 @@ export const MOCK_ARTICLE = {
   source_locale: 'en-us',
   author_id: 9999,
   section_id: 600,
+  permission_group_id: 12001,
+  user_segment_id: 15001,
   draft: false,
   promoted: false,
   position: 0,
@@ -430,6 +432,20 @@ export const errorHandlers = {
   ),
   localesUnauthorized: http.get(
     `${HC_BASE}/locales`,
+    () => new HttpResponse('unauthorized', { status: 401 }),
+  ),
+  // Guide admin / Help Center manager gate: a content-editor token gets 403 on
+  // the permission-groups and user-segments endpoints (issue #161).
+  permissionGroupsForbidden: http.get(`${BASE}/guide/permission_groups`, () =>
+    HttpResponse.json({ error: 'Forbidden' }, { status: 403 }),
+  ),
+  userSegmentsForbidden: http.get(`${HC_BASE}/user_segments`, () =>
+    HttpResponse.json({ error: 'Forbidden' }, { status: 403 }),
+  ),
+  // A 401 (not 403) on the same admin endpoint must still hard-fail topology, so
+  // the stale-token invalidation path keeps firing (guards against swallowing it).
+  permissionGroupsUnauthorized: http.get(
+    `${BASE}/guide/permission_groups`,
     () => new HttpResponse('unauthorized', { status: 401 }),
   ),
 };
@@ -734,6 +750,24 @@ export const handlers = [
   // pagination the way the real endpoint does so the tool's params are exercised.
   http.get(`${BASE}/guide/content_tags`, ({ request }) => {
     const url = new URL(request.url);
+    // Faithful to the real endpoint (#162): /guide/content_tags caps page[size]
+    // at 30 and 400s on anything larger, unlike the other Help Center list
+    // endpoints that allow up to 100. Reproduce that so the tool's clamp is tested.
+    const size = url.searchParams.get('page[size]');
+    if (size !== null && Number(size) > 30) {
+      return HttpResponse.json(
+        {
+          errors: [
+            {
+              title: `Value \`${size}\` for /page/size/0 is of type \`string\`; expected \`integer less than or equal to 30\``,
+              code: 'TypeError',
+              meta: null,
+            },
+          ],
+        },
+        { status: 400 },
+      );
+    }
     // Prefix match kept case-sensitive: the real endpoint's casing is
     // unverified, so the mock does not encode a case-insensitive assumption.
     const prefix = url.searchParams.get('filter[name_prefix]');

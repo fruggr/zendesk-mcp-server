@@ -1,3 +1,15 @@
+## [2.12.2](https://github.com/fruggr/zendesk-mcp-server/compare/v2.12.1...v2.12.2) (2026-07-15)
+
+### Bug Fixes
+
+* **help-center:** cap list_content_tags page size at the endpoint limit of 30 ([#164](https://github.com/fruggr/zendesk-mcp-server/issues/164)) ([c999dfd](https://github.com/fruggr/zendesk-mcp-server/commit/c999dfd651b22feefe0045a6bdb51fdd49937c81))
+
+## [2.12.1](https://github.com/fruggr/zendesk-mcp-server/compare/v2.12.0...v2.12.1) (2026-07-15)
+
+### Bug Fixes
+
+* **help-center:** degrade topology gracefully when Guide-admin endpoints 403 ([#163](https://github.com/fruggr/zendesk-mcp-server/issues/163)) ([eb172f2](https://github.com/fruggr/zendesk-mcp-server/commit/eb172f273223511a8bb330f423da08d246929184))
+
 ## [2.12.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.11.0...v2.12.0) (2026-07-13)
 
 ### Features

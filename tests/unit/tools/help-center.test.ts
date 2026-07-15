@@ -215,6 +215,23 @@ describe('help center tools', () => {
       expect(result.content[0]?.text).toContain('Editors');
       expect(result.content[0]?.text).toContain('12001');
     });
+
+    it('explains the Guide-admin requirement (and the fallback) on a 403', async () => {
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/guide/permission_groups', () =>
+          HttpResponse.json({ error: 'Forbidden' }, { status: 403 }),
+        ),
+      );
+      const tool = findTool('list_permission_groups');
+      const error = await tool.handler({}).then(
+        () => {
+          throw new Error('expected list_permission_groups to reject on 403');
+        },
+        (err: unknown) => err as Error,
+      );
+      expect(error.message).toMatch(/Guide.?admin|admin/i);
+      expect(error.message).toMatch(/get_article/);
+    });
   });
 
   describe('create_article', () => {
@@ -573,7 +590,7 @@ describe('help center tools', () => {
   describe('list_content_tags', () => {
     it('lists content tags sorted by name ascending, spanning past the old cap', async () => {
       const tool = findTool('list_content_tags');
-      const result = await tool.handler({ sort_by: 'name', sort_order: 'asc', page_size: 100 });
+      const result = await tool.handler({ sort_by: 'name', sort_order: 'asc', page_size: 30 });
       const text = result.content[0]?.text ?? '';
       expect(text).toContain('scanner');
       expect(text).toContain('ct_001');
@@ -585,7 +602,7 @@ describe('help center tools', () => {
 
     it('reverses order for descending sort', async () => {
       const tool = findTool('list_content_tags');
-      const result = await tool.handler({ sort_by: 'name', sort_order: 'desc', page_size: 100 });
+      const result = await tool.handler({ sort_by: 'name', sort_order: 'desc', page_size: 30 });
       const text = result.content[0]?.text ?? '';
       expect(text.indexOf('mistral')).toBeLessThan(text.indexOf('ai'));
     });
@@ -596,7 +613,7 @@ describe('help center tools', () => {
         name_prefix: 'mi',
         sort_by: 'name',
         sort_order: 'asc',
-        page_size: 100,
+        page_size: 30,
       });
       const text = result.content[0]?.text ?? '';
       expect(text).toContain('mistral');
@@ -610,6 +627,16 @@ describe('help center tools', () => {
       const text = result.content[0]?.text ?? '';
       expect(text).toContain('More available');
       expect(text).toContain('next-page-cursor');
+    });
+
+    it('caps page_size at the content-tags endpoint limit of 30 (#162)', () => {
+      const tool = findTool('list_content_tags');
+      // The Guide content-tags endpoint 400s on page[size] > 30, so the schema
+      // rejects out-of-range values instead of letting them hit the API.
+      expect(() => tool.inputSchema.parse({ page_size: 31 })).toThrow();
+      expect(tool.inputSchema.parse({ page_size: 30 })).toMatchObject({ page_size: 30 });
+      // Default is the endpoint's max, not the shared 100 that used to leak in.
+      expect(tool.inputSchema.parse({}).page_size).toBe(30);
     });
   });
 
@@ -636,6 +663,23 @@ describe('help center tools', () => {
       const result = await tool.handler({});
       expect(result.content[0]?.text).toContain('Signed-in users');
       expect(result.content[0]?.text).toContain('15001');
+    });
+
+    it('explains the Guide-admin requirement (and the fallback) on a 403', async () => {
+      mswServer.use(
+        http.get(`${HC_BASE}/user_segments`, () =>
+          HttpResponse.json({ error: 'Forbidden' }, { status: 403 }),
+        ),
+      );
+      const tool = findTool('list_user_segments');
+      const error = await tool.handler({}).then(
+        () => {
+          throw new Error('expected list_user_segments to reject on 403');
+        },
+        (err: unknown) => err as Error,
+      );
+      expect(error.message).toMatch(/Guide.?admin|admin/i);
+      expect(error.message).toMatch(/get_article/);
     });
   });
 

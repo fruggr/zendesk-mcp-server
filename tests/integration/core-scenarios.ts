@@ -77,6 +77,22 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         expect(text).toContain('(600)'); // section FAQ
         expect(text).toContain('admin'); // current user role
       });
+
+      it('still renders the topology for a content-editor token that is forbidden the admin-only parts (#161)', async () => {
+        mswServer.use(errorHandlers.permissionGroupsForbidden);
+        connected = await harness.connect(makeConfig());
+
+        const read = await connected.client.readResource({ uri: 'zendesk-hc://topology' });
+        const text = (read.contents ?? [])
+          .map((c) => (typeof c.text === 'string' ? c.text : ''))
+          .join('\n');
+        // The readable structure still comes back instead of a -32603 failure.
+        expect(text).toContain('(800)');
+        expect(text).toContain('(600)');
+        expect(text).toContain('admin');
+        // The admin-only section is flagged unavailable, not silently empty.
+        expect(text).toMatch(/Guide.?admin/i);
+      });
     });
 
     describe('tools/list', () => {
@@ -228,7 +244,7 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
       it('lists content tags with defaults applied and filters by name prefix (#132)', async () => {
         connected = await harness.connect(makeConfig({ mode: 'all' }));
 
-        // No arguments: the schema defaults (sort=name, page_size=100) are
+        // No arguments: the schema defaults (sort=name, page_size=30) are
         // applied by the SDK, so the full referential comes back enumerable.
         const all = await connected.client.callTool({
           name: 'list_content_tags',

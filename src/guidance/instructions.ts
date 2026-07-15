@@ -25,10 +25,13 @@ export const buildInstructions = (config: Config): string | undefined => {
   return [
     `This MCP server is connected to the Zendesk Help Center of "${config.subdomain}".`,
     '',
-    `Before creating or editing Help Center content, read the resource ${TOPOLOGY_RESOURCE_URI}.`,
-    'It describes the active locales (and the default one), the category → section tree with IDs,',
+    `When creating or editing Help Center content, the resource ${TOPOLOGY_RESOURCE_URI} is useful context:`,
+    'it lists the active locales (and the default one), the category → section tree with IDs,',
     'the visibility user segments, the permission groups, and your current role.',
-    'Prefer the IDs from that resource (section_id, permission_group_id, user_segment_id, locale)',
-    'over guessing from names.',
+    'Prefer its IDs (section_id, permission_group_id, user_segment_id, locale) over guessing from names.',
+    '',
+    'It degrades gracefully: without Guide-admin / Help Center manager rights the permission-groups and',
+    'user-segments sections are marked unavailable (not empty). In that case reuse a permission_group_id',
+    'or user_segment_id from an existing article (get_article) instead.',
   ].join('\n');
 };

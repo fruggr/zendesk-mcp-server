@@ -1,6 +1,12 @@
 export const CHARACTER_LIMIT = 25_000;
 export const DEFAULT_PAGE_SIZE = 100;
 export const MAX_PAGE_SIZE = 100;
+
+// The Guide content-tags endpoint (/guide/content_tags) caps page[size] at 30
+// and 400s on anything larger, unlike the other Help Center list endpoints that
+// allow up to 100. Reusing the shared MAX_PAGE_SIZE (100) here always failed
+// (issue #162), so list_content_tags gets its own limit.
+export const CONTENT_TAGS_MAX_PAGE_SIZE = 30;
 export const TOKEN_CACHE_TTL_MS = 5 * 60 * 1000;
 
 // Read a positive-integer override from the environment, falling back to a safe

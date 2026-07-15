@@ -340,6 +340,21 @@ describe('formatArticleSummary', () => {
     expect(result).toContain('guide');
   });
 
+  it('surfaces the permission group and user segment so their IDs can be reused', () => {
+    const result = formatArticleSummary(MOCK_ARTICLE);
+    expect(result).toContain('12001');
+    expect(result).toContain('15001');
+  });
+
+  it('marks visibility as everyone when the article has no user segment', () => {
+    const result = formatArticleSummary({
+      ...MOCK_ARTICLE,
+      user_segment_id: null,
+    });
+    expect(result).toContain('12001');
+    expect(result).toMatch(/everyone/i);
+  });
+
   it('omits labels when empty', () => {
     const result = formatArticleSummary({ ...MOCK_ARTICLE, label_names: [] });
     expect(result).not.toContain('Labels');

@@ -29,9 +29,35 @@ export interface TopologyData {
   /** True when the tenant has more categories than a single page (tree omitted). */
   categoriesHasMore: boolean;
   userSegments: ZendeskUserSegment[];
+  /** True when listing user segments was forbidden (403), not merely empty. */
+  userSegmentsDenied: boolean;
   permissionGroups: ZendeskPermissionGroup[];
+  /** True when listing permission groups was forbidden (403), not merely empty. */
+  permissionGroupsDenied: boolean;
   currentUser: ZendeskUser;
 }
+
+/**
+ * Resolve an admin-gated fetch to a sentinel on HTTP 403 instead of rejecting.
+ * Enumerating permission groups and user segments requires Guide-admin / Help
+ * Center manager rights — a tier above per-article editing — so a content-editor
+ * token gets 403 there while the rest of the topology is readable (#161). Any
+ * other failure rethrows; crucially a 401 still propagates so the stale token
+ * gets invalidated (see `onUnauthorized` in `createTopologyProvider`).
+ */
+const tolerate403 = async <T>(
+  promise: Promise<T>,
+  fallback: T,
+): Promise<{ value: T; denied: boolean }> => {
+  try {
+    return { value: await promise, denied: false };
+  } catch (error) {
+    if (error instanceof ZendeskApiError && error.status === 403) {
+      return { value: fallback, denied: true };
+    }
+    throw error;
+  }
+};
 
 /**
  * Fetch the structural topology with the CALLER'S token, so the result respects
@@ -41,7 +67,7 @@ export interface TopologyData {
  */
 export const fetchTopology = async (subdomain: string, token: string): Promise<TopologyData> => {
   const pageParams = { 'page[size]': String(MAX_PAGE_SIZE) };
-  const [locales, categoriesRes, sectionsRes, segmentsRes, permsRes, meRes] = await Promise.all([
+  const [locales, categoriesRes, sectionsRes, segments, perms, meRes] = await Promise.all([
     helpCenterGet<ZendeskLocalesResponse>(subdomain, token, '/locales'),
     helpCenterGet<ZendeskListResponse<ZendeskCategory>>(
       subdomain,
@@ -50,11 +76,18 @@ export const fetchTopology = async (subdomain: string, token: string): Promise<T
       pageParams,
     ),
     helpCenterGet<ZendeskListResponse<ZendeskSection>>(subdomain, token, '/sections', pageParams),
-    helpCenterGet<{ user_segments: ZendeskUserSegment[] }>(subdomain, token, '/user_segments'),
-    zendeskGet<{ permission_groups: ZendeskPermissionGroup[] }>(
-      subdomain,
-      token,
-      '/guide/permission_groups',
+    // Admin-gated: degrade to empty on 403 rather than failing the whole resource.
+    tolerate403(
+      helpCenterGet<{ user_segments: ZendeskUserSegment[] }>(subdomain, token, '/user_segments'),
+      { user_segments: [] },
+    ),
+    tolerate403(
+      zendeskGet<{ permission_groups: ZendeskPermissionGroup[] }>(
+        subdomain,
+        token,
+        '/guide/permission_groups',
+      ),
+      { permission_groups: [] },
     ),
     zendeskGet<{ user: ZendeskUser }>(subdomain, token, '/users/me'),
   ]);
@@ -68,8 +101,10 @@ export const fetchTopology = async (subdomain: string, token: string): Promise<T
     sections,
     sectionsHasMore: extractPaginationMeta(sectionsRes, sections.length).has_more,
     categoriesHasMore: extractPaginationMeta(categoriesRes, categories.length).has_more,
-    userSegments: segmentsRes.user_segments ?? [],
-    permissionGroups: permsRes.permission_groups ?? [],
+    userSegments: segments.value.user_segments ?? [],
+    userSegmentsDenied: segments.denied,
+    permissionGroups: perms.value.permission_groups ?? [],
+    permissionGroupsDenied: perms.denied,
     currentUser: meRes.user,
   };
 };
@@ -111,6 +146,16 @@ const renderTree = (data: TopologyData): string[] => {
   return lines.length ? lines : ['_(no categories)_'];
 };
 
+/**
+ * Render an admin-gated section as one of three states so the LLM never mistakes
+ * "you can't see this" for "there are none": the formatted list, `_(none)_` when
+ * genuinely empty, or `deniedNote` when the token was forbidden (403).
+ */
+const renderAdminSection = (items: string[], denied: boolean, deniedNote: string): string[] => {
+  if (denied) return [deniedNote];
+  return items.length ? items : ['_(none)_'];
+};
+
 /** Render the topology as a compact Markdown document for the LLM context. */
 export const formatTopology = (data: TopologyData): string => {
   const text = [
@@ -126,12 +171,18 @@ export const formatTopology = (data: TopologyData): string => {
     ...renderTree(data),
     '',
     '## Visibility (user segments)',
-    ...(data.userSegments.length ? data.userSegments.map(formatUserSegment) : ['_(none)_']),
+    ...renderAdminSection(
+      data.userSegments.map(formatUserSegment),
+      data.userSegmentsDenied,
+      '_Unavailable: listing user segments requires Guide-admin / Help Center manager rights, which this token lacks (HTTP 403). To set visibility, reuse the user_segment_id of an existing article (get_article), or omit it to default to everyone._',
+    ),
     '',
     '## Permission groups',
-    ...(data.permissionGroups.length
-      ? data.permissionGroups.map(formatPermissionGroup)
-      : ['_(none)_']),
+    ...renderAdminSection(
+      data.permissionGroups.map(formatPermissionGroup),
+      data.permissionGroupsDenied,
+      '_Unavailable: listing permission groups requires Guide-admin / Help Center manager rights, which this token lacks (HTTP 403). To create or edit an article, reuse the permission_group_id of an existing article (get_article)._',
+    ),
   ].join('\n');
 
   return truncateIfNeeded(text);
