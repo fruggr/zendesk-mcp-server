@@ -310,7 +310,7 @@ describe('help center tools', () => {
   describe('list_content_tags', () => {
     it('lists content tags sorted by name ascending, spanning past the old cap', async () => {
       const tool = findTool('list_content_tags');
-      const result = await tool.handler({ sort_by: 'name', sort_order: 'asc', page_size: 100 });
+      const result = await tool.handler({ sort_by: 'name', sort_order: 'asc', page_size: 30 });
       const text = result.content[0]?.text ?? '';
       expect(text).toContain('scanner');
       expect(text).toContain('ct_001');
@@ -322,7 +322,7 @@ describe('help center tools', () => {
 
     it('reverses order for descending sort', async () => {
       const tool = findTool('list_content_tags');
-      const result = await tool.handler({ sort_by: 'name', sort_order: 'desc', page_size: 100 });
+      const result = await tool.handler({ sort_by: 'name', sort_order: 'desc', page_size: 30 });
       const text = result.content[0]?.text ?? '';
       expect(text.indexOf('mistral')).toBeLessThan(text.indexOf('ai'));
     });
@@ -333,7 +333,7 @@ describe('help center tools', () => {
         name_prefix: 'mi',
         sort_by: 'name',
         sort_order: 'asc',
-        page_size: 100,
+        page_size: 30,
       });
       const text = result.content[0]?.text ?? '';
       expect(text).toContain('mistral');
@@ -347,6 +347,16 @@ describe('help center tools', () => {
       const text = result.content[0]?.text ?? '';
       expect(text).toContain('More available');
       expect(text).toContain('next-page-cursor');
+    });
+
+    it('caps page_size at the content-tags endpoint limit of 30 (#162)', () => {
+      const tool = findTool('list_content_tags');
+      // The Guide content-tags endpoint 400s on page[size] > 30, so the schema
+      // rejects out-of-range values instead of letting them hit the API.
+      expect(() => tool.inputSchema.parse({ page_size: 31 })).toThrow();
+      expect(tool.inputSchema.parse({ page_size: 30 })).toMatchObject({ page_size: 30 });
+      // Default is the endpoint's max, not the shared 100 that used to leak in.
+      expect(tool.inputSchema.parse({}).page_size).toBe(30);
     });
   });
 

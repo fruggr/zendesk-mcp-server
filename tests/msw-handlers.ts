@@ -743,6 +743,24 @@ export const handlers = [
   // pagination the way the real endpoint does so the tool's params are exercised.
   http.get(`${BASE}/guide/content_tags`, ({ request }) => {
     const url = new URL(request.url);
+    // Faithful to the real endpoint (#162): /guide/content_tags caps page[size]
+    // at 30 and 400s on anything larger, unlike the other Help Center list
+    // endpoints that allow up to 100. Reproduce that so the tool's clamp is tested.
+    const size = url.searchParams.get('page[size]');
+    if (size !== null && Number(size) > 30) {
+      return HttpResponse.json(
+        {
+          errors: [
+            {
+              title: `Value \`${size}\` for /page/size/0 is of type \`string\`; expected \`integer less than or equal to 30\``,
+              code: 'TypeError',
+              meta: null,
+            },
+          ],
+        },
+        { status: 400 },
+      );
+    }
     // Prefix match kept case-sensitive: the real endpoint's casing is
     // unverified, so the mock does not encode a case-insensitive assumption.
     const prefix = url.searchParams.get('filter[name_prefix]');
