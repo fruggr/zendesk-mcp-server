@@ -187,6 +187,8 @@ export const MOCK_ARTICLE = {
   source_locale: 'en-us',
   author_id: 9999,
   section_id: 600,
+  permission_group_id: 12001,
+  user_segment_id: 15001,
   draft: false,
   promoted: false,
   position: 0,
@@ -430,6 +432,20 @@ export const errorHandlers = {
   ),
   localesUnauthorized: http.get(
     `${HC_BASE}/locales`,
+    () => new HttpResponse('unauthorized', { status: 401 }),
+  ),
+  // Guide admin / Help Center manager gate: a content-editor token gets 403 on
+  // the permission-groups and user-segments endpoints (issue #161).
+  permissionGroupsForbidden: http.get(`${BASE}/guide/permission_groups`, () =>
+    HttpResponse.json({ error: 'Forbidden' }, { status: 403 }),
+  ),
+  userSegmentsForbidden: http.get(`${HC_BASE}/user_segments`, () =>
+    HttpResponse.json({ error: 'Forbidden' }, { status: 403 }),
+  ),
+  // A 401 (not 403) on the same admin endpoint must still hard-fail topology, so
+  // the stale-token invalidation path keeps firing (guards against swallowing it).
+  permissionGroupsUnauthorized: http.get(
+    `${BASE}/guide/permission_groups`,
     () => new HttpResponse('unauthorized', { status: 401 }),
   ),
 };

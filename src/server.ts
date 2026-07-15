@@ -304,7 +304,7 @@ export const registerToolset = (
           {
             title: 'Zendesk Help Center topology',
             description:
-              'Active locales, category → section tree, visibility segments, permission groups, and your role. Read before creating or editing content.',
+              'Active locales, category → section tree, visibility segments, permission groups, and your role. Useful context when creating or editing content; admin-only sections (permission groups, user segments) are marked unavailable rather than empty when your role lacks Guide-admin rights.',
             mimeType: 'text/markdown',
           },
           async (uri) => ({

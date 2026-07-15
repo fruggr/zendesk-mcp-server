@@ -77,6 +77,22 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         expect(text).toContain('(600)'); // section FAQ
         expect(text).toContain('admin'); // current user role
       });
+
+      it('still renders the topology for a content-editor token that is forbidden the admin-only parts (#161)', async () => {
+        mswServer.use(errorHandlers.permissionGroupsForbidden);
+        connected = await harness.connect(makeConfig());
+
+        const read = await connected.client.readResource({ uri: 'zendesk-hc://topology' });
+        const text = (read.contents ?? [])
+          .map((c) => (typeof c.text === 'string' ? c.text : ''))
+          .join('\n');
+        // The readable structure still comes back instead of a -32603 failure.
+        expect(text).toContain('(800)');
+        expect(text).toContain('(600)');
+        expect(text).toContain('admin');
+        // The admin-only section is flagged unavailable, not silently empty.
+        expect(text).toMatch(/Guide.?admin/i);
+      });
     });
 
     describe('tools/list', () => {

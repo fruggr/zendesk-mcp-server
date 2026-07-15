@@ -371,6 +371,11 @@ export const formatArticleSummary = (article: ZendeskArticle): string =>
     `## ${article.title} (${article.id})`,
     `- **Locale**: ${article.locale} | **Source locale**: ${article.source_locale}`,
     `- **Section**: ${article.section_id} | **Draft**: ${article.draft}`,
+    // Surface the visibility/edit IDs so an editor without Guide-admin rights can
+    // reuse them (list_permission_groups / list_user_segments are admin-gated, #161).
+    `- **Permission group**: ${article.permission_group_id} | **User segment**: ${
+      article.user_segment_id == null ? 'everyone (no segment)' : article.user_segment_id
+    }`,
     typeof article.position === 'number' ? `- **Position**: ${article.position}` : '',
     article.label_names.length > 0 ? `- **Labels**: ${article.label_names.join(', ')}` : '',
     `- **Created**: ${article.created_at} | **Updated**: ${article.updated_at}`,
