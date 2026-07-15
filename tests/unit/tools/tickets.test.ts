@@ -743,10 +743,9 @@ describe('ticket tools', () => {
         ],
       });
       expect(result.content[0]?.text).toContain('with 1 attachment(s)');
-      const comment = (putBody?.['ticket'] as Record<string, unknown>)['comment'] as Record<
-        string,
-        unknown
-      >;
+      const comment = ((putBody as Record<string, unknown>)['ticket'] as Record<string, unknown>)[
+        'comment'
+      ] as Record<string, unknown>;
       expect(comment['uploads']).toEqual(['mock-upload-token']);
       expect(comment['public']).toBe(false);
     });
@@ -783,10 +782,9 @@ describe('ticket tools', () => {
         ],
       });
       expect(result.content[0]?.text).toContain('with 1 attachment(s)');
-      const comment = (putBody?.['ticket'] as Record<string, unknown>)['comment'] as Record<
-        string,
-        unknown
-      >;
+      const comment = ((putBody as Record<string, unknown>)['ticket'] as Record<string, unknown>)[
+        'comment'
+      ] as Record<string, unknown>;
       expect(comment['uploads']).toEqual(['mock-upload-token']);
       expect(comment['public']).toBe(true);
     });
@@ -856,10 +854,9 @@ describe('ticket tools', () => {
       expect(uploadReqs).toHaveLength(2);
       expect(uploadReqs[0]?.token).toBeNull();
       expect(uploadReqs[1]?.token).toBe('mock-upload-token');
-      const comment = (putBody?.['ticket'] as Record<string, unknown>)['comment'] as Record<
-        string,
-        unknown
-      >;
+      const comment = ((putBody as Record<string, unknown>)['ticket'] as Record<string, unknown>)[
+        'comment'
+      ] as Record<string, unknown>;
       expect(comment['uploads']).toEqual(['mock-upload-token']);
     });
   });
