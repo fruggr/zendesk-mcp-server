@@ -585,6 +585,22 @@ describe('help center tools', () => {
       expect(text.toLowerCase()).toContain('yes');
     });
 
+    it('matches the outdated flag case-insensitively against the locale list', async () => {
+      // Zendesk accepts a mixed-case locale in the request URL but reports it
+      // canonically lowercased in the list, so "EN-US" must still resolve to
+      // the outdated:true en-us entry rather than falling back to "unknown".
+      const tool = findTool('compare_translations');
+      const result = await tool.handler({
+        article_id: 5000,
+        source_locale: 'fr',
+        target_locale: 'EN-US',
+      });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('Outdated');
+      expect(text.toLowerCase()).toContain('yes');
+      expect(text).not.toContain('unknown');
+    });
+
     it('reports the target as not outdated when the flag is false', async () => {
       const tool = findTool('compare_translations');
       const result = await tool.handler({

@@ -66,6 +66,21 @@ import type { ToolContext, ToolDefinition } from './definitions';
 const ARTICLE_ID_DESC =
   'Article ID — the numeric id of the Help Center article. Obtain it from list_articles or search_articles.';
 
+// The article `translations` list endpoint, shared by every read tool that
+// needs the available locales. It is also the only endpoint that returns the
+// per-translation `outdated` flag (a single-translation GET omits it), so
+// callers checking staleness must go through here.
+const listTranslations = (
+  subdomain: string,
+  token: string,
+  articleId: number,
+): Promise<ZendeskTranslation[]> =>
+  helpCenterGet<{ translations: ZendeskTranslation[] }>(
+    subdomain,
+    token,
+    `/articles/${articleId}/translations`,
+  ).then((res) => res.translations);
+
 const largeArticleHint = (body: string, sectionCount: number): string | null => {
   if (body.length < LARGE_ARTICLE_BODY_CHARS && sectionCount < LARGE_ARTICLE_SECTION_COUNT) {
     return null;
@@ -168,11 +183,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           token,
           path,
         );
-        const { translations } = await helpCenterGet<{ translations: ZendeskTranslation[] }>(
-          subdomain,
-          token,
-          `/articles/${article_id}/translations`,
-        );
+        const translations = await listTranslations(subdomain, token, article_id);
         const hint = largeArticleHint(article.body, parseSections(article.body).length);
         const text =
           (hint ?? '') +
@@ -414,11 +425,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         }
         const formatted = await Promise.all(
           articles.map(async (article) => {
-            const { translations } = await helpCenterGet<{ translations: ZendeskTranslation[] }>(
-              subdomain,
-              token,
-              `/articles/${article.id}/translations`,
-            );
+            const translations = await listTranslations(subdomain, token, article.id);
             const locales = translations.map((t) => t.locale).join(', ');
             return `${formatArticleSummary(article)}\n- **Translations**: ${locales}`;
           }),
@@ -450,11 +457,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       handler: async (params) => {
         const { article_id } = params as { article_id: number };
         const token = await getToken();
-        const { translations } = await helpCenterGet<{ translations: ZendeskTranslation[] }>(
-          subdomain,
-          token,
-          `/articles/${article_id}/translations`,
-        );
+        const translations = await listTranslations(subdomain, token, article_id);
         return {
           content: [{ type: 'text', text: formatList(translations, formatTranslationSummary) }],
         };
@@ -1090,9 +1093,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           token,
           `/articles/${article_id}/translations/${effectiveLocale}`,
         );
-        const { translations } = await helpCenterGet<{
-          translations: ZendeskTranslation[];
-        }>(subdomain, token, `/articles/${article_id}/translations`);
+        const translations = await listTranslations(subdomain, token, article_id);
         const sections = parseSections(translation.body);
 
         const outlineLines = sections.length
@@ -1276,7 +1277,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           target_locale: string;
         };
         const token = await getToken();
-        const [sourceRes, targetRes, listRes] = await Promise.all([
+        const [sourceRes, targetRes, translations] = await Promise.all([
           helpCenterGet<{ translation: ZendeskTranslation }>(
             subdomain,
             token,
@@ -1288,12 +1289,8 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
             `/articles/${article_id}/translations/${target_locale}`,
           ),
           // The `outdated` flag is only exposed on the list endpoint, not on a
-          // single-translation GET — same pattern as get_article_outline.
-          helpCenterGet<{ translations: ZendeskTranslation[] }>(
-            subdomain,
-            token,
-            `/articles/${article_id}/translations`,
-          ),
+          // single-translation GET — same reason get_article_outline lists too.
+          listTranslations(subdomain, token, article_id),
         ]);
         const sourceSections = parseSections(sourceRes.translation.body);
         const targetSections = parseSections(targetRes.translation.body);
@@ -1301,7 +1298,13 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
 
         // Authoritative staleness: Zendesk's own per-translation outdated flag
         // for the target locale. "unknown" when the API does not return it.
-        const targetListEntry = listRes.translations.find((t) => t.locale === target_locale);
+        // Match case-insensitively: Zendesk accepts a mixed-case locale in the
+        // request URL but the list endpoint reports it canonically lowercased,
+        // so an exact match would spuriously fall back to "unknown".
+        const targetLocaleKey = target_locale.toLowerCase();
+        const targetListEntry = translations.find(
+          (t) => t.locale.toLowerCase() === targetLocaleKey,
+        );
         const outdated =
           targetListEntry?.outdated === undefined
             ? 'unknown'
