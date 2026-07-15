@@ -643,7 +643,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           .int()
           .optional()
           .describe(
-            'User segment ID for visibility (use list_user_segments to find it). Defaults to everyone.',
+            'User segment ID for visibility (use list_user_segments to find it; if that is forbidden because the token is not a Guide admin, reuse the user_segment_id of an existing article from get_article). Defaults to everyone.',
           ),
         author_id: z
           .number()
@@ -739,7 +739,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           .int()
           .optional()
           .describe(
-            'User segment that controls who can see the article (id from list_user_segments).',
+            'User segment that controls who can see the article (id from list_user_segments; if that is forbidden because the token is not a Guide admin, reuse the user_segment_id of an existing article from get_article).',
           ),
         author_id: z
           .number()
@@ -751,7 +751,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           .int()
           .optional()
           .describe(
-            'Guide permission group controlling who can edit (id from list_permission_groups).',
+            'Guide permission group controlling who can edit (id from list_permission_groups; if that is forbidden because the token is not a Guide admin, reuse the permission_group_id of an existing article from get_article).',
           ),
         section_id: z
           .number()
