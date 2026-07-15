@@ -1,3 +1,9 @@
+## [2.12.1](https://github.com/fruggr/zendesk-mcp-server/compare/v2.12.0...v2.12.1) (2026-07-15)
+
+### Bug Fixes
+
+* **help-center:** degrade topology gracefully when Guide-admin endpoints 403 ([#163](https://github.com/fruggr/zendesk-mcp-server/issues/163)) ([eb172f2](https://github.com/fruggr/zendesk-mcp-server/commit/eb172f273223511a8bb330f423da08d246929184))
+
 ## [2.12.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.11.0...v2.12.0) (2026-07-13)
 
 ### Features
