@@ -1,3 +1,9 @@
+## [2.12.2](https://github.com/fruggr/zendesk-mcp-server/compare/v2.12.1...v2.12.2) (2026-07-15)
+
+### Bug Fixes
+
+* **help-center:** cap list_content_tags page size at the endpoint limit of 30 ([#164](https://github.com/fruggr/zendesk-mcp-server/issues/164)) ([c999dfd](https://github.com/fruggr/zendesk-mcp-server/commit/c999dfd651b22feefe0045a6bdb51fdd49937c81))
+
 ## [2.12.1](https://github.com/fruggr/zendesk-mcp-server/compare/v2.12.0...v2.12.1) (2026-07-15)
 
 ### Bug Fixes
