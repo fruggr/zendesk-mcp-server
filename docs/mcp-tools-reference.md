@@ -52,7 +52,7 @@ out every `write` tool before the proxies are built.
 | `list_content_tags` | List Guide content tags (end-user visible), cursor-paginated with name-prefix filter and sort | read |
 | `list_labels` | List article labels (search ranking, not user-visible) | read |
 | `list_user_segments` | List user segments (article visibility; requires Guide-admin / Help Center manager rights) | read |
-| `compare_translations` | Section-level diff between two locales of an article | read |
+| `compare_translations` | Compare two locales of an article: target `outdated` flag, structural verdict, and per-section presence status (word counts informational) | read |
 | `create_article` | Create a new article in a section | write |
 | `update_article` | Update article metadata (draft, labels, tags, visibility, section, sort position) | write |
 | `archive_article` | Archive (soft-delete) an article; recoverable only via the Guide admin UI | write |

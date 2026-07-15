@@ -351,6 +351,13 @@ export interface ZendeskTranslation {
   updated_at: string;
   source_id: number;
   source_type: string;
+  /**
+   * Set by Zendesk when the source translation was edited after this one — the
+   * authoritative "this translation is stale" signal. Only returned on the
+   * translations *list* endpoint (`GET /articles/{id}/translations`), not on a
+   * single-translation GET, so it is optional here.
+   */
+  outdated?: boolean;
 }
 
 export interface ZendeskCategory {

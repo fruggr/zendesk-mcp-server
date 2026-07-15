@@ -1091,7 +1091,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           `/articles/${article_id}/translations/${effectiveLocale}`,
         );
         const { translations } = await helpCenterGet<{
-          translations: Array<ZendeskTranslation & { outdated?: boolean }>;
+          translations: ZendeskTranslation[];
         }>(subdomain, token, `/articles/${article_id}/translations`);
         const sections = parseSections(translation.body);
 
@@ -1253,7 +1253,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: true,
       title: 'Compare Article Translations',
       description:
-        'Compare section structure between two locales of the same article, matched by index. Returns a compact table (one row per section) with status: "ok" (both present, source/target word count ratio within 25%), "different" (word count ratio diverges by more than 25% — size signal only, NOT a semantic divergence: two locales may legitimately differ in verbosity) or "missing" (section absent in target). Useful to spot structurally stale or missing sections; do not interpret "different" as an edit regression on its own.',
+        'Compare two locales of the same article to decide whether the target translation needs work, reporting three independent signals instead of one ambiguous verdict. (1) Header — Zendesk\'s own per-translation "outdated" flag for the target locale, the authoritative staleness signal (set when the source was edited after the translation was written): "yes", "no", or "unknown" when Zendesk does not return it; plus a global structure check (section count and heading-tag sequence) and each translation\'s updated_at / draft state. When structure mismatches, the per-index rows may be misaligned and the header says so. (2) A per-section table matched by index, with status "ok" (present in both), "missing" (present in source, absent in target) or "extra" (present in target, absent in source). (3) Per-section source/target word counts, INFORMATIONAL ONLY: a length difference between languages is normal and is deliberately NOT flagged as a divergence — do not read a word-count gap as an edit regression or staleness. Read-only; performs three Help Center GET calls (both translations plus the translations list for the outdated flag).',
       inputSchema: z.object({
         article_id: z.number().int().describe(ARTICLE_ID_DESC),
         source_locale: z
@@ -1276,7 +1276,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           target_locale: string;
         };
         const token = await getToken();
-        const [sourceRes, targetRes] = await Promise.all([
+        const [sourceRes, targetRes, listRes] = await Promise.all([
           helpCenterGet<{ translation: ZendeskTranslation }>(
             subdomain,
             token,
@@ -1287,10 +1287,42 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
             token,
             `/articles/${article_id}/translations/${target_locale}`,
           ),
+          // The `outdated` flag is only exposed on the list endpoint, not on a
+          // single-translation GET — same pattern as get_article_outline.
+          helpCenterGet<{ translations: ZendeskTranslation[] }>(
+            subdomain,
+            token,
+            `/articles/${article_id}/translations`,
+          ),
         ]);
         const sourceSections = parseSections(sourceRes.translation.body);
         const targetSections = parseSections(targetRes.translation.body);
         const maxLen = Math.max(sourceSections.length, targetSections.length);
+
+        // Authoritative staleness: Zendesk's own per-translation outdated flag
+        // for the target locale. "unknown" when the API does not return it.
+        const targetListEntry = listRes.translations.find((t) => t.locale === target_locale);
+        const outdated =
+          targetListEntry?.outdated === undefined
+            ? 'unknown'
+            : targetListEntry.outdated
+              ? 'yes'
+              : 'no';
+        const outdatedLine =
+          outdated === 'yes'
+            ? `- **Outdated (target ${target_locale})**: yes — the source was edited after this translation; it likely needs updating.`
+            : `- **Outdated (target ${target_locale})**: ${outdated}`;
+
+        // Structural verdict: language-neutral (section count + heading-tag
+        // sequence), unlike word counts. A mismatch means the index-matched
+        // rows below may not line up.
+        const sourceTags = sourceSections.map((s) => s.headingTag).join(',');
+        const targetTags = targetSections.map((s) => s.headingTag).join(',');
+        const structureAligned =
+          sourceSections.length === targetSections.length && sourceTags === targetTags;
+        const structureLine = structureAligned
+          ? `- **Structure**: ${sourceSections.length} sections in both locales — aligned.`
+          : `- **Structure**: ${sourceSections.length} source vs ${targetSections.length} target sections — MISMATCH; the per-index rows below may be misaligned.`;
 
         const rows: string[] = [];
         rows.push(`| Idx | Heading | Status | Source words | Target words |`);
@@ -1301,19 +1333,22 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           const heading = src?.heading ?? tgt?.heading ?? '';
           const sourceWords = src?.wordCount ?? 0;
           const targetWords = tgt?.wordCount ?? 0;
-          let status: 'ok' | 'missing' | 'different';
+          let status: 'ok' | 'missing' | 'extra';
           if (!tgt) status = 'missing';
-          else if (!src) status = 'different';
-          else {
-            const denom = Math.max(sourceWords, 1);
-            const diffRatio = Math.abs(sourceWords - targetWords) / denom;
-            status = diffRatio > 0.25 ? 'different' : 'ok';
-          }
+          else if (!src) status = 'extra';
+          else status = 'ok';
           rows.push(`| ${i} | ${heading} | ${status} | ${sourceWords} | ${targetWords} |`);
         }
 
         const text = [
           `# Translation diff — Article #${article_id} (${source_locale} → ${target_locale})`,
+          '',
+          outdatedLine,
+          structureLine,
+          `- **Updated**: source ${sourceRes.translation.updated_at} | target ${targetRes.translation.updated_at}`,
+          `- **Target draft**: ${targetRes.translation.draft ? 'yes' : 'no'}`,
+          '',
+          '_Word counts are informational: a length difference between languages is normal, not a divergence._',
           '',
           ...rows,
         ].join('\n');

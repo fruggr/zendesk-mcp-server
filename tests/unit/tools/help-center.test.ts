@@ -557,20 +557,76 @@ describe('help center tools', () => {
       expect(text).toContain('Setup');
     });
 
-    it('flags sections with diverging word counts as different', async () => {
+    it('does not flag a longer-but-faithful section as divergent (issue #135)', async () => {
+      // en-us "Setup" is 4 words, fr "Setup" is 2 — a benign length gap that the
+      // old word-count heuristic mislabelled `different`. Both are present, so it
+      // must now be `ok`, and the ambiguous `different` status must be gone.
       const tool = findTool('compare_translations');
       const result = await tool.handler({
         article_id: 5000,
         source_locale: 'en-us',
         target_locale: 'fr',
       });
-      expect(result.content[0]?.text).toContain('different');
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('| 1 | Setup | ok |');
+      expect(text).not.toContain('different');
     });
 
-    it('description clarifies that "different" is based on a word count ratio', () => {
+    it('surfaces the target outdated flag in the header when set', async () => {
+      // en-us is outdated:true in the translations list fixture.
       const tool = findTool('compare_translations');
-      expect(tool.description.toLowerCase()).toContain('word count');
-      expect(tool.description).toContain('25');
+      const result = await tool.handler({
+        article_id: 5000,
+        source_locale: 'fr',
+        target_locale: 'en-us',
+      });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('Outdated');
+      expect(text.toLowerCase()).toContain('yes');
+    });
+
+    it('reports the target as not outdated when the flag is false', async () => {
+      const tool = findTool('compare_translations');
+      const result = await tool.handler({
+        article_id: 5000,
+        source_locale: 'en-us',
+        target_locale: 'fr',
+      });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toMatch(/Outdated[^\n]*\bno\b/i);
+    });
+
+    it('reports a section missing in the target and a structural mismatch', async () => {
+      // de has only the Intro section; en-us has Intro + Setup.
+      const tool = findTool('compare_translations');
+      const result = await tool.handler({
+        article_id: 5000,
+        source_locale: 'en-us',
+        target_locale: 'de',
+      });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('| 1 | Setup | missing |');
+      expect(text.toLowerCase()).toContain('mismatch');
+    });
+
+    it('reports a section present only in the target as extra', async () => {
+      const tool = findTool('compare_translations');
+      const result = await tool.handler({
+        article_id: 5000,
+        source_locale: 'de',
+        target_locale: 'en-us',
+      });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('| 1 | Setup | extra |');
+    });
+
+    it('description surfaces the outdated flag and treats word counts as informational', () => {
+      const tool = findTool('compare_translations');
+      const description = tool.description.toLowerCase();
+      expect(description).toContain('outdated');
+      expect(description).toContain('informational');
+      // The old contract keyed the status off a 25% word-count ratio; that is gone.
+      expect(tool.description).not.toContain('25%');
     });
   });
 });
