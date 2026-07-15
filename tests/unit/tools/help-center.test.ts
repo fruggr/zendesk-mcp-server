@@ -2,7 +2,7 @@ import { HttpResponse, http } from 'msw';
 import { describe, expect, it } from 'vitest';
 import type { ToolContext } from '../../../src/tools/definitions';
 import { createHelpCenterTools } from '../../../src/tools/help-center';
-import { MOCK_ARTICLE, manyContentTagsHandler } from '../../msw-handlers';
+import { MOCK_ARTICLE, MOCK_TRANSLATION, manyContentTagsHandler } from '../../msw-handlers';
 import { mswServer } from '../../setup';
 
 const ctx: ToolContext = { subdomain: 'testsubdomain', getToken: () => 'test-token' };
@@ -599,6 +599,29 @@ describe('help center tools', () => {
       expect(text).toContain('Outdated');
       expect(text.toLowerCase()).toContain('yes');
       expect(text).not.toContain('unknown');
+    });
+
+    it('reports outdated "unknown" when the list omits the flag for an existing target', async () => {
+      // Defensive path: the target translation exists but its list entry carries
+      // no `outdated` field (some tenants/endpoints omit it). Must degrade to
+      // "unknown" rather than crash or invent a value. This branch is not
+      // reproducible against a live tenant (the list there always returns the
+      // flag), so it is only covered here.
+      mswServer.use(
+        http.get(`${HC_BASE}/articles/:id/translations`, () =>
+          HttpResponse.json({
+            translations: [{ ...MOCK_TRANSLATION, locale: 'fr' }],
+          }),
+        ),
+      );
+      const tool = findTool('compare_translations');
+      const result = await tool.handler({
+        article_id: 5000,
+        source_locale: 'en-us',
+        target_locale: 'fr',
+      });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toMatch(/Outdated[^\n]*unknown/i);
     });
 
     it('reports the target as not outdated when the flag is false', async () => {
