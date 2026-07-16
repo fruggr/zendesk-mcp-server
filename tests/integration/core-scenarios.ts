@@ -276,7 +276,7 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         expect(result.isError).toBeFalsy();
         const text = textOf(result);
         // en-us is outdated:true in the translations-list fixture.
-        expect(text).toContain('Outdated');
+        expect(text).toContain('outdated flag');
         expect(text.toLowerCase()).toContain('yes');
         // Per-section presence status, not a word-count verdict.
         expect(text).toContain('| Idx | Heading | Status');

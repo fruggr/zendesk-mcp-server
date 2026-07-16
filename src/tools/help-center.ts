@@ -1254,7 +1254,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: true,
       title: 'Compare Article Translations',
       description:
-        'Compare two locales of the same article to decide whether the target translation needs work, reporting three independent signals instead of one ambiguous verdict. (1) Header — Zendesk\'s own per-translation "outdated" flag for the target locale, the authoritative staleness signal (set when the source was edited after the translation was written): "yes", "no", or "unknown" when Zendesk does not return it; plus a global structure check (section count and heading-tag sequence) and each translation\'s updated_at / draft state. When structure mismatches, the per-index rows may be misaligned and the header says so. (2) A per-section table matched by index, with status "ok" (present in both), "missing" (present in source, absent in target) or "extra" (present in target, absent in source). (3) Per-section source/target word counts, INFORMATIONAL ONLY: a length difference between languages is normal and is deliberately NOT flagged as a divergence — do not read a word-count gap as an edit regression or staleness. Read-only; performs three Help Center GET calls (both translations plus the translations list for the outdated flag).',
+        'Compare two locales of the same article to decide whether the target translation needs work, reporting independent signals instead of one ambiguous verdict. (1) Header — a "Freshness" verdict for the target, derived from the two translations\' updated_at timestamps: if the source was edited after the target it is "likely behind, review recommended" (with the day gap), otherwise "up to date". This is the primary staleness signal and is always available. (2) Zendesk\'s own per-translation "outdated" flag for the target ("yes"/"no"/"unknown"), shown as a secondary overlay: it is only set through Guide\'s native "mark out of date" workflow and NOT by API edits, so a "no" does not by itself mean current — prefer Freshness. (3) A global structure check (section count and heading-tag sequence); on mismatch the header warns the per-index rows may be misaligned. (4) A per-section table matched by index, status "ok" (present in both), "missing" (present in source, absent in target) or "extra" (present in target, absent in source). (5) Per-section source/target word counts, INFORMATIONAL ONLY: a length difference between languages is normal and is deliberately NOT flagged as a divergence — do not read a word-count gap as an edit regression or staleness. Read-only; performs three Help Center GET calls (both translations plus the translations list for the outdated flag).',
       inputSchema: z.object({
         article_id: z.number().int().describe(ARTICLE_ID_DESC),
         source_locale: z
@@ -1296,11 +1296,38 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         const targetSections = parseSections(targetRes.translation.body);
         const maxLen = Math.max(sourceSections.length, targetSections.length);
 
-        // Authoritative staleness: Zendesk's own per-translation outdated flag
-        // for the target locale. "unknown" when the API does not return it.
-        // Match case-insensitively: Zendesk accepts a mixed-case locale in the
-        // request URL but the list endpoint reports it canonically lowercased,
-        // so an exact match would spuriously fall back to "unknown".
+        // Primary staleness signal: derive it from the edit timestamps we
+        // already fetched. If the source was edited after the target, the
+        // translation is very likely behind. This is always available and, for
+        // API/external translation workflows, far more useful than Zendesk's
+        // `outdated` flag (which is only set through Guide's own edit workflow —
+        // see below). updated_at values are ISO-8601 UTC, so a lexical compare
+        // is order-correct; parse for the day delta.
+        const sourceUpdated = sourceRes.translation.updated_at;
+        const targetUpdated = targetRes.translation.updated_at;
+        const srcMs = Date.parse(sourceUpdated);
+        const tgtMs = Date.parse(targetUpdated);
+        const comparable = Number.isFinite(srcMs) && Number.isFinite(tgtMs);
+        let freshnessLine: string;
+        if (comparable && srcMs > tgtMs) {
+          const days = Math.floor((srcMs - tgtMs) / 86_400_000);
+          const gap = days >= 1 ? `${days} day(s)` : 'less than a day';
+          freshnessLine = `- **Freshness (target ${target_locale})**: source was edited ${gap} after this translation → likely behind, review recommended.`;
+        } else if (comparable) {
+          freshnessLine = `- **Freshness (target ${target_locale})**: up to date (source has not been edited since this translation).`;
+        } else {
+          freshnessLine = `- **Freshness (target ${target_locale})**: unknown (could not compare edit timestamps).`;
+        }
+
+        // Secondary signal: Zendesk's own per-translation `outdated` flag for the
+        // target locale. It is only set through Guide's native "mark translations
+        // out of date" workflow, NOT by API edits — so for API/external workflows
+        // it usually stays false regardless of real staleness. Surface it, but as
+        // an overlay to the freshness signal above, never as the sole verdict.
+        // "unknown" when the API does not return it. Match case-insensitively:
+        // Zendesk accepts a mixed-case locale in the request URL but the list
+        // endpoint reports it canonically lowercased, so an exact match would
+        // spuriously fall back to "unknown".
         const targetLocaleKey = target_locale.toLowerCase();
         const targetListEntry = translations.find(
           (t) => t.locale.toLowerCase() === targetLocaleKey,
@@ -1313,8 +1340,10 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
               : 'no';
         const outdatedLine =
           outdated === 'yes'
-            ? `- **Outdated (target ${target_locale})**: yes — the source was edited after this translation; it likely needs updating.`
-            : `- **Outdated (target ${target_locale})**: ${outdated}`;
+            ? `- **Zendesk outdated flag (target ${target_locale})**: yes — explicitly marked out of date in Guide.`
+            : outdated === 'no'
+              ? `- **Zendesk outdated flag (target ${target_locale})**: no (only set via Guide's own edit workflow; "no" does not by itself mean current — rely on Freshness above).`
+              : `- **Zendesk outdated flag (target ${target_locale})**: unknown.`;
 
         // Structural verdict: language-neutral (section count + heading-tag
         // sequence), unlike word counts. A mismatch means the index-matched
@@ -1346,9 +1375,10 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         const text = [
           `# Translation diff — Article #${article_id} (${source_locale} → ${target_locale})`,
           '',
+          freshnessLine,
           outdatedLine,
           structureLine,
-          `- **Updated**: source ${sourceRes.translation.updated_at} | target ${targetRes.translation.updated_at}`,
+          `- **Updated**: source ${sourceUpdated} | target ${targetUpdated}`,
           `- **Target draft**: ${targetRes.translation.draft ? 'yes' : 'no'}`,
           '',
           '_Word counts are informational: a length difference between languages is normal, not a divergence._',

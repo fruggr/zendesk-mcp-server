@@ -572,6 +572,47 @@ describe('help center tools', () => {
       expect(text).not.toContain('different');
     });
 
+    it('flags the target as likely behind when the source was edited later', async () => {
+      // Primary freshness signal, derived from updated_at: source (en-us) edited
+      // after the target (fr) → the translation is very likely behind.
+      mswServer.use(
+        http.get(`${HC_BASE}/articles/:id/translations/:locale`, ({ params }) => {
+          const locale = params['locale'] as string;
+          const updated_at = locale === 'en-us' ? '2026-05-01T00:00:00Z' : '2026-01-01T00:00:00Z';
+          return HttpResponse.json({
+            translation: {
+              ...MOCK_TRANSLATION,
+              locale,
+              updated_at,
+              body: '<h2>Intro</h2><p>x</p>',
+            },
+          });
+        }),
+      );
+      const tool = findTool('compare_translations');
+      const result = await tool.handler({
+        article_id: 5000,
+        source_locale: 'en-us',
+        target_locale: 'fr',
+      });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('Freshness');
+      expect(text.toLowerCase()).toContain('behind');
+    });
+
+    it('reports the target as up to date when the source is not newer', async () => {
+      // Both translations share the fixture updated_at, so the source is not
+      // newer than the target → up to date.
+      const tool = findTool('compare_translations');
+      const result = await tool.handler({
+        article_id: 5000,
+        source_locale: 'en-us',
+        target_locale: 'fr',
+      });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toMatch(/Freshness[^\n]*up to date/i);
+    });
+
     it('surfaces the target outdated flag in the header when set', async () => {
       // en-us is outdated:true in the translations list fixture.
       const tool = findTool('compare_translations');
@@ -581,7 +622,7 @@ describe('help center tools', () => {
         target_locale: 'en-us',
       });
       const text = result.content[0]?.text ?? '';
-      expect(text).toContain('Outdated');
+      expect(text).toContain('outdated flag');
       expect(text.toLowerCase()).toContain('yes');
     });
 
@@ -596,7 +637,7 @@ describe('help center tools', () => {
         target_locale: 'EN-US',
       });
       const text = result.content[0]?.text ?? '';
-      expect(text).toContain('Outdated');
+      expect(text).toContain('outdated flag');
       expect(text.toLowerCase()).toContain('yes');
       expect(text).not.toContain('unknown');
     });
@@ -659,9 +700,10 @@ describe('help center tools', () => {
       expect(text).toContain('| 1 | Setup | extra |');
     });
 
-    it('description surfaces the outdated flag and treats word counts as informational', () => {
+    it('description surfaces freshness and the outdated flag, and treats word counts as informational', () => {
       const tool = findTool('compare_translations');
       const description = tool.description.toLowerCase();
+      expect(description).toContain('freshness');
       expect(description).toContain('outdated');
       expect(description).toContain('informational');
       // The old contract keyed the status off a 25% word-count ratio; that is gone.
