@@ -1,3 +1,17 @@
+## [2.13.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.12.2...v2.13.0) (2026-07-16)
+
+### Features
+
+* **help_center:** add reorder_article tool ([#159](https://github.com/fruggr/zendesk-mcp-server/issues/159)) ([9b019bf](https://github.com/fruggr/zendesk-mcp-server/commit/9b019bf7c19fc296e5020666cbae21cee47d392a))
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Chores
+
+* **deps:** update @biomejs/biome to v2.5.3 and fix new lint errors ([#165](https://github.com/fruggr/zendesk-mcp-server/issues/165)) ([177362e](https://github.com/fruggr/zendesk-mcp-server/commit/177362e3e0e9ee1cc8a6903c8e12529c4bfcd6f0))
+</details>
+
 ## [2.12.2](https://github.com/fruggr/zendesk-mcp-server/compare/v2.12.1...v2.12.2) (2026-07-15)
 
 ### Bug Fixes
