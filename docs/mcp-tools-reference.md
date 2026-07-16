@@ -55,6 +55,7 @@ out every `write` tool before the proxies are built.
 | `compare_translations` | Section-level diff between two locales of an article | read |
 | `create_article` | Create a new article in a section | write |
 | `update_article` | Update article metadata (draft, labels, tags, visibility, section, sort position) | write |
+| `reorder_article` | Move an article within its section (top/bottom/before/after), breaking position ties deterministically | write |
 | `archive_article` | Archive (soft-delete) an article; recoverable only via the Guide admin UI | write |
 | `create_article_translation` | Create a translation for an article | write |
 | `update_article_translation` | Update an article's translation (full body) | write |

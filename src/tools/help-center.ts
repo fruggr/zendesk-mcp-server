@@ -15,6 +15,7 @@ import {
   LARGE_ARTICLE_BODY_CHARS,
   LARGE_ARTICLE_SECTION_COUNT,
   MAX_PAGE_SIZE,
+  REORDER_CONFIRM_THRESHOLD,
 } from '../constants';
 import type {
   ZendeskArticle,
@@ -28,6 +29,14 @@ import type {
   ZendeskTranslation,
   ZendeskUserSegment,
 } from '../types';
+import {
+  arrangeDesiredOrder,
+  computePositionWrites,
+  hasPositionInversion,
+  isPlacedAsRequested,
+  type OrderedArticle,
+  type ReorderTarget,
+} from '../utils/article-order';
 import {
   htmlToMarkdown,
   markdownToHtml,
@@ -78,8 +87,55 @@ const largeArticleHint = (body: string, sectionCount: number): string | null => 
   ].join('\n');
 };
 
+// Message returned when a reorder's position writes are (or would be) silently
+// ignored because the section is sorted automatically rather than manually. There
+// is no API field exposing the sort mode, so we name the section and the exact UI
+// steps rather than fabricate an admin deep-link (none is stable across Guide
+// versions). `applied` is set only after writes were attempted (post-verify path).
+const autoSortNotice = (sectionId: number, applied?: number): string =>
+  [
+    applied === undefined
+      ? `Section #${sectionId} looks like it is sorted automatically, so a manual reorder would have no visible effect.`
+      : `Wrote ${applied} article position(s), but the display order of section #${sectionId} did not change — the section is sorted automatically, so positions are ignored.`,
+    'To order its articles manually: in Guide, open the section, choose "Edit section", set "Order articles by" to Manual, then re-run this tool.',
+  ].join(' ');
+
 export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
   const { subdomain, getToken } = ctx;
+
+  // Fetch a section's articles in their EFFECTIVE display order (no sort_by), the
+  // order an end user sees. Fully paginated so reorder decisions and verification
+  // see every article, not just the first page. Used by reorder_article.
+  //
+  // The listing MUST be locale-scoped: without sort_by the endpoint falls back to
+  // the section's configured "Order articles by", and a locale-dependent mode
+  // (title / recent activity / edited_at) makes the non-locale endpoint reject the
+  // request with HTTP 400 ("must specify a locale in order to sort by title…").
+  // Scoping by the article's locale both satisfies that requirement and still
+  // surfaces the auto-sorted order so the inversion probe can detect it.
+  const fetchSectionOrder = async (
+    sectionId: number,
+    locale: string,
+    token: string,
+  ): Promise<OrderedArticle[]> => {
+    const order: OrderedArticle[] = [];
+    let cursor: string | undefined;
+    do {
+      const response = await helpCenterGet<ZendeskListResponse<ZendeskArticle>>(
+        subdomain,
+        token,
+        `/${locale}/sections/${sectionId}/articles`,
+        buildCursorParams(MAX_PAGE_SIZE, cursor),
+      );
+      const articles = response.articles ?? [];
+      for (const article of articles) {
+        order.push({ id: article.id, position: article.position });
+      }
+      const meta = extractPaginationMeta(response, articles.length);
+      cursor = meta.has_more && meta.after_cursor ? meta.after_cursor : undefined;
+    } while (cursor);
+    return order;
+  };
 
   return [
     {
@@ -789,6 +845,189 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         return {
           content: [
             { type: 'text', text: `Article #${article.id} updated.\n\n${formatArticle(article)}` },
+          ],
+        };
+      },
+    },
+    {
+      name: 'reorder_article',
+      namespace: 'help_center',
+      readOnly: false,
+      title: 'Reorder Help Center Article',
+      description:
+        'Reorder an article within its current section by moving it relative to its siblings (top, bottom, or before/after another article), and return whether the new order was applied. This is the reliable way to satisfy "put this article first/last" requests: it writes the minimal set of article positions needed to make the order deterministic, because Zendesk leaves newly created articles tied at position 0 where a plain position update is silently ambiguous. It does NOT move the article to a different section — use update_article with section_id for that. Zendesk exposes no way to read whether a section is manually or automatically sorted, so when the section is sorted automatically (by date or alphabetically) the position writes are ignored; this tool detects that after the fact and returns guidance to switch the section to manual ordering in Guide. A move may reposition several neighbouring articles; when that count exceeds a configurable safety threshold the call is refused unless confirm is set to true.',
+      inputSchema: z.object({
+        article_id: z
+          .number()
+          .int()
+          .describe(
+            'Article ID — the numeric id of the article to move within its section. Obtain it from list_articles or search_articles.',
+          ),
+        target: z
+          .enum(['top', 'bottom', 'before', 'after'])
+          .describe(
+            'Where to move the article relative to its section siblings: "top" (becomes first), "bottom" (becomes last), or "before"/"after" a specific reference article. "before" and "after" require reference_article_id.',
+          ),
+        reference_article_id: z
+          .number()
+          .int()
+          .optional()
+          .describe(
+            'The sibling article to position next to when target is "before" or "after" (numeric id from list_articles). Must belong to the same section and differ from article_id; leave it unset for "top" or "bottom".',
+          ),
+        normalize: z
+          .boolean()
+          .default(false)
+          .describe(
+            'When true, also renumber every article in the section to contiguous positions (0, 1, 2, …) so the stored positions stay tidy. Defaults to false, which writes the fewest positions possible and lets gaps remain. Either way the confirmation threshold still applies.',
+          ),
+        confirm: z
+          .boolean()
+          .default(false)
+          .describe(
+            'Safety guard for large reorders. When the move would rewrite more article positions than the configured threshold (ZENDESK_REORDER_CONFIRM_THRESHOLD, default 20), the tool refuses and reports the count until you pass true here. Has no effect on small reorders.',
+          ),
+      }),
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+      handler: async (params) => {
+        const {
+          article_id,
+          target,
+          reference_article_id,
+          normalize = false,
+          confirm = false,
+        } = params as {
+          article_id: number;
+          target: ReorderTarget;
+          reference_article_id?: number;
+          normalize?: boolean;
+          confirm?: boolean;
+        };
+
+        // Cross-field validation (the schema is a plain object; enforce the
+        // target/reference relationship here, like archive_article's confirm guard).
+        const needsReference = target === 'before' || target === 'after';
+        if (needsReference && reference_article_id === undefined) {
+          throw new Error(
+            `target "${target}" requires reference_article_id (the article to move ${target}).`,
+          );
+        }
+        if (!needsReference && reference_article_id !== undefined) {
+          throw new Error(
+            `reference_article_id must be omitted when target is "${target}" (it only applies to "before"/"after").`,
+          );
+        }
+        if (reference_article_id !== undefined && reference_article_id === article_id) {
+          throw new Error('reference_article_id must differ from article_id.');
+        }
+
+        const token = await getToken();
+
+        // Resolve the article's section (also validates the article exists).
+        const { article } = await helpCenterGet<{ article: ZendeskArticle }>(
+          subdomain,
+          token,
+          `/articles/${article_id}`,
+        );
+        const sectionId = article.section_id;
+        // Scope every section listing to the article's locale — the endpoint
+        // rejects a locale-less request when the section's default sort is
+        // locale-dependent (see fetchSectionOrder).
+        const locale = article.source_locale;
+
+        const effective = await fetchSectionOrder(sectionId, locale, token);
+
+        // For before/after, the reference must be in the same section. Disambiguate
+        // not-found vs wrong-section so the caller gets an actionable message.
+        if (needsReference && !effective.some((a) => a.id === reference_article_id)) {
+          let detail = 'was not found';
+          try {
+            const { article: ref } = await helpCenterGet<{ article: ZendeskArticle }>(
+              subdomain,
+              token,
+              `/articles/${reference_article_id}`,
+            );
+            detail = `is in section #${ref.section_id}, not section #${sectionId}`;
+          } catch {
+            // 404 or similar → keep the "was not found" wording.
+          }
+          throw new Error(
+            `Reference article #${reference_article_id} ${detail}. It must be in the same section (#${sectionId}) as article #${article_id}.`,
+          );
+        }
+
+        const targetLabel = needsReference ? `${target} article #${reference_article_id}` : target;
+
+        const desired = arrangeDesiredOrder(effective, article_id, target, reference_article_id);
+        const writes = computePositionWrites(desired, article_id, normalize);
+
+        if (writes.length === 0) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `Article #${article_id} is already positioned ${targetLabel} in section #${sectionId}. No changes made.`,
+              },
+            ],
+          };
+        }
+
+        // A strict inversion in the effective order is definitive proof the
+        // section ignores `position` (it is auto-sorted). Short-circuit before any
+        // write, at any size — writing would be silently ignored regardless. The
+        // post-write verification below still backstops the cases an inversion
+        // cannot reveal up front (e.g. an auto order that happens to be ascending).
+        if (hasPositionInversion(effective)) {
+          return { content: [{ type: 'text', text: autoSortNotice(sectionId) }] };
+        }
+
+        // Blast-radius guard.
+        if (writes.length > REORDER_CONFIRM_THRESHOLD && confirm !== true) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `Reordering article #${article_id} to ${targetLabel} would reposition ${writes.length} articles in section #${sectionId}, above the safety threshold of ${REORDER_CONFIRM_THRESHOLD}. Re-run with confirm: true to proceed.`,
+              },
+            ],
+          };
+        }
+
+        // Apply the writes. Positions are absolute, so a re-run after a failure
+        // recomputes against the current state and resumes — it never double-applies.
+        let applied = 0;
+        for (const write of writes) {
+          try {
+            await helpCenterPut(subdomain, token, `/articles/${write.id}`, {
+              article: { position: write.position },
+            });
+            applied += 1;
+          } catch (error) {
+            const reason = error instanceof Error ? error.message : String(error);
+            throw new Error(
+              `Reorder of article #${article_id} failed after ${applied}/${writes.length} position write(s) (on article #${write.id}): ${reason} Positions are written absolutely, so re-running the identical call is safe and resumes where it stopped.`,
+              { cause: error },
+            );
+          }
+        }
+
+        // Verify the move took effect (the definitive auto-sort check).
+        const after = await fetchSectionOrder(sectionId, locale, token);
+        if (!isPlacedAsRequested(after, article_id, target, reference_article_id)) {
+          return { content: [{ type: 'text', text: autoSortNotice(sectionId, applied) }] };
+        }
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Article #${article_id} moved to ${targetLabel} in section #${sectionId} (${applied} article${applied === 1 ? '' : 's'} repositioned).`,
+            },
           ],
         };
       },
