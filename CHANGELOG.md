@@ -1,3 +1,9 @@
+## [2.14.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.13.0...v2.14.0) (2026-07-17)
+
+### Features
+
+* **help-center:** disambiguate compare_translations status ([#135](https://github.com/fruggr/zendesk-mcp-server/issues/135)) ([#166](https://github.com/fruggr/zendesk-mcp-server/issues/166)) ([5aab8dd](https://github.com/fruggr/zendesk-mcp-server/commit/5aab8dd7a9b78a5cb965ec44527aeaab51c35d0e))
+
 ## [2.13.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.12.2...v2.13.0) (2026-07-16)
 
 ### Features
