@@ -29,6 +29,16 @@ export const ConfigSchema = z.object({
    */
   topology: z.boolean().default(true),
   /**
+   * Whether to expose the pull-only Help Center article resources
+   * (`zendesk-hc://article/{id}`), whose list surfaces the promoted ("featured")
+   * articles so a user can pin one as context. On by default; an operator
+   * disables it server-wide with `--no-article-resources` (e.g. on a very large
+   * Help Center where scanning for promoted articles is costly, or when the
+   * resources are unwanted). Only ever active when the `help_center` namespace
+   * itself is active.
+   */
+  articleResources: z.boolean().default(true),
+  /**
    * Dev-only (stdio): expose the `reload_tools` tool, which re-imports the tool
    * modules from source and re-registers them on the live session on demand, so
    * tool code edited during a dev cycle takes effect without a restart. CLI-only
@@ -74,6 +84,7 @@ interface CliResult {
   namespaces?: string[];
   tools?: string[];
   topology?: boolean;
+  articleResources?: boolean;
   dev?: boolean;
   logLevel?: string;
   transport?: string;
@@ -121,6 +132,8 @@ const parseCliArgs = (args: string[]): CliResult => {
       result.readOnly = true;
     } else if (arg === '--no-topology') {
       result.topology = false;
+    } else if (arg === '--no-article-resources') {
+      result.articleResources = false;
     } else if (arg === '--dev') {
       result.dev = true;
     } else if (arg === '--namespace' && next) {
@@ -198,6 +211,7 @@ export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
     namespaces: cli.namespaces,
     tools: cli.tools,
     topology: cli.topology ?? true,
+    articleResources: cli.articleResources ?? true,
     dev: cli.dev ?? false,
     transport,
     host,

@@ -23,6 +23,8 @@ Options:
   --read-only             Only expose read operations
   --no-topology           Disable the Help Center structural context
                           (instructions + zendesk-hc://topology resource)
+  --no-article-resources  Disable the Help Center article resources
+                          (zendesk-hc://article/{id}; promoted articles listed)
   --log-level <level>     debug | info (default) | warn | error
   --transport <t>         stdio (default) | http
   --host <host>           HTTP bind host (default: 0.0.0.0)
@@ -164,6 +166,11 @@ Hard cap on the number of comment pages fetched when collecting a ticket's attac
 **Required:** no · **Default:** `20`
 
 Safety threshold for `reorder_article`. When moving an article would rewrite more than this many article positions (for example moving an article to the top of a large or heavily tied section), the tool refuses and reports the count until the call is retried with `confirm: true`. Lower it to be prompted sooner, raise it to reorder large sections without confirmation.
+
+### `ZENDESK_ARTICLE_RESOURCES_SCAN_MAX_PAGES`
+**Required:** no · **Default:** `20`
+
+Hard cap on the number of article pages scanned to find promoted articles for the `zendesk-hc://article/{id}` resources' listing. The Help Center API has no server-side promoted filter, so the listing pages through the articles and filters them client-side; this bounds that scan on a very large Help Center (promoted articles beyond the cap are omitted from the listing, and the truncation is logged). Raise it if promoted articles live deep in a large catalog.
 
 ---
 

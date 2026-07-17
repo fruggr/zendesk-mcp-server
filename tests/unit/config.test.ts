@@ -60,6 +60,16 @@ describe('loadConfig', () => {
     expect(config.topology).toBe(false);
   });
 
+  it('enables the article resources by default', () => {
+    const config = loadConfig(['mycompany']);
+    expect(config.articleResources).toBe(true);
+  });
+
+  it('parses --no-article-resources flag', () => {
+    const config = loadConfig(['mycompany', '--no-article-resources']);
+    expect(config.articleResources).toBe(false);
+  });
+
   it('defaults dev mode to off', () => {
     const config = loadConfig(['mycompany']);
     expect(config.dev).toBe(false);

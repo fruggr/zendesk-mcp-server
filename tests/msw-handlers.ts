@@ -197,6 +197,13 @@ export const MOCK_ARTICLE = {
   updated_at: '2026-01-02T00:00:00Z',
 };
 
+export const MOCK_PROMOTED_ARTICLE = {
+  ...MOCK_ARTICLE,
+  id: 5001,
+  title: 'Featured guide',
+  promoted: true,
+};
+
 export const MOCK_TRANSLATION = {
   id: 7000,
   locale: 'fr',
@@ -448,7 +455,29 @@ export const errorHandlers = {
     `${BASE}/guide/permission_groups`,
     () => new HttpResponse('unauthorized', { status: 401 }),
   ),
+  // The promoted-article scan backing the article resources' list callback fails.
+  // A 500 must be swallowed (empty list, logged) so it never breaks resources/list.
+  articlesListError: http.get(
+    `${HC_BASE}/articles`,
+    () => new HttpResponse('boom', { status: 500 }),
+  ),
+  // A 401 on the same scan must still fire the stale-token invalidation path.
+  articlesListUnauthorized: http.get(
+    `${HC_BASE}/articles`,
+    () => new HttpResponse('unauthorized', { status: 401 }),
+  ),
 };
+
+// Opt-in override: an article listing that mixes a non-promoted and a promoted
+// article on a single page, so the article resources' list callback (which filters
+// `promoted` client-side) has exactly one entry to surface.
+export const promotedArticlesHandler = http.get(`${HC_BASE}/articles`, () =>
+  HttpResponse.json({
+    articles: [MOCK_ARTICLE, MOCK_PROMOTED_ARTICLE],
+    meta: { has_more: false, after_cursor: '' },
+    count: 2,
+  }),
+);
 
 // Opt-in override: a Help Center with more sections than a single page, used to
 // exercise the topology resource's "summary mode" (tree omitted, count + hint).

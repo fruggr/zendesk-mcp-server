@@ -4,6 +4,13 @@ import type { Config } from '../config';
 export const TOPOLOGY_RESOURCE_URI = 'zendesk-hc://topology';
 
 /**
+ * URI template of the pull-only Help Center article resources. The template's
+ * `list` callback enumerates the promoted ("featured") articles (so clients can
+ * surface them for pinning), while any article id can be read on demand.
+ */
+export const ARTICLE_RESOURCE_URI_TEMPLATE = 'zendesk-hc://article/{id}';
+
+/**
  * Whether the Help Center structural context (init instructions + the
  * `zendesk-hc://topology` resource) should be exposed. True only when the
  * feature is enabled (`--no-topology` not set) AND the `help_center` namespace
@@ -13,6 +20,18 @@ export const TOPOLOGY_RESOURCE_URI = 'zendesk-hc://topology';
  */
 export const helpCenterContextEnabled = (config: Config): boolean =>
   config.topology && (!config.namespaces?.length || config.namespaces.includes('help_center'));
+
+/**
+ * Whether the pull-only Help Center article resources
+ * (`zendesk-hc://article/{id}`) should be exposed. True only when the feature is
+ * enabled (`--no-article-resources` not set) AND the `help_center` namespace is
+ * active (no `--namespace` filter, or one that includes it). Same double-gate as
+ * `helpCenterContextEnabled`, but keyed to its own flag so an operator can toggle
+ * the topology resource and the article resources independently.
+ */
+export const articleResourcesEnabled = (config: Config): boolean =>
+  config.articleResources &&
+  (!config.namespaces?.length || config.namespaces.includes('help_center'));
 
 /**
  * The static `instructions` blob sent on `initialize`. Deliberately short and

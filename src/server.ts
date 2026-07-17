@@ -1,8 +1,12 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
 import * as z from 'zod/v4';
 import { ZendeskApiError } from './client/zendesk-api';
 import type { Config } from './config';
+import { ARTICLE_RESOURCES_SCAN_MAX_PAGES } from './constants';
+import { createArticleResourcesProvider } from './guidance/article-resources';
 import {
+  ARTICLE_RESOURCE_URI_TEMPLATE,
+  articleResourcesEnabled,
   buildInstructions,
   helpCenterContextEnabled,
   TOPOLOGY_RESOURCE_URI,
@@ -312,6 +316,72 @@ export const registerToolset = (
               { uri: uri.toString(), mimeType: 'text/markdown', text: await topology.read() },
             ],
           }),
+        ),
+      );
+    }
+
+    // Pull-only Help Center article resources (zendesk-hc://article/{id}). The
+    // template's `list` callback enumerates the promoted articles so a client can
+    // surface them for pinning; the read callback renders ANY article id (Zendesk
+    // ACLs enforced via the caller's token) as Markdown. Both defer all I/O to
+    // request time via the provider, preserving the lazy-auth invariant. The list
+    // callback swallows fetch failures (returning an empty list, logged) so a
+    // transient article scan error never breaks resources/list — which would also
+    // hide the separately-registered topology resource.
+    if (articleResourcesEnabled(config)) {
+      const articles = createArticleResourcesProvider(getToken, config.subdomain, onUnauthorized);
+      const template = new ResourceTemplate(ARTICLE_RESOURCE_URI_TEMPLATE, {
+        list: async () => {
+          try {
+            const { refs, truncated } = await articles.listPromoted();
+            if (truncated) {
+              logger.warn('article_resources_list_truncated', {
+                max_pages: ARTICLE_RESOURCES_SCAN_MAX_PAGES,
+                listed: refs.length,
+              });
+            }
+            return {
+              resources: refs.map((article) => ({
+                uri: `zendesk-hc://article/${article.id}`,
+                name: article.title,
+                title: article.title,
+                mimeType: 'text/markdown',
+              })),
+            };
+          } catch (err) {
+            logger.warn('article_resources_list_failed', {
+              error: err instanceof Error ? err.message : String(err),
+            });
+            return { resources: [] };
+          }
+        },
+      });
+      registered.push(
+        server.registerResource(
+          'help-center-article',
+          template,
+          {
+            title: 'Zendesk Help Center article',
+            description:
+              'A Help Center article rendered as Markdown, addressed by id. The list surfaces the promoted (featured) articles so one can be pinned as context; any article id can be read, subject to your Zendesk read permissions.',
+            mimeType: 'text/markdown',
+          },
+          async (uri, variables) => {
+            const raw = Array.isArray(variables['id']) ? variables['id'][0] : variables['id'];
+            const id = Number(raw);
+            if (!Number.isSafeInteger(id) || id <= 0) {
+              throw new Error(`Invalid article id in resource URI: ${uri.toString()}`);
+            }
+            return {
+              contents: [
+                {
+                  uri: uri.toString(),
+                  mimeType: 'text/markdown',
+                  text: await articles.readArticle(id),
+                },
+              ],
+            };
+          },
         ),
       );
     }

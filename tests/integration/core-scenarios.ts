@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { errorHandlers } from '../msw-handlers';
+import { errorHandlers, promotedArticlesHandler } from '../msw-handlers';
 import { mswServer } from '../setup';
 import { type ConnectedClient, type IntegrationHarness, makeConfig } from './harness';
 
@@ -57,8 +57,19 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         expect(connected.client.getServerCapabilities()?.resources).toBeUndefined();
       });
 
-      it('omits instructions and the resource when topology is disabled', async () => {
+      it('omits instructions and the topology resource when topology is disabled', async () => {
         connected = await harness.connect(makeConfig({ topology: false }));
+        expect(connected.client.getInstructions()).toBeUndefined();
+        // Instructions are topology-gated. The article resources are a separate,
+        // still-enabled feature, so the resources capability is still advertised
+        // — only the topology resource itself is gone from the listing.
+        expect(connected.client.getServerCapabilities()?.resources).toBeDefined();
+        const { resources } = await connected.client.listResources();
+        expect(resources.map((r) => r.uri)).not.toContain('zendesk-hc://topology');
+      });
+
+      it('omits the resources capability when both resource features are disabled', async () => {
+        connected = await harness.connect(makeConfig({ topology: false, articleResources: false }));
         expect(connected.client.getInstructions()).toBeUndefined();
         expect(connected.client.getServerCapabilities()?.resources).toBeUndefined();
       });
@@ -92,6 +103,45 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         expect(text).toContain('admin');
         // The admin-only section is flagged unavailable, not silently empty.
         expect(text).toMatch(/Guide.?admin/i);
+      });
+    });
+
+    describe('help-center article resources', () => {
+      it('lists only the promoted articles as article resources', async () => {
+        mswServer.use(promotedArticlesHandler);
+        connected = await harness.connect(makeConfig());
+        const uris = (await connected.client.listResources()).resources.map((r) => r.uri);
+
+        expect(uris).toContain('zendesk-hc://article/5001'); // promoted
+        expect(uris).not.toContain('zendesk-hc://article/5000'); // not promoted
+      });
+
+      it('reads any article id as a Markdown resource', async () => {
+        connected = await harness.connect(makeConfig());
+        const read = await connected.client.readResource({ uri: 'zendesk-hc://article/5001' });
+        const text = (read.contents ?? [])
+          .map((c) => (typeof c.text === 'string' ? c.text : ''))
+          .join('\n');
+
+        expect(text).toContain('(5001)');
+        expect(text).toContain('Testing guide'); // body converted from HTML
+        expect(text).not.toContain('<p>'); // not a raw HTML dump
+      });
+
+      it('keeps resources/list working (topology still listed) when the promoted scan fails', async () => {
+        mswServer.use(errorHandlers.articlesListError);
+        connected = await harness.connect(makeConfig());
+        const uris = (await connected.client.listResources()).resources.map((r) => r.uri);
+
+        expect(uris).toContain('zendesk-hc://topology');
+      });
+
+      it('exposes no article resources when the feature is disabled', async () => {
+        mswServer.use(promotedArticlesHandler);
+        connected = await harness.connect(makeConfig({ articleResources: false }));
+        const uris = (await connected.client.listResources()).resources.map((r) => r.uri);
+
+        expect(uris.some((u) => u.startsWith('zendesk-hc://article/'))).toBe(false);
       });
     });
 
