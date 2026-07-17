@@ -85,7 +85,7 @@ export interface ArticleResourcesProvider {
   /** List the promoted articles for the resource template's `list` callback. */
   listPromoted(): Promise<PromotedArticleList>;
   /** Render one article (any id) as Markdown for a resource read. */
-  readArticle(id: number, locale?: string): Promise<string>;
+  readArticle(id: number): Promise<string>;
 }
 
 /**
@@ -130,10 +130,10 @@ export const createArticleResourcesProvider = (
       return promise;
     },
 
-    async readArticle(id, locale) {
+    async readArticle(id) {
       try {
         const token = await getToken();
-        return await fetchArticleMarkdown(subdomain, token, id, locale);
+        return await fetchArticleMarkdown(subdomain, token, id);
       } catch (err) {
         notifyIfUnauthorized(err);
         throw err;

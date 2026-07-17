@@ -4,11 +4,22 @@ import type { Config } from '../config';
 export const TOPOLOGY_RESOURCE_URI = 'zendesk-hc://topology';
 
 /**
+ * URI prefix of the pull-only Help Center article resources. Single source of
+ * truth for both the `{id}` template registered on the server and the concrete
+ * per-article URIs the list callback emits, so the two can never drift apart
+ * (notably if the `zendesk-hc://` scheme is ever made configurable, see #169).
+ */
+export const ARTICLE_RESOURCE_URI_PREFIX = 'zendesk-hc://article/';
+
+/**
  * URI template of the pull-only Help Center article resources. The template's
  * `list` callback enumerates the promoted ("featured") articles (so clients can
  * surface them for pinning), while any article id can be read on demand.
  */
-export const ARTICLE_RESOURCE_URI_TEMPLATE = 'zendesk-hc://article/{id}';
+export const ARTICLE_RESOURCE_URI_TEMPLATE = `${ARTICLE_RESOURCE_URI_PREFIX}{id}`;
+
+/** Build the concrete resource URI for a single article id. */
+export const articleResourceUri = (id: number): string => `${ARTICLE_RESOURCE_URI_PREFIX}${id}`;
 
 /**
  * Whether the Help Center structural context (init instructions + the

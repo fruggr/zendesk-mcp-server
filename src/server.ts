@@ -7,6 +7,7 @@ import { createArticleResourcesProvider } from './guidance/article-resources';
 import {
   ARTICLE_RESOURCE_URI_TEMPLATE,
   articleResourcesEnabled,
+  articleResourceUri,
   buildInstructions,
   helpCenterContextEnabled,
   TOPOLOGY_RESOURCE_URI,
@@ -342,7 +343,7 @@ export const registerToolset = (
             }
             return {
               resources: refs.map((article) => ({
-                uri: `zendesk-hc://article/${article.id}`,
+                uri: articleResourceUri(article.id),
                 name: article.title,
                 title: article.title,
                 mimeType: 'text/markdown',
