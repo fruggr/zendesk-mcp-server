@@ -2,7 +2,7 @@ import { HttpResponse, http } from 'msw';
 import { describe, expect, it } from 'vitest';
 import type { ToolContext } from '../../../src/tools/definitions';
 import { createHelpCenterTools } from '../../../src/tools/help-center';
-import { MOCK_ARTICLE, manyContentTagsHandler } from '../../msw-handlers';
+import { MOCK_ARTICLE, MOCK_TRANSLATION, manyContentTagsHandler } from '../../msw-handlers';
 import { mswServer } from '../../setup';
 
 const ctx: ToolContext = { subdomain: 'testsubdomain', getToken: () => 'test-token' };
@@ -837,20 +837,157 @@ describe('help center tools', () => {
       expect(text).toContain('Setup');
     });
 
-    it('flags sections with diverging word counts as different', async () => {
+    it('does not flag a longer-but-faithful section as divergent (issue #135)', async () => {
+      // en-us "Setup" is 4 words, fr "Setup" is 2 — a benign length gap that the
+      // old word-count heuristic mislabelled `different`. Both are present, so it
+      // must now be `ok`, and the ambiguous `different` status must be gone.
       const tool = findTool('compare_translations');
       const result = await tool.handler({
         article_id: 5000,
         source_locale: 'en-us',
         target_locale: 'fr',
       });
-      expect(result.content[0]?.text).toContain('different');
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('| 1 | Setup | ok |');
+      expect(text).not.toContain('different');
     });
 
-    it('description clarifies that "different" is based on a word count ratio', () => {
+    it('flags the target as likely behind when the source was edited later', async () => {
+      // Primary freshness signal, derived from updated_at: source (en-us) edited
+      // after the target (fr) → the translation is very likely behind.
+      mswServer.use(
+        http.get(`${HC_BASE}/articles/:id/translations/:locale`, ({ params }) => {
+          const locale = params['locale'] as string;
+          const updated_at = locale === 'en-us' ? '2026-05-01T00:00:00Z' : '2026-01-01T00:00:00Z';
+          return HttpResponse.json({
+            translation: {
+              ...MOCK_TRANSLATION,
+              locale,
+              updated_at,
+              body: '<h2>Intro</h2><p>x</p>',
+            },
+          });
+        }),
+      );
       const tool = findTool('compare_translations');
-      expect(tool.description.toLowerCase()).toContain('word count');
-      expect(tool.description).toContain('25');
+      const result = await tool.handler({
+        article_id: 5000,
+        source_locale: 'en-us',
+        target_locale: 'fr',
+      });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('Freshness');
+      expect(text.toLowerCase()).toContain('behind');
+    });
+
+    it('reports the target as up to date when the source is not newer', async () => {
+      // Both translations share the fixture updated_at, so the source is not
+      // newer than the target → up to date.
+      const tool = findTool('compare_translations');
+      const result = await tool.handler({
+        article_id: 5000,
+        source_locale: 'en-us',
+        target_locale: 'fr',
+      });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toMatch(/Freshness[^\n]*up to date/i);
+    });
+
+    it('surfaces the target outdated flag in the header when set', async () => {
+      // en-us is outdated:true in the translations list fixture.
+      const tool = findTool('compare_translations');
+      const result = await tool.handler({
+        article_id: 5000,
+        source_locale: 'fr',
+        target_locale: 'en-us',
+      });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('outdated flag');
+      expect(text.toLowerCase()).toContain('yes');
+    });
+
+    it('matches the outdated flag case-insensitively against the locale list', async () => {
+      // Zendesk accepts a mixed-case locale in the request URL but reports it
+      // canonically lowercased in the list, so "EN-US" must still resolve to
+      // the outdated:true en-us entry rather than falling back to "unknown".
+      const tool = findTool('compare_translations');
+      const result = await tool.handler({
+        article_id: 5000,
+        source_locale: 'fr',
+        target_locale: 'EN-US',
+      });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('outdated flag');
+      expect(text.toLowerCase()).toContain('yes');
+      expect(text).not.toContain('unknown');
+    });
+
+    it('reports outdated "unknown" when the list omits the flag for an existing target', async () => {
+      // Defensive path: the target translation exists but its list entry carries
+      // no `outdated` field (some tenants/endpoints omit it). Must degrade to
+      // "unknown" rather than crash or invent a value. This branch is not
+      // reproducible against a live tenant (the list there always returns the
+      // flag), so it is only covered here.
+      mswServer.use(
+        http.get(`${HC_BASE}/articles/:id/translations`, () =>
+          HttpResponse.json({
+            translations: [{ ...MOCK_TRANSLATION, locale: 'fr' }],
+          }),
+        ),
+      );
+      const tool = findTool('compare_translations');
+      const result = await tool.handler({
+        article_id: 5000,
+        source_locale: 'en-us',
+        target_locale: 'fr',
+      });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toMatch(/Outdated[^\n]*unknown/i);
+    });
+
+    it('reports the target as not outdated when the flag is false', async () => {
+      const tool = findTool('compare_translations');
+      const result = await tool.handler({
+        article_id: 5000,
+        source_locale: 'en-us',
+        target_locale: 'fr',
+      });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toMatch(/Outdated[^\n]*\bno\b/i);
+    });
+
+    it('reports a section missing in the target and a structural mismatch', async () => {
+      // de has only the Intro section; en-us has Intro + Setup.
+      const tool = findTool('compare_translations');
+      const result = await tool.handler({
+        article_id: 5000,
+        source_locale: 'en-us',
+        target_locale: 'de',
+      });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('| 1 | Setup | missing |');
+      expect(text.toLowerCase()).toContain('mismatch');
+    });
+
+    it('reports a section present only in the target as extra', async () => {
+      const tool = findTool('compare_translations');
+      const result = await tool.handler({
+        article_id: 5000,
+        source_locale: 'de',
+        target_locale: 'en-us',
+      });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('| 1 | Setup | extra |');
+    });
+
+    it('description surfaces freshness and the outdated flag, and treats word counts as informational', () => {
+      const tool = findTool('compare_translations');
+      const description = tool.description.toLowerCase();
+      expect(description).toContain('freshness');
+      expect(description).toContain('outdated');
+      expect(description).toContain('informational');
+      // The old contract keyed the status off a 25% word-count ratio; that is gone.
+      expect(tool.description).not.toContain('25%');
     });
   });
 });

@@ -266,6 +266,23 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         expect(filteredText).not.toContain('scanner');
       });
 
+      it('compares translations, surfacing the outdated flag and section status over the wire (#135)', async () => {
+        connected = await harness.connect(makeConfig({ mode: 'all' }));
+        const result = await connected.client.callTool({
+          name: 'compare_translations',
+          arguments: { article_id: 5000, source_locale: 'fr', target_locale: 'en-us' },
+        });
+
+        expect(result.isError).toBeFalsy();
+        const text = textOf(result);
+        // en-us is outdated:true in the translations-list fixture.
+        expect(text).toContain('outdated flag');
+        expect(text.toLowerCase()).toContain('yes');
+        // Per-section presence status, not a word-count verdict.
+        expect(text).toContain('| Idx | Heading | Status');
+        expect(text).not.toContain('different');
+      });
+
       it('archives a Help Center article over the wire when confirmed', async () => {
         connected = await harness.connect(makeConfig({ mode: 'all' }));
         const result = await connected.client.callTool({

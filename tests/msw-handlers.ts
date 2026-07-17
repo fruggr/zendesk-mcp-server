@@ -681,7 +681,9 @@ export const handlers = [
     const body =
       locale === 'en-us'
         ? '<h2>Intro</h2><p>Source intro</p><h2>Setup</h2><p>one two three four</p>'
-        : '<h2>Intro</h2><p>French intro</p><h2>Setup</h2><p>un deux</p>';
+        : locale === 'de'
+          ? '<h2>Intro</h2><p>Deutsch intro</p>'
+          : '<h2>Intro</h2><p>French intro</p><h2>Setup</h2><p>un deux</p>';
     return HttpResponse.json({
       translation: { ...MOCK_TRANSLATION, locale, body },
     });

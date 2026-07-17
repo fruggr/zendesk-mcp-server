@@ -75,6 +75,21 @@ import type { ToolContext, ToolDefinition } from './definitions';
 const ARTICLE_ID_DESC =
   'Article ID — the numeric id of the Help Center article. Obtain it from list_articles or search_articles.';
 
+// The article `translations` list endpoint, shared by every read tool that
+// needs the available locales. It is also the only endpoint that returns the
+// per-translation `outdated` flag (a single-translation GET omits it), so
+// callers checking staleness must go through here.
+const listTranslations = (
+  subdomain: string,
+  token: string,
+  articleId: number,
+): Promise<ZendeskTranslation[]> =>
+  helpCenterGet<{ translations: ZendeskTranslation[] }>(
+    subdomain,
+    token,
+    `/articles/${articleId}/translations`,
+  ).then((res) => res.translations);
+
 const largeArticleHint = (body: string, sectionCount: number): string | null => {
   if (body.length < LARGE_ARTICLE_BODY_CHARS && sectionCount < LARGE_ARTICLE_SECTION_COUNT) {
     return null;
@@ -224,11 +239,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           token,
           path,
         );
-        const { translations } = await helpCenterGet<{ translations: ZendeskTranslation[] }>(
-          subdomain,
-          token,
-          `/articles/${article_id}/translations`,
-        );
+        const translations = await listTranslations(subdomain, token, article_id);
         const hint = largeArticleHint(article.body, parseSections(article.body).length);
         const text =
           (hint ?? '') +
@@ -470,11 +481,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         }
         const formatted = await Promise.all(
           articles.map(async (article) => {
-            const { translations } = await helpCenterGet<{ translations: ZendeskTranslation[] }>(
-              subdomain,
-              token,
-              `/articles/${article.id}/translations`,
-            );
+            const translations = await listTranslations(subdomain, token, article.id);
             const locales = translations.map((t) => t.locale).join(', ');
             return `${formatArticleSummary(article)}\n- **Translations**: ${locales}`;
           }),
@@ -506,11 +513,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       handler: async (params) => {
         const { article_id } = params as { article_id: number };
         const token = await getToken();
-        const { translations } = await helpCenterGet<{ translations: ZendeskTranslation[] }>(
-          subdomain,
-          token,
-          `/articles/${article_id}/translations`,
-        );
+        const translations = await listTranslations(subdomain, token, article_id);
         return {
           content: [{ type: 'text', text: formatList(translations, formatTranslationSummary) }],
         };
@@ -1329,9 +1332,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           token,
           `/articles/${article_id}/translations/${effectiveLocale}`,
         );
-        const { translations } = await helpCenterGet<{
-          translations: Array<ZendeskTranslation & { outdated?: boolean }>;
-        }>(subdomain, token, `/articles/${article_id}/translations`);
+        const translations = await listTranslations(subdomain, token, article_id);
         const sections = parseSections(translation.body);
 
         const outlineLines = sections.length
@@ -1492,7 +1493,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: true,
       title: 'Compare Article Translations',
       description:
-        'Compare section structure between two locales of the same article, matched by index. Returns a compact table (one row per section) with status: "ok" (both present, source/target word count ratio within 25%), "different" (word count ratio diverges by more than 25% — size signal only, NOT a semantic divergence: two locales may legitimately differ in verbosity) or "missing" (section absent in target). Useful to spot structurally stale or missing sections; do not interpret "different" as an edit regression on its own.',
+        'Compare two locales of the same article to decide whether the target translation needs work, reporting independent signals instead of one ambiguous verdict. (1) Header — a "Freshness" verdict for the target, derived from the two translations\' updated_at timestamps: if the source was edited after the target it is "likely behind, review recommended" (with the day gap), otherwise "up to date". This is the primary staleness signal and is always available. (2) Zendesk\'s own per-translation "outdated" flag for the target ("yes"/"no"/"unknown"), shown as a secondary overlay: it is only set through Guide\'s native "mark out of date" workflow and NOT by API edits, so a "no" does not by itself mean current — prefer Freshness. (3) A global structure check (section count and heading-tag sequence); on mismatch the header warns the per-index rows may be misaligned. (4) A per-section table matched by index, status "ok" (present in both), "missing" (present in source, absent in target) or "extra" (present in target, absent in source). (5) Per-section source/target word counts, INFORMATIONAL ONLY: a length difference between languages is normal and is deliberately NOT flagged as a divergence — do not read a word-count gap as an edit regression or staleness. Read-only; performs three Help Center GET calls (both translations plus the translations list for the outdated flag).',
       inputSchema: z.object({
         article_id: z.number().int().describe(ARTICLE_ID_DESC),
         source_locale: z
@@ -1515,7 +1516,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           target_locale: string;
         };
         const token = await getToken();
-        const [sourceRes, targetRes] = await Promise.all([
+        const [sourceRes, targetRes, translations] = await Promise.all([
           helpCenterGet<{ translation: ZendeskTranslation }>(
             subdomain,
             token,
@@ -1526,10 +1527,73 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
             token,
             `/articles/${article_id}/translations/${target_locale}`,
           ),
+          // The `outdated` flag is only exposed on the list endpoint, not on a
+          // single-translation GET — same reason get_article_outline lists too.
+          listTranslations(subdomain, token, article_id),
         ]);
         const sourceSections = parseSections(sourceRes.translation.body);
         const targetSections = parseSections(targetRes.translation.body);
         const maxLen = Math.max(sourceSections.length, targetSections.length);
+
+        // Primary staleness signal: derive it from the edit timestamps we
+        // already fetched. If the source was edited after the target, the
+        // translation is very likely behind. This is always available and, for
+        // API/external translation workflows, far more useful than Zendesk's
+        // `outdated` flag (which is only set through Guide's own edit workflow —
+        // see below). updated_at values are ISO-8601 UTC, so a lexical compare
+        // is order-correct; parse for the day delta.
+        const sourceUpdated = sourceRes.translation.updated_at;
+        const targetUpdated = targetRes.translation.updated_at;
+        const srcMs = Date.parse(sourceUpdated);
+        const tgtMs = Date.parse(targetUpdated);
+        const comparable = Number.isFinite(srcMs) && Number.isFinite(tgtMs);
+        let freshnessLine: string;
+        if (comparable && srcMs > tgtMs) {
+          const days = Math.floor((srcMs - tgtMs) / 86_400_000);
+          const gap = days >= 1 ? `${days} day(s)` : 'less than a day';
+          freshnessLine = `- **Freshness (target ${target_locale})**: source was edited ${gap} after this translation → likely behind, review recommended.`;
+        } else if (comparable) {
+          freshnessLine = `- **Freshness (target ${target_locale})**: up to date (source has not been edited since this translation).`;
+        } else {
+          freshnessLine = `- **Freshness (target ${target_locale})**: unknown (could not compare edit timestamps).`;
+        }
+
+        // Secondary signal: Zendesk's own per-translation `outdated` flag for the
+        // target locale. It is only set through Guide's native "mark translations
+        // out of date" workflow, NOT by API edits — so for API/external workflows
+        // it usually stays false regardless of real staleness. Surface it, but as
+        // an overlay to the freshness signal above, never as the sole verdict.
+        // "unknown" when the API does not return it. Match case-insensitively:
+        // Zendesk accepts a mixed-case locale in the request URL but the list
+        // endpoint reports it canonically lowercased, so an exact match would
+        // spuriously fall back to "unknown".
+        const targetLocaleKey = target_locale.toLowerCase();
+        const targetListEntry = translations.find(
+          (t) => t.locale.toLowerCase() === targetLocaleKey,
+        );
+        const outdated =
+          targetListEntry?.outdated === undefined
+            ? 'unknown'
+            : targetListEntry.outdated
+              ? 'yes'
+              : 'no';
+        const outdatedLine =
+          outdated === 'yes'
+            ? `- **Zendesk outdated flag (target ${target_locale})**: yes — explicitly marked out of date in Guide.`
+            : outdated === 'no'
+              ? `- **Zendesk outdated flag (target ${target_locale})**: no (only set via Guide's own edit workflow; "no" does not by itself mean current — rely on Freshness above).`
+              : `- **Zendesk outdated flag (target ${target_locale})**: unknown.`;
+
+        // Structural verdict: language-neutral (section count + heading-tag
+        // sequence), unlike word counts. A mismatch means the index-matched
+        // rows below may not line up.
+        const sourceTags = sourceSections.map((s) => s.headingTag).join(',');
+        const targetTags = targetSections.map((s) => s.headingTag).join(',');
+        const structureAligned =
+          sourceSections.length === targetSections.length && sourceTags === targetTags;
+        const structureLine = structureAligned
+          ? `- **Structure**: ${sourceSections.length} sections in both locales — aligned.`
+          : `- **Structure**: ${sourceSections.length} source vs ${targetSections.length} target sections — MISMATCH; the per-index rows below may be misaligned.`;
 
         const rows: string[] = [];
         rows.push(`| Idx | Heading | Status | Source words | Target words |`);
@@ -1540,19 +1604,23 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           const heading = src?.heading ?? tgt?.heading ?? '';
           const sourceWords = src?.wordCount ?? 0;
           const targetWords = tgt?.wordCount ?? 0;
-          let status: 'ok' | 'missing' | 'different';
+          let status: 'ok' | 'missing' | 'extra';
           if (!tgt) status = 'missing';
-          else if (!src) status = 'different';
-          else {
-            const denom = Math.max(sourceWords, 1);
-            const diffRatio = Math.abs(sourceWords - targetWords) / denom;
-            status = diffRatio > 0.25 ? 'different' : 'ok';
-          }
+          else if (!src) status = 'extra';
+          else status = 'ok';
           rows.push(`| ${i} | ${heading} | ${status} | ${sourceWords} | ${targetWords} |`);
         }
 
         const text = [
           `# Translation diff — Article #${article_id} (${source_locale} → ${target_locale})`,
+          '',
+          freshnessLine,
+          outdatedLine,
+          structureLine,
+          `- **Updated**: source ${sourceUpdated} | target ${targetUpdated}`,
+          `- **Target draft**: ${targetRes.translation.draft ? 'yes' : 'no'}`,
+          '',
+          '_Word counts are informational: a length difference between languages is normal, not a divergence._',
           '',
           ...rows,
         ].join('\n');
