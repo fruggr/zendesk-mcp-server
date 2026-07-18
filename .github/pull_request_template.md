@@ -28,7 +28,7 @@ Closes #<n>
 - [ ] I ran a Claude Code review on the diff and addressed its findings
 - [ ] Documentation is updated where needed
 - [ ] If this PR adds an MCP tool: it is documented in `docs/mcp-tools-reference.md`
-- [ ] If the change has **MCP-runtime-observable** behaviour (tool surface, transports, auth, resources, prompts): this PR carries a `## Functional validation plan` (authored with `/functional-validation-plan`), executed by an independent validator (`/run-validation-plan`) whose report is posted as a PR comment. Pure tooling / dev-tooling is exempt — the standard gates cover it.
+- [ ] If the change has **MCP-runtime-observable** behaviour (tool surface, transports, auth, resources, prompts, persistence, timing): this PR carries a `## Functional validation plan` (authored with `/functional-validation-plan`), executed by an independent validator (`/run-validation-plan`) whose report is posted as a PR comment. Pure tooling / dev-tooling is exempt — the standard gates cover it.
 
 ## Notes for the reviewer (human or AI)
 <!-- Points worth attention, design choices to validate, alternatives ruled out -->

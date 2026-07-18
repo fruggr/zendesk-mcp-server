@@ -11,8 +11,9 @@ behaves as claimed. This skill produces the brief that lets them do that.
 
 ## When to apply
 
-- Whenever you produce an **implementation plan**: the plan must include a
-  functional validation plan as a first-class section, not an afterthought.
+- Whenever you produce an **implementation plan** that changes MCP-runtime-
+  observable behaviour: the plan must include a functional validation plan as a
+  first-class section, not an afterthought.
 - Whenever you land a feature or bugfix whose behaviour is observable at
   **MCP-server runtime** (auth flows, transports, tool surface, resources,
   prompts, persistence, timing).
