@@ -346,6 +346,12 @@ export const registerToolset = (
                 uri: articleResourceUri(article.id),
                 name: article.title,
                 title: article.title,
+                // Per-article description so clients that render `uri — description`
+                // in a resource picker can tell the entries apart (without it, every
+                // entry inherits the template's generic description and looks
+                // identical). Lead with the title + id so the distinguishing part
+                // survives the client truncating a long line.
+                description: `"${article.title}" (article ${article.id}) — promoted Help Center article, as Markdown.`,
                 mimeType: 'text/markdown',
               })),
             };

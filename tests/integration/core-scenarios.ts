@@ -110,10 +110,19 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
       it('lists only the promoted articles as article resources', async () => {
         mswServer.use(promotedArticlesHandler);
         connected = await harness.connect(makeConfig());
-        const uris = (await connected.client.listResources()).resources.map((r) => r.uri);
+        const { resources } = await connected.client.listResources();
+        const uris = resources.map((r) => r.uri);
 
         expect(uris).toContain('zendesk-hc://article/5001'); // promoted
         expect(uris).not.toContain('zendesk-hc://article/5000'); // not promoted
+
+        // Each article entry carries its own title/description (not the template's
+        // generic one) so a resource picker can tell them apart — the entry must
+        // not inherit the template metadata verbatim.
+        const promoted = resources.find((r) => r.uri === 'zendesk-hc://article/5001');
+        expect(promoted?.title).toBe('Featured guide');
+        expect(promoted?.description).toContain('Featured guide');
+        expect(promoted?.description).toContain('5001');
       });
 
       it('reads any article id as a Markdown resource', async () => {
