@@ -35,9 +35,11 @@ if (rawForced && forced !== 'native' && forced !== 'legacy') {
   );
 }
 
-// PRoot's link2symlink store — the one environment where tsgo mislocates its
-// libs. Keyed on this marker, never on arch (real arm64 runs native TS 7 fine).
-const nativeBroken = () => existsSync('/.l2s');
+// Detect PRoot's link2symlink layer — the one environment where tsgo mislocates
+// its libs. `PROOT_L2S_DIR` is PRoot's own signal that link2symlink is active
+// (set even when the store isn't at the default `/.l2s`); the path check is the
+// fallback. Keyed on these, never on arch (real arm64 runs native TS 7 fine).
+const nativeBroken = () => Boolean(process.env.PROOT_L2S_DIR) || existsSync('/.l2s');
 
 const useLegacy = forced === 'legacy' || (forced !== 'native' && nativeBroken());
 const pkg = useLegacy ? 'typescript-legacy' : 'typescript';
