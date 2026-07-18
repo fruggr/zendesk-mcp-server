@@ -14,18 +14,19 @@ const TOKEN = 'test-token';
 const HC = `https://${SUBDOMAIN}.zendesk.com/api/v2/help_center`;
 
 describe('fetchPromotedArticles', () => {
-  it('returns only the promoted articles, filtering the rest out client-side', async () => {
+  it('returns only the promoted articles (full objects), filtering the rest out client-side', async () => {
     mswServer.use(promotedArticlesHandler);
-    const { refs, truncated } = await fetchPromotedArticles(SUBDOMAIN, TOKEN);
+    const { articles, truncated } = await fetchPromotedArticles(SUBDOMAIN, TOKEN);
 
     expect(truncated).toBe(false);
-    expect(refs).toEqual([{ id: 5001, title: 'Featured guide' }]);
+    expect(articles.map((a) => a.id)).toEqual([5001]);
+    expect(articles[0]).toMatchObject({ id: 5001, title: 'Featured guide', promoted: true });
   });
 
   it('returns an empty list when nothing is promoted', async () => {
     // The default /articles handler returns a single non-promoted article.
-    const { refs, truncated } = await fetchPromotedArticles(SUBDOMAIN, TOKEN);
-    expect(refs).toEqual([]);
+    const { articles, truncated } = await fetchPromotedArticles(SUBDOMAIN, TOKEN);
+    expect(articles).toEqual([]);
     expect(truncated).toBe(false);
   });
 
@@ -40,9 +41,9 @@ describe('fetchPromotedArticles', () => {
       ),
     );
 
-    const { refs, truncated } = await fetchPromotedArticles(SUBDOMAIN, TOKEN, 1);
+    const { articles, truncated } = await fetchPromotedArticles(SUBDOMAIN, TOKEN, 1);
     expect(truncated).toBe(true);
-    expect(refs).toHaveLength(1);
+    expect(articles).toHaveLength(1);
   });
 });
 

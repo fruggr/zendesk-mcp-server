@@ -10,6 +10,7 @@ import {
   zendeskPost,
 } from '../client/zendesk-api';
 import {
+  ARTICLE_RESOURCES_SCAN_MAX_PAGES,
   CONTENT_TAGS_MAX_PAGE_SIZE,
   DEFAULT_PAGE_SIZE,
   LARGE_ARTICLE_BODY_CHARS,
@@ -17,6 +18,7 @@ import {
   MAX_PAGE_SIZE,
   REORDER_CONFIRM_THRESHOLD,
 } from '../constants';
+import { fetchPromotedArticles } from '../guidance/article-resources';
 import type {
   ZendeskArticle,
   ZendeskArticleAttachment,
@@ -492,6 +494,37 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           : '';
         const text = [header, ...formatted].filter(Boolean).join('\n\n');
         return { content: [{ type: 'text', text: truncateIfNeeded(text) }] };
+      },
+    },
+    {
+      name: 'list_promoted_articles',
+      namespace: 'help_center',
+      readOnly: true,
+      title: 'List Promoted Help Center Articles',
+      description:
+        'List the promoted ("featured") Help Center articles — the small, editorially-curated set surfaced at the top of their sections. Returns metadata only (no body); use get_article for full content. The Help Center API has no server-side promoted filter, so this scans article pages and filters client-side, bounded by a page cap (ZENDESK_ARTICLE_RESOURCES_SCAN_MAX_PAGES, default 20); on a very large Help Center some promoted articles may be omitted, and that is flagged in the output. Lists the default locale. To promote or unpromote an article, use update_article with `promoted` (requires Help Center admin / Guide admin rights).',
+      inputSchema: z.object({}),
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+      handler: async () => {
+        const token = await getToken();
+        const { articles, truncated } = await fetchPromotedArticles(subdomain, token);
+        const header = `Promoted (featured) articles: ${articles.length}`;
+        const body = articles.length
+          ? articles.map(formatArticleSummary).join('\n\n')
+          : '_No promoted articles found._';
+        // No silent caps: if the scan was bounded, say so rather than implying the
+        // list is exhaustive.
+        const note = truncated
+          ? `\n\n_Note: the scan hit its ${ARTICLE_RESOURCES_SCAN_MAX_PAGES}-page cap, so promoted articles deeper in the catalog may be missing. Raise ZENDESK_ARTICLE_RESOURCES_SCAN_MAX_PAGES to widen it._`
+          : '';
+        return {
+          content: [{ type: 'text', text: truncateIfNeeded(`${header}\n\n${body}${note}`) }],
+        };
       },
     },
     {

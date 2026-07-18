@@ -2,7 +2,12 @@ import { HttpResponse, http } from 'msw';
 import { describe, expect, it } from 'vitest';
 import type { ToolContext } from '../../../src/tools/definitions';
 import { createHelpCenterTools } from '../../../src/tools/help-center';
-import { MOCK_ARTICLE, MOCK_TRANSLATION, manyContentTagsHandler } from '../../msw-handlers';
+import {
+  MOCK_ARTICLE,
+  MOCK_TRANSLATION,
+  manyContentTagsHandler,
+  promotedArticlesHandler,
+} from '../../msw-handlers';
 import { mswServer } from '../../setup';
 
 const ctx: ToolContext = { subdomain: 'testsubdomain', getToken: () => 'test-token' };
@@ -16,8 +21,46 @@ const findTool = (name: string) => {
 };
 
 describe('help center tools', () => {
-  it('creates 23 tools', () => {
-    expect(createHelpCenterTools(ctx)).toHaveLength(23);
+  it('creates 24 tools', () => {
+    expect(createHelpCenterTools(ctx)).toHaveLength(24);
+  });
+
+  describe('list_promoted_articles', () => {
+    it('lists only the promoted articles, with the admin-only status note', async () => {
+      mswServer.use(promotedArticlesHandler);
+      const tool = findTool('list_promoted_articles');
+      const result = await tool.handler({});
+      const text = result.content[0]?.text ?? '';
+
+      expect(text).toContain('Featured guide'); // promoted (5001)
+      expect(text).toContain('5001');
+      expect(text).not.toContain('How to test'); // non-promoted (5000) filtered out
+      // The admin-only caveat rides along on each promoted article.
+      expect(text).toContain('**Promoted**');
+      expect(text).toMatch(/Help Center admin|Guide admin/);
+    });
+
+    it('reports when nothing is promoted', async () => {
+      // The default /articles handler returns a single non-promoted article.
+      const tool = findTool('list_promoted_articles');
+      const result = await tool.handler({});
+      expect(result.content[0]?.text).toContain('No promoted articles');
+    });
+
+    it('flags truncation when the scan hits the page cap', async () => {
+      mswServer.use(
+        http.get(`${HC_BASE}/articles`, () =>
+          HttpResponse.json({
+            articles: [{ ...MOCK_ARTICLE, id: 5001, promoted: true }],
+            meta: { has_more: true, after_cursor: 'next-cursor' },
+            count: 100,
+          }),
+        ),
+      );
+      const tool = findTool('list_promoted_articles');
+      const result = await tool.handler({});
+      expect(result.content[0]?.text).toMatch(/cap|omitted|missing/i);
+    });
   });
 
   describe('search_articles', () => {

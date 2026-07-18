@@ -65,7 +65,7 @@ describe('groupByNamespace', () => {
     const hcCount = grouped.get('help_center')?.length ?? 0;
     const userCount = grouped.get('users')?.length ?? 0;
     expect(ticketCount).toBe(18); // 17 ticket tools + 1 search
-    expect(hcCount).toBe(23);
+    expect(hcCount).toBe(24);
     expect(userCount).toBe(5);
   });
 });

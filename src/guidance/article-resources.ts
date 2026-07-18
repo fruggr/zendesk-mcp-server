@@ -22,19 +22,30 @@ export interface PromotedArticleList {
   truncated: boolean;
 }
 
+/** Result of the raw scan: the full promoted articles, plus the truncation flag. */
+export interface PromotedArticleScan {
+  articles: ZendeskArticle[];
+  /** True when the page cap was hit with more pages remaining (some omitted). */
+  truncated: boolean;
+}
+
 /**
  * Scan the Help Center for promoted ("featured") articles with the CALLER'S
  * token, so the result respects that user's read permissions. The API exposes no
  * server-side `promoted` filter (only label_names / sort), so we page through
  * `/articles` and filter `promoted` client-side, bounded by `maxPages` to keep
  * the scan tractable on a large Help Center. `truncated` signals the cap was hit.
+ *
+ * Returns the FULL promoted articles so callers that need rich metadata (the
+ * `list_promoted_articles` tool) get everything; the resource provider maps these
+ * down to lean refs before caching so the per-session cache doesn't retain bodies.
  */
 export const fetchPromotedArticles = async (
   subdomain: string,
   token: string,
   maxPages: number = ARTICLE_RESOURCES_SCAN_MAX_PAGES,
-): Promise<PromotedArticleList> => {
-  const refs: PromotedArticleRef[] = [];
+): Promise<PromotedArticleScan> => {
+  const promoted: ZendeskArticle[] = [];
   let cursor: string | undefined;
   let pages = 0;
   let truncated = false;
@@ -49,7 +60,7 @@ export const fetchPromotedArticles = async (
     const articles = response.articles ?? [];
     for (const article of articles) {
       if (article.promoted) {
-        refs.push({ id: article.id, title: article.title });
+        promoted.push(article);
       }
     }
     pages += 1;
@@ -61,7 +72,7 @@ export const fetchPromotedArticles = async (
     }
   } while (cursor);
 
-  return { refs, truncated };
+  return { articles: promoted, truncated };
 };
 
 /**
@@ -120,7 +131,10 @@ export const createArticleResourcesProvider = (
 
       const promise = (async () => {
         const token = await getToken();
-        return fetchPromotedArticles(subdomain, token);
+        const { articles, truncated } = await fetchPromotedArticles(subdomain, token);
+        // Map to lean refs before caching so the per-session cache holds only the
+        // id + title, never the full article bodies from the scan.
+        return { refs: articles.map((a) => ({ id: a.id, title: a.title })), truncated };
       })().catch((err: unknown) => {
         cached = undefined;
         notifyIfUnauthorized(err);
