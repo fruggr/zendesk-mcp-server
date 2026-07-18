@@ -87,12 +87,20 @@ quality bar still hold — the freedom is from Zendesk's shape, not from craft.)
 
 ## Planning
 
-Every implementation plan must also carry a **functional validation plan** for
-the feature, written for an *independent* validator (another agent or a human) —
-not the implementer. It lives in the PR description; the validator posts their
-report as a PR comment (English). Author the plan with the
+An implementation plan that changes **MCP-runtime-observable behaviour** — the
+tool surface, transports, auth, resources, prompts, persistence or timing a
+running server exposes to a client — must also carry a **functional validation
+plan** for that behaviour, written for an *independent* validator (another agent
+or a human), not the implementer. It lives in the PR description; the validator
+posts their report as a PR comment (English). Author the plan with the
 `functional-validation-plan` skill; the validator executes it with the
 `run-validation-plan` skill — don't inline either here.
+
+**Pure tooling / dev-tooling changes are exempt** — build scripts, the
+typecheck/lint/format setup, dev-only scripts, CI and release automation change
+nothing a client observes at runtime, so the standard gates (`pnpm typecheck` /
+`pnpm check` / `pnpm test` + CI) *are* the validation; no third-party pass. The
+test: if a running server behaves no differently for a client, it's tooling.
 
 ## Code style
 

@@ -13,11 +13,16 @@ behaves as claimed. This skill produces the brief that lets them do that.
 
 - Whenever you produce an **implementation plan**: the plan must include a
   functional validation plan as a first-class section, not an afterthought.
-- Whenever you land a feature or bugfix whose behaviour is observable at runtime
-  (auth flows, transports, tool surface, persistence, timing).
+- Whenever you land a feature or bugfix whose behaviour is observable at
+  **MCP-server runtime** (auth flows, transports, tool surface, resources,
+  prompts, persistence, timing).
 
-Skip only for changes with no runtime-observable behaviour (pure docs, comments,
-formatting) — say so explicitly rather than silently omitting it.
+Skip for changes with no MCP-runtime-observable behaviour: pure docs, comments,
+formatting, **and pure tooling / dev-tooling** (build scripts, the
+typecheck/lint/format setup, dev-only scripts, CI, release automation) — those
+are covered by the standard gates (`pnpm typecheck` / `pnpm check` / `pnpm test`
++ CI), not a third-party functional pass. Say so explicitly rather than silently
+omitting the plan.
 
 ## Hard rules
 
