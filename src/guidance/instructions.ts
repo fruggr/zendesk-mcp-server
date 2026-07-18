@@ -22,27 +22,33 @@ export const ARTICLE_RESOURCE_URI_TEMPLATE = `${ARTICLE_RESOURCE_URI_PREFIX}{id}
 export const articleResourceUri = (id: number): string => `${ARTICLE_RESOURCE_URI_PREFIX}${id}`;
 
 /**
+ * Whether the `help_center` namespace is active: no `--namespace` filter, or one
+ * that includes it. The shared second half of the two Help Center feature gates
+ * below, so the namespace semantics live in one place.
+ */
+const helpCenterNamespaceActive = (config: Config): boolean =>
+  !config.namespaces?.length || config.namespaces.includes('help_center');
+
+/**
  * Whether the Help Center structural context (init instructions + the
  * `zendesk-hc://topology` resource) should be exposed. True only when the
  * feature is enabled (`--no-topology` not set) AND the `help_center` namespace
- * is active (no `--namespace` filter, or one that includes it). Shared by the
- * instructions builder and the resource registration in `server.ts` so both
- * gates stay in sync.
+ * is active. Shared by the instructions builder and the resource registration in
+ * `server.ts` so both gates stay in sync.
  */
 export const helpCenterContextEnabled = (config: Config): boolean =>
-  config.topology && (!config.namespaces?.length || config.namespaces.includes('help_center'));
+  config.topology && helpCenterNamespaceActive(config);
 
 /**
  * Whether the pull-only Help Center article resources
  * (`zendesk-hc://article/{id}`) should be exposed. True only when the feature is
  * enabled (`--no-article-resources` not set) AND the `help_center` namespace is
- * active (no `--namespace` filter, or one that includes it). Same double-gate as
- * `helpCenterContextEnabled`, but keyed to its own flag so an operator can toggle
- * the topology resource and the article resources independently.
+ * active. Same double-gate as `helpCenterContextEnabled`, but keyed to its own
+ * flag so an operator can toggle the topology resource and the article resources
+ * independently.
  */
 export const articleResourcesEnabled = (config: Config): boolean =>
-  config.articleResources &&
-  (!config.namespaces?.length || config.namespaces.includes('help_center'));
+  config.articleResources && helpCenterNamespaceActive(config);
 
 /**
  * The static `instructions` blob sent on `initialize`. Deliberately short and

@@ -19,7 +19,7 @@ describe('fetchPromotedArticles', () => {
     const { refs, truncated } = await fetchPromotedArticles(SUBDOMAIN, TOKEN);
 
     expect(truncated).toBe(false);
-    expect(refs).toEqual([{ id: 5001, title: 'Featured guide', locale: 'en-us' }]);
+    expect(refs).toEqual([{ id: 5001, title: 'Featured guide' }]);
   });
 
   it('returns an empty list when nothing is promoted', async () => {

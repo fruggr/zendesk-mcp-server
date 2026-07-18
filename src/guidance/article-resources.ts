@@ -13,7 +13,6 @@ import { buildCursorParams, extractPaginationMeta } from '../utils/pagination';
 export interface PromotedArticleRef {
   id: number;
   title: string;
-  locale: string;
 }
 
 /** Result of a promoted-article scan: the refs, plus whether the cap cut it short. */
@@ -38,6 +37,7 @@ export const fetchPromotedArticles = async (
   const refs: PromotedArticleRef[] = [];
   let cursor: string | undefined;
   let pages = 0;
+  let truncated = false;
 
   do {
     const response = await helpCenterGet<ZendeskListResponse<ZendeskArticle>>(
@@ -49,18 +49,19 @@ export const fetchPromotedArticles = async (
     const articles = response.articles ?? [];
     for (const article of articles) {
       if (article.promoted) {
-        refs.push({ id: article.id, title: article.title, locale: article.locale });
+        refs.push({ id: article.id, title: article.title });
       }
     }
     pages += 1;
     const meta = extractPaginationMeta(response, articles.length);
     cursor = meta.has_more ? (meta.after_cursor ?? undefined) : undefined;
     if (cursor && pages >= maxPages) {
-      return { refs, truncated: true };
+      truncated = true;
+      break;
     }
   } while (cursor);
 
-  return { refs, truncated: false };
+  return { refs, truncated };
 };
 
 /**
