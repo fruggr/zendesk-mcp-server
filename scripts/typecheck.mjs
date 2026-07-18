@@ -10,7 +10,9 @@
 //
 // On such environments we fall back to the JS-based TypeScript 6, installed
 // under the `typescript-legacy` alias. Everywhere else — CI, x86, genuine
-// arm64 (Apple silicon, Graviton) — the fast native TS 7 is used.
+// arm64 (Apple silicon, Graviton) — the fast native TS 7 is used. Because the
+// two are different compilers, CI (native TS 7) stays the source of truth; a
+// local TS 6 pass is a close pre-check, not a guarantee.
 //
 // Override the auto-detection with ZENDESK_MCP_TSC=native|legacy.
 // Retire this shim and the `typescript-legacy` alias once tsgo resolves the
@@ -19,29 +21,51 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { constants } from 'node:os';
 import { dirname, join } from 'node:path';
 
-const forced = process.env.ZENDESK_MCP_TSC; // "native" | "legacy" | undefined
+// Explicit override, normalized so casing/whitespace variants ("Native",
+// "legacy\n") are honored. An unrecognized value warns and falls through to
+// auto-detection rather than being silently ignored.
+const rawForced = process.env.ZENDESK_MCP_TSC;
+const forced = rawForced?.trim().toLowerCase();
+if (rawForced && forced !== 'native' && forced !== 'legacy') {
+  console.error(
+    `[typecheck] ignoring unrecognized ZENDESK_MCP_TSC=${JSON.stringify(rawForced)} (expected "native" or "legacy"); auto-detecting`,
+  );
+}
 
 // PRoot's link2symlink store — the one environment where tsgo mislocates its
 // libs. Keyed on this marker, never on arch (real arm64 runs native TS 7 fine).
 const nativeBroken = () => existsSync('/.l2s');
 
 const useLegacy = forced === 'legacy' || (forced !== 'native' && nativeBroken());
-
-// Resolve the chosen compiler by package name (via its always-exported
-// package.json) so this works regardless of the node_modules layout. Both
-// packages must be addressed by name — each declares its bin as `tsc`.
-const require = createRequire(import.meta.url);
 const pkg = useLegacy ? 'typescript-legacy' : 'typescript';
-const bin = join(dirname(require.resolve(`${pkg}/package.json`)), 'bin', 'tsc');
 
 console.error(`[typecheck] ${useLegacy ? 'TypeScript 6 (JS fallback)' : 'TypeScript 7 (native)'}`);
 
 try {
+  // Resolve the chosen compiler by package name (via its always-exported
+  // package.json) so this works regardless of node_modules layout. Both
+  // packages ship a JS `bin/tsc` shim, so both are launched through Node.
+  const require = createRequire(import.meta.url);
+  const bin = join(dirname(require.resolve(`${pkg}/package.json`)), 'bin', 'tsc');
   execFileSync(process.execPath, [bin, '--noEmit', ...process.argv.slice(2)], {
     stdio: 'inherit',
   });
 } catch (error) {
-  process.exit(typeof error.status === 'number' ? error.status : 1);
+  // A non-zero tsc run (type errors) throws with a numeric status — propagate
+  // it. A signal-killed tsc (e.g. OOM -> SIGKILL) is surfaced as 128+signal,
+  // matching shell convention, so a CI orchestrator can tell it from a real
+  // type error. Anything else (unresolved package, failed spawn) is a wrapper
+  // failure: report it instead of a bare exit 1.
+  if (typeof error.status === 'number') {
+    process.exit(error.status);
+  }
+  if (error.signal) {
+    const signalNumber = constants.signals[error.signal];
+    process.exit(signalNumber ? 128 + signalNumber : 1);
+  }
+  console.error(`[typecheck] failed to run ${pkg}'s tsc: ${error.message}`);
+  process.exit(1);
 }
