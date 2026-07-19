@@ -1,3 +1,19 @@
+## [2.14.1](https://github.com/fruggr/zendesk-mcp-server/compare/v2.14.0...v2.14.1) (2026-07-19)
+
+### Bug Fixes
+
+* **typecheck:** fall back to JS TypeScript 6 where native tsgo can't run ([#171](https://github.com/fruggr/zendesk-mcp-server/issues/171)) ([7dc1195](https://github.com/fruggr/zendesk-mcp-server/commit/7dc11956e19c89ee157e993da6d451434c19f38b))
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Chores
+
+* **deps:** lock file maintenance ([#168](https://github.com/fruggr/zendesk-mcp-server/issues/168)) ([6fafc94](https://github.com/fruggr/zendesk-mcp-server/commit/6fafc94460edb0b30985fa559fcb5c7b18333eb6))
+* **deps:** update dependency typescript to v7 ([#151](https://github.com/fruggr/zendesk-mcp-server/issues/151)) ([2086d17](https://github.com/fruggr/zendesk-mcp-server/commit/2086d1727ba4ef65cff45f33a726fb0605f9ec17))
+* **deps:** update pnpm to v11.11.0 ([#167](https://github.com/fruggr/zendesk-mcp-server/issues/167)) ([cb06bad](https://github.com/fruggr/zendesk-mcp-server/commit/cb06bad1d174ffd5ac5451d8a50185e01c139838))
+</details>
+
 ## [2.14.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.13.0...v2.14.0) (2026-07-17)
 
 ### Features

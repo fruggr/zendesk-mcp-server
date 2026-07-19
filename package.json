@@ -1,6 +1,6 @@
 {
   "name": "@fruggr/zendesk-mcp-server",
-  "version": "2.14.0",
+  "version": "2.14.1",
   "mcpName": "io.github.fruggr/zendesk-mcp-server",
   "description": "Deep Zendesk MCP server for your AI assistant: search, draft, update and translate Help Center articles and manage Support tickets end to end — comments, triage and image attachments.",
   "type": "module",
