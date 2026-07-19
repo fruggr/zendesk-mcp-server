@@ -16,7 +16,7 @@
   "scripts": {
     "build": "tsdown",
     "build:server-json": "node scripts/build-server-json.mjs > server.json",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "node scripts/typecheck.mjs",
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
     "prepare": "npm run build",
@@ -105,6 +105,7 @@
     "tsdown": "^0.22.0",
     "tsx": "^4.21.0",
     "typescript": "^7.0.0",
+    "typescript-legacy": "npm:typescript@6.0.3",
     "vitest": "^4.1.0"
   }
 }
