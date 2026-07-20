@@ -48,7 +48,13 @@ const fail = (message: string): never => {
 // Skip values that follow a value-taking flag (e.g. `all` in `--mode all`),
 // otherwise the placeholder is wrongly skipped. Keep in sync with the
 // value-taking flags in `src/config.ts` `parseCliArgs`.
-const VALUE_FLAGS = new Set(['--mode', '--namespace', '--tool', '--log-level']);
+const VALUE_FLAGS = new Set([
+  '--mode',
+  '--namespace',
+  '--tool',
+  '--log-level',
+  '--hc-resource-scheme',
+]);
 const hasPositionalSubdomain = configArgs.some((arg, i) => {
   if (arg.startsWith('-')) return false;
   const prev = configArgs[i - 1];

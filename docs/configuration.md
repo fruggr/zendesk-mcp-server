@@ -23,6 +23,10 @@ Options:
   --read-only             Only expose read operations
   --no-topology           Disable the Help Center structural context
                           (instructions + zendesk-hc://topology resource)
+  --hc-resource-scheme <scheme>
+                          URI scheme of the Help Center resources
+                          (default: zendesk-hc, i.e. zendesk-hc://topology);
+                          bare RFC 3986 scheme, e.g. "wiki" — no "://"
   --log-level <level>     debug | info (default) | warn | error
   --transport <t>         stdio (default) | http
   --host <host>           HTTP bind host (default: 0.0.0.0)
@@ -139,6 +143,19 @@ Public URL advertised in OAuth discovery metadata. See [Public URL](http-deploym
 **Required:** no · **Default:** —
 
 Comma-separated browser origins added to the default CORS allowlist.
+
+### `HC_RESOURCE_SCHEME`
+**Required:** no · **Default:** `zendesk-hc`
+
+URI scheme of the Help Center MCP resources (also `--hc-resource-scheme`, which
+takes precedence). With the default, the topology resource is
+`zendesk-hc://topology`; set e.g. `wiki` to expose it as `wiki://topology` and
+have the `instructions` blob cite that URI. Strictly a **bare RFC 3986 scheme**
+— a lowercase letter followed by lowercase letters, digits, `+`, `-` or `.`;
+anything else (`wiki://`, `Wiki`, `-wiki`, `1wiki`) is rejected at startup. A
+generic scheme like `wiki` is safe collision-wise (MCP resource URIs are scoped
+per server), it is just less self-descriptive in a client connected to several
+servers.
 
 ### `LOG_LEVEL`
 **Required:** no · **Default:** `info`

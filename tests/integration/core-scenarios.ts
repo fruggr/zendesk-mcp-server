@@ -78,6 +78,25 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         expect(text).toContain('admin'); // current user role
       });
 
+      it('exposes the resource and instructions under a custom scheme when --hc-resource-scheme is set (#169)', async () => {
+        connected = await harness.connect(makeConfig({ hcResourceScheme: 'wiki' }));
+
+        const instructions = connected.client.getInstructions();
+        expect(instructions).toContain('wiki://topology');
+        expect(instructions).not.toContain('zendesk-hc://');
+
+        const { resources } = await connected.client.listResources();
+        expect(resources.map((r) => r.uri)).toContain('wiki://topology');
+        expect(resources.map((r) => r.uri)).not.toContain('zendesk-hc://topology');
+
+        const read = await connected.client.readResource({ uri: 'wiki://topology' });
+        const text = (read.contents ?? [])
+          .map((c) => (typeof c.text === 'string' ? c.text : ''))
+          .join('\n');
+        expect(text).toContain('en-us');
+        expect(text).toContain('(800)');
+      });
+
       it('still renders the topology for a content-editor token that is forbidden the admin-only parts (#161)', async () => {
         mswServer.use(errorHandlers.permissionGroupsForbidden);
         connected = await harness.connect(makeConfig());

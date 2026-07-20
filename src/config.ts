@@ -22,12 +22,29 @@ export const ConfigSchema = z.object({
   tools: z.array(z.string()).optional(),
   /**
    * Whether to expose the Help Center structural context (the `instructions`
-   * blob + the `zendesk-hc://topology` resource). On by default; an operator
+   * blob + the topology resource, default `zendesk-hc://topology`). On by
+   * default; an operator
    * disables it server-wide with `--no-topology` (e.g. on a very large Help
    * Center, or when the context is unwanted). Only ever active when the
    * `help_center` namespace itself is active.
    */
   topology: z.boolean().default(true),
+  /**
+   * URI scheme of the Help Center MCP resources (today the topology resource,
+   * `<scheme>://topology`). Defaults to `zendesk-hc`; a deployer can brand it
+   * (`--hc-resource-scheme wiki` / `HC_RESOURCE_SCHEME=wiki`). Strictly a bare
+   * RFC 3986 scheme — clients parse resource URIs with WHATWG `URL`, so a
+   * non-conformant scheme would surface as a broken resource at runtime;
+   * reject it at config parse time instead. ASCII-only message, value not
+   * echoed (same policy as parsePort below).
+   */
+  hcResourceScheme: z
+    .string()
+    .regex(/^[a-z][a-z0-9+.-]*$/, {
+      message:
+        'Invalid HC_RESOURCE_SCHEME / --hc-resource-scheme value. Expected a bare RFC 3986 scheme: a lowercase letter followed by lowercase letters, digits, "+", "-" or "." (no "://").',
+    })
+    .default('zendesk-hc'),
   /**
    * Dev-only (stdio): expose the `reload_tools` tool, which re-imports the tool
    * modules from source and re-registers them on the live session on demand, so
@@ -74,6 +91,7 @@ interface CliResult {
   namespaces?: string[];
   tools?: string[];
   topology?: boolean;
+  hcResourceScheme?: string;
   dev?: boolean;
   logLevel?: string;
   transport?: string;
@@ -121,6 +139,9 @@ const parseCliArgs = (args: string[]): CliResult => {
       result.readOnly = true;
     } else if (arg === '--no-topology') {
       result.topology = false;
+    } else if (arg === '--hc-resource-scheme' && next) {
+      result.hcResourceScheme = next;
+      i++;
     } else if (arg === '--dev') {
       result.dev = true;
     } else if (arg === '--namespace' && next) {
@@ -189,6 +210,12 @@ export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
     cli.callbackPort ??
     parsePortEnv(process.env['ZENDESK_OAUTH_CALLBACK_PORT'], 'ZENDESK_OAUTH_CALLBACK_PORT');
 
+  // Empty env means unset (same convention as parsePortEnv); undefined lets
+  // the schema default (`zendesk-hc`) apply. Format is validated by the schema.
+  const hcResourceSchemeEnv = process.env['HC_RESOURCE_SCHEME'];
+  const hcResourceScheme =
+    cli.hcResourceScheme ?? (hcResourceSchemeEnv === '' ? undefined : hcResourceSchemeEnv);
+
   return ConfigSchema.parse({
     subdomain,
     oauthClientId,
@@ -198,6 +225,7 @@ export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
     namespaces: cli.namespaces,
     tools: cli.tools,
     topology: cli.topology ?? true,
+    hcResourceScheme,
     dev: cli.dev ?? false,
     transport,
     host,

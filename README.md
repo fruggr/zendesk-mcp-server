@@ -174,6 +174,9 @@ disabled together with `--no-topology`):
 
 Clients that don't consume `instructions` or `resources` simply ignore them —
 the feature degrades silently. Use `--no-topology` to turn both off server-wide.
+The `zendesk-hc://` URI scheme is the default; a deployer can brand it with
+[`--hc-resource-scheme` / `HC_RESOURCE_SCHEME`](docs/configuration.md#hc_resource_scheme)
+(e.g. `wiki` → `wiki://topology`).
 
 ## Prerequisites
 
