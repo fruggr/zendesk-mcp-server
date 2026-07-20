@@ -67,6 +67,11 @@
       "description": "Hold @tsconfig/node* updates and replacements until #28 (Node 24 runtime migration) lands. Replacement PRs (e.g. #19) bypass dependencyDashboardApproval, so we silence the whole family here. Remove this rule when #28 is merged.",
       "matchPackageNames": ["@tsconfig/node20", "@tsconfig/node22", "@tsconfig/node24"],
       "enabled": false
+    },
+    {
+      "description": "typescript-legacy is a deliberately pinned npm alias for TypeScript 6 (npm:typescript@6.0.3), the JS-compiler fallback used by scripts/typecheck.mjs on PRoot/Termux environments where TS 7's native tsgo is broken. Renovate must not manage it: any bump (including to 7.x, which npm considers the same package) defeats the pin. For npm aliases Renovate's depName is the package.json key, so this rule matches only the alias and leaves the real `typescript` dependency managed as usual. Remove this rule together with the alias and the typecheck shim once tsgo works under PRoot (see scripts/typecheck.mjs header).",
+      "matchDepNames": ["typescript-legacy"],
+      "enabled": false
     }
   ]
 }
