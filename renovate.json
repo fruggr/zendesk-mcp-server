@@ -69,9 +69,9 @@
       "enabled": false
     },
     {
-      "description": "typescript-legacy is a deliberately pinned npm alias for TypeScript 6 (npm:typescript@6.0.3), the JS-compiler fallback used by scripts/typecheck.mjs on PRoot/Termux environments where TS 7's native tsgo is broken. Renovate must not manage it: any bump (including to 7.x, which npm considers the same package) defeats the pin. For npm aliases Renovate's depName is the package.json key, so this rule matches only the alias and leaves the real `typescript` dependency managed as usual. Remove this rule together with the alias and the typecheck shim once tsgo works under PRoot (see scripts/typecheck.mjs header).",
+      "description": "typescript-legacy is an npm alias for TypeScript 6 (npm:typescript@6.0.3), the JS-compiler fallback used by scripts/typecheck.mjs on PRoot/Termux environments where TS 7's native tsgo is broken. Keep it on the 6.x line: Renovate still proposes 6.x patch/minor updates (and security fixes), but never 7.x — npm considers TS 7 the same package, and bumping the alias to it would remove the fallback. For npm aliases Renovate's depName is the package.json key, so this rule matches only the alias and leaves the real `typescript` dependency managed as usual. Remove this rule together with the alias and the typecheck shim once tsgo works under PRoot (see scripts/typecheck.mjs header).",
       "matchDepNames": ["typescript-legacy"],
-      "enabled": false
+      "allowedVersions": "<7.0.0"
     }
   ]
 }
