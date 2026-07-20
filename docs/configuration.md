@@ -152,7 +152,10 @@ takes precedence). With the default, the topology resource is
 `zendesk-hc://topology`; set e.g. `wiki` to expose it as `wiki://topology` and
 have the `instructions` blob cite that URI. Strictly a **bare RFC 3986 scheme**
 — a lowercase letter followed by lowercase letters, digits, `+`, `-` or `.`;
-anything else (`wiki://`, `Wiki`, `-wiki`, `1wiki`) is rejected at startup. A
+anything else (`wiki://`, `Wiki`, `-wiki`, `1wiki`) is rejected at startup. The
+WHATWG-special schemes (`http`, `https`, `ws`, `wss`, `ftp`, `file`) are also
+rejected: URL normalization appends a trailing slash to them, which would make
+the advertised resource URI unreadable by MCP clients. A
 generic scheme like `wiki` is safe collision-wise (MCP resource URIs are scoped
 per server), it is just less self-descriptive in a client connected to several
 servers.

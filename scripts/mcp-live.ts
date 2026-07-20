@@ -54,6 +54,12 @@ const VALUE_FLAGS = new Set([
   '--tool',
   '--log-level',
   '--hc-resource-scheme',
+  '--transport',
+  '--host',
+  '--port',
+  '--public-url',
+  '--cors-origin',
+  '--callback-port',
 ]);
 const hasPositionalSubdomain = configArgs.some((arg, i) => {
   if (arg.startsWith('-')) return false;

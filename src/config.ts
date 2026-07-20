@@ -44,6 +44,25 @@ export const ConfigSchema = z.object({
       message:
         'Invalid HC_RESOURCE_SCHEME / --hc-resource-scheme value. Expected a bare RFC 3986 scheme: a lowercase letter followed by lowercase letters, digits, "+", "-" or "." (no "://").',
     })
+    // WHATWG "special" schemes (http, https, ws, wss, ftp, file) serialize
+    // with a trailing slash (`new URL('http://x').toString()` === 'http://x/'),
+    // so the SDK's read handler — which normalizes the requested URI through
+    // `URL` before its exact-string registry lookup — would list the resource
+    // but never find it on read. Require the actual URI to round-trip.
+    .refine(
+      (scheme) => {
+        const uri = `${scheme}://topology`;
+        try {
+          return new URL(uri).toString() === uri;
+        } catch {
+          return false;
+        }
+      },
+      {
+        message:
+          'Invalid HC_RESOURCE_SCHEME / --hc-resource-scheme value. WHATWG-special schemes (http, https, ws, wss, ftp, file) do not survive URL normalization and would make the resource unreadable; pick a custom scheme such as "wiki".',
+      },
+    )
     .default('zendesk-hc'),
   /**
    * Dev-only (stdio): expose the `reload_tools` tool, which re-imports the tool
@@ -210,11 +229,9 @@ export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
     cli.callbackPort ??
     parsePortEnv(process.env['ZENDESK_OAUTH_CALLBACK_PORT'], 'ZENDESK_OAUTH_CALLBACK_PORT');
 
-  // Empty env means unset (same convention as parsePortEnv); undefined lets
-  // the schema default (`zendesk-hc`) apply. Format is validated by the schema.
-  const hcResourceSchemeEnv = process.env['HC_RESOURCE_SCHEME'];
-  const hcResourceScheme =
-    cli.hcResourceScheme ?? (hcResourceSchemeEnv === '' ? undefined : hcResourceSchemeEnv);
+  // `|| undefined`: an empty env means unset (same convention as parsePortEnv),
+  // letting the schema default (`zendesk-hc`) apply; format is schema-validated.
+  const hcResourceScheme = cli.hcResourceScheme ?? (process.env['HC_RESOURCE_SCHEME'] || undefined);
 
   return ConfigSchema.parse({
     subdomain,

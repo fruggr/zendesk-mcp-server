@@ -246,6 +246,14 @@ describe('loadConfig', () => {
       }
     });
 
+    it('rejects WHATWG-special schemes whose URL normalization would make the resource unreadable', () => {
+      for (const special of ['http', 'https', 'ws', 'wss', 'ftp', 'file']) {
+        expect(() => loadConfig(['mycompany', '--hc-resource-scheme', special])).toThrow(
+          /WHATWG-special/,
+        );
+      }
+    });
+
     it('treats an empty HC_RESOURCE_SCHEME env as unset (same as PORT-style envs)', () => {
       process.env['HC_RESOURCE_SCHEME'] = '';
       const config = loadConfig(['mycompany']);
