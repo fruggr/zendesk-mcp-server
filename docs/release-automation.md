@@ -125,6 +125,11 @@ version depending on `conventional-changelog-writer@^9`. The canary assertions i
 `tests/unit/release-notes-preset-render.test.ts` are what detects a broken pairing,
 in either direction.
 
+Until then the entry is kept current like any other override: Renovate tracks it
+and auto-merges its patch / minor bumps (the `pnpm.overrides` row in the auto-merge
+policy below), a major would land in the Dependency Dashboard for approval, and
+either way the canary gates the merge.
+
 ## Auto-merge policy
 
 | Update kind                                       | Vulnerability (security) | Non-vulnerability        |
