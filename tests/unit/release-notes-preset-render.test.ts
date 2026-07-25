@@ -13,12 +13,18 @@ import { generateNotes } from '../../scripts/release-notes-collapsed.js';
  * ships in `.releaserc.json`, then through our collapsing wrapper.
  *
  * It is a deliberate compatibility canary: the conventionalcommits preset must
- * stay on a generation whose `writerOpts` the pinned `release-notes-generator`
- * (and its `conventional-changelog-writer`) can render. A preset major that
- * switches the rendering API — e.g. v10's Handlebars → render-functions change,
- * which needs `conventional-changelog-writer@9` while the plugin still depends on
- * `@^8` — silently produces notes containing only the version header. These
- * assertions fail loudly in that case instead of shipping empty changelogs.
+ * stay on a generation whose `writerOpts` the resolved
+ * `conventional-changelog-writer` can render. Preset v10 replaced Handlebars
+ * template strings with render functions, which only writer 9 understands, while
+ * `@semantic-release/release-notes-generator` still declares
+ * `conventional-changelog-writer@^8` — writer 8 finds no `mainTemplate` and emits
+ * *only* the version header. The pairing therefore holds solely because
+ * `pnpm-workspace.yaml` overrides the writer to `^9`.
+ *
+ * These assertions are the tripwire if that pairing breaks again: a lockfile regen
+ * that drops the override, or an upstream major moving the writer past 9. They fail
+ * loudly instead of shipping empty changelogs. See `docs/release-automation.md`
+ * ("Preset / writer version coupling") for the removal condition.
  */
 
 // The collapsing plugin is the 2nd `.releaserc.json` plugin entry: [path, options].

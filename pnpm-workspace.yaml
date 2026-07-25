@@ -6,3 +6,4 @@ minimumReleaseAge: 10080
 
 overrides:
   ip-address: ^10.2.0
+  conventional-changelog-writer: ^9.2.0

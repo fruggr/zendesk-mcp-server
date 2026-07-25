@@ -78,9 +78,12 @@ each new version automatically.
 
 semantic-release generates the notes from **every** commit between the previous
 tag and the release commit — including the non-triggering ones (`chore`, `ci`,
-`build`, `test`, `refactor`, `docs`, `style`). By default the `conventionalcommits`
-preset hides those types, so they never surfaced in any changelog even though they
-belong to a release range.
+`build`, `test`, `refactor`, `docs`, `style`). The `conventionalcommits` preset
+hides those types in its default type list (`effect: 'hidden'`), so they never
+surfaced in any changelog even though they belong to a release range. The
+`presetConfig.types` array in `.releaserc.json` replaces that list wholesale, and
+an entry without an `effect` defaults to visible — which is why the types are
+listed there with a `section` and nothing else.
 
 To keep them visible without drowning the consumer-facing notes (especially the
 Renovate `chore(deps)` churn), the `release-notes-generator` step is replaced by a
@@ -92,11 +95,35 @@ It calls the official generator, then post-processes the markdown:
 - **Internal sections** — the non-triggering types above — are grouped into a single
   collapsed `<details>` block placed underneath.
 
-No Handlebars template is reimplemented, so the wrapper survives preset version
-bumps. The collapsed section titles and the `<summary>` label are configurable via
-the `collapsedSections` / `collapsedSummary` plugin options in `.releaserc.json`.
-The wrapper requires `@semantic-release/release-notes-generator` as an explicit
-devDependency (kept on the same major as the one `semantic-release` bundles).
+No Handlebars template is reimplemented — the wrapper only reorganizes rendered
+markdown, so it is insensitive to *how* the preset renders. It does not, however,
+shield the pipeline from the preset ↔ writer coupling below. The collapsed section
+titles and the `<summary>` label are configurable via the `collapsedSections` /
+`collapsedSummary` plugin options in `.releaserc.json`. The wrapper requires
+`@semantic-release/release-notes-generator` as an explicit devDependency (kept on
+the same major as the one `semantic-release` bundles).
+
+### Preset / writer version coupling
+
+`conventional-changelog-conventionalcommits` v10 replaced Handlebars template
+strings with render functions. Only `conventional-changelog-writer@9` understands
+that shape, while `@semantic-release/release-notes-generator@14` (latest) still
+declares `conventional-changelog-writer@^8`. Paired as published, writer 8 finds no
+`mainTemplate` and renders **only the version header** — a release would still be
+cut, with an empty CHANGELOG and GitHub Release. Upstream issue:
+[semantic-release/release-notes-generator#992](https://github.com/semantic-release/release-notes-generator/issues/992).
+
+`pnpm-workspace.yaml` therefore overrides the writer to `^9.2.0`. The override is
+unscoped because `@semantic-release/commit-analyzer` declares the writer but never
+imports it (it reads only the preset's `parserOpts`; release levels come from its
+own default release rules), so forcing the writer cannot affect version detection —
+only rendering. Verified on real repository history: the generated notes are
+byte-identical to the pre-upgrade output.
+
+**Removal condition:** drop the override once `release-notes-generator` publishes a
+version depending on `conventional-changelog-writer@^9`. The canary assertions in
+`tests/unit/release-notes-preset-render.test.ts` are what detects a broken pairing,
+in either direction.
 
 ## Auto-merge policy
 
@@ -127,15 +154,6 @@ Concrete examples:
 - Non-vuln patch update of `hono` (prod) → PR `chore(deps): update hono to X` → manual review → no release on merge.
 - GitHub Action digest bump → PR `chore(deps): update actions/X` → manual review → no release.
 - Weekly Friday lockfile maintenance (before 8am, Europe/Paris) → PR `chore(deps): lock file maintenance` → auto-merge → no release. Picks up transitive updates whose parent ranges already allow the new version (e.g. a `^3.0.1`-ranged transitive moving from 3.1.0 to 3.1.2).
-
-## Transitive vulnerabilities
-
-`vulnerabilityAlerts` only acts on dependencies that appear in `package.json`. For vulnerabilities deep in the tree (visible in `pnpm-lock.yaml` only), two mechanisms cover the gap:
-
-1. **`lockFileMaintenance`** (weekly, Friday morning) regenerates `pnpm-lock.yaml`. Any transitive whose parent range already accepts the patched version moves up — no manifest change needed. This covers the common case.
-2. **`pnpm.overrides`** in `package.json` is required when the parent pins the vulnerable transitive at an exact version (or a range that excludes the patched one). The first time, a maintainer opens a `fix(security):` PR adding the override; from then on, Renovate auto-bumps the override entry via the dedicated `matchDepTypes: ["pnpm.overrides"]` rule (patch / minor only).
-
-**Caveat — semver hygiene in the npm ecosystem.** Bumping a transitive via lockfile-only regen relies on the parent's declared semver range being accurate. Some maintainers ship breaking changes in patch/minor versions. The auto-merged `lockFileMaintenance` PR is therefore guarded by CI (typecheck + tests); a regression should fail the build and block the merge. Skim the diff when reviewing CI failures on these PRs.
 
 ## Admin prerequisites (out-of-PR settings)
 
