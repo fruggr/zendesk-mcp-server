@@ -105,6 +105,12 @@ test: if a running server behaves no differently for a client, it's tooling.
 ## Code style
 
 - TypeScript strict; Biome for lint/format (`pnpm check`).
+- Keep the `!!**/node_modules` force-ignore in `biome.json` `files.includes`: it
+  stops Biome 2's scanner from opening every dependency file for its module graph
+  (~40% of `pnpm check` wall time, worse on slow filesystems), and excludes them
+  from the *scan*, not the *lint* — diagnostics here are unchanged. Revisit if a
+  type-aware rule needs dependency types. `biome.json` rejects comments, hence
+  this note.
 - Functional: pure functions, immutable data, no classes (except `ZendeskApiError`).
 - Tool handlers are standalone functions in `ToolDefinition[]` arrays.
 - ASCII-only error messages on auth paths — `node:http` rejects non-ASCII bytes
