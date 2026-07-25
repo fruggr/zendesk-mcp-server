@@ -32,13 +32,10 @@ Open a *new* issue for the delta. Fuller checklist in `CONTRIBUTING.md`.
 
 ## Architecture
 
-Standard MCP server under `src/` (entry `index.ts` → `server.ts`). Auth in
-`auth/`, HTTP client in `client/`, tool definitions in `tools/`, tool filtering
-in `routing/registry.ts`. Transports in `transports/`: stdio (SDK
-`StdioServerTransport`) plus a thin `node:http` HTTP transport that wraps
-`StreamableHTTPServerTransport` and serves the RFC 9728 / RFC 8414 OAuth
-discovery endpoints; HTTP builds a per-session `McpServer` so the request's
-bearer is captured in the tools' closure — no shared state.
+Transports: stdio (SDK `StdioServerTransport`) plus a thin `node:http` HTTP
+transport that wraps `StreamableHTTPServerTransport` and serves the RFC 9728 /
+RFC 8414 OAuth discovery endpoints; HTTP builds a per-session `McpServer` so the
+request's bearer is captured in the tools' closure — no shared state.
 
 **Tool modes** (chosen at startup by `--mode`): `all` (every tool individually),
 `namespace` (default — one proxy per namespace), `single` (one `zendesk` proxy).
