@@ -33,7 +33,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "pnpm exec biome check --write --no-errors-on-unmatched \"$CLAUDE_FILE_PATHS\" || true"
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && set -f && ./node_modules/.bin/biome check --write --no-errors-on-unmatched $CLAUDE_FILE_PATHS || true"
           }
         ]
       }
