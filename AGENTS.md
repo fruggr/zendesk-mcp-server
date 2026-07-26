@@ -108,6 +108,15 @@ test: if a running server behaves no differently for a client, it's tooling.
   from the *scan*, not the *lint* — diagnostics here are unchanged. Revisit if a
   type-aware rule needs dependency types. `biome.json` rejects comments, hence
   this note.
+- Keep `--skip=types` on the `PostToolUse` hook. The two `types`-domain rules in
+  `biome.json` (`useArrayFind`, `useArraySortCompare`) trigger a project-wide
+  type-inference pass on *every* invocation, single file included — they cost
+  more than the other 219 active rules combined (353 ms → 103 ms on one file).
+  Skipped on the hot path only: pre-commit and CI run the full `biome check` and
+  still enforce them. Measurements and the rejected Oxc alternative:
+  `docs/decisions/lint-tooling.md`.
+- Lint runs on every edit; formatting only at pre-commit (`lefthook.yml`). Don't
+  add formatting back to the per-edit hook.
 - Functional: pure functions, immutable data, no classes (except `ZendeskApiError`).
 - Tool handlers are standalone functions in `ToolDefinition[]` arrays.
 - ASCII-only error messages on auth paths — `node:http` rejects non-ASCII bytes
