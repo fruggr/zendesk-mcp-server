@@ -9,7 +9,7 @@
 | --- | --- |
 | **Status** | Decided and applied |
 | **Date** | 2026-07-26 |
-| **Applied in** | PR_PLACEHOLDER |
+| **Applied in** | [#186](https://github.com/fruggr/zendesk-mcp-server/pull/186) |
 | **Question** | Should this repo replace Biome with the Oxc toolchain (oxlint + oxfmt) to cut the cost of the `PostToolUse` lint hook on Android/Termux/PRoot? |
 | **Answer** | **No.** The cost was two `types`-domain Biome rules, not the tool. See [§1](#1-tldr). |
 
