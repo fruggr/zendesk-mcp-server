@@ -62,11 +62,12 @@ shared — so they run at different stages. Why, with measurements:
 | ----- | --------- |
 | On every edit (Claude Code `PostToolUse` hook) | `biome lint --write --skip=types` on the edited files — lints, does **not** format |
 | `pre-commit` | `biome check --write --error-on-warnings` on staged `src`/`tests`/`scripts` files — formats, sorts imports, full lint |
-| CI | `pnpm check` over the whole project |
+| CI | `pnpm check` over `src/`, `tests/` and `scripts/` |
 
-`pnpm install` installs the pre-commit hook ([lefthook](https://lefthook.dev),
-configured in [`lefthook.yml`](lefthook.yml)); `git commit --no-verify` bypasses
-it and CI will still catch it.
+`pnpm install` *attempts* to install the pre-commit hook
+([lefthook](https://lefthook.dev), configured in [`lefthook.yml`](lefthook.yml)) —
+best-effort, so it never fails the install and a missing hook is possible.
+`git commit --no-verify` bypasses it too; CI is the backstop either way.
 
 To test a PR branch without publishing to npm — the `prepare` script builds on install:
 
