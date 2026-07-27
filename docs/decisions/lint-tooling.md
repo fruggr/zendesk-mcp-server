@@ -17,6 +17,25 @@ Everything below is measured on this repository, not quoted from vendor
 benchmarks. The reproduction script is `scripts/bench-lint-tooling.mjs`; the
 method is in [Appendix A](#appendix-a--how-the-numbers-were-produced).
 
+> **Measurement provenance — read before comparing numbers across sections.**
+> The figures were collected over several sessions on a shared x86-64 container,
+> under varying load and on two Biome versions. The same command therefore
+> appears with different absolute medians in different sections (`biome check
+> --write` on one file: 413.3 ms in §1, 355.5 ms in §3.1, 1348.6 ms in the
+> version table of §7). None of them is wrong — **only ratios *within* a single
+> table are comparable; absolutes are not comparable across tables.** Two things
+> move them:
+>
+> - **Load.** Absolute times on this container vary by 2–3× between an idle and
+>   a busy run. The `--skip=types` path is the stable one, because it is short.
+> - **Biome version.** 2.5.5 is ~3.8× faster than 2.5.4 on the type-inference
+>   path specifically (§7). Sections §3–§5 were measured on 2.5.5 with Oxc
+>   installed; §1, §6 and §7 describe the shipped configuration.
+>
+> The conclusion holds regardless: `--skip=types` removes the type-inference
+> pass entirely, so it wins by a wide margin on every version and load level
+> measured.
+
 ---
 
 ## 1. TL;DR
@@ -271,7 +290,7 @@ project** and 3.6× on a single file.
 > from 201 ms to 580 ms — Markdown table re-alignment is ~40–70 ms *per file*.
 > It also silently reformats 22 committed Markdown files. `ignorePatterns:
 > ["**/*.md"]` is mandatory, not optional.
-
+>
 > **`--write` is oxfmt's default.** Unlike Prettier and Biome, running `oxfmt
 > <path>` with no flag rewrites files in place. Any CI check must pass
 > `--check`.
@@ -323,7 +342,7 @@ Biome-vs-Oxc gap, it was two rules doing type inference on the hot path.
 
 And neither rule fires on those two sites **even with types enabled**:
 
-```
+```text
 biome lint --only=suspicious/useArraySortCompare src/ tests/ scripts/
 → Checked 80 files in 412ms. No fixes applied.
 ```
@@ -662,9 +681,11 @@ references, and prints both a table and a JSON line. Scenarios whose binary is
 absent skip themselves, so it keeps working after the Oxc devDependencies are
 removed.
 
-**Always check the "Checked N files" line** before trusting a Biome number — see
-the `--config-path` trap in §3.4. A misresolved config reports plausible timings
-for zero files.
+**The "Checked N files" line is now asserted by the script** — it refuses to
+time a Biome scenario that matched nothing, rather than reporting an excellent
+number for doing no work. That guard exists because of the `--config-path` trap
+in §3.4. The `--write` scenarios do write, so the script snapshots every file
+they can touch and restores it afterwards, including on Ctrl-C.
 
 ### Rule coverage — one-off analysis
 

@@ -19,7 +19,7 @@
     "typecheck": "node scripts/typecheck.mjs",
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
-    "prepare": "npm run build && lefthook install || true",
+    "prepare": "npm run build && (lefthook install || true)",
     "prepublishOnly": "npm run build",
     "check": "biome check --error-on-warnings src/ tests/ scripts/",
     "check:fix": "biome check --write src/ tests/ scripts/",

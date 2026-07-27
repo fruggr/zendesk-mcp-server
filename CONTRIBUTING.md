@@ -54,31 +54,19 @@ pnpm build && pnpm typecheck && pnpm check && pnpm test
 
 ### Lint and format: which stage does what
 
-Linting and formatting run at different stages, on purpose — lint feedback is
-worth having immediately, formatting only matters before code is shared. The
-reasoning and the measurements are in
+Lint feedback is worth having immediately; formatting only matters before code is
+shared — so they run at different stages. Why, with measurements:
 [`docs/decisions/lint-tooling.md`](docs/decisions/lint-tooling.md).
 
 | Stage | What runs |
 | ----- | --------- |
-| On every edit (Claude Code `PostToolUse` hook) | `biome lint --write --skip=types` on the edited files — lints and applies safe fixes, does **not** format |
-| `pre-commit` | `biome check --write --error-on-warnings` on staged `src`/`tests`/`scripts` files — formats, sorts imports, and lints including the type-aware rules the edit hook skips |
+| On every edit (Claude Code `PostToolUse` hook) | `biome lint --write --skip=types` on the edited files — lints, does **not** format |
+| `pre-commit` | `biome check --write --error-on-warnings` on staged `src`/`tests`/`scripts` files — formats, sorts imports, full lint |
 | CI | `pnpm check` over the whole project |
 
-`pnpm install` installs the pre-commit hook — [lefthook](https://lefthook.dev),
-via the `prepare` script, configured in [`lefthook.yml`](lefthook.yml). Two
-things worth knowing:
-
-- `git commit --no-verify` bypasses the hook. CI will still catch it.
-- If the commit is refused, the safe fixes Biome applied stay on disk — run
-  `pnpm check:fix`, resolve what remains by hand, and commit again.
-
-Partially staged files (`git add -p`) are safe: lefthook hides the unstaged
-hunks while the hook runs, so only the staged version is formatted and
-committed and the unstaged work survives untouched.
-
-Because the edit hook no longer formats, expect the working tree to drift out of
-format while you work. That is intended; the pre-commit hook settles it.
+`pnpm install` installs the pre-commit hook ([lefthook](https://lefthook.dev),
+configured in [`lefthook.yml`](lefthook.yml)); `git commit --no-verify` bypasses
+it and CI will still catch it.
 
 To test a PR branch without publishing to npm — the `prepare` script builds on install:
 
