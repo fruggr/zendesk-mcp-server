@@ -108,6 +108,16 @@ test: if a running server behaves no differently for a client, it's tooling.
   from the *scan*, not the *lint* — diagnostics here are unchanged. Revisit if a
   type-aware rule needs dependency types. `biome.json` rejects comments, hence
   this note.
+- The rule set beyond `recommended` is a **zero-violation ratchet**: a rule is
+  only enabled once the tree is already clean for it, so `pnpm check` stays green
+  in the same commit that turns it on. Don't enable a rule and bulk-rewrite code
+  to satisfy it in one go — land the cleanup first, the rule after.
+- `nursery` rules stay off: they change semantics between Biome minors and
+  Renovate bumps Biome automatically, so one would break CI unattended.
+- The `types` domain stays off — Biome 2.5's inference misses even the documented
+  examples of `noFloatingPromises`, and `noUnnecessaryConditions` false-positives
+  on optional chaining. Zero diagnostics there means "not analysed", not "clean";
+  `pnpm typecheck` is the real type gate.
 - Functional: pure functions, immutable data, no classes (except `ZendeskApiError`).
 - Tool handlers are standalone functions in `ToolDefinition[]` arrays.
 - ASCII-only error messages on auth paths — `node:http` rejects non-ASCII bytes

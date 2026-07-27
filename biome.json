@@ -10,20 +10,93 @@
       "complexity": {
         "useLiteralKeys": "off",
         "useArrayFind": "error",
-        "noUselessReturn": "error"
+        "noUselessReturn": "error",
+        "noDivRegex": "error",
+        "noRedundantDefaultExport": "error",
+        "noUselessCatchBinding": "error",
+        "noUselessStringConcat": "error",
+        "useWhile": "error"
+      },
+      "correctness": {
+        "noGlobalDirnameFilename": "error",
+        "noPrivateImports": "error",
+        "noUndeclaredDependencies": "error",
+        "noUndeclaredVariables": "error",
+        "noUnusedInstantiation": "error",
+        "useSingleJsDocAsterisk": "error"
+      },
+      "performance": {
+        "noBarrelFile": "error",
+        "noReExportAll": "error"
       },
       "suspicious": {
         "useArraySortCompare": "error",
         "noDuplicatedSpreadProps": "error",
         "noReturnAssign": "error",
-        "noProto": "error"
+        "noProto": "error",
+        "noConstantBinaryExpressions": "error",
+        "noDeprecatedImports": "error",
+        "noEmptySource": "error",
+        "noEvolvingTypes": "error",
+        "noExportsInTest": "error",
+        "noForIn": "error",
+        "noImportCycles": "error",
+        "noParametersOnlyUsedInRecursion": "error",
+        "noSkippedTests": "error",
+        "noUnassignedVariables": "error",
+        "noUnusedExpressions": "error",
+        "noVar": "error",
+        "useErrorMessage": "error",
+        "useGuardForIn": "error",
+        "useNumberToFixedDigitsArgument": "error",
+        "useStaticResponseMethods": "error"
       },
       "style": {
         "useErrorCause": "error",
-        "useGlobalThis": "error"
+        "useGlobalThis": "error",
+        "noCommonJs": "error",
+        "noDefaultExport": "error",
+        "noEnum": "error",
+        "noExportedImports": "error",
+        "noInferrableTypes": "error",
+        "noMultiAssign": "error",
+        "noNamespace": "error",
+        "noParameterAssign": "error",
+        "noShoutyConstants": "error",
+        "noSubstr": "error",
+        "noUselessElse": "error",
+        "noYodaExpression": "error",
+        "useAsConstAssertion": "error",
+        "useAtIndex": "error",
+        "useCollapsedElseIf": "error",
+        "useCollapsedIf": "error",
+        "useConsistentArrowReturn": "error",
+        "useConsistentBuiltinInstantiation": "error",
+        "useConsistentObjectDefinitions": "error",
+        "useDefaultParameterLast": "error",
+        "useEnumInitializers": "error",
+        "useFilenamingConvention": "error",
+        "useNodeAssertStrict": "error",
+        "useNumberNamespace": "error",
+        "useObjectSpread": "error",
+        "useReadonlyClassProperties": "error",
+        "useShorthandAssign": "error",
+        "useSingleVarDeclarator": "error",
+        "useSpreadOverApply": "error",
+        "useSymbolDescription": "error",
+        "useThrowNewError": "error",
+        "useThrowOnlyError": "error",
+        "useTrimStartEnd": "error",
+        "useUnifiedTypeSignatures": "error"
       }
     }
   },
+  "overrides": [
+    {
+      "includes": ["**/*.config.ts", "**/*.config.mts"],
+      "linter": { "rules": { "style": { "noDefaultExport": "off" } } }
+    }
+  ],
   "formatter": {
     "enabled": true,
     "indentStyle": "space",
