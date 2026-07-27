@@ -1,0 +1,9 @@
+{
+  "name": "@yuku-parser/binding-android-arm64",
+  "version": "0.6.5",
+  "description": "Native android-arm64 (Termux/bionic) binding for yuku-parser, built from https://github.com/dlecan/yuku/tree/android-arm64-poc",
+  "os": ["android"],
+  "cpu": ["arm64"],
+  "main": "yuku-parser.node",
+  "files": ["yuku-parser.node"]
+}

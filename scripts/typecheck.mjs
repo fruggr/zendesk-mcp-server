@@ -173,7 +173,32 @@ const ensureUnshared = () => {
   );
 };
 
+// TS 7's native compiler has no build at all for some platforms (Microsoft
+// publishes no @typescript/typescript-android-arm64, so Termux hits this):
+// the platform package is simply absent from disk and tsgo cannot launch.
+// Detected by resolving the platform package through typescript's own module
+// tree — the JS fallback is the only option there, whatever ZENDESK_MCP_TSC
+// says about un-hardlinking.
+const nativeUnavailable = () => {
+  try {
+    const require = createRequire(import.meta.url);
+    const tsPackageJson = require.resolve('typescript/package.json');
+    createRequire(tsPackageJson).resolve(
+      `@typescript/typescript-${process.platform}-${process.arch}/package.json`,
+    );
+    return false;
+  } catch {
+    return true;
+  }
+};
+
 let useLegacy = forced === 'legacy';
+if (!useLegacy && nativeUnavailable()) {
+  console.error(
+    `[typecheck] no native TS 7 build for ${process.platform}-${process.arch}; falling back to TypeScript 6`,
+  );
+  useLegacy = true;
+}
 if (!useLegacy && forced !== 'native' && nativeBroken()) {
   try {
     ensureUnshared();
