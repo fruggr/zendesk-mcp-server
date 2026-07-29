@@ -18,23 +18,19 @@ benchmarks. The reproduction script is `scripts/bench-lint-tooling.mjs`; the
 method is in [Appendix A](#appendix-a--how-the-numbers-were-produced).
 
 > **Measurement provenance — read before comparing numbers across sections.**
-> The figures were collected over several sessions on a shared x86-64 container,
-> under varying load and on two Biome versions. The same command therefore
-> appears with different absolute medians in different sections (`biome check
-> --write` on one file: 413.3 ms in §1, 355.5 ms in §3.1, 1348.6 ms in the
-> version table of §7). None of them is wrong — **only ratios *within* a single
-> table are comparable; absolutes are not comparable across tables.** Two things
-> move them:
+> §1, §6 and §7 are **one dataset**, re-measured on Biome 2.5.5 (the shipped
+> version) once it cleared the release cooldown. §3–§5 come from the original
+> evaluation session, which needed Oxc installed and cannot be re-run now that
+> the packages are gone; the same command therefore shows a different absolute
+> median there (`biome check --write` on one file: 458.5 ms in §1, 355.5 ms in
+> §3.1). Neither is wrong — **only ratios *within* a single table are
+> comparable.** Absolute times on this shared x86-64 container move by 2–3×
+> between an idle and a busy run; the `--skip=types` path is the stable one,
+> because it is short.
 >
-> - **Load.** Absolute times on this container vary by 2–3× between an idle and
->   a busy run. The `--skip=types` path is the stable one, because it is short.
-> - **Biome version.** 2.5.5 is ~3.8× faster than 2.5.4 on the type-inference
->   path specifically (§7). Sections §3–§5 were measured on 2.5.5 with Oxc
->   installed; §1, §6 and §7 describe the shipped configuration.
->
-> The conclusion holds regardless: `--skip=types` removes the type-inference
-> pass entirely, so it wins by a wide margin on every version and load level
-> measured.
+> The conclusion does not depend on any of it: `--skip=types` removes the
+> type-inference pass entirely, so it wins by a wide margin on every version and
+> load level measured.
 
 ---
 
@@ -48,14 +44,14 @@ brings Biome to oxlint's speed:
 
 | Hook command | Median (1 file) | vs today |
 | --- | ---: | ---: |
-| `biome check --write` *(today)* | 413.3 ms | 1× |
-| `biome lint` *(lint-only, no other change)* | 353.5 ms | 1.2× |
-| **`biome lint --write --skip=types`** | **116.9 ms** | **3.5×** |
-| `oxlint` *(reference)* | 100.2 ms | 4.1× |
+| `biome check --write` *(the old hook)* | 458.5 ms | 1× |
+| `biome lint` *(lint-only, no other change)* | 433.9 ms | 1.1× |
+| **`biome lint --write --skip=types`** | **137.0 ms** | **3.3×** |
+| `biome lint --skip=types` *(no write)* | 116.9 ms | 3.9× |
 
-`biome lint --skip=types` is **103.5 ms against oxlint's 100.2 ms** — the same
-speed, with one flag, no second toolchain, and no rule lost (the two type-aware
-rules still run at pre-commit and in CI).
+`biome lint --skip=types` lands at 116.9 ms against the ~100 ms oxlint managed
+on the same machine — the same order, with one flag, no second toolchain, and no
+rule lost (the two type-aware rules still run at pre-commit and in CI).
 
 **Two corrections this measurement forces**, both worth reading before acting:
 
@@ -71,10 +67,10 @@ rules still run at pre-commit and in CI).
 
 | Stage | Command | Wired in | Cost |
 | --- | --- | --- | ---: |
-| `PostToolUse` (per edit) | `biome lint --write --skip=types <file>` | `.claude/settings.json` | **116.9 ms** |
-| pre-commit (staged) | `biome check --write --error-on-warnings <files>` | lefthook (`lefthook.yml`) | 425.2 ms |
+| `PostToolUse` (per edit) | `biome lint --write --skip=types <file>` | `.claude/settings.json` | **137.0 ms** |
+| pre-commit (staged) | `biome check --write --error-on-warnings <files>` | lefthook (`lefthook.yml`) | 503.5 ms |
 | pre-push | *nothing* | — | — |
-| CI | `pnpm check` — the same command, project scope | `.github/workflows/ci.yml`, unchanged | 697.2 ms |
+| CI | `pnpm check` — the same command, project scope | `.github/workflows/ci.yml`, unchanged | 807.2 ms |
 
 The pre-commit stage runs through **lefthook** rather than a hand-written hook.
 Its glob is scoped to `src`/`tests`/`scripts`, the same paths as `pnpm check`,
@@ -145,17 +141,16 @@ reaches 1.0 or Biome's type-inference cost changes.
 
 | | Version | Role today |
 | --- | --- | --- |
-| Biome | 2.5.5 *(measured); repo ships 2.5.4* | lint + format + import sorting (`pnpm check`, `PostToolUse` hook) |
+| Biome | 2.5.5 | lint + format + import sorting (`pnpm check`, `PostToolUse` hook) |
 | oxlint | 1.75.0 | lint only |
 | oxfmt | 0.60.0 | format only (pre-1.0) |
 | oxlint-tsgolint | 7.0.2001 | optional, enables oxlint's type-aware rules |
 
-Biome was bumped 2.5.4 → 2.5.5 for the measurements so both sides ran their
-latest release, using `--config.minimumReleaseAge=0` to bypass the
-`pnpm-workspace.yaml` cooldown for the evaluation only. **The repo ships 2.5.4** —
-2.5.5 is still inside the cooldown window. That version gap turned out to matter
-a great deal on the type-inference path; see
-[§7](#the-biome-version-matters-more-than-expected).
+During the evaluation the repo was pinned to Biome 2.5.4 and 2.5.5 was still
+inside the release cooldown, so the comparison ran on 2.5.5 via
+`--config.minimumReleaseAge=0`. Renovate has since shipped 2.5.5 (#190), and
+§1/§6/§7 were re-measured on it — the version gap mattered a great deal on the
+type-inference path; see [§7](#the-biome-version-matters-more-than-expected).
 
 **Measurement platform caveat.** All timings are from the Linux x86-64 CI
 container (4 vCPU Xeon @ 2.10 GHz), **not** from Android/Termux/PRoot. Absolute
@@ -566,16 +561,16 @@ the question becomes what each option *costs*.
 
 | | 1 file | Rule coverage |
 | --- | ---: | --- |
-| `biome check --write` *(today)* | 413.3 ms | 100 % |
-| `biome lint` *(lint-only, nothing else changed)* | 353.5 ms | 100 % |
-| **`biome lint --write --skip=types`** | **116.9 ms** | 219/221 rules; the 2 skipped run at pre-commit |
-| `oxlint` | 100.2 ms | 88.6 % full, 3.6 % partial, 7.9 % missing |
+| `biome check --write` *(the old hook)* | 458.5 ms | 100 % |
+| `biome lint` *(lint-only, nothing else changed)* | 433.9 ms | 100 % |
+| **`biome lint --write --skip=types`** | **137.0 ms** | 219/221 rules; the 2 skipped run at pre-commit |
+| `oxlint` *(measured in the §3 session)* | ~100 ms | 88.6 % full, 3.6 % partial, 7.9 % missing |
 
-oxlint is 17 ms faster and 8 rules poorer, in exchange for a second toolchain,
-a second rule config to keep tuned, and the drift risk of §6.3. That is not a
-trade worth making.
+oxlint is in the same range and 8 rules poorer, in exchange for a second
+toolchain, a second rule config to keep tuned, and the drift risk of §6.3. That
+is not a trade worth making.
 
-Note that lint-only *by itself* buys ~15 %. The speedup is `--skip=types`; the
+Note that lint-only *by itself* buys ~5 %. The speedup is `--skip=types`; the
 lint-only split is what makes skipping it free, since the two type-aware rules
 have a natural home one stage later.
 
@@ -583,7 +578,7 @@ have a natural home one stage later.
 
 | | staged (5 files) | project |
 | --- | ---: | ---: |
-| `biome check --write --error-on-warnings` | **425.2 ms** | 697.2 ms |
+| `biome check --write --error-on-warnings` | **503.5 ms** | 807.2 ms |
 
 Deliberately identical to CI, differing only in scope. This is what makes CI a
 verification step rather than a discovery step: there is no check in CI that the
@@ -622,7 +617,7 @@ Kept for the record, none of it decisive:
 
 ## 7. What was applied
 
-**Stayed on Biome. Changed the hook command, not the toolchain.** A 3.5× faster
+**Stayed on Biome. Changed the hook command, not the toolchain.** A 3.3× faster
 per-edit hook with **no second linter, no second rule config, no coverage loss
 and no drift risk**.
 
@@ -639,10 +634,10 @@ and no drift risk**.
 command. `biome.json` keeps both `types`-domain rules: they are skipped on the
 hot path by a flag, not removed, so pre-commit and CI still enforce them.
 
-### The Biome version matters more than expected
+### The Biome version mattered more than expected
 
-Most measurements in this document were taken on Biome **2.5.5**. The repo is
-pinned to **2.5.4**, and the difference on the type-inference path is large:
+While this change was in review the repo was pinned to Biome **2.5.4**, and the
+gap to 2.5.5 on the type-inference path turned out to be large:
 
 | Biome | `check --write`, 1 file | `lint --write --skip=types`, 1 file |
 | --- | ---: | ---: |
@@ -650,18 +645,14 @@ pinned to **2.5.4**, and the difference on the type-inference path is large:
 | 2.5.5 | 354.6 ms | 104.3 ms |
 
 Same machine, same config. The skipped path is flat across versions — only the
-type pass moved, by ~3.8×.
+type pass moved, by ~3.8×. On 2.5.4 this change made the hook **12×** faster;
+on 2.5.5 it is 3.3×, because 2.5.5 had already recovered most of that cost.
 
-The repo nonetheless stays on **2.5.4**: 2.5.5 was published 2026-07-21 and the
-`minimumReleaseAge: 10080` cooldown in `pnpm-workspace.yaml` rejects it until
-2026-07-28. Committing a lockfile that violates the policy would fail
-`pnpm install` in CI, and bypassing a deliberate supply-chain safeguard to win
-milliseconds on a path this change already makes 12× faster is the wrong trade.
-
-**So this is a note for whoever reviews the Renovate bump to 2.5.5:** it is not
-routine — it is a large improvement on `pnpm check` and the pre-commit hook,
-both of which keep the type-aware rules. Take it when it lands. The per-edit
-hook is unaffected either way; `--skip=types` already sidesteps that cost.
+Renovate shipped 2.5.5 in #190 and this branch merged it, so the figures in §1,
+§6 and §7 are measured on the version the repo actually runs. The lasting point
+for future bumps: a Biome release that touches type inference moves `pnpm check`
+and the pre-commit hook a great deal, and the per-edit hook not at all —
+`--skip=types` already sidesteps that path.
 
 Not done, tracked here rather than lost — both independent of this decision:
 `oxlint --type-aware` found 8 issues Biome does not report, and oxlint's

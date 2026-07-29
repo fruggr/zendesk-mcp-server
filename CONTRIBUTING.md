@@ -54,8 +54,7 @@ pnpm build && pnpm typecheck && pnpm check && pnpm test
 
 ### Lint and format: which stage does what
 
-Lint feedback is worth having immediately; formatting only matters before code is
-shared — so they run at different stages. Why, with measurements:
+Why they run at different stages, with measurements:
 [`docs/decisions/lint-tooling.md`](docs/decisions/lint-tooling.md).
 
 | Stage | What runs |
