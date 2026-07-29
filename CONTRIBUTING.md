@@ -52,22 +52,6 @@ pnpm dev -- <your-subdomain> --transport http --port 3000 --public-url http://lo
 pnpm build && pnpm typecheck && pnpm check && pnpm test
 ```
 
-### Lint and format: which stage does what
-
-Why they run at different stages, with measurements:
-[`docs/decisions/lint-tooling.md`](docs/decisions/lint-tooling.md).
-
-| Stage | What runs |
-| ----- | --------- |
-| On every edit (Claude Code `PostToolUse` hook) | `biome lint --write --skip=types` on the edited files — lints, does **not** format |
-| `pre-commit` | `biome check --write --error-on-warnings` on staged `src`/`tests`/`scripts` files — formats, sorts imports, full lint |
-| CI | `pnpm check` over `src/`, `tests/` and `scripts/` |
-
-`pnpm install` *attempts* to install the pre-commit hook
-([lefthook](https://lefthook.dev), configured in [`lefthook.yml`](lefthook.yml)) —
-best-effort, so it never fails the install and a missing hook is possible.
-`git commit --no-verify` bypasses it too; CI is the backstop either way.
-
 To test a PR branch without publishing to npm — the `prepare` script builds on install:
 
 ```bash
@@ -146,7 +130,9 @@ The same checklist appears on the
 
 - TypeScript with `@tsconfig/strictest` — no `any` escapes without a comment
   explaining why.
-- Biome must be clean: `pnpm check` (and `pnpm check:fix` to auto-format).
+- Biome must be clean: `pnpm check` (and `pnpm check:fix` to auto-format). A
+  pre-commit hook enforces this on staged files; `git commit --no-verify`
+  bypasses it, and CI catches it either way.
 - All `vitest` tests must pass: `pnpm test`.
 - Coverage thresholds must hold: `pnpm test:coverage` (enforced in CI).
 - Test-Driven Development is the default workflow:
