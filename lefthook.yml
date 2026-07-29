@@ -17,5 +17,5 @@ pre-commit:
       glob:
         - '{src,tests,scripts}/*.{ts,mjs,cjs,js,json,jsonc}'
         - '{src,tests,scripts}/**/*.{ts,mjs,cjs,js,json,jsonc}'
-      run: ./node_modules/.bin/biome check --write --error-on-warnings --no-errors-on-unmatched {staged_files}
+      run: node scripts/biome.mjs check --write --error-on-warnings --no-errors-on-unmatched {staged_files}
       stage_fixed: true

@@ -112,6 +112,10 @@ test: if a running server behaves no differently for a client, it's tooling.
   `--skip=types` on the `PostToolUse` hook — those two rules dominate its cost
   and pre-commit still enforces them. Don't add formatting back to the per-edit
   hook. Why: `docs/decisions/lint-tooling.md`.
+- Lint and format through the pnpm scripts (`pnpm check`, `pnpm check:fix`);
+  automated callers go through `scripts/biome.mjs`, never
+  `node_modules/.bin/biome`, which has no binary to run on Android/Termux.
+  Why, and what the shim does: `docs/decisions/biome-on-android.md`.
 - Functional: pure functions, immutable data, no classes (except `ZendeskApiError`).
 - Tool handlers are standalone functions in `ToolDefinition[]` arrays.
 - ASCII-only error messages on auth paths — `node:http` rejects non-ASCII bytes
