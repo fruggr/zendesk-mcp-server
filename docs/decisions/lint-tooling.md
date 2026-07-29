@@ -18,13 +18,19 @@ benchmarks. The reproduction script is `scripts/bench-lint-tooling.mjs`; the
 method is in [Appendix A](#appendix-a--how-the-numbers-were-produced).
 
 > **Measurement provenance — read before comparing numbers across sections.**
-> §1, §6 and §7 are **one dataset**, re-measured on Biome 2.5.5 (the shipped
-> version) once it cleared the release cooldown. §3–§5 come from the original
-> evaluation session, which needed Oxc installed and cannot be re-run now that
-> the packages are gone; the same command therefore shows a different absolute
-> median there (`biome check --write` on one file: 458.5 ms in §1, 355.5 ms in
-> §3.1). Neither is wrong — **only ratios *within* a single table are
-> comparable.** Absolute times on this shared x86-64 container move by 2–3×
+> The **stage tables** in §1, §6 and §7 are one dataset, re-measured on Biome
+> 2.5.5 (the shipped version) once it cleared the release cooldown. Two things
+> are deliberately *not* part of it, because neither can be reproduced today:
+>
+> - **§3–§5**, the Oxc comparison — it needs oxlint and oxfmt installed, and
+>   they were removed with the decision.
+> - **The version table in §7**, which compares 2.5.4 against 2.5.5 — the repo
+>   has moved to 2.5.5, so the 2.5.4 column can no longer be re-taken.
+>
+> So the same command shows different absolute medians in different places
+> (`biome check --write` on one file: 458.5 ms in §1, 355.5 ms in §3.1, 354.6 ms
+> in §7's version table). None is wrong — **only ratios *within* a single table
+> are comparable.** Absolute times on this shared x86-64 container move by 2–3×
 > between an idle and a busy run; the `--skip=types` path is the stable one,
 > because it is short.
 >
@@ -150,7 +156,7 @@ During the evaluation the repo was pinned to Biome 2.5.4 and 2.5.5 was still
 inside the release cooldown, so the comparison ran on 2.5.5 via
 `--config.minimumReleaseAge=0`. Renovate has since shipped 2.5.5 (#190), and
 §1/§6/§7 were re-measured on it — the version gap mattered a great deal on the
-type-inference path; see [§7](#the-biome-version-matters-more-than-expected).
+type-inference path; see [§7](#the-biome-version-mattered-more-than-expected).
 
 **Measurement platform caveat.** All timings are from the Linux x86-64 CI
 container (4 vCPU Xeon @ 2.10 GHz), **not** from Android/Termux/PRoot. Absolute
@@ -643,6 +649,10 @@ gap to 2.5.5 on the type-inference path turned out to be large:
 | --- | ---: | ---: |
 | 2.5.4 | 1348.6 ms | 112.3 ms |
 | 2.5.5 | 354.6 ms | 104.3 ms |
+
+*This table alone is from the pre-merge session — the repo is on 2.5.5 now, so
+the 2.5.4 column cannot be re-taken. Its two rows are directly comparable to
+each other; they are not comparable to the stage tables above.*
 
 Same machine, same config. The skipped path is flat across versions — only the
 type pass moved, by ~3.8×. On 2.5.4 this change made the hook **12×** faster;
