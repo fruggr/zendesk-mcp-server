@@ -1,5 +1,6 @@
-#!/bin/bash
-set -euo pipefail
+#!/bin/sh
+# Keep POSIX sh: Android/Termux has neither /bin/bash nor /usr/bin/env.
+set -eu
 
 # Install dependencies at the start of a Claude Code on the web session so tests,
 # linters and the MCP server work out of the box. Web-only: local sessions manage

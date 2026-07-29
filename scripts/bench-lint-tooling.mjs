@@ -31,7 +31,20 @@ const readCount = (name, raw, minimum) => {
 const RUNS = readCount('RUNS', process.env['RUNS'] ?? 9, 1);
 const WARMUPS = readCount('WARMUPS', process.env['WARMUPS'] ?? 2, 0);
 
-const BIOME = './node_modules/.bin/biome';
+// Asked of the wrapper rather than hardcoded: on Android/Termux — the platform
+// this script exists to be re-run on — `node_modules/.bin/biome` has no binary
+// to run, and the wrapper is what fetches the musl build (see
+// `docs/decisions/biome-on-android.md`). Timing the wrapper itself would add a
+// Node start-up to every sample, hence the path and not the command. An empty
+// string on failure leaves the Biome scenarios to the `existsSync` gate below,
+// which skips them the same way a missing oxlint is skipped.
+const BIOME = (() => {
+  try {
+    return execSync('node scripts/biome.mjs --print-binary', { encoding: 'utf8' }).trim();
+  } catch {
+    return '';
+  }
+})();
 const OXLINT = './node_modules/.bin/oxlint';
 const OXFMT = './node_modules/.bin/oxfmt';
 
