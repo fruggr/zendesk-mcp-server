@@ -11,3 +11,31 @@ minimumReleaseAge: 10080
 overrides:
   ip-address: ^10.2.0
   conventional-changelog-writer: ^9.2.0
+
+# yuku publishes no android-arm64 binding, which breaks `pnpm run build`
+# (tsdown) on Android/Termux dev devices. Graft one onto the exact locked
+# version as an optionalDependency: pnpm applies the same os/cpu gate as any
+# platform package (installed on android/arm64 only, skipped elsewhere) and
+# pins the tarball integrity in the lockfile. Bindings are built from
+# https://github.com/dlecan/yuku/tree/android-arm64-poc (yuku v0.6.5; see its
+# README-ANDROID-POC.md for the recipe and provenance).
+#
+# blockExoticSubdeps must be off for pnpm to accept these URL-resolved
+# subdependencies — a deliberate trade-off: the two grafts below are the only
+# exotic subdeps in the tree (the lockfile pins their URL + integrity, so any
+# new one shows up in review), accepted until either the bindings are
+# published on the npm registry under a personal scope (registry deps are not
+# exotic — lets this flag come back on) or upstream ships android-arm64
+# bindings, which deletes this whole block.
+#
+# On a yuku version bump: rebuild from the matching upstream tag, publish new
+# release assets, update the two URLs and the version selectors below.
+blockExoticSubdeps: false
+
+packageExtensions:
+  yuku-codegen@0.6.5:
+    optionalDependencies:
+      '@yuku-codegen/binding-android-arm64': https://github.com/dlecan/yuku/releases/download/android-arm64-poc-v0.6.5/yuku-codegen-binding-android-arm64-0.6.5.tgz
+  yuku-parser@0.6.5:
+    optionalDependencies:
+      '@yuku-parser/binding-android-arm64': https://github.com/dlecan/yuku/releases/download/android-arm64-poc-v0.6.5/yuku-parser-binding-android-arm64-0.6.5.tgz
