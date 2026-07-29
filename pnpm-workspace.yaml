@@ -1,5 +1,9 @@
 allowBuilds:
   esbuild: true
+  # lefthook's postinstall only downloads its Go binary as a fallback; the
+  # binary already ships in the platform optional dependency, so the CLI works
+  # with the build script blocked. Kept false deliberately.
+  lefthook: false
   msw: true
 
 minimumReleaseAge: 10080

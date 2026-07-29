@@ -130,7 +130,9 @@ The same checklist appears on the
 
 - TypeScript with `@tsconfig/strictest` — no `any` escapes without a comment
   explaining why.
-- Biome must be clean: `pnpm check` (and `pnpm check:fix` to auto-format).
+- Biome must be clean: `pnpm check` (and `pnpm check:fix` to auto-format). A
+  pre-commit hook enforces this on staged files; `git commit --no-verify`
+  bypasses it, and CI catches it either way.
 - All `vitest` tests must pass: `pnpm test`.
 - Coverage thresholds must hold: `pnpm test:coverage` (enforced in CI).
 - Test-Driven Development is the default workflow:

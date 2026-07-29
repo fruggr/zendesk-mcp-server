@@ -108,6 +108,10 @@ test: if a running server behaves no differently for a client, it's tooling.
   from the *scan*, not the *lint* — diagnostics here are unchanged. Revisit if a
   type-aware rule needs dependency types. `biome.json` rejects comments, hence
   this note.
+- Lint runs on every edit, formatting only at pre-commit (`lefthook.yml`). Keep
+  `--skip=types` on the `PostToolUse` hook — those two rules dominate its cost
+  and pre-commit still enforces them. Don't add formatting back to the per-edit
+  hook. Why: `docs/decisions/lint-tooling.md`.
 - Functional: pure functions, immutable data, no classes (except `ZendeskApiError`).
 - Tool handlers are standalone functions in `ToolDefinition[]` arrays.
 - ASCII-only error messages on auth paths — `node:http` rejects non-ASCII bytes
