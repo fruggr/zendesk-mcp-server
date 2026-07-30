@@ -1,5 +1,6 @@
+import { HttpResponse, http } from 'msw';
 import { afterEach, describe, expect, it } from 'vitest';
-import { errorHandlers, promotedArticlesHandler } from '../msw-handlers';
+import { errorHandlers, MOCK_PROMOTED_ARTICLE, promotedArticlesHandler } from '../msw-handlers';
 import { mswServer } from '../setup';
 import { type ConnectedClient, type IntegrationHarness, makeConfig } from './harness';
 
@@ -168,21 +169,36 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         expect(uris).toContain('zendesk-hc://topology');
       });
 
-      it('disables the promoted pre-listing (no entries, tool gone) but keeps read-by-id when --no-promoted-articles', async () => {
-        mswServer.use(promotedArticlesHandler);
+      it('disables the promoted pre-listing (zero scan, tool gone) but keeps read-by-id when --no-promoted-articles', async () => {
+        // Count any /articles scan: with the pre-listing off there must be none. A
+        // successful handler (not an error one) would let an accidental scan pass
+        // silently on the "no entries" check alone, so assert the request count too.
+        let scanCount = 0;
+        mswServer.use(
+          http.get('https://testsubdomain.zendesk.com/api/v2/help_center/articles', () => {
+            scanCount += 1;
+            return HttpResponse.json({
+              articles: [MOCK_PROMOTED_ARTICLE],
+              meta: { has_more: false, after_cursor: '' },
+              count: 1,
+            });
+          }),
+        );
         connected = await harness.connect(makeConfig({ mode: 'all', promotedArticles: false }));
 
-        // The list callback short-circuits (no scan) → no promoted article entries...
+        // The list callback short-circuits → no promoted entries AND no scan request.
         const uris = (await connected.client.listResources()).resources.map((r) => r.uri);
         expect(uris.some((u) => u.startsWith('zendesk-hc://article/'))).toBe(false);
+        expect(scanCount).toBe(0);
 
-        // ...and the companion tool is gone, so the pre-listing makes zero Zendesk calls.
+        // ...and the companion tool is gone.
         const names = toolNames((await connected.client.listTools()).tools);
         expect(names).not.toContain('list_promoted_articles');
 
-        // ...but reading a known article by id still works — read-by-id is NOT disabled.
-        const read = await connected.client.readResource({ uri: 'zendesk-hc://article/5001' });
-        expect(resourceTextOf(read)).toContain('(5001)');
+        // ...but reading an UNLISTED (non-promoted) article by id still works —
+        // read-by-id is NOT disabled by the flag. Article 5000 is never promoted.
+        const read = await connected.client.readResource({ uri: 'zendesk-hc://article/5000' });
+        expect(resourceTextOf(read)).toContain('(5000)');
       });
 
       it('exposes the list_promoted_articles tool when the feature is enabled (default)', async () => {
