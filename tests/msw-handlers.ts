@@ -209,6 +209,15 @@ export const MOCK_TRANSLATION = {
   source_type: 'Article',
 };
 
+// Per-locale translation bodies used by the compare_translations handler below.
+// `de` is deliberately one section shorter than `en-us` so the structure-mismatch
+// path has a fixture; any other locale gets the two-section French body.
+const TRANSLATION_BODIES: Record<string, string> = {
+  'en-us': '<h2>Intro</h2><p>Source intro</p><h2>Setup</h2><p>one two three four</p>',
+  de: '<h2>Intro</h2><p>Deutsch intro</p>',
+};
+const FALLBACK_TRANSLATION_BODY = '<h2>Intro</h2><p>French intro</p><h2>Setup</h2><p>un deux</p>';
+
 export const MOCK_CATEGORY = {
   id: 800,
   name: 'General',
@@ -678,12 +687,7 @@ export const handlers = [
   ),
   http.get(`${HC_BASE}/articles/:id/translations/:locale`, ({ params }) => {
     const locale = params['locale'] as string;
-    const body =
-      locale === 'en-us'
-        ? '<h2>Intro</h2><p>Source intro</p><h2>Setup</h2><p>one two three four</p>'
-        : locale === 'de'
-          ? '<h2>Intro</h2><p>Deutsch intro</p>'
-          : '<h2>Intro</h2><p>French intro</p><h2>Setup</h2><p>un deux</p>';
+    const body = TRANSLATION_BODIES[locale] ?? FALLBACK_TRANSLATION_BODY;
     return HttpResponse.json({
       translation: { ...MOCK_TRANSLATION, locale, body },
     });

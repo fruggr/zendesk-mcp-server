@@ -70,6 +70,7 @@
         "noExportedImports": "error",
         "noInferrableTypes": "error",
         "noMultiAssign": "error",
+        "noNestedTernary": "error",
         "noNamespace": "error",
         "noParameterAssign": "error",
         "noShoutyConstants": "error",
