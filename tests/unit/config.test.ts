@@ -10,6 +10,7 @@ describe('loadConfig', () => {
     delete process.env['HOST'];
     delete process.env['PORT'];
     delete process.env['ZENDESK_OAUTH_CALLBACK_PORT'];
+    delete process.env['HC_RESOURCE_SCHEME'];
   });
 
   it('parses subdomain from CLI positional arg', () => {
@@ -198,6 +199,81 @@ describe('loadConfig', () => {
 
     it('rejects values that are not URLs', () => {
       expect(() => loadConfig(['mycompany', '--cors-origin', 'not-a-url'])).toThrow();
+    });
+  });
+
+  describe('hcResourceScheme', () => {
+    it('defaults to zendesk-hc', () => {
+      const config = loadConfig(['mycompany']);
+      expect(config.hcResourceScheme).toBe('zendesk-hc');
+    });
+
+    it('parses --hc-resource-scheme flag', () => {
+      const config = loadConfig(['mycompany', '--hc-resource-scheme', 'wiki']);
+      expect(config.hcResourceScheme).toBe('wiki');
+    });
+
+    it('reads HC_RESOURCE_SCHEME from env', () => {
+      process.env['HC_RESOURCE_SCHEME'] = 'docs';
+      const config = loadConfig(['mycompany']);
+      expect(config.hcResourceScheme).toBe('docs');
+    });
+
+    it('prefers --hc-resource-scheme over the env var', () => {
+      process.env['HC_RESOURCE_SCHEME'] = 'docs';
+      const config = loadConfig(['mycompany', '--hc-resource-scheme', 'wiki']);
+      expect(config.hcResourceScheme).toBe('wiki');
+    });
+
+    it('accepts any RFC 3986 scheme: letter then letters, digits, "+", "-", "."', () => {
+      expect(
+        loadConfig(['mycompany', '--hc-resource-scheme', 'fruggr-wiki']).hcResourceScheme,
+      ).toBe('fruggr-wiki');
+      expect(loadConfig(['mycompany', '--hc-resource-scheme', 'z6+x.y-w']).hcResourceScheme).toBe(
+        'z6+x.y-w',
+      );
+    });
+
+    it('rejects a scheme carrying the "://" separator (strict bare scheme, no normalization)', () => {
+      expect(() => loadConfig(['mycompany', '--hc-resource-scheme', 'wiki://'])).toThrow(
+        /HC_RESOURCE_SCHEME|--hc-resource-scheme/,
+      );
+    });
+
+    it('rejects schemes that are not RFC 3986 conformant', () => {
+      for (const bad of ['Wiki', '-wiki', '1wiki', 'wi ki']) {
+        expect(() => loadConfig(['mycompany', '--hc-resource-scheme', bad])).toThrow();
+      }
+    });
+
+    it('reports only the format error for format-rejected values, not the WHATWG-special one', () => {
+      let thrown: unknown;
+      try {
+        loadConfig(['mycompany', '--hc-resource-scheme', 'Wiki']);
+      } catch (error) {
+        thrown = error;
+      }
+      expect(String(thrown)).toContain('RFC 3986');
+      expect(String(thrown)).not.toContain('WHATWG-special');
+    });
+
+    it('rejects WHATWG-special schemes whose URL normalization would make the resource unreadable', () => {
+      for (const special of ['http', 'https', 'ws', 'wss', 'ftp', 'file']) {
+        expect(() => loadConfig(['mycompany', '--hc-resource-scheme', special])).toThrow(
+          /WHATWG-special/,
+        );
+      }
+    });
+
+    it('treats an empty HC_RESOURCE_SCHEME env as unset (same as PORT-style envs)', () => {
+      process.env['HC_RESOURCE_SCHEME'] = '';
+      const config = loadConfig(['mycompany']);
+      expect(config.hcResourceScheme).toBe('zendesk-hc');
+    });
+
+    it('rejects an invalid HC_RESOURCE_SCHEME env value', () => {
+      process.env['HC_RESOURCE_SCHEME'] = 'wiki://';
+      expect(() => loadConfig(['mycompany'])).toThrow(/HC_RESOURCE_SCHEME|--hc-resource-scheme/);
     });
   });
 

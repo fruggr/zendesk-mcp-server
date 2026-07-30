@@ -12,6 +12,10 @@ const textOf = (result: { content?: Array<{ type: string; text?: string }> }): s
 
 const toolNames = (tools: Array<{ name: string }>): string[] => tools.map((t) => t.name);
 
+/** Text of a resources/read result, joined for easy asserts. */
+const resourceTextOf = (read: { contents?: Array<{ text?: unknown }> }): string =>
+  (read.contents ?? []).map((c) => (typeof c.text === 'string' ? c.text : '')).join('\n');
+
 /**
  * Shared, transport-agnostic integration scenarios. Every assertion here goes
  * through a real MCP client over the harness's transport — `tools/list` and
@@ -69,13 +73,28 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         expect(resources.map((r) => r.uri)).toContain('zendesk-hc://topology');
 
         const read = await connected.client.readResource({ uri: 'zendesk-hc://topology' });
-        const text = (read.contents ?? [])
-          .map((c) => (typeof c.text === 'string' ? c.text : ''))
-          .join('\n');
+        const text = resourceTextOf(read);
         expect(text).toContain('en-us'); // default locale
         expect(text).toContain('(800)'); // category General
         expect(text).toContain('(600)'); // section FAQ
         expect(text).toContain('admin'); // current user role
+      });
+
+      it('exposes the resource and instructions under a custom scheme when --hc-resource-scheme is set (#169)', async () => {
+        connected = await harness.connect(makeConfig({ hcResourceScheme: 'wiki' }));
+
+        const instructions = connected.client.getInstructions();
+        expect(instructions).toContain('wiki://topology');
+        expect(instructions).not.toContain('zendesk-hc://');
+
+        const { resources } = await connected.client.listResources();
+        expect(resources.map((r) => r.uri)).toContain('wiki://topology');
+        expect(resources.map((r) => r.uri)).not.toContain('zendesk-hc://topology');
+
+        const read = await connected.client.readResource({ uri: 'wiki://topology' });
+        const text = resourceTextOf(read);
+        expect(text).toContain('en-us');
+        expect(text).toContain('(800)');
       });
 
       it('still renders the topology for a content-editor token that is forbidden the admin-only parts (#161)', async () => {
@@ -83,9 +102,7 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         connected = await harness.connect(makeConfig());
 
         const read = await connected.client.readResource({ uri: 'zendesk-hc://topology' });
-        const text = (read.contents ?? [])
-          .map((c) => (typeof c.text === 'string' ? c.text : ''))
-          .join('\n');
+        const text = resourceTextOf(read);
         // The readable structure still comes back instead of a -32603 failure.
         expect(text).toContain('(800)');
         expect(text).toContain('(600)');
