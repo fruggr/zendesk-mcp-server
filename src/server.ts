@@ -3,7 +3,10 @@ import * as z from 'zod/v4';
 import { ZendeskApiError } from './client/zendesk-api';
 import type { Config } from './config';
 import { ARTICLE_RESOURCES_SCAN_MAX_PAGES } from './constants';
-import { createArticleResourcesProvider } from './guidance/article-resources';
+import {
+  createArticleResourcesProvider,
+  LIST_PROMOTED_ARTICLES_TOOL,
+} from './guidance/article-resources';
 import {
   articleResourcesEnabled,
   articleResourceUri,
@@ -240,7 +243,7 @@ export const registerToolset = (
     // Zendesk calls: gating only the resource (below) would leave the tool callable,
     // and its promoted-article scan would still hit the API. `!== false` so an
     // unset flag (hand-built configs) keeps the default-on behaviour.
-    .filter((t) => config.articleResources !== false || t.name !== 'list_promoted_articles');
+    .filter((t) => config.articleResources !== false || t.name !== LIST_PROMOTED_ARTICLES_TOOL);
 
   // Registration is atomic: if any registerTool/registerResource throws partway
   // (e.g. a hot-reloaded module introduced a duplicate tool name), roll back the
@@ -348,16 +351,16 @@ export const registerToolset = (
               });
             }
             return {
-              resources: refs.map((article) => ({
-                uri: articleResourceUri(config, article.id),
-                name: article.title,
-                title: article.title,
+              resources: refs.map((ref) => ({
+                uri: articleResourceUri(config, ref.id),
+                name: ref.title,
+                title: ref.title,
                 // Per-article description so clients that render `uri — description`
                 // in a resource picker can tell the entries apart (without it, every
                 // entry inherits the template's generic description and looks
                 // identical). Lead with the title + id so the distinguishing part
                 // survives the client truncating a long line.
-                description: `"${article.title}" (article ${article.id}) — promoted Help Center article, as Markdown.`,
+                description: `"${ref.title}" (article ${ref.id}) — promoted Help Center article, as Markdown.`,
                 mimeType: 'text/markdown',
               })),
             };

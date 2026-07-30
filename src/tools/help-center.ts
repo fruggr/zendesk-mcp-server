@@ -18,7 +18,7 @@ import {
   MAX_PAGE_SIZE,
   REORDER_CONFIRM_THRESHOLD,
 } from '../constants';
-import { fetchPromotedArticles } from '../guidance/article-resources';
+import { fetchPromotedArticles, LIST_PROMOTED_ARTICLES_TOOL } from '../guidance/article-resources';
 import type {
   ZendeskArticle,
   ZendeskArticleAttachment,
@@ -497,7 +497,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       },
     },
     {
-      name: 'list_promoted_articles',
+      name: LIST_PROMOTED_ARTICLES_TOOL,
       namespace: 'help_center',
       readOnly: true,
       title: 'List Promoted Help Center Articles',

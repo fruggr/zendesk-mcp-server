@@ -9,6 +9,14 @@ import { htmlToMarkdown } from '../utils/article-sections';
 import { formatArticleSummary, truncateIfNeeded } from '../utils/formatting';
 import { buildCursorParams, extractPaginationMeta } from '../utils/pagination';
 
+/**
+ * Name of the companion tool that lists promoted articles. Shared between the
+ * tool definition (`help-center.ts`) and the `--no-article-resources` opt-out
+ * filter (`server.ts`) so the two can never drift: renaming the tool here keeps
+ * the filter dropping it, preserving the "zero Zendesk calls when off" invariant.
+ */
+export const LIST_PROMOTED_ARTICLES_TOOL = 'list_promoted_articles';
+
 /** A promoted article reduced to what the resource list needs (uri + display). */
 export interface PromotedArticleRef {
   id: number;
