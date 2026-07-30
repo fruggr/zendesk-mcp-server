@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { createServer, type Server } from 'node:http';
+import { createServer, type Server, type ServerResponse } from 'node:http';
 import { release } from 'node:os';
 import open from 'open';
 import { DEFAULT_CALLBACK_PORT, getOAuthUrls } from '../constants';
@@ -66,6 +66,23 @@ const escapeHtml = (value: string): string =>
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 
+// Pages served back to the browser tab that completed (or failed) the flow.
+// ASCII only, like every other string on the auth path.
+const errorPage = (title: string, detail?: string): string =>
+  `<html><body><h1>${escapeHtml(title)}</h1>${detail === undefined ? '' : `<p>${escapeHtml(detail)}</p>`}</body></html>`;
+
+const SUCCESS_PAGE =
+  '<html><body>' +
+  '<h1>Authentication successful!</h1>' +
+  '<p>You can close this tab and return to your AI assistant.</p>' +
+  '<p>This tab will auto-close in <span id="t">10</span>s.</p>' +
+  '<script>' +
+  'let n=10;' +
+  'const el=document.getElementById("t");' +
+  'const i=setInterval(()=>{n--;el.textContent=n;if(n<=0){clearInterval(i);window.close();}},1000);' +
+  '</script>' +
+  '</body></html>';
+
 /**
  * A started OAuth flow: the local callback server is already listening and the
  * browser-open attempt has been made. `authorizeUrl` is available immediately
@@ -76,6 +93,16 @@ const escapeHtml = (value: string): string =>
 export interface StartedBrowserAuth {
   authorizeUrl: string;
   tokenPromise: Promise<TokenResult>;
+}
+
+// How a completed callback settles the token promise, carried as data so the
+// request handler does not need a callback per branch.
+type CallbackOutcome = { ok: true; token: TokenResult } | { ok: false; error: unknown };
+
+interface CallbackResolution {
+  status: number;
+  html: string;
+  outcome: CallbackOutcome;
 }
 
 const generateCodeVerifier = (): string => randomBytes(32).toString('base64url');
@@ -112,6 +139,89 @@ export const startBrowserAuth = (
     let authTimeout: ReturnType<typeof setTimeout> | undefined;
     let callbackServer: Server;
 
+    // PKCE code -> token. The redirect_uri must be byte-identical to the one
+    // sent on the authorize call, so it is rebuilt from the port actually bound
+    // rather than the requested one.
+    const exchangeCodeForToken = async (code: string): Promise<TokenResult> => {
+      const callbackPort = (callbackServer.address() as { port: number }).port;
+      const tokenBody = new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        client_id: oauthClientId,
+        redirect_uri: `http://localhost:${callbackPort}/callback`,
+        code_verifier: codeVerifier,
+      });
+
+      const tokenResponse = await fetch(tokenUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: tokenBody.toString(),
+      });
+
+      logger.debug('oauth_token_exchange', { status: tokenResponse.status });
+
+      if (!tokenResponse.ok) {
+        const errorBody = await tokenResponse.text();
+        throw new Error(`Token exchange failed (${tokenResponse.status}): ${errorBody}`);
+      }
+      return (await tokenResponse.json()) as TokenResult;
+    };
+
+    // Every terminal path of the callback does the same three things: answer the
+    // browser tab, stop the timeout and the callback server, then settle the
+    // token promise. Taking the outcome as data rather than a callback keeps the
+    // request handler free of nested closures.
+    const finishRequest = (
+      res: ServerResponse,
+      status: number,
+      html: string,
+      outcome: CallbackOutcome,
+    ): void => {
+      res.writeHead(status, { 'Content-Type': 'text/html' });
+      res.end(html);
+      clearTimeout(authTimeout);
+      callbackServer.close();
+      if (outcome.ok) resolveToken(outcome.token);
+      else rejectToken(outcome.error);
+    };
+
+    // Decide what the callback means: an OAuth error, a missing code, or a code
+    // to exchange. Returns the page to serve and how the token promise should
+    // settle, so the request handler stays pure plumbing.
+    const resolveCallback = async (url: URL): Promise<CallbackResolution> => {
+      const error = url.searchParams.get('error');
+      if (error) {
+        const desc = url.searchParams.get('error_description') ?? error;
+        return {
+          status: 400,
+          html: errorPage('Authentication failed', desc),
+          outcome: { ok: false, error: new Error(`OAuth error: ${desc}`) },
+        };
+      }
+
+      const code = url.searchParams.get('code');
+      if (!code) {
+        return {
+          status: 400,
+          html: errorPage('Missing authorization code'),
+          outcome: { ok: false, error: new Error('Missing authorization code in callback') },
+        };
+      }
+
+      try {
+        const token = await exchangeCodeForToken(code);
+        logger.info('oauth_authenticated');
+        return { status: 200, html: SUCCESS_PAGE, outcome: { ok: true, token } };
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        return {
+          status: 500,
+          html: errorPage('Token exchange failed', detail),
+          outcome: { ok: false, error: err },
+        };
+      }
+    };
+
     callbackServer = createServer(async (req, res) => {
       const url = new URL(req.url ?? '/', `http://localhost`);
 
@@ -121,88 +231,13 @@ export const startBrowserAuth = (
         return;
       }
 
-      const code = url.searchParams.get('code');
-      const error = url.searchParams.get('error');
-
       logger.debug('oauth_callback_received', {
-        hasCode: Boolean(code),
-        hasError: Boolean(error),
+        hasCode: Boolean(url.searchParams.get('code')),
+        hasError: Boolean(url.searchParams.get('error')),
       });
 
-      if (error) {
-        const desc = url.searchParams.get('error_description') ?? error;
-        res.writeHead(400, { 'Content-Type': 'text/html' });
-        res.end(
-          `<html><body><h1>Authentication failed</h1><p>${escapeHtml(desc)}</p></body></html>`,
-        );
-        clearTimeout(authTimeout);
-        callbackServer.close();
-        rejectToken(new Error(`OAuth error: ${desc}`));
-        return;
-      }
-
-      if (!code) {
-        res.writeHead(400, { 'Content-Type': 'text/html' });
-        res.end('<html><body><h1>Missing authorization code</h1></body></html>');
-        clearTimeout(authTimeout);
-        callbackServer.close();
-        rejectToken(new Error('Missing authorization code in callback'));
-        return;
-      }
-
-      // Exchange code for token
-      try {
-        const callbackPort = (callbackServer.address() as { port: number }).port;
-        const tokenBody = new URLSearchParams({
-          grant_type: 'authorization_code',
-          code,
-          client_id: oauthClientId,
-          redirect_uri: `http://localhost:${callbackPort}/callback`,
-          code_verifier: codeVerifier,
-        });
-
-        const tokenResponse = await fetch(tokenUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: tokenBody.toString(),
-        });
-
-        logger.debug('oauth_token_exchange', { status: tokenResponse.status });
-
-        if (!tokenResponse.ok) {
-          const errorBody = await tokenResponse.text();
-          throw new Error(`Token exchange failed (${tokenResponse.status}): ${errorBody}`);
-        }
-
-        const tokenData = (await tokenResponse.json()) as TokenResult;
-        logger.info('oauth_authenticated');
-
-        res.writeHead(200, { 'Content-Type': 'text/html' });
-        res.end(
-          '<html><body>' +
-            '<h1>Authentication successful!</h1>' +
-            '<p>You can close this tab and return to your AI assistant.</p>' +
-            '<p>This tab will auto-close in <span id="t">10</span>s.</p>' +
-            '<script>' +
-            'let n=10;' +
-            'const el=document.getElementById("t");' +
-            'const i=setInterval(()=>{n--;el.textContent=n;if(n<=0){clearInterval(i);window.close();}},1000);' +
-            '</script>' +
-            '</body></html>',
-        );
-
-        clearTimeout(authTimeout);
-        callbackServer.close();
-        resolveToken(tokenData);
-      } catch (err) {
-        res.writeHead(500, { 'Content-Type': 'text/html' });
-        res.end(
-          `<html><body><h1>Token exchange failed</h1><p>${escapeHtml(err instanceof Error ? err.message : String(err))}</p></body></html>`,
-        );
-        clearTimeout(authTimeout);
-        callbackServer.close();
-        rejectToken(err);
-      }
+      const { status, html, outcome } = await resolveCallback(url);
+      finishRequest(res, status, html, outcome);
     });
 
     const requestedPort = config.callbackPort ?? DEFAULT_CALLBACK_PORT;
