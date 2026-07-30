@@ -43,6 +43,9 @@ export const ConfigSchema = z.object({
     .regex(/^[a-z][a-z0-9+.-]*$/, {
       message:
         'Invalid HC_RESOURCE_SCHEME / --hc-resource-scheme value. Expected a bare RFC 3986 scheme: a lowercase letter followed by lowercase letters, digits, "+", "-" or "." (no "://").',
+      // Stop here on a format failure so the WHATWG-special refinement below
+      // does not pile a misleading second message onto e.g. `Wiki`.
+      abort: true,
     })
     // WHATWG "special" schemes (http, https, ws, wss, ftp, file) serialize
     // with a trailing slash (`new URL('http://x').toString()` === 'http://x/'),

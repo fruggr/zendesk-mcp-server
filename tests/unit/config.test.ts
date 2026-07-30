@@ -246,6 +246,17 @@ describe('loadConfig', () => {
       }
     });
 
+    it('reports only the format error for format-rejected values, not the WHATWG-special one', () => {
+      let thrown: unknown;
+      try {
+        loadConfig(['mycompany', '--hc-resource-scheme', 'Wiki']);
+      } catch (error) {
+        thrown = error;
+      }
+      expect(String(thrown)).toContain('RFC 3986');
+      expect(String(thrown)).not.toContain('WHATWG-special');
+    });
+
     it('rejects WHATWG-special schemes whose URL normalization would make the resource unreadable', () => {
       for (const special of ['http', 'https', 'ws', 'wss', 'ftp', 'file']) {
         expect(() => loadConfig(['mycompany', '--hc-resource-scheme', special])).toThrow(
