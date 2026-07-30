@@ -12,6 +12,7 @@
         "useArrayFind": "error",
         "noUselessReturn": "error",
         "noDivRegex": "error",
+        "noExcessiveCognitiveComplexity": "error",
         "noImplicitCoercions": "error",
         "noRedundantDefaultExport": "error",
         "noUselessCatchBinding": "error",
@@ -110,7 +111,12 @@
     },
     {
       "includes": ["tests/**", "scripts/**"],
-      "linter": { "rules": { "performance": { "useTopLevelRegex": "off" } } }
+      "linter": {
+        "rules": {
+          "complexity": { "noExcessiveCognitiveComplexity": "off" },
+          "performance": { "useTopLevelRegex": "off" }
+        }
+      }
     }
   ],
   "formatter": {
