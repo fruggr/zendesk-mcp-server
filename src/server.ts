@@ -5,12 +5,12 @@ import type { Config } from './config';
 import { ARTICLE_RESOURCES_SCAN_MAX_PAGES } from './constants';
 import { createArticleResourcesProvider } from './guidance/article-resources';
 import {
-  ARTICLE_RESOURCE_URI_TEMPLATE,
   articleResourcesEnabled,
   articleResourceUri,
+  articleResourceUriTemplate,
   buildInstructions,
   helpCenterContextEnabled,
-  TOPOLOGY_RESOURCE_URI,
+  topologyResourceUri,
 } from './guidance/instructions';
 import { createTopologyProvider } from './guidance/topology';
 import { filterTools, groupByNamespace } from './routing/registry';
@@ -305,7 +305,7 @@ export const registerToolset = (
       registered.push(
         server.registerResource(
           'help-center-topology',
-          TOPOLOGY_RESOURCE_URI,
+          topologyResourceUri(config),
           {
             title: 'Zendesk Help Center topology',
             description:
@@ -331,7 +331,7 @@ export const registerToolset = (
     // hide the separately-registered topology resource.
     if (articleResourcesEnabled(config)) {
       const articles = createArticleResourcesProvider(getToken, config.subdomain, onUnauthorized);
-      const template = new ResourceTemplate(ARTICLE_RESOURCE_URI_TEMPLATE, {
+      const template = new ResourceTemplate(articleResourceUriTemplate(config), {
         list: async () => {
           try {
             const { refs, truncated } = await articles.listPromoted();
@@ -343,7 +343,7 @@ export const registerToolset = (
             }
             return {
               resources: refs.map((article) => ({
-                uri: articleResourceUri(article.id),
+                uri: articleResourceUri(config, article.id),
                 name: article.title,
                 title: article.title,
                 // Per-article description so clients that render `uri — description`

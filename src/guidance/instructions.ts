@@ -1,25 +1,32 @@
 import type { Config } from '../config';
 
-/** Stable URI of the dynamic Help Center topology resource. */
-export const TOPOLOGY_RESOURCE_URI = 'zendesk-hc://topology';
+/**
+ * URI of the dynamic Help Center topology resource. Single source of truth for
+ * every place that cites it (resource registration, `instructions` blob): the
+ * scheme comes from the config (`--hc-resource-scheme`, default `zendesk-hc`),
+ * the path is fixed. Any future Help Center resource should build its URI the
+ * same way so the whole surface follows the configured scheme.
+ */
+export const topologyResourceUri = (config: Config): string =>
+  `${config.hcResourceScheme}://topology`;
 
 /**
- * URI prefix of the pull-only Help Center article resources. Single source of
- * truth for both the `{id}` template registered on the server and the concrete
- * per-article URIs the list callback emits, so the two can never drift apart
- * (notably if the `zendesk-hc://` scheme is ever made configurable, see #169).
+ * URI template of the pull-only Help Center article resources, built from the
+ * configured scheme exactly like `topologyResourceUri` (`--hc-resource-scheme`,
+ * default `zendesk-hc` → `zendesk-hc://article/{id}`). The template's `list`
+ * callback enumerates the promoted ("featured") articles (so clients can surface
+ * them for pinning), while any article id can be read on demand.
  */
-export const ARTICLE_RESOURCE_URI_PREFIX = 'zendesk-hc://article/';
+export const articleResourceUriTemplate = (config: Config): string =>
+  `${config.hcResourceScheme}://article/{id}`;
 
 /**
- * URI template of the pull-only Help Center article resources. The template's
- * `list` callback enumerates the promoted ("featured") articles (so clients can
- * surface them for pinning), while any article id can be read on demand.
+ * Build the concrete resource URI for a single article id, under the configured
+ * scheme. Shares the scheme with the template above so the listed URIs always
+ * match the template the read callback is registered under.
  */
-export const ARTICLE_RESOURCE_URI_TEMPLATE = `${ARTICLE_RESOURCE_URI_PREFIX}{id}`;
-
-/** Build the concrete resource URI for a single article id. */
-export const articleResourceUri = (id: number): string => `${ARTICLE_RESOURCE_URI_PREFIX}${id}`;
+export const articleResourceUri = (config: Config, id: number): string =>
+  `${config.hcResourceScheme}://article/${id}`;
 
 /**
  * Whether the `help_center` namespace is active: no `--namespace` filter, or one
@@ -31,7 +38,7 @@ const helpCenterNamespaceActive = (config: Config): boolean =>
 
 /**
  * Whether the Help Center structural context (init instructions + the
- * `zendesk-hc://topology` resource) should be exposed. True only when the
+ * topology resource, default `zendesk-hc://topology`) should be exposed. True only when the
  * feature is enabled (`--no-topology` not set) AND the `help_center` namespace
  * is active. Shared by the instructions builder and the resource registration in
  * `server.ts` so both gates stay in sync.
@@ -54,14 +61,14 @@ export const articleResourcesEnabled = (config: Config): boolean =>
  * The static `instructions` blob sent on `initialize`. Deliberately short and
  * I/O-free: it must not trigger the lazy OAuth/PKCE flow just to connect, and
  * it stays within a tight token budget. The rich, dynamic topology lives in the
- * pull-only `zendesk-hc://topology` resource referenced here.
+ * pull-only topology resource (default `zendesk-hc://topology`) referenced here.
  */
 export const buildInstructions = (config: Config): string | undefined => {
   if (!helpCenterContextEnabled(config)) return undefined;
   return [
     `This MCP server is connected to the Zendesk Help Center of "${config.subdomain}".`,
     '',
-    `When creating or editing Help Center content, the resource ${TOPOLOGY_RESOURCE_URI} is useful context:`,
+    `When creating or editing Help Center content, the resource ${topologyResourceUri(config)} is useful context:`,
     'it lists the active locales (and the default one), the category → section tree with IDs,',
     'the visibility user segments, the permission groups, and your current role.',
     'Prefer its IDs (section_id, permission_group_id, user_segment_id, locale) over guessing from names.',

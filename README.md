@@ -179,7 +179,10 @@ channels (all active only when the `help_center` namespace is), each fetched
 The `instructions` blob and the topology resource are toggled together with
 `--no-topology`; the article resources are toggled independently with
 `--no-article-resources`. Clients that don't consume `instructions` or
-`resources` simply ignore them — the feature degrades silently.
+`resources` simply ignore them — the feature degrades silently. The `zendesk-hc://`
+URI scheme is the default; a deployer can brand it with
+[`--hc-resource-scheme` / `HC_RESOURCE_SCHEME`](docs/configuration.md#hc_resource_scheme)
+(e.g. `wiki` → `wiki://topology`, `wiki://article/{id}`).
 
 ## Prerequisites
 

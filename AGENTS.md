@@ -32,13 +32,10 @@ Open a *new* issue for the delta. Fuller checklist in `CONTRIBUTING.md`.
 
 ## Architecture
 
-Standard MCP server under `src/` (entry `index.ts` → `server.ts`). Auth in
-`auth/`, HTTP client in `client/`, tool definitions in `tools/`, tool filtering
-in `routing/registry.ts`. Transports in `transports/`: stdio (SDK
-`StdioServerTransport`) plus a thin `node:http` HTTP transport that wraps
-`StreamableHTTPServerTransport` and serves the RFC 9728 / RFC 8414 OAuth
-discovery endpoints; HTTP builds a per-session `McpServer` so the request's
-bearer is captured in the tools' closure — no shared state.
+Transports: stdio (SDK `StdioServerTransport`) plus a thin `node:http` HTTP
+transport that wraps `StreamableHTTPServerTransport` and serves the RFC 9728 /
+RFC 8414 OAuth discovery endpoints; HTTP builds a per-session `McpServer` so the
+request's bearer is captured in the tools' closure — no shared state.
 
 **Tool modes** (chosen at startup by `--mode`): `all` (every tool individually),
 `namespace` (default — one proxy per namespace), `single` (one `zendesk` proxy).
@@ -87,16 +84,38 @@ quality bar still hold — the freedom is from Zendesk's shape, not from craft.)
 
 ## Planning
 
-Every implementation plan must also carry a **functional validation plan** for
-the feature, written for an *independent* validator (another agent or a human) —
-not the implementer. It lives in the PR description; the validator posts their
-report as a PR comment (English). Author the plan with the
+An implementation plan that changes **MCP-runtime-observable behaviour** — the
+tool surface, transports, auth, resources, prompts, persistence or timing a
+running server exposes to a client — must also carry a **functional validation
+plan** for that behaviour, written for an *independent* validator (another agent
+or a human), not the implementer. It lives in the PR description; the validator
+posts their report as a PR comment (English). Author the plan with the
 `functional-validation-plan` skill; the validator executes it with the
 `run-validation-plan` skill — don't inline either here.
+
+**Pure tooling / dev-tooling changes are exempt** — build scripts, the
+typecheck/lint/format setup, dev-only scripts, CI and release automation change
+nothing a client observes at runtime, so the standard gates (`pnpm typecheck` /
+`pnpm check` / `pnpm test` + CI) *are* the validation; no third-party pass. The
+test: if a running server behaves no differently for a client, it's tooling.
 
 ## Code style
 
 - TypeScript strict; Biome for lint/format (`pnpm check`).
+- Keep the `!!**/node_modules` force-ignore in `biome.json` `files.includes`: it
+  stops Biome 2's scanner from opening every dependency file for its module graph
+  (~40% of `pnpm check` wall time, worse on slow filesystems), and excludes them
+  from the *scan*, not the *lint* — diagnostics here are unchanged. Revisit if a
+  type-aware rule needs dependency types. `biome.json` rejects comments, hence
+  this note.
+- Lint runs on every edit, formatting only at pre-commit (`lefthook.yml`). Keep
+  `--skip=types` on the `PostToolUse` hook — those two rules dominate its cost
+  and pre-commit still enforces them. Don't add formatting back to the per-edit
+  hook. Why: `docs/decisions/lint-tooling.md`.
+- Lint and format through the pnpm scripts (`pnpm check`, `pnpm check:fix`);
+  automated callers go through `scripts/biome.mjs`, never
+  `node_modules/.bin/biome`, which has no binary to run on Android/Termux.
+  Why, and what the shim does: `docs/decisions/biome-on-android.md`.
 - Functional: pure functions, immutable data, no classes (except `ZendeskApiError`).
 - Tool handlers are standalone functions in `ToolDefinition[]` arrays.
 - ASCII-only error messages on auth paths — `node:http` rejects non-ASCII bytes

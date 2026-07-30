@@ -1,0 +1,21 @@
+# Git hooks. Installed by the `prepare` script on `pnpm install`.
+#
+# Linting and formatting run at different stages on purpose: lint feedback is
+# worth having on every edit (the Claude Code PostToolUse hook, see
+# .claude/settings.json), formatting only matters before code is shared. The
+# measurements behind that split are in docs/decisions/lint-tooling.md.
+#
+# This is the stage that formats, sorts imports, and runs the full lint —
+# including the two `types`-domain rules the per-edit hook skips for speed.
+pre-commit:
+  jobs:
+    - name: biome
+      # Same paths as `pnpm check`, so pre-commit and CI cannot disagree.
+      # Two patterns on purpose: `**/` requires at least one directory level in
+      # lefthook's matcher, so it alone would silently skip src/index.ts,
+      # src/config.ts, tests/setup.ts and every other top-level file.
+      glob:
+        - '{src,tests,scripts}/*.{ts,mjs,cjs,js,json,jsonc}'
+        - '{src,tests,scripts}/**/*.{ts,mjs,cjs,js,json,jsonc}'
+      run: node scripts/biome.mjs check --write --error-on-warnings --no-errors-on-unmatched {staged_files}
+      stage_fixed: true

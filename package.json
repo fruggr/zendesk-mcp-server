@@ -1,6 +1,6 @@
 {
   "name": "@fruggr/zendesk-mcp-server",
-  "version": "2.14.0",
+  "version": "2.15.0",
   "mcpName": "io.github.fruggr/zendesk-mcp-server",
   "description": "Deep Zendesk MCP server for your AI assistant: search, draft, update and translate Help Center articles and manage Support tickets end to end — comments, triage and image attachments.",
   "type": "module",
@@ -16,13 +16,13 @@
   "scripts": {
     "build": "tsdown",
     "build:server-json": "node scripts/build-server-json.mjs > server.json",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "node scripts/typecheck.mjs",
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
-    "prepare": "npm run build",
+    "prepare": "npm run build && (lefthook install || true)",
     "prepublishOnly": "npm run build",
-    "check": "biome check --error-on-warnings src/ tests/ scripts/",
-    "check:fix": "biome check --write src/ tests/ scripts/",
+    "check": "node scripts/biome.mjs check --error-on-warnings src/ tests/ scripts/",
+    "check:fix": "node scripts/biome.mjs check --write src/ tests/ scripts/",
     "test": "vitest run",
     "test:watch": "vitest watch",
     "test:coverage": "vitest run --coverage",
@@ -67,7 +67,7 @@
   "engines": {
     "node": ">=20"
   },
-  "packageManager": "pnpm@11.11.0+sha512.4463f65fd80ed80d69bc1d4bf163ee94f605c7380fc318bb5b2ebe15f8cd12d49c51a4d59e951b401e764d3b6ca751cbf51bc50ed7001a6bcb4935e684c34882",
+  "packageManager": "pnpm@11.16.0+sha512.b767e9a98fc87aec0f42daefcd0e84941c2cdb45d73c4e1e68860fb2bdfdbe032ab592105479e5e05c237f740c8a5ffdbbb52385797ddc2296745a1bbb883e8d",
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
     "cheerio": "1.2.0",
@@ -86,7 +86,7 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.3",
+    "@biomejs/biome": "2.5.5",
     "@semantic-release/changelog": "^6.0.3",
     "@semantic-release/exec": "^7.1.0",
     "@semantic-release/git": "^10.0.1",
@@ -98,13 +98,15 @@
     "@types/hast": "^3.0.4",
     "@types/node": "^22.15.0",
     "@vitest/coverage-v8": "^4.1.0",
-    "conventional-changelog-conventionalcommits": "^9.3.1",
+    "conventional-changelog-conventionalcommits": "^10.2.1",
+    "lefthook": "^2.1.10",
     "msw": "^2.12.13",
     "semantic-release": "^25.0.3",
     "shx": "^0.4.0",
     "tsdown": "^0.22.0",
     "tsx": "^4.21.0",
     "typescript": "^7.0.0",
+    "typescript-legacy": "npm:typescript@6.0.3",
     "vitest": "^4.1.0"
   }
 }
