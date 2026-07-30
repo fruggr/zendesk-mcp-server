@@ -226,6 +226,18 @@ const sendJsonRpcError = (
   res.end(JSON.stringify({ error: { code, message }, id: null, jsonrpc: '2.0' }));
 };
 
+// Terminate a request whose handler threw. Once headers are on the wire,
+// appending a JSON error mid-stream would corrupt the body, so the response is
+// simply closed instead.
+const failRequest = (res: ServerResponse, err: unknown): void => {
+  const message = err instanceof Error ? err.message : 'Internal Server Error';
+  if (!res.headersSent) {
+    sendJsonRpcError(res, 500, -32603, message);
+    return;
+  }
+  if (!res.writableEnded) res.end();
+};
+
 const sendUnauthorized = (res: ServerResponse, resource: string): void => {
   // RFC 6750 + MCP 2025-06-18: the WWW-Authenticate header points the client
   // at the resource metadata that bootstraps the OAuth discovery flow.
@@ -361,6 +373,33 @@ export const startHttpTransport = async (
   const idleTimeoutMs = options.sessionIdleTimeoutMs ?? SESSION_IDLE_TIMEOUT_MS;
   const maxBodyBytes = options.maxBodyBytes ?? MAX_BODY_BYTES;
 
+  // Route a request onto an already-established session, adopting the presented
+  // bearer (clients may have refreshed their Zendesk token mid-session).
+  // Returns false when the id names no live session, so the caller falls
+  // through to initialization; true means the response was already handled.
+  const dispatchToSession = async (
+    req: IncomingMessage,
+    res: ServerResponse,
+    sessionId: string,
+    bearer: string,
+  ): Promise<boolean> => {
+    const session = sessions.get(sessionId);
+    if (!session) return false;
+
+    session.auth.bearer = bearer;
+    session.lastActivityAt = Date.now();
+    const body =
+      req.method === 'POST'
+        ? await readJsonBody(req, maxBodyBytes)
+        : ({ ok: true, value: undefined } as const);
+    if (!body.ok) {
+      respondBodyError(req, res, body);
+      return true;
+    }
+    await session.transport.handleRequest(req, res, body.value);
+    return true;
+  };
+
   const handleMcpRequest = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     // MCP 2025-06-18: the Authorization header is validated on EVERY request,
     // not only at session initialization — a session id alone is not a
@@ -375,26 +414,7 @@ export const startHttpTransport = async (
     const sessionId =
       typeof req.headers['mcp-session-id'] === 'string' ? req.headers['mcp-session-id'] : undefined;
 
-    // Existing session: adopt the presented bearer (clients may have
-    // refreshed their Zendesk token mid-session) and route the request to
-    // the session's transport.
-    if (sessionId) {
-      const session = sessions.get(sessionId);
-      if (session) {
-        session.auth.bearer = bearer;
-        session.lastActivityAt = Date.now();
-        const body =
-          req.method === 'POST'
-            ? await readJsonBody(req, maxBodyBytes)
-            : ({ ok: true, value: undefined } as const);
-        if (!body.ok) {
-          respondBodyError(req, res, body);
-          return;
-        }
-        await session.transport.handleRequest(req, res, body.value);
-        return;
-      }
-    }
+    if (sessionId && (await dispatchToSession(req, res, sessionId, bearer))) return;
 
     if (req.method !== 'POST') {
       // Non-POST without a session ID can't initialize a new session.
@@ -439,6 +459,15 @@ export const startHttpTransport = async (
     await transport.handleRequest(req, res, body.value);
   };
 
+  // GET endpoints answered straight from static metadata — the two RFC 9728 /
+  // RFC 8414 discovery documents plus the health probe. Everything else routes
+  // to /mcp or 404s.
+  const staticGetRoutes: Record<string, () => unknown> = {
+    '/.well-known/oauth-protected-resource': () => metadata.protectedResource,
+    '/.well-known/oauth-authorization-server': () => metadata.authorizationServer,
+    '/healthz': () => ({ status: 'ok', subdomain: config.subdomain }),
+  };
+
   const requestListener = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     try {
       // CORS preflight is short-circuited before routing; for actual requests
@@ -449,16 +478,9 @@ export const startHttpTransport = async (
 
       const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
 
-      if (url.pathname === '/.well-known/oauth-protected-resource' && req.method === 'GET') {
-        sendJson(res, 200, metadata.protectedResource);
-        return;
-      }
-      if (url.pathname === '/.well-known/oauth-authorization-server' && req.method === 'GET') {
-        sendJson(res, 200, metadata.authorizationServer);
-        return;
-      }
-      if (url.pathname === '/healthz' && req.method === 'GET') {
-        sendJson(res, 200, { status: 'ok', subdomain: config.subdomain });
+      const staticRoute = req.method === 'GET' ? staticGetRoutes[url.pathname] : undefined;
+      if (staticRoute) {
+        sendJson(res, 200, staticRoute());
         return;
       }
       if (url.pathname === '/mcp') {
@@ -469,14 +491,7 @@ export const startHttpTransport = async (
       res.writeHead(404, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Not found', path: url.pathname }));
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Internal Server Error';
-      if (!res.headersSent) {
-        sendJsonRpcError(res, 500, -32603, message);
-      } else if (!res.writableEnded) {
-        // Headers already on the wire: appending a JSON error mid-stream would
-        // corrupt the body; just terminate the response.
-        res.end();
-      }
+      failRequest(res, err);
     }
   };
 
