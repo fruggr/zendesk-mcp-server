@@ -7,6 +7,7 @@ import { createMcpServer } from '../server';
 import { type Logger, silentLogger } from '../utils/logger';
 
 const WILDCARD_HOSTS = new Set(['0.0.0.0', '::', '*']);
+const TRAILING_SLASHES = /\/+$/;
 
 // Default CORS allowlist: the major web MCP clients that work today via
 // Custom Connector UIs. Native clients (Claude Desktop, Claude Code CLI,
@@ -131,7 +132,7 @@ const handleCorsPreflight = (
 //      will reject this resource identifier, so log a clear warning so the
 //      operator knows to set PUBLIC_URL.
 export const resolveResourceUrl = (config: Config, logger: Logger = silentLogger): string => {
-  if (config.publicUrl) return config.publicUrl.replace(/\/+$/, '');
+  if (config.publicUrl) return config.publicUrl.replace(TRAILING_SLASHES, '');
   if (!WILDCARD_HOSTS.has(config.host)) {
     return `http://${config.host}:${config.port}`;
   }

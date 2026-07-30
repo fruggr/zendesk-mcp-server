@@ -22,9 +22,12 @@ const isWindows = process.platform === 'win32';
  * (`@fruggr/zendesk-mcp-server` → `fruggr` + `zendesk-mcp-server`) so the path is
  * vendor-namespaced and can't collide with another `zendesk-mcp-server`.
  */
+// Splits an npm scoped name into [scope, package]; hoisted so it is compiled once.
+const SCOPED_PACKAGE_NAME = /^@([^/]+)\/(.+)$/;
+
 const appDirSegments = (): string[] => {
   const { name } = readPackageInfo();
-  const scoped = /^@([^/]+)\/(.+)$/.exec(name);
+  const scoped = SCOPED_PACKAGE_NAME.exec(name);
   return scoped?.[1] && scoped[2] ? [scoped[1], scoped[2]] : [name];
 };
 

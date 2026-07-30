@@ -29,6 +29,7 @@
       },
       "performance": {
         "noBarrelFile": "error",
+        "useTopLevelRegex": "error",
         "noReExportAll": "error"
       },
       "suspicious": {
@@ -84,6 +85,7 @@
         "useConsistentObjectDefinitions": "error",
         "useConsistentTypeDefinitions": "error",
         "useDefaultParameterLast": "error",
+        "useDefaultSwitchClause": "error",
         "useEnumInitializers": "error",
         "useFilenamingConvention": "error",
         "useNodeAssertStrict": "error",
@@ -105,6 +107,10 @@
     {
       "includes": ["**/*.config.ts", "**/*.config.mts"],
       "linter": { "rules": { "style": { "noDefaultExport": "off" } } }
+    },
+    {
+      "includes": ["tests/**", "scripts/**"],
+      "linter": { "rules": { "performance": { "useTopLevelRegex": "off" } } }
     }
   ],
   "formatter": {

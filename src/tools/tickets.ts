@@ -163,13 +163,15 @@ const collectAttachmentBlocks = async (
 // undefined (never mis-attributed data) when the ticket falls outside the
 // result window (very high-volume requester) or Search is briefly unavailable
 // / not yet indexed.
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
 const fetchTicketSla = async (
   subdomain: string,
   token: string,
   ticket: ZendeskTicket,
 ): Promise<ZendeskSlaSideloadEntry | undefined> => {
   const day = ticket.created_at.slice(0, 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return undefined;
+  if (!ISO_DAY.test(day)) return undefined;
   const shiftDay = (offset: number): string => {
     const d = new Date(`${day}T00:00:00Z`);
     d.setUTCDate(d.getUTCDate() + offset);

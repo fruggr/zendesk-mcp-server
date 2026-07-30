@@ -289,6 +289,14 @@ export const registerToolset = (
         );
         break;
       }
+      default: {
+        // `config.mode` is a closed union, so this is unreachable while the
+        // types hold. It is the guard for a mode added to the union (or fed in
+        // by a hand-edited config) without a branch here: fail at registration
+        // rather than start a server exposing no tools at all.
+        const unhandled: never = config.mode;
+        throw new Error(`Unsupported tool mode: ${String(unhandled)}`);
+      }
     }
 
     // Pull-only Help Center topology resource. Read on demand with the caller's
