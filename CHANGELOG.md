@@ -1,3 +1,33 @@
+## [2.15.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.14.2...v2.15.0) (2026-07-30)
+
+### Features
+
+* make the Help Center resource URI scheme configurable (param --hc-resource-scheme) ([#173](https://github.com/fruggr/zendesk-mcp-server/issues/173)) ([25d8fbb](https://github.com/fruggr/zendesk-mcp-server/commit/25d8fbbb283debc73696d8033f3d8467e424284a))
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Documentation
+
+* fix a stale harness pointer and drop AGENTS.md's directory tour ([#184](https://github.com/fruggr/zendesk-mcp-server/issues/184)) ([137fe0f](https://github.com/fruggr/zendesk-mcp-server/commit/137fe0f973e521921821e4ddd52387121df55f02))
+
+### Chores
+
+* **build:** make install and build work on Android/Termux ([#189](https://github.com/fruggr/zendesk-mcp-server/issues/189)) ([3157d04](https://github.com/fruggr/zendesk-mcp-server/commit/3157d04f78b60ac823530e1179fd076f28a88127))
+* **deps:** lock file maintenance ([#179](https://github.com/fruggr/zendesk-mcp-server/issues/179)) ([aecfca0](https://github.com/fruggr/zendesk-mcp-server/commit/aecfca0c02bababc6455caee49207b022dab95b1))
+* **deps:** update actions/setup-node action to v7 ([#182](https://github.com/fruggr/zendesk-mcp-server/issues/182)) ([113ee6b](https://github.com/fruggr/zendesk-mcp-server/commit/113ee6b5925cec0c2b1faa97cd05699aac58db06))
+* **deps:** update conventional-changelog-conventionalcommits to v10 with a writer 9 override ([#181](https://github.com/fruggr/zendesk-mcp-server/issues/181)) ([5683dc9](https://github.com/fruggr/zendesk-mcp-server/commit/5683dc9ea323f69284a5529690bec4ec9a631a4f))
+* **deps:** update dependency @biomejs/biome to v2.5.5 ([#190](https://github.com/fruggr/zendesk-mcp-server/issues/190)) ([988026b](https://github.com/fruggr/zendesk-mcp-server/commit/988026b9c60cd37f5ae4be1e329207470fe0acf5))
+* **deps:** update pnpm to v11.13.1 ([#178](https://github.com/fruggr/zendesk-mcp-server/issues/178)) ([239602a](https://github.com/fruggr/zendesk-mcp-server/commit/239602a187ba6eedd334a86004064384423a674c))
+* **deps:** update pnpm to v11.14.0 ([#180](https://github.com/fruggr/zendesk-mcp-server/issues/180)) ([c82b709](https://github.com/fruggr/zendesk-mcp-server/commit/c82b70920f8b7b88453a030bd48aaaf42820a223))
+* **deps:** update pnpm to v11.15.0 ([#185](https://github.com/fruggr/zendesk-mcp-server/issues/185)) ([36c398d](https://github.com/fruggr/zendesk-mcp-server/commit/36c398d10fe798975c41b8bc63e55f247e0bc8af))
+* **deps:** update pnpm to v11.15.1 ([#187](https://github.com/fruggr/zendesk-mcp-server/issues/187)) ([3219b1c](https://github.com/fruggr/zendesk-mcp-server/commit/3219b1cf0655c6761eef7b9e47311e341c359467))
+* **deps:** update pnpm to v11.16.0 ([#192](https://github.com/fruggr/zendesk-mcp-server/issues/192)) ([f2523a4](https://github.com/fruggr/zendesk-mcp-server/commit/f2523a4694976f75e5dcad97ea08e78237ad29be))
+* **lint:** improve Biome check on Android/Proot plateform ([#183](https://github.com/fruggr/zendesk-mcp-server/issues/183)) ([eb35571](https://github.com/fruggr/zendesk-mcp-server/commit/eb35571f5666869be86cea131aff1153c03ec783))
+* **lint:** lint on edit, format at pre-commit ([#186](https://github.com/fruggr/zendesk-mcp-server/issues/186)) ([ea78dd5](https://github.com/fruggr/zendesk-mcp-server/commit/ea78dd51ebc8ea0009b2239dd6a3c2c2ca87555f))
+* **lint:** run Biome through a shim so it works on Android/Termux ([#191](https://github.com/fruggr/zendesk-mcp-server/issues/191)) ([15abae9](https://github.com/fruggr/zendesk-mcp-server/commit/15abae94a438344d288b801b7ff1f95d3f5089ef))
+</details>
+
 ## [2.14.2](https://github.com/fruggr/zendesk-mcp-server/compare/v2.14.1...v2.14.2) (2026-07-22)
 
 ### Bug Fixes

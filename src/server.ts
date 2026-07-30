@@ -5,7 +5,7 @@ import type { Config } from './config';
 import {
   buildInstructions,
   helpCenterContextEnabled,
-  TOPOLOGY_RESOURCE_URI,
+  topologyResourceUri,
 } from './guidance/instructions';
 import { createTopologyProvider } from './guidance/topology';
 import { filterTools, groupByNamespace } from './routing/registry';
@@ -300,7 +300,7 @@ export const registerToolset = (
       registered.push(
         server.registerResource(
           'help-center-topology',
-          TOPOLOGY_RESOURCE_URI,
+          topologyResourceUri(config),
           {
             title: 'Zendesk Help Center topology',
             description:
