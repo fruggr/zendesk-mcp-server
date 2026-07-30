@@ -23,6 +23,7 @@
         "noUndeclaredDependencies": "error",
         "noUndeclaredVariables": "error",
         "noUnusedInstantiation": "error",
+        "useJsonImportAttributes": "error",
         "useSingleJsDocAsterisk": "error"
       },
       "performance": {
@@ -34,6 +35,7 @@
         "noDuplicatedSpreadProps": "error",
         "noReturnAssign": "error",
         "noProto": "error",
+        "noBitwiseOperators": "error",
         "noConstantBinaryExpressions": "error",
         "noDeprecatedImports": "error",
         "noEmptySource": "error",
@@ -54,9 +56,12 @@
       "style": {
         "useErrorCause": "error",
         "useGlobalThis": "error",
+        "useGroupedAccessorPairs": "error",
         "noCommonJs": "error",
         "noDefaultExport": "error",
+        "noDoneCallback": "error",
         "noEnum": "error",
+        "noExcessiveClassesPerFile": "error",
         "noExportedImports": "error",
         "noInferrableTypes": "error",
         "noMultiAssign": "error",
