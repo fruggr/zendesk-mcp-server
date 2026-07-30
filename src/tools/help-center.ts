@@ -36,12 +36,14 @@ import {
   isPlacedAsRequested,
   type OrderedArticle,
   type ReorderTarget,
+  type ReorderWrite,
 } from '../utils/article-order';
 import {
   htmlToMarkdown,
   markdownToHtml,
   parseSections,
   replaceSectionContent,
+  type Section,
 } from '../utils/article-sections';
 import {
   formatArticle,
@@ -115,6 +117,122 @@ const autoSortNotice = (sectionId: number, applied?: number): string =>
     'To order its articles manually: in Guide, open the section, choose "Edit section", set "Order articles by" to Manual, then re-run this tool.',
   ].join(' ');
 
+// --- compare_translations report lines. Each is a pure function of data the
+// handler already fetched, kept out of it so the handler reads as the sequence
+// of signals it produces rather than the arithmetic behind each one.
+
+// Primary staleness signal, derived from the edit timestamps. If the source was
+// edited after the target, the translation is very likely behind. Always
+// available and, for API/external translation workflows, far more useful than
+// Zendesk's `outdated` flag (see below). updated_at values are ISO-8601 UTC, so
+// a lexical compare is order-correct; parse for the day delta.
+const renderFreshnessLine = (
+  sourceUpdatedAt: string,
+  targetUpdatedAt: string,
+  targetLocale: string,
+): string => {
+  const srcMs = Date.parse(sourceUpdatedAt);
+  const tgtMs = Date.parse(targetUpdatedAt);
+  const label = `- **Freshness (target ${targetLocale})**`;
+
+  if (!Number.isFinite(srcMs) || !Number.isFinite(tgtMs)) {
+    return `${label}: unknown (could not compare edit timestamps).`;
+  }
+  if (srcMs <= tgtMs) {
+    return `${label}: up to date (source has not been edited since this translation).`;
+  }
+  const days = Math.floor((srcMs - tgtMs) / 86_400_000);
+  const gap = days >= 1 ? `${days} day(s)` : 'less than a day';
+  return `${label}: source was edited ${gap} after this translation → likely behind, review recommended.`;
+};
+
+// Secondary signal: Zendesk's own per-translation `outdated` flag for the target
+// locale. It is only set through Guide's native "mark translations out of date"
+// workflow, NOT by API edits — so for API/external workflows it usually stays
+// false regardless of real staleness. Surfaced as an overlay to the freshness
+// signal, never as the sole verdict. Matched case-insensitively: Zendesk accepts
+// a mixed-case locale in the request URL but the list endpoint reports it
+// canonically lowercased, so an exact match would spuriously report "unknown".
+const renderOutdatedLine = (translations: ZendeskTranslation[], targetLocale: string): string => {
+  const targetLocaleKey = targetLocale.toLowerCase();
+  const entry = translations.find((t) => t.locale.toLowerCase() === targetLocaleKey);
+  const label = `- **Zendesk outdated flag (target ${targetLocale})**`;
+
+  if (entry?.outdated === undefined) return `${label}: unknown.`;
+  if (entry.outdated) return `${label}: yes — explicitly marked out of date in Guide.`;
+  return `${label}: no (only set via Guide's own edit workflow; "no" does not by itself mean current — rely on Freshness above).`;
+};
+
+// Structural verdict: language-neutral (section count + heading-tag sequence),
+// unlike word counts. A mismatch means the index-matched rows may not line up.
+const renderStructureLine = (sourceSections: Section[], targetSections: Section[]): string => {
+  const sourceTags = sourceSections.map((s) => s.headingTag).join(',');
+  const targetTags = targetSections.map((s) => s.headingTag).join(',');
+  const aligned = sourceSections.length === targetSections.length && sourceTags === targetTags;
+  return aligned
+    ? `- **Structure**: ${sourceSections.length} sections in both locales — aligned.`
+    : `- **Structure**: ${sourceSections.length} source vs ${targetSections.length} target sections — MISMATCH; the per-index rows below may be misaligned.`;
+};
+
+// Index-matched section table. Rows past one side's end are reported as
+// missing/extra rather than dropped, so a length mismatch stays visible.
+const renderSectionRows = (sourceSections: Section[], targetSections: Section[]): string[] => {
+  const rows = [
+    '| Idx | Heading | Status | Source words | Target words |',
+    '| --- | --- | --- | --- | --- |',
+  ];
+  const maxLen = Math.max(sourceSections.length, targetSections.length);
+
+  for (let i = 0; i < maxLen; i += 1) {
+    const src = sourceSections[i];
+    const tgt = targetSections[i];
+    const heading = src?.heading ?? tgt?.heading ?? '';
+    const status = tgt ? (src ? 'ok' : 'extra') : 'missing';
+    rows.push(
+      `| ${i} | ${heading} | ${status} | ${src?.wordCount ?? 0} | ${tgt?.wordCount ?? 0} |`,
+    );
+  }
+  return rows;
+};
+
+// Article listing endpoint. Section and locale scoping are independent and
+// combine; the locale-scoped variant is what a locale-dependent section sort
+// mode requires (see fetchSectionOrder). Truthiness matches the previous
+// ternary chain — a 0 id falls back to the unscoped path.
+const articleListPath = (sectionId: number | undefined, locale: string | undefined): string => {
+  if (sectionId && locale) return `/${locale}/sections/${sectionId}/articles`;
+  if (sectionId) return `/sections/${sectionId}/articles`;
+  if (locale) return `/${locale}/articles`;
+  return '/articles';
+};
+
+// `first`/`last` are absolute; `before`/`after` are relative and need a peer.
+const needsReferenceArticle = (target: ReorderTarget): boolean =>
+  target === 'before' || target === 'after';
+
+// Cross-field rules the flat input schema cannot express: a relative target
+// requires a reference, an absolute one must not carry it, and no article can be
+// positioned relative to itself. Throws naming the offending combination.
+const assertReorderParamsCoherent = (
+  articleId: number,
+  target: ReorderTarget,
+  referenceArticleId: number | undefined,
+): void => {
+  if (needsReferenceArticle(target) && referenceArticleId === undefined) {
+    throw new Error(
+      `target "${target}" requires reference_article_id (the article to move ${target}).`,
+    );
+  }
+  if (!needsReferenceArticle(target) && referenceArticleId !== undefined) {
+    throw new Error(
+      `reference_article_id must be omitted when target is "${target}" (it only applies to "before"/"after").`,
+    );
+  }
+  if (referenceArticleId !== undefined && referenceArticleId === articleId) {
+    throw new Error('reference_article_id must differ from article_id.');
+  }
+};
+
 export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
   const { subdomain, getToken } = ctx;
 
@@ -150,6 +268,60 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       cursor = meta.has_more && meta.after_cursor ? meta.after_cursor : undefined;
     } while (cursor);
     return order;
+  };
+
+  // A relative reorder only makes sense inside one section. When the reference
+  // is absent from the section listing, tell the caller which of the two cases
+  // it is — "no such article" and "exists, but elsewhere" need different fixes.
+  const assertReferenceInSection = async (
+    effective: OrderedArticle[],
+    referenceArticleId: number | undefined,
+    articleId: number,
+    sectionId: number,
+    token: string,
+  ): Promise<void> => {
+    if (effective.some((a) => a.id === referenceArticleId)) return;
+
+    let detail = 'was not found';
+    try {
+      const { article: ref } = await helpCenterGet<{ article: ZendeskArticle }>(
+        subdomain,
+        token,
+        `/articles/${referenceArticleId}`,
+      );
+      detail = `is in section #${ref.section_id}, not section #${sectionId}`;
+    } catch {
+      // 404 or similar → keep the "was not found" wording.
+    }
+    throw new Error(
+      `Reference article #${referenceArticleId} ${detail}. It must be in the same section (#${sectionId}) as article #${articleId}.`,
+    );
+  };
+
+  // Positions are absolute, so a re-run after a failure recomputes against the
+  // current state and resumes — it never double-applies. Returns how many writes
+  // landed; on failure the error names that count so the caller can resume.
+  const applyPositionWrites = async (
+    writes: ReorderWrite[],
+    articleId: number,
+    token: string,
+  ): Promise<number> => {
+    let applied = 0;
+    for (const write of writes) {
+      try {
+        await helpCenterPut(subdomain, token, `/articles/${write.id}`, {
+          article: { position: write.position },
+        });
+        applied += 1;
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        throw new Error(
+          `Reorder of article #${articleId} failed after ${applied}/${writes.length} position write(s) (on article #${write.id}): ${reason} Positions are written absolutely, so re-running the identical call is safe and resumes where it stopped.`,
+          { cause: error },
+        );
+      }
+    }
+    return applied;
   };
 
   return [
@@ -450,18 +622,10 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
             include_translations: boolean;
           };
         const token = await getToken();
-        const path =
-          section_id && locale
-            ? `/${locale}/sections/${section_id}/articles`
-            : section_id
-              ? `/sections/${section_id}/articles`
-              : locale
-                ? `/${locale}/articles`
-                : '/articles';
         const response = await helpCenterGet<ZendeskListResponse<ZendeskArticle>>(
           subdomain,
           token,
-          path,
+          articleListPath(section_id, locale),
           { ...buildCursorParams(page_size, cursor), sort_by, sort_order },
         );
         const articles = response.articles ?? [];
@@ -914,20 +1078,8 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
 
         // Cross-field validation (the schema is a plain object; enforce the
         // target/reference relationship here, like archive_article's confirm guard).
-        const needsReference = target === 'before' || target === 'after';
-        if (needsReference && reference_article_id === undefined) {
-          throw new Error(
-            `target "${target}" requires reference_article_id (the article to move ${target}).`,
-          );
-        }
-        if (!needsReference && reference_article_id !== undefined) {
-          throw new Error(
-            `reference_article_id must be omitted when target is "${target}" (it only applies to "before"/"after").`,
-          );
-        }
-        if (reference_article_id !== undefined && reference_article_id === article_id) {
-          throw new Error('reference_article_id must differ from article_id.');
-        }
+        assertReorderParamsCoherent(article_id, target, reference_article_id);
+        const needsReference = needsReferenceArticle(target);
 
         const token = await getToken();
 
@@ -945,22 +1097,13 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
 
         const effective = await fetchSectionOrder(sectionId, locale, token);
 
-        // For before/after, the reference must be in the same section. Disambiguate
-        // not-found vs wrong-section so the caller gets an actionable message.
-        if (needsReference && !effective.some((a) => a.id === reference_article_id)) {
-          let detail = 'was not found';
-          try {
-            const { article: ref } = await helpCenterGet<{ article: ZendeskArticle }>(
-              subdomain,
-              token,
-              `/articles/${reference_article_id}`,
-            );
-            detail = `is in section #${ref.section_id}, not section #${sectionId}`;
-          } catch {
-            // 404 or similar → keep the "was not found" wording.
-          }
-          throw new Error(
-            `Reference article #${reference_article_id} ${detail}. It must be in the same section (#${sectionId}) as article #${article_id}.`,
+        if (needsReference) {
+          await assertReferenceInSection(
+            effective,
+            reference_article_id,
+            article_id,
+            sectionId,
+            token,
           );
         }
 
@@ -1001,23 +1144,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           };
         }
 
-        // Apply the writes. Positions are absolute, so a re-run after a failure
-        // recomputes against the current state and resumes — it never double-applies.
-        let applied = 0;
-        for (const write of writes) {
-          try {
-            await helpCenterPut(subdomain, token, `/articles/${write.id}`, {
-              article: { position: write.position },
-            });
-            applied += 1;
-          } catch (error) {
-            const reason = error instanceof Error ? error.message : String(error);
-            throw new Error(
-              `Reorder of article #${article_id} failed after ${applied}/${writes.length} position write(s) (on article #${write.id}): ${reason} Positions are written absolutely, so re-running the identical call is safe and resumes where it stopped.`,
-              { cause: error },
-            );
-          }
-        }
+        const applied = await applyPositionWrites(writes, article_id, token);
 
         // Verify the move took effect (the definitive auto-sort check).
         const after = await fetchSectionOrder(sectionId, locale, token);
@@ -1533,83 +1660,15 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         ]);
         const sourceSections = parseSections(sourceRes.translation.body);
         const targetSections = parseSections(targetRes.translation.body);
-        const maxLen = Math.max(sourceSections.length, targetSections.length);
 
-        // Primary staleness signal: derive it from the edit timestamps we
-        // already fetched. If the source was edited after the target, the
-        // translation is very likely behind. This is always available and, for
-        // API/external translation workflows, far more useful than Zendesk's
-        // `outdated` flag (which is only set through Guide's own edit workflow —
-        // see below). updated_at values are ISO-8601 UTC, so a lexical compare
-        // is order-correct; parse for the day delta.
-        const sourceUpdated = sourceRes.translation.updated_at;
-        const targetUpdated = targetRes.translation.updated_at;
-        const srcMs = Date.parse(sourceUpdated);
-        const tgtMs = Date.parse(targetUpdated);
-        const comparable = Number.isFinite(srcMs) && Number.isFinite(tgtMs);
-        let freshnessLine: string;
-        if (comparable && srcMs > tgtMs) {
-          const days = Math.floor((srcMs - tgtMs) / 86_400_000);
-          const gap = days >= 1 ? `${days} day(s)` : 'less than a day';
-          freshnessLine = `- **Freshness (target ${target_locale})**: source was edited ${gap} after this translation → likely behind, review recommended.`;
-        } else if (comparable) {
-          freshnessLine = `- **Freshness (target ${target_locale})**: up to date (source has not been edited since this translation).`;
-        } else {
-          freshnessLine = `- **Freshness (target ${target_locale})**: unknown (could not compare edit timestamps).`;
-        }
-
-        // Secondary signal: Zendesk's own per-translation `outdated` flag for the
-        // target locale. It is only set through Guide's native "mark translations
-        // out of date" workflow, NOT by API edits — so for API/external workflows
-        // it usually stays false regardless of real staleness. Surface it, but as
-        // an overlay to the freshness signal above, never as the sole verdict.
-        // "unknown" when the API does not return it. Match case-insensitively:
-        // Zendesk accepts a mixed-case locale in the request URL but the list
-        // endpoint reports it canonically lowercased, so an exact match would
-        // spuriously fall back to "unknown".
-        const targetLocaleKey = target_locale.toLowerCase();
-        const targetListEntry = translations.find(
-          (t) => t.locale.toLowerCase() === targetLocaleKey,
+        const freshnessLine = renderFreshnessLine(
+          sourceRes.translation.updated_at,
+          targetRes.translation.updated_at,
+          target_locale,
         );
-        const outdated =
-          targetListEntry?.outdated === undefined
-            ? 'unknown'
-            : targetListEntry.outdated
-              ? 'yes'
-              : 'no';
-        const outdatedLine =
-          outdated === 'yes'
-            ? `- **Zendesk outdated flag (target ${target_locale})**: yes — explicitly marked out of date in Guide.`
-            : outdated === 'no'
-              ? `- **Zendesk outdated flag (target ${target_locale})**: no (only set via Guide's own edit workflow; "no" does not by itself mean current — rely on Freshness above).`
-              : `- **Zendesk outdated flag (target ${target_locale})**: unknown.`;
-
-        // Structural verdict: language-neutral (section count + heading-tag
-        // sequence), unlike word counts. A mismatch means the index-matched
-        // rows below may not line up.
-        const sourceTags = sourceSections.map((s) => s.headingTag).join(',');
-        const targetTags = targetSections.map((s) => s.headingTag).join(',');
-        const structureAligned =
-          sourceSections.length === targetSections.length && sourceTags === targetTags;
-        const structureLine = structureAligned
-          ? `- **Structure**: ${sourceSections.length} sections in both locales — aligned.`
-          : `- **Structure**: ${sourceSections.length} source vs ${targetSections.length} target sections — MISMATCH; the per-index rows below may be misaligned.`;
-
-        const rows: string[] = [];
-        rows.push(`| Idx | Heading | Status | Source words | Target words |`);
-        rows.push(`| --- | --- | --- | --- | --- |`);
-        for (let i = 0; i < maxLen; i += 1) {
-          const src = sourceSections[i];
-          const tgt = targetSections[i];
-          const heading = src?.heading ?? tgt?.heading ?? '';
-          const sourceWords = src?.wordCount ?? 0;
-          const targetWords = tgt?.wordCount ?? 0;
-          let status: 'ok' | 'missing' | 'extra';
-          if (!tgt) status = 'missing';
-          else if (!src) status = 'extra';
-          else status = 'ok';
-          rows.push(`| ${i} | ${heading} | ${status} | ${sourceWords} | ${targetWords} |`);
-        }
+        const outdatedLine = renderOutdatedLine(translations, target_locale);
+        const structureLine = renderStructureLine(sourceSections, targetSections);
+        const rows = renderSectionRows(sourceSections, targetSections);
 
         const text = [
           `# Translation diff — Article #${article_id} (${source_locale} → ${target_locale})`,
@@ -1617,7 +1676,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           freshnessLine,
           outdatedLine,
           structureLine,
-          `- **Updated**: source ${sourceUpdated} | target ${targetUpdated}`,
+          `- **Updated**: source ${sourceRes.translation.updated_at} | target ${targetRes.translation.updated_at}`,
           `- **Target draft**: ${targetRes.translation.draft ? 'yes' : 'no'}`,
           '',
           '_Word counts are informational: a length difference between languages is normal, not a divergence._',
