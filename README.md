@@ -171,27 +171,29 @@ channels (all active only when the `help_center` namespace is), each fetched
   instead. On a very large Help Center the section tree is summarized (per-category,
   with a pointer to `list_sections`) to stay concise.
 - **`zendesk-hc://article/{id}`** (pull-only [MCP resources](https://modelcontextprotocol.io/docs/concepts/resources)):
-  the listing surfaces the promoted (*featured*) articles so a user can pin one as
-  first-class context in clients that support resource pinning / @-mention; any
-  article id can then be read on demand, returned as Markdown. The companion
+  two distinct capabilities. **Read-by-id** — any article id can be read on demand,
+  returned as Markdown (a cheap single fetch, no preloading). **Promoted pre-listing** —
+  the resource's listing surfaces the promoted (*featured*) articles so a user can
+  pin one in clients that support resource pinning / @-mention, and the companion
   `list_promoted_articles` tool returns the same set. Clients that don't support
   resources ignore these silently.
-  <br>**Cost:** finding promoted articles has no server-side filter, so the listing
-  (and the tool) scans article pages — one Zendesk API request per page, capped. The
-  resource listing is cached briefly per session (repeated `resources/list` calls
-  coalesce); the `list_promoted_articles` tool performs a fresh scan on every call.
-  It runs only on a client's `resources/list` or a tool call, never at connect, and
-  consumes no LLM context until an article is actually pinned/read. On a large Help
-  Center this can be several requests; see
+  <br>**Cost:** only the *pre-listing* costs requests — finding promoted articles has
+  no server-side filter, so it scans article pages (one Zendesk API request per page,
+  capped). The resource listing is cached briefly per session (repeated `resources/list`
+  calls coalesce); the `list_promoted_articles` tool performs a fresh scan on every
+  call. It runs only on a client's `resources/list` or a tool call, never at connect,
+  and consumes no LLM context until an article is pinned/read. Read-by-id costs one
+  fetch, only when a specific article is opened. See
   [`ZENDESK_ARTICLE_RESOURCES_SCAN_MAX_PAGES`](docs/configuration.md#zendesk_article_resources_scan_max_pages).
 
 The `instructions` blob and the topology resource are toggled together with
-`--no-topology`; the article resources are toggled independently with
-`--no-article-resources` — which removes both the resource **and** the
-`list_promoted_articles` tool, so the server makes zero Zendesk requests for the
-feature. Clients that don't consume `instructions` or `resources` simply ignore
-them — the feature degrades silently. The `zendesk-hc://` URI scheme is the
-default; a deployer can brand it with
+`--no-topology`. The **promoted pre-listing** is toggled independently with
+`--no-promoted-articles` — which turns off the resource `list` scan **and** the
+`list_promoted_articles` tool, so the server makes zero preloading requests;
+**reading a known article by id stays available** (it never preloads). Clients that
+don't consume `instructions` or `resources` simply ignore them — the feature
+degrades silently. The `zendesk-hc://` URI scheme is the default; a deployer can
+brand it with
 [`--hc-resource-scheme` / `HC_RESOURCE_SCHEME`](docs/configuration.md#hc_resource_scheme)
 (e.g. `wiki` → `wiki://topology`, `wiki://article/{id}`).
 

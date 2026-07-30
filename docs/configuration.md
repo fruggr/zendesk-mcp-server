@@ -23,8 +23,10 @@ Options:
   --read-only             Only expose read operations
   --no-topology           Disable the Help Center structural context
                           (instructions + zendesk-hc://topology resource)
-  --no-article-resources  Disable the Help Center article resources
-                          (<scheme>://article/{id}; promoted articles listed)
+  --no-promoted-articles  Disable the promoted-article PRE-LISTING (the
+                          <scheme>://article/{id} list scan + the
+                          list_promoted_articles tool). Reading a known
+                          article by id stays available.
   --hc-resource-scheme <scheme>
                           URI scheme of the Help Center resources
                           (default: zendesk-hc, i.e. zendesk-hc://topology);
@@ -192,7 +194,7 @@ Safety threshold for `reorder_article`. When moving an article would rewrite mor
 
 Hard cap on the number of article pages scanned to find promoted ("featured") articles. This backs both the `<scheme>://article/{id}` resource listing (`resources/list`) and the `list_promoted_articles` tool. The Help Center API has no server-side promoted filter, so the scan pages through the articles and filters them client-side; this bounds that scan on a very large Help Center (promoted articles beyond the cap are omitted, and the truncation is flagged). Raise it if promoted articles live deep in a large catalog.
 
-**Cost note.** Each scanned page is one Zendesk API request (Zendesk rate-limits all plans), so on a large Help Center a single listing/tool call can fan out to several requests. The resource-listing scan is cached per session for a few minutes (`ARTICLE_RESOURCES_TTL_MS`) so repeated `resources/list` calls coalesce; the `list_promoted_articles` tool performs a fresh, uncached scan on every call. The scan runs only when a resource-capable client calls `resources/list` or the LLM calls `list_promoted_articles` — never at connect. The worst case is a large catalog with few or no promoted articles (a full-cap scan for little result); if that matters for your tenant's quota, lower this cap or disable the feature entirely with **`--no-article-resources`**, which removes both the resource and the tool so the server makes **zero** Zendesk requests for this feature.
+**Cost note.** Each scanned page is one Zendesk API request (Zendesk rate-limits all plans), so on a large Help Center a single listing/tool call can fan out to several requests. The resource-listing scan is cached per session for a few minutes (`ARTICLE_RESOURCES_TTL_MS`) so repeated `resources/list` calls coalesce; the `list_promoted_articles` tool performs a fresh, uncached scan on every call. The scan runs only when a resource-capable client calls `resources/list` or the LLM calls `list_promoted_articles` — never at connect. The worst case is a large catalog with few or no promoted articles (a full-cap scan for little result); if that matters for your tenant's quota, lower this cap or disable the pre-listing with **`--no-promoted-articles`** — that turns off the resource `list` scan **and** the `list_promoted_articles` tool, so the server makes **zero** preloading requests. It does **not** disable reading a known article by id (`<scheme>://article/{id}` stays registered): that is a cheap, on-demand single fetch, not a preload.
 
 ---
 

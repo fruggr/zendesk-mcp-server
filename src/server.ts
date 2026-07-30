@@ -8,11 +8,12 @@ import {
   LIST_PROMOTED_ARTICLES_TOOL,
 } from './guidance/article-resources';
 import {
-  articleResourcesEnabled,
+  articleResourceEnabled,
   articleResourceUri,
   articleResourceUriTemplate,
   buildInstructions,
   helpCenterContextEnabled,
+  promotedArticlesEnabled,
   topologyResourceUri,
 } from './guidance/instructions';
 import { createTopologyProvider } from './guidance/topology';
@@ -238,12 +239,13 @@ export const registerToolset = (
     namespaces: config.namespaces,
     tools: config.tools,
   })
-    // When article resources are disabled (`--no-article-resources`), also drop the
-    // companion `list_promoted_articles` tool. The feature must then make ZERO
-    // Zendesk calls: gating only the resource (below) would leave the tool callable,
-    // and its promoted-article scan would still hit the API. `!== false` so an
-    // unset flag (hand-built configs) keeps the default-on behaviour.
-    .filter((t) => config.articleResources !== false || t.name !== LIST_PROMOTED_ARTICLES_TOOL);
+    // When the promoted pre-listing is disabled (`--no-promoted-articles`), also
+    // drop the companion `list_promoted_articles` tool. That listing must then make
+    // ZERO Zendesk calls: gating only the resource `list` callback (below) would
+    // leave the tool callable, and its promoted-article scan would still hit the
+    // API. Read-by-id (`<scheme>://article/{id}`) is unaffected — it stays
+    // registered. `!== false` so an unset flag (hand-built configs) keeps default-on.
+    .filter((t) => config.promotedArticles !== false || t.name !== LIST_PROMOTED_ARTICLES_TOOL);
 
   // Registration is atomic: if any registerTool/registerResource throws partway
   // (e.g. a hot-reloaded module introduced a duplicate tool name), roll back the
@@ -330,18 +332,23 @@ export const registerToolset = (
       );
     }
 
-    // Pull-only Help Center article resources (zendesk-hc://article/{id}). The
-    // template's `list` callback enumerates the promoted articles so a client can
-    // surface them for pinning; the read callback renders ANY article id (Zendesk
-    // ACLs enforced via the caller's token) as Markdown. Both defer all I/O to
-    // request time via the provider, preserving the lazy-auth invariant. The list
-    // callback swallows fetch failures (returning an empty list, logged) so a
-    // transient article scan error never breaks resources/list — which would also
-    // hide the separately-registered topology resource.
-    if (articleResourcesEnabled(config)) {
+    // Pull-only Help Center article resources (zendesk-hc://article/{id}). The read
+    // callback renders ANY article id (Zendesk ACLs enforced via the caller's token)
+    // as Markdown — a cheap, on-demand single fetch — so the template is registered
+    // whenever the help_center namespace is active, independent of the promoted flag.
+    // The `list` callback enumerates the promoted articles (for a picker) ONLY when
+    // the pre-listing is enabled; with `--no-promoted-articles` it short-circuits to
+    // an empty list WITHOUT scanning, so no preloading request is ever made while
+    // read-by-id still works. Both defer all I/O to request time (lazy-auth). The
+    // list callback swallows scan failures (empty list, logged) so a transient error
+    // never breaks resources/list — which would also hide the topology resource.
+    if (articleResourceEnabled(config)) {
       const articles = createArticleResourcesProvider(getToken, config.subdomain, onUnauthorized);
+      const listPromotedEnabled = promotedArticlesEnabled(config);
       const template = new ResourceTemplate(articleResourceUriTemplate(config), {
         list: async () => {
+          // Pre-listing off → no scan, no Zendesk request; read-by-id still works.
+          if (!listPromotedEnabled) return { resources: [] };
           try {
             const { refs, truncated } = await articles.listPromoted();
             if (truncated) {

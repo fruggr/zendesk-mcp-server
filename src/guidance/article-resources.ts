@@ -11,9 +11,10 @@ import { buildCursorParams, extractPaginationMeta } from '../utils/pagination';
 
 /**
  * Name of the companion tool that lists promoted articles. Shared between the
- * tool definition (`help-center.ts`) and the `--no-article-resources` opt-out
+ * tool definition (`help-center.ts`) and the `--no-promoted-articles` opt-out
  * filter (`server.ts`) so the two can never drift: renaming the tool here keeps
- * the filter dropping it, preserving the "zero Zendesk calls when off" invariant.
+ * the filter dropping it, preserving the "zero preloading requests when off"
+ * invariant.
  */
 export const LIST_PROMOTED_ARTICLES_TOOL = 'list_promoted_articles';
 

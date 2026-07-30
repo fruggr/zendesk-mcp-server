@@ -72,10 +72,16 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         expect(resources.map((r) => r.uri)).not.toContain('zendesk-hc://topology');
       });
 
-      it('omits the resources capability when both resource features are disabled', async () => {
-        connected = await harness.connect(makeConfig({ topology: false, articleResources: false }));
+      it('keeps the read-by-id article resource (and the resources capability) when topology and promoted listing are both off', async () => {
+        connected = await harness.connect(makeConfig({ topology: false, promotedArticles: false }));
         expect(connected.client.getInstructions()).toBeUndefined();
-        expect(connected.client.getServerCapabilities()?.resources).toBeUndefined();
+        // Read-by-id stays registered whenever help_center is active, so the
+        // resources capability persists; only the topology resource and the promoted
+        // listing are gone. (Namespace filtering is what removes resources entirely.)
+        expect(connected.client.getServerCapabilities()?.resources).toBeDefined();
+        const uris = (await connected.client.listResources()).resources.map((r) => r.uri);
+        expect(uris).not.toContain('zendesk-hc://topology');
+        expect(uris.some((u) => u.startsWith('zendesk-hc://article/'))).toBe(false);
       });
 
       it('lists and reads the topology resource with the live tenant structure', async () => {
@@ -162,17 +168,21 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         expect(uris).toContain('zendesk-hc://topology');
       });
 
-      it('removes BOTH the resource and the list_promoted_articles tool when disabled', async () => {
+      it('disables the promoted pre-listing (no entries, tool gone) but keeps read-by-id when --no-promoted-articles', async () => {
         mswServer.use(promotedArticlesHandler);
-        connected = await harness.connect(makeConfig({ mode: 'all', articleResources: false }));
+        connected = await harness.connect(makeConfig({ mode: 'all', promotedArticles: false }));
 
+        // The list callback short-circuits (no scan) → no promoted article entries...
         const uris = (await connected.client.listResources()).resources.map((r) => r.uri);
         expect(uris.some((u) => u.startsWith('zendesk-hc://article/'))).toBe(false);
 
-        // The companion tool must be gone too, so the feature makes zero Zendesk
-        // requests when off (not merely hidden as a resource).
+        // ...and the companion tool is gone, so the pre-listing makes zero Zendesk calls.
         const names = toolNames((await connected.client.listTools()).tools);
         expect(names).not.toContain('list_promoted_articles');
+
+        // ...but reading a known article by id still works — read-by-id is NOT disabled.
+        const read = await connected.client.readResource({ uri: 'zendesk-hc://article/5001' });
+        expect(resourceTextOf(read)).toContain('(5001)');
       });
 
       it('exposes the list_promoted_articles tool when the feature is enabled (default)', async () => {

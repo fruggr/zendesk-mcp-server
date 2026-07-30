@@ -61,14 +61,14 @@ describe('loadConfig', () => {
     expect(config.topology).toBe(false);
   });
 
-  it('enables the article resources by default', () => {
+  it('enables the promoted-article pre-listing by default', () => {
     const config = loadConfig(['mycompany']);
-    expect(config.articleResources).toBe(true);
+    expect(config.promotedArticles).toBe(true);
   });
 
-  it('parses --no-article-resources flag', () => {
-    const config = loadConfig(['mycompany', '--no-article-resources']);
-    expect(config.articleResources).toBe(false);
+  it('parses --no-promoted-articles flag', () => {
+    const config = loadConfig(['mycompany', '--no-promoted-articles']);
+    expect(config.promotedArticles).toBe(false);
   });
 
   it('defaults dev mode to off', () => {

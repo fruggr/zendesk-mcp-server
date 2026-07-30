@@ -47,19 +47,28 @@ export const helpCenterContextEnabled = (config: Config): boolean =>
   config.topology && helpCenterNamespaceActive(config);
 
 /**
- * Whether the pull-only Help Center article resources
- * (`zendesk-hc://article/{id}`) should be exposed. True only when the feature is
- * enabled (`--no-article-resources` not set) AND the `help_center` namespace is
- * active. Same double-gate as `helpCenterContextEnabled`, but keyed to its own
- * flag so an operator can toggle the topology resource and the article resources
- * independently.
+ * Whether the read-by-id article resource (`<scheme>://article/{id}`) should be
+ * registered. Available whenever the `help_center` namespace is active — reading
+ * one article is a cheap, on-demand single fetch with NO preloading, so it is
+ * deliberately NOT gated by the promoted-listing flag: `--no-promoted-articles`
+ * turns off the costly pre-listing (below), never the ability to address a known
+ * article id. Not tied to `--no-topology` either (topology is a separate feature).
  */
-export const articleResourcesEnabled = (config: Config): boolean =>
-  // `!== false` (not truthiness) so an omitted flag on a hand-built Config stays
-  // default-on, matching the `--no-article-resources` tool filter in server.ts —
-  // otherwise the two gates disagree and the tool could show while the resource is
-  // suppressed for the same config.
-  config.articleResources !== false && helpCenterNamespaceActive(config);
+export const articleResourceEnabled = (config: Config): boolean =>
+  helpCenterNamespaceActive(config);
+
+/**
+ * Whether the promoted-article PRE-LISTING is exposed: the resource `list`
+ * callback's scan (which enumerates the promoted articles for `resources/list`)
+ * AND the `list_promoted_articles` tool. This is the costly, fan-out part (a capped
+ * scan of `/articles`, no server-side promoted filter), so it gets its own flag —
+ * `--no-promoted-articles` turns it off so the server issues zero preloading
+ * requests, while read-by-id (above) stays available. `!== false` (not truthiness)
+ * so an omitted flag on a hand-built Config stays default-on, matching the tool
+ * filter in `server.ts`.
+ */
+export const promotedArticlesEnabled = (config: Config): boolean =>
+  config.promotedArticles !== false && helpCenterNamespaceActive(config);
 
 /**
  * The static `instructions` blob sent on `initialize`. Deliberately short and

@@ -30,15 +30,17 @@ export const ConfigSchema = z.object({
    */
   topology: z.boolean().default(true),
   /**
-   * Whether to expose the pull-only Help Center article resources
-   * (`zendesk-hc://article/{id}`), whose list surfaces the promoted ("featured")
-   * articles so a user can pin one as context. On by default; an operator
-   * disables it server-wide with `--no-article-resources` (e.g. on a very large
-   * Help Center where scanning for promoted articles is costly, or when the
-   * resources are unwanted). Only ever active when the `help_center` namespace
-   * itself is active.
+   * Whether to PRE-LIST the promoted ("featured") Help Center articles: the
+   * `<scheme>://article/{id}` resource's `list` callback (which scans `/articles`
+   * to enumerate the promoted set for `resources/list`) AND the
+   * `list_promoted_articles` tool. On by default; an operator disables the
+   * pre-listing with `--no-promoted-articles` (e.g. on a very large Help Center
+   * where scanning is costly) so the server issues zero preloading requests. This
+   * does NOT disable reading a known article by id (`<scheme>://article/{id}` stays
+   * registered) — that is cheap and on-demand. Only ever active when the
+   * `help_center` namespace itself is active.
    */
-  articleResources: z.boolean().default(true),
+  promotedArticles: z.boolean().default(true),
   /**
    * URI scheme of the Help Center MCP resources (today the topology resource,
    * `<scheme>://topology`). Defaults to `zendesk-hc`; a deployer can brand it
@@ -123,7 +125,7 @@ interface CliResult {
   namespaces?: string[];
   tools?: string[];
   topology?: boolean;
-  articleResources?: boolean;
+  promotedArticles?: boolean;
   hcResourceScheme?: string;
   dev?: boolean;
   logLevel?: string;
@@ -172,8 +174,8 @@ const parseCliArgs = (args: string[]): CliResult => {
       result.readOnly = true;
     } else if (arg === '--no-topology') {
       result.topology = false;
-    } else if (arg === '--no-article-resources') {
-      result.articleResources = false;
+    } else if (arg === '--no-promoted-articles') {
+      result.promotedArticles = false;
     } else if (arg === '--hc-resource-scheme' && next) {
       result.hcResourceScheme = next;
       i++;
@@ -258,7 +260,7 @@ export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
     namespaces: cli.namespaces,
     tools: cli.tools,
     topology: cli.topology ?? true,
-    articleResources: cli.articleResources ?? true,
+    promotedArticles: cli.promotedArticles ?? true,
     hcResourceScheme,
     dev: cli.dev ?? false,
     transport,

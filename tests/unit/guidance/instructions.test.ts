@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
-  articleResourcesEnabled,
+  articleResourceEnabled,
   articleResourceUri,
   articleResourceUriTemplate,
   buildInstructions,
+  promotedArticlesEnabled,
   topologyResourceUri,
 } from '../../../src/guidance/instructions';
 import { makeConfig } from '../../integration/harness';
@@ -55,19 +56,33 @@ describe('buildInstructions', () => {
   });
 });
 
-describe('articleResourcesEnabled', () => {
+describe('articleResourceEnabled (read-by-id)', () => {
+  it('is on whenever help_center is active, regardless of the promoted flag or topology', () => {
+    expect(articleResourceEnabled(makeConfig())).toBe(true);
+    expect(articleResourceEnabled(makeConfig({ namespaces: ['help_center'] }))).toBe(true);
+    // Read-by-id is NOT gated by the promoted pre-listing flag nor by topology.
+    expect(articleResourceEnabled(makeConfig({ promotedArticles: false }))).toBe(true);
+    expect(articleResourceEnabled(makeConfig({ topology: false }))).toBe(true);
+  });
+
+  it('is off only when help_center is filtered out', () => {
+    expect(articleResourceEnabled(makeConfig({ namespaces: ['tickets'] }))).toBe(false);
+  });
+});
+
+describe('promotedArticlesEnabled (pre-listing + tool)', () => {
   it('is enabled by default and when help_center is explicitly included', () => {
-    expect(articleResourcesEnabled(makeConfig())).toBe(true);
-    expect(articleResourcesEnabled(makeConfig({ namespaces: ['help_center'] }))).toBe(true);
+    expect(promotedArticlesEnabled(makeConfig())).toBe(true);
+    expect(promotedArticlesEnabled(makeConfig({ namespaces: ['help_center'] }))).toBe(true);
   });
 
   it('is disabled when help_center is filtered out', () => {
-    expect(articleResourcesEnabled(makeConfig({ namespaces: ['tickets'] }))).toBe(false);
+    expect(promotedArticlesEnabled(makeConfig({ namespaces: ['tickets'] }))).toBe(false);
   });
 
-  it('is disabled when the feature flag is off, independently of topology', () => {
-    expect(articleResourcesEnabled(makeConfig({ articleResources: false }))).toBe(false);
-    // Independent toggles: topology off does not disable article resources.
-    expect(articleResourcesEnabled(makeConfig({ topology: false }))).toBe(true);
+  it('is disabled when the flag is off, independently of topology', () => {
+    expect(promotedArticlesEnabled(makeConfig({ promotedArticles: false }))).toBe(false);
+    // Independent toggles: topology off does not disable the promoted listing.
+    expect(promotedArticlesEnabled(makeConfig({ topology: false }))).toBe(true);
   });
 });
