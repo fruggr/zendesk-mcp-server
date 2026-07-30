@@ -1,10 +1,19 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
 import * as z from 'zod/v4';
 import { ZendeskApiError } from './client/zendesk-api';
 import type { Config } from './config';
+import { ARTICLE_RESOURCES_SCAN_MAX_PAGES } from './constants';
 import {
+  createArticleResourcesProvider,
+  LIST_PROMOTED_ARTICLES_TOOL,
+} from './guidance/article-resources';
+import {
+  articleResourceEnabled,
+  articleResourceUri,
+  articleResourceUriTemplate,
   buildInstructions,
   helpCenterContextEnabled,
+  promotedArticlesEnabled,
   topologyResourceUri,
 } from './guidance/instructions';
 import { createTopologyProvider } from './guidance/topology';
@@ -229,7 +238,14 @@ export const registerToolset = (
     readOnly: config.readOnly,
     namespaces: config.namespaces,
     tools: config.tools,
-  });
+  })
+    // When the promoted pre-listing is disabled (`--no-promoted-articles`), also
+    // drop the companion `list_promoted_articles` tool. That listing must then make
+    // ZERO Zendesk calls: gating only the resource `list` callback (below) would
+    // leave the tool callable, and its promoted-article scan would still hit the
+    // API. Read-by-id (`<scheme>://article/{id}`) is unaffected — it stays
+    // registered. `!== false` so an unset flag (hand-built configs) keeps default-on.
+    .filter((t) => config.promotedArticles !== false || t.name !== LIST_PROMOTED_ARTICLES_TOOL);
 
   // Registration is atomic: if any registerTool/registerResource throws partway
   // (e.g. a hot-reloaded module introduced a duplicate tool name), roll back the
@@ -312,6 +328,83 @@ export const registerToolset = (
               { uri: uri.toString(), mimeType: 'text/markdown', text: await topology.read() },
             ],
           }),
+        ),
+      );
+    }
+
+    // Pull-only Help Center article resources (zendesk-hc://article/{id}). The read
+    // callback renders ANY article id (Zendesk ACLs enforced via the caller's token)
+    // as Markdown — a cheap, on-demand single fetch — so the template is registered
+    // whenever the help_center namespace is active, independent of the promoted flag.
+    // The `list` callback enumerates the promoted articles (for a picker) ONLY when
+    // the pre-listing is enabled; with `--no-promoted-articles` it short-circuits to
+    // an empty list WITHOUT scanning, so no preloading request is ever made while
+    // read-by-id still works. Both defer all I/O to request time (lazy-auth). The
+    // list callback swallows scan failures (empty list, logged) so a transient error
+    // never breaks resources/list — which would also hide the topology resource.
+    if (articleResourceEnabled(config)) {
+      const articles = createArticleResourcesProvider(getToken, config.subdomain, onUnauthorized);
+      const listPromotedEnabled = promotedArticlesEnabled(config);
+      const template = new ResourceTemplate(articleResourceUriTemplate(config), {
+        list: async () => {
+          // Pre-listing off → no scan, no Zendesk request; read-by-id still works.
+          if (!listPromotedEnabled) return { resources: [] };
+          try {
+            const { refs, truncated } = await articles.listPromoted();
+            if (truncated) {
+              logger.warn('article_resources_list_truncated', {
+                max_pages: ARTICLE_RESOURCES_SCAN_MAX_PAGES,
+                listed: refs.length,
+              });
+            }
+            return {
+              resources: refs.map((ref) => ({
+                uri: articleResourceUri(config, ref.id),
+                name: ref.title,
+                title: ref.title,
+                // Per-article description so clients that render `uri — description`
+                // in a resource picker can tell the entries apart (without it, every
+                // entry inherits the template's generic description and looks
+                // identical). Lead with the title + id so the distinguishing part
+                // survives the client truncating a long line.
+                description: `"${ref.title}" (article ${ref.id}) — promoted Help Center article, as Markdown.`,
+                mimeType: 'text/markdown',
+              })),
+            };
+          } catch (err) {
+            logger.warn('article_resources_list_failed', {
+              error: err instanceof Error ? err.message : String(err),
+            });
+            return { resources: [] };
+          }
+        },
+      });
+      registered.push(
+        server.registerResource(
+          'help-center-article',
+          template,
+          {
+            title: 'Zendesk Help Center article',
+            description:
+              'A Help Center article rendered as Markdown, addressed by id. The list surfaces the promoted (featured) articles so one can be pinned as context; any article id can be read, subject to your Zendesk read permissions.',
+            mimeType: 'text/markdown',
+          },
+          async (uri, variables) => {
+            const raw = Array.isArray(variables['id']) ? variables['id'][0] : variables['id'];
+            const id = Number(raw);
+            if (!Number.isSafeInteger(id) || id <= 0) {
+              throw new Error(`Invalid article id in resource URI: ${uri.toString()}`);
+            }
+            return {
+              contents: [
+                {
+                  uri: uri.toString(),
+                  mimeType: 'text/markdown',
+                  text: await articles.readArticle(id),
+                },
+              ],
+            };
+          },
         ),
       );
     }

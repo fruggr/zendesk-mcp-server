@@ -2,7 +2,12 @@ import { HttpResponse, http } from 'msw';
 import { describe, expect, it } from 'vitest';
 import type { ToolContext } from '../../../src/tools/definitions';
 import { createHelpCenterTools } from '../../../src/tools/help-center';
-import { MOCK_ARTICLE, MOCK_TRANSLATION, manyContentTagsHandler } from '../../msw-handlers';
+import {
+  MOCK_ARTICLE,
+  MOCK_TRANSLATION,
+  manyContentTagsHandler,
+  promotedArticlesHandler,
+} from '../../msw-handlers';
 import { mswServer } from '../../setup';
 
 const ctx: ToolContext = { subdomain: 'testsubdomain', getToken: () => 'test-token' };
@@ -16,8 +21,67 @@ const findTool = (name: string) => {
 };
 
 describe('help center tools', () => {
-  it('creates 23 tools', () => {
-    expect(createHelpCenterTools(ctx)).toHaveLength(23);
+  it('creates 24 tools', () => {
+    expect(createHelpCenterTools(ctx)).toHaveLength(24);
+  });
+
+  describe('list_promoted_articles', () => {
+    it('lists only the promoted articles, with the admin-only status note', async () => {
+      mswServer.use(promotedArticlesHandler);
+      const tool = findTool('list_promoted_articles');
+      const result = await tool.handler({});
+      const text = result.content[0]?.text ?? '';
+
+      expect(text).toContain('Featured guide'); // promoted (5001)
+      expect(text).toContain('5001');
+      expect(text).not.toContain('How to test'); // non-promoted (5000) filtered out
+      // The admin-only caveat rides along on each promoted article.
+      expect(text).toContain('**Promoted**');
+      expect(text).toMatch(/Help Center admin|Guide admin/);
+    });
+
+    it('reports when nothing is promoted', async () => {
+      // The default /articles handler returns a single non-promoted article.
+      const tool = findTool('list_promoted_articles');
+      const result = await tool.handler({});
+      expect(result.content[0]?.text).toContain('No promoted articles');
+    });
+
+    it('flags truncation and the API cost when the scan hits the page cap', async () => {
+      mswServer.use(
+        http.get(`${HC_BASE}/articles`, () =>
+          HttpResponse.json({
+            articles: [{ ...MOCK_ARTICLE, id: 5001, promoted: true }],
+            meta: { has_more: true, after_cursor: 'next-cursor' },
+            count: 100,
+          }),
+        ),
+      );
+      const tool = findTool('list_promoted_articles');
+      const result = await tool.handler({});
+      const text = result.content[0]?.text ?? '';
+      expect(text).toMatch(/cap|omitted|missing/i);
+      expect(text).toMatch(/Zendesk API request/i); // surfaces the cost to the LLM
+    });
+
+    it('surfaces the scan cost when it fans out over several pages', async () => {
+      let n = 0;
+      mswServer.use(
+        http.get(`${HC_BASE}/articles`, () => {
+          n += 1;
+          return HttpResponse.json({
+            articles: [{ ...MOCK_ARTICLE, id: 5000 + n, promoted: true }],
+            meta: { has_more: n < 2, after_cursor: n < 2 ? 'next' : '' },
+            count: 2,
+          });
+        }),
+      );
+      const tool = findTool('list_promoted_articles');
+      const result = await tool.handler({});
+      const text = result.content[0]?.text ?? '';
+      expect(text).not.toMatch(/cap/i); // not truncated
+      expect(text).toContain('2 Zendesk API requests');
+    });
   });
 
   describe('search_articles', () => {

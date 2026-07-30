@@ -28,6 +28,23 @@ const positiveIntEnv = (name: string, fallback: number): number => {
 // stale for long after a reorg.
 export const TOPOLOGY_TTL_MS = 5 * 60 * 1000;
 
+// TTL for the per-session promoted-articles cache backing the article resources'
+// list callback (zendesk-hc://article/{id}). Promoted/featured status changes
+// rarely, so a short TTL keeps a session's repeated resources/list calls cheap
+// without going stale for long.
+export const ARTICLE_RESOURCES_TTL_MS = 5 * 60 * 1000;
+
+// Max article pages scanned to find promoted articles. The Help Center API has no
+// server-side promoted filter (only label_names / sort_by / sort_order), so the
+// list callback pages through /articles and filters `promoted` client-side; this
+// bounds that scan on a large Help Center. Promoted articles beyond the cap are
+// omitted (and the truncation is logged). Override via
+// ZENDESK_ARTICLE_RESOURCES_SCAN_MAX_PAGES.
+export const ARTICLE_RESOURCES_SCAN_MAX_PAGES = positiveIntEnv(
+  'ZENDESK_ARTICLE_RESOURCES_SCAN_MAX_PAGES',
+  20,
+);
+
 // Local port the OAuth PKCE flow listens on for the browser callback. Must match
 // the redirect URL registered in the Zendesk OAuth client. Deliberately picked
 // outside the usual dev range (3000/5000/8080…) and below the OS ephemeral

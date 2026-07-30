@@ -155,28 +155,47 @@ The full tool-by-tool reference — every tool with its description and its
 
 Beyond tools, the server hands an LLM the structural context it needs to work
 against *your* Help Center — so it stops guessing locales or fuzzy-matching
-section names and uses real IDs instead. This is delivered through two
-MCP-native channels (both active only when the `help_center` namespace is, and
-disabled together with `--no-topology`):
+section names and uses real IDs instead. This is delivered through MCP-native
+channels (all active only when the `help_center` namespace is), each fetched
+**with the caller's own token** so it respects that user's read permissions:
 
 - **`instructions`** (sent on `initialize`): a short, static blob auto-loaded by
   compliant clients. It names the subdomain and points at the topology resource.
 - **`zendesk-hc://topology`** (a pull-only [MCP resource](https://modelcontextprotocol.io/docs/concepts/resources)):
   read on demand, it returns Markdown describing the active locales (and the
   default), the category → section tree with IDs, the visibility user segments,
-  the permission groups, and the calling user's role. It is fetched **with the
-  caller's own token**, so it respects that user's read permissions. Listing the
-  permission groups and user segments needs Guide-admin / Help Center manager
-  rights; with a content-editor token those two sections are marked *unavailable*
-  (not empty) and the rest still renders — reuse those IDs from an existing
-  article (`get_article`) instead. On a very large Help Center the section tree is
-  summarized (per-category, with a pointer to `list_sections`) to stay concise.
+  the permission groups, and the calling user's role. Listing the permission
+  groups and user segments needs Guide-admin / Help Center manager rights; with a
+  content-editor token those two sections are marked *unavailable* (not empty) and
+  the rest still renders — reuse those IDs from an existing article (`get_article`)
+  instead. On a very large Help Center the section tree is summarized (per-category,
+  with a pointer to `list_sections`) to stay concise.
+- **`zendesk-hc://article/{id}`** (pull-only [MCP resources](https://modelcontextprotocol.io/docs/concepts/resources)):
+  two distinct capabilities. **Read-by-id** — any article id can be read on demand,
+  returned as Markdown (a cheap single fetch, no preloading). **Promoted pre-listing** —
+  the resource's listing surfaces the promoted (*featured*) articles so a user can
+  pin one in clients that support resource pinning / @-mention, and the companion
+  `list_promoted_articles` tool returns the same set. Clients that don't support
+  resources ignore these silently.
+  <br>**Cost:** only the *pre-listing* costs requests — finding promoted articles has
+  no server-side filter, so it scans article pages (one Zendesk API request per page,
+  capped). The resource listing is cached briefly per session (repeated `resources/list`
+  calls coalesce); the `list_promoted_articles` tool performs a fresh scan on every
+  call. It runs only on a client's `resources/list` or a tool call, never at connect,
+  and consumes no LLM context until an article is pinned/read. Read-by-id costs one
+  fetch, only when a specific article is opened. See
+  [`ZENDESK_ARTICLE_RESOURCES_SCAN_MAX_PAGES`](docs/configuration.md#zendesk_article_resources_scan_max_pages).
 
-Clients that don't consume `instructions` or `resources` simply ignore them —
-the feature degrades silently. Use `--no-topology` to turn both off server-wide.
-The `zendesk-hc://` URI scheme is the default; a deployer can brand it with
+The `instructions` blob and the topology resource are toggled together with
+`--no-topology`. The **promoted pre-listing** is toggled independently with
+`--no-promoted-articles` — which turns off the resource `list` scan **and** the
+`list_promoted_articles` tool, so the server makes zero preloading requests;
+**reading a known article by id stays available** (it never preloads). Clients that
+don't consume `instructions` or `resources` simply ignore them — the feature
+degrades silently. The `zendesk-hc://` URI scheme is the default; a deployer can
+brand it with
 [`--hc-resource-scheme` / `HC_RESOURCE_SCHEME`](docs/configuration.md#hc_resource_scheme)
-(e.g. `wiki` → `wiki://topology`).
+(e.g. `wiki` → `wiki://topology`, `wiki://article/{id}`).
 
 ## Prerequisites
 

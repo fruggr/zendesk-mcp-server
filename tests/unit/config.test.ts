@@ -61,6 +61,16 @@ describe('loadConfig', () => {
     expect(config.topology).toBe(false);
   });
 
+  it('enables the promoted-article pre-listing by default', () => {
+    const config = loadConfig(['mycompany']);
+    expect(config.promotedArticles).toBe(true);
+  });
+
+  it('parses --no-promoted-articles flag', () => {
+    const config = loadConfig(['mycompany', '--no-promoted-articles']);
+    expect(config.promotedArticles).toBe(false);
+  });
+
   it('defaults dev mode to off', () => {
     const config = loadConfig(['mycompany']);
     expect(config.dev).toBe(false);
