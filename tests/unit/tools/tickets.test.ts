@@ -536,7 +536,7 @@ describe('ticket tools', () => {
         return tool;
       };
 
-      const mockCommentAttachments = (attachments: Array<Record<string, unknown>>) => {
+      const mockCommentAttachments = (attachments: Record<string, unknown>[]) => {
         mswServer.use(
           http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/comments', () =>
             HttpResponse.json({

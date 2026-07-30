@@ -8,8 +8,15 @@ export interface ToolAnnotations {
   openWorldHint: boolean;
 }
 
-export type ToolTextContent = { type: 'text'; text: string };
-export type ToolImageContent = { type: 'image'; data: string; mimeType: string };
+export interface ToolTextContent {
+  type: 'text';
+  text: string;
+}
+export interface ToolImageContent {
+  type: 'image';
+  data: string;
+  mimeType: string;
+}
 
 export interface ToolResult {
   [key: string]: unknown;

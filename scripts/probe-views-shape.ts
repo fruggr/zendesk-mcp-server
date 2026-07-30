@@ -115,7 +115,7 @@ const main = async (): Promise<void> => {
   }
 
   // (1) List Views — the object shape list_views renders (id/title/active/description).
-  const viewsResp = await zendeskGet<{ views?: Array<Record<string, unknown>> }>(
+  const viewsResp = await zendeskGet<{ views?: Record<string, unknown>[] }>(
     subdomain,
     token,
     '/views',
@@ -139,7 +139,7 @@ const main = async (): Promise<void> => {
   // (2) count_many — the raw view_counts shape (view_id/value/pretty/fresh). Used
   // to pick a non-empty view to execute.
   const ids = views.map((v) => Number(v['id'])).filter((n) => Number.isFinite(n));
-  const countsResp = await zendeskGet<{ view_counts?: Array<Record<string, unknown>> }>(
+  const countsResp = await zendeskGet<{ view_counts?: Record<string, unknown>[] }>(
     subdomain,
     token,
     '/views/count_many',
@@ -166,7 +166,7 @@ const main = async (): Promise<void> => {
   );
   dump(`GET /views/${targetId}/execute — top-level keys`, Object.keys(exec));
   dump('execute columns', exec['columns'] ?? '(no columns)');
-  const rows = (exec['rows'] as Array<Record<string, unknown>> | undefined) ?? [];
+  const rows = (exec['rows'] as Record<string, unknown>[] | undefined) ?? [];
   console.log(`\n(${rows.length} rows returned)`);
   const extraction = rows.slice(0, 5).map((row, i) => ({
     row_index: i,
@@ -206,7 +206,7 @@ const main = async (): Promise<void> => {
   // (4) show_many hydration — confirm it returns FULL tickets for those ids, and
   // whether the returned order matches the requested order (the tool re-sorts, so
   // a mismatch here is expected and handled — this just documents it).
-  const many = await zendeskGet<{ tickets?: Array<Record<string, unknown>> }>(
+  const many = await zendeskGet<{ tickets?: Record<string, unknown>[] }>(
     subdomain,
     token,
     '/tickets/show_many',

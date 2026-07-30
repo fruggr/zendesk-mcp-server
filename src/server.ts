@@ -60,7 +60,7 @@ export const summarizeDescription = (description: string): string => {
 };
 
 export const buildOperationList = (
-  tools: ReadonlyArray<Pick<ToolDefinition, 'name' | 'description' | 'readOnly'>>,
+  tools: readonly Pick<ToolDefinition, 'name' | 'description' | 'readOnly'>[],
 ): string =>
   tools
     .map(
@@ -74,7 +74,7 @@ export const buildOperationList = (
 // ANY op is. openWorld is always true (we always hit Zendesk).
 // Mistral/Vibe ignore annotations entirely, hence the `[RO]` prefix below.
 export const aggregateAnnotations = (
-  tools: ReadonlyArray<Pick<ToolDefinition, 'annotations'>>,
+  tools: readonly Pick<ToolDefinition, 'annotations'>[],
 ): ToolAnnotations => ({
   readOnlyHint: tools.every((t) => t.annotations.readOnlyHint),
   destructiveHint: tools.some((t) => t.annotations.destructiveHint),

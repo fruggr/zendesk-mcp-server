@@ -15,7 +15,7 @@ const WILDCARD_HOSTS = new Set(['0.0.0.0', '::', '*']);
 //
 // Ordered by current usage share (ChatGPT first). Update over time as the
 // MCP client landscape evolves.
-export const DEFAULT_BROWSER_MCP_CLIENT_ORIGINS: ReadonlyArray<string> = [
+export const DEFAULT_BROWSER_MCP_CLIENT_ORIGINS: readonly string[] = [
   'https://chatgpt.com',
   'https://chat.openai.com',
   'https://claude.ai',
@@ -58,7 +58,7 @@ const ALLOWED_PROTOCOLS = new Set(['http:', 'https:']);
  */
 export const resolveAllowedOrigin = (
   origin: string,
-  extraOrigins: ReadonlyArray<string> | undefined,
+  extraOrigins: readonly string[] | undefined,
 ): string | undefined => {
   const defaultMatch = DEFAULT_BROWSER_MCP_CLIENT_ORIGINS.find((entry) => entry === origin);
   if (defaultMatch) return defaultMatch;
@@ -82,7 +82,7 @@ export const resolveAllowedOrigin = (
 const applyCorsHeaders = (
   req: IncomingMessage,
   res: ServerResponse,
-  extraOrigins: ReadonlyArray<string>,
+  extraOrigins: readonly string[],
 ): void => {
   const requestOrigin = req.headers['origin'];
   if (typeof requestOrigin !== 'string' || requestOrigin.length === 0) return;
@@ -104,7 +104,7 @@ const applyCorsHeaders = (
 const handleCorsPreflight = (
   req: IncomingMessage,
   res: ServerResponse,
-  extraOrigins: ReadonlyArray<string>,
+  extraOrigins: readonly string[],
 ): boolean => {
   if (req.method !== 'OPTIONS') return false;
   applyCorsHeaders(req, res, extraOrigins);

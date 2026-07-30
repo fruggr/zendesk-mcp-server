@@ -159,7 +159,7 @@ const main = async (): Promise<void> => {
   let targetId = cliTicketId;
   if (!targetId) {
     try {
-      const search = await zendeskGet<{ results?: Array<Record<string, unknown>> }>(
+      const search = await zendeskGet<{ results?: Record<string, unknown>[] }>(
         subdomain,
         token,
         '/search',
