@@ -51,12 +51,11 @@ export const formatTicket = (ticket: ZendeskTicket): string =>
     .filter(Boolean)
     .join('\n');
 
-const formatConditionValue = (value: unknown): string =>
-  value === null || value === undefined
-    ? ''
-    : typeof value === 'object'
-      ? JSON.stringify(value)
-      : String(value);
+const formatConditionValue = (value: unknown): string => {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+};
 
 export const formatSlaPolicy = (policy: ZendeskSlaPolicy): string => {
   const conditions = [

@@ -174,6 +174,17 @@ const renderStructureLine = (sourceSections: Section[], targetSections: Section[
     : `- **Structure**: ${sourceSections.length} source vs ${targetSections.length} target sections — MISMATCH; the per-index rows below may be misaligned.`;
 };
 
+// Whether an index has a counterpart on both sides. `extra` means the target
+// has a section the source does not; `missing` is the reverse.
+const sectionRowStatus = (
+  source: Section | undefined,
+  target: Section | undefined,
+): 'ok' | 'missing' | 'extra' => {
+  if (!target) return 'missing';
+  if (!source) return 'extra';
+  return 'ok';
+};
+
 // Index-matched section table. Rows past one side's end are reported as
 // missing/extra rather than dropped, so a length mismatch stays visible.
 const renderSectionRows = (sourceSections: Section[], targetSections: Section[]): string[] => {
@@ -187,7 +198,7 @@ const renderSectionRows = (sourceSections: Section[], targetSections: Section[])
     const src = sourceSections[i];
     const tgt = targetSections[i];
     const heading = src?.heading ?? tgt?.heading ?? '';
-    const status = tgt ? (src ? 'ok' : 'extra') : 'missing';
+    const status = sectionRowStatus(src, tgt);
     rows.push(
       `| ${i} | ${heading} | ${status} | ${src?.wordCount ?? 0} | ${tgt?.wordCount ?? 0} |`,
     );
@@ -204,6 +215,15 @@ const articleListPath = (sectionId: number | undefined, locale: string | undefin
   if (sectionId) return `/sections/${sectionId}/articles`;
   if (locale) return `/${locale}/articles`;
   return '/articles';
+};
+
+// Section listing endpoint. Same two independent scoping dimensions as
+// articleListPath, and the same truthiness fallback.
+const sectionListPath = (categoryId: number | undefined, locale: string | undefined): string => {
+  if (categoryId && locale) return `/${locale}/categories/${categoryId}/sections`;
+  if (categoryId) return `/categories/${categoryId}/sections`;
+  if (locale) return `/${locale}/sections`;
+  return '/sections';
 };
 
 // `first`/`last` are absolute; `before`/`after` are relative and need a peer.
@@ -528,18 +548,10 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           cursor?: string;
         };
         const token = await getToken();
-        const path =
-          category_id && locale
-            ? `/${locale}/categories/${category_id}/sections`
-            : category_id
-              ? `/categories/${category_id}/sections`
-              : locale
-                ? `/${locale}/sections`
-                : '/sections';
         const response = await helpCenterGet<ZendeskListResponse<ZendeskSection>>(
           subdomain,
           token,
-          path,
+          sectionListPath(category_id, locale),
           buildCursorParams(page_size, cursor),
         );
         const sections = response.sections ?? [];
