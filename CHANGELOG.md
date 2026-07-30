@@ -1,3 +1,9 @@
+## [2.16.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.15.0...v2.16.0) (2026-07-30)
+
+### Features
+
+* **help-center:** expose promoted articles as pull-only MCP resources ([#170](https://github.com/fruggr/zendesk-mcp-server/issues/170)) ([b676695](https://github.com/fruggr/zendesk-mcp-server/commit/b67669512023257df4702ee8e9750d8b5240b06b))
+
 ## [2.15.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.14.2...v2.15.0) (2026-07-30)
 
 ### Features
