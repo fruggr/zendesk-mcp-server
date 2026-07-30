@@ -177,10 +177,12 @@ channels (all active only when the `help_center` namespace is), each fetched
   `list_promoted_articles` tool returns the same set. Clients that don't support
   resources ignore these silently.
   <br>**Cost:** finding promoted articles has no server-side filter, so the listing
-  (and the tool) scans article pages — one Zendesk API request per page, capped and
-  cached briefly per session. It runs only on a client's `resources/list` or a tool
-  call, never at connect, and consumes no LLM context until an article is actually
-  pinned/read. On a large Help Center this can be several requests; see
+  (and the tool) scans article pages — one Zendesk API request per page, capped. The
+  resource listing is cached briefly per session (repeated `resources/list` calls
+  coalesce); the `list_promoted_articles` tool performs a fresh scan on every call.
+  It runs only on a client's `resources/list` or a tool call, never at connect, and
+  consumes no LLM context until an article is actually pinned/read. On a large Help
+  Center this can be several requests; see
   [`ZENDESK_ARTICLE_RESOURCES_SCAN_MAX_PAGES`](docs/configuration.md#zendesk_article_resources_scan_max_pages).
 
 The `instructions` blob and the topology resource are toggled together with

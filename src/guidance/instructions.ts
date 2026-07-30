@@ -55,7 +55,11 @@ export const helpCenterContextEnabled = (config: Config): boolean =>
  * independently.
  */
 export const articleResourcesEnabled = (config: Config): boolean =>
-  config.articleResources && helpCenterNamespaceActive(config);
+  // `!== false` (not truthiness) so an omitted flag on a hand-built Config stays
+  // default-on, matching the `--no-article-resources` tool filter in server.ts —
+  // otherwise the two gates disagree and the tool could show while the resource is
+  // suppressed for the same config.
+  config.articleResources !== false && helpCenterNamespaceActive(config);
 
 /**
  * The static `instructions` blob sent on `initialize`. Deliberately short and
