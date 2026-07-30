@@ -525,8 +525,13 @@ describe('ticket tools', () => {
       });
 
       const loadAttachmentsTool = async () => {
-        const { createTicketTools } = await import('../../../src/tools/tickets');
-        const tool = createTicketTools(ctx).find((t) => t.name === 'get_ticket_attachments');
+        // Aliased on purpose: this is the freshly re-imported module (after
+        // `vi.resetModules()`), not the `createTicketTools` imported at the top
+        // of the file. Same name for both would hide which one is in play.
+        const { createTicketTools: createTicketToolsFresh } = await import(
+          '../../../src/tools/tickets'
+        );
+        const tool = createTicketToolsFresh(ctx).find((t) => t.name === 'get_ticket_attachments');
         if (!tool) throw new Error('get_ticket_attachments not found');
         return tool;
       };

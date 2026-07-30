@@ -14,6 +14,15 @@ import { mswServer } from '../../setup';
 const SUB = 'testsubdomain';
 const TOKEN = 'test-bearer-token';
 
+// Resolves to the rejection reason, or to `null` if the promise fulfilled.
+// Lets a test assert on the thrown error at the top level of the `it()` body
+// rather than inside a `catch` that a non-throwing call would simply skip.
+const rejectionOf = (promise: Promise<unknown>): Promise<unknown> =>
+  promise.then(
+    () => null,
+    (error: unknown) => error,
+  );
+
 describe('zendeskGet', () => {
   it('fetches data with Bearer auth', async () => {
     const result = await zendeskGet<{ user: { id: number } }>(SUB, TOKEN, '/users/me');
@@ -28,14 +37,14 @@ describe('zendeskGet', () => {
   });
 
   it('throws ZendeskApiError on 404', async () => {
-    await expect(zendeskGet(SUB, TOKEN, '/tickets/404')).rejects.toThrow(ZendeskApiError);
-    try {
-      await zendeskGet(SUB, TOKEN, '/tickets/404');
-    } catch (e) {
-      expect(e).toBeInstanceOf(ZendeskApiError);
-      expect((e as ZendeskApiError).status).toBe(404);
-      expect((e as ZendeskApiError).message).toContain('not found');
-    }
+    // Capture the rejection instead of asserting inside a `catch`: a `catch`
+    // block that never runs makes the test pass vacuously if the call stops
+    // throwing. `rejectionOf` resolves to `null` on success, so the assertions
+    // below fail loudly in that case.
+    const error = await rejectionOf(zendeskGet(SUB, TOKEN, '/tickets/404'));
+    expect(error).toBeInstanceOf(ZendeskApiError);
+    expect((error as ZendeskApiError).status).toBe(404);
+    expect((error as ZendeskApiError).message).toContain('not found');
   });
 
   it('throws on 401 with auth message', async () => {
@@ -44,11 +53,7 @@ describe('zendeskGet', () => {
         HttpResponse.json({}, { status: 401 }),
       ),
     );
-    try {
-      await zendeskGet(SUB, TOKEN, '/forbidden');
-    } catch (e) {
-      expect((e as ZendeskApiError).message).toContain('expired');
-    }
+    await expect(zendeskGet(SUB, TOKEN, '/forbidden')).rejects.toThrow(/expired/);
   });
 
   it('throws on 429 with rate limit message', async () => {
@@ -57,11 +62,7 @@ describe('zendeskGet', () => {
         HttpResponse.json({}, { status: 429 }),
       ),
     );
-    try {
-      await zendeskGet(SUB, TOKEN, '/ratelimited');
-    } catch (e) {
-      expect((e as ZendeskApiError).message).toContain('Rate limit');
-    }
+    await expect(zendeskGet(SUB, TOKEN, '/ratelimited')).rejects.toThrow(/Rate limit/);
   });
 });
 

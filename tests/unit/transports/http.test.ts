@@ -50,7 +50,12 @@ const initializeSession = async (port: number, authorization: string): Promise<s
       },
     }),
   });
-  expect(init.status).toBe(200);
+  // Throw rather than `expect()` here: this runs outside an `it()` body, where a
+  // failed assertion is reported against whichever test happened to call the
+  // helper. A thrown error names the real problem.
+  if (init.status !== 200) {
+    throw new Error(`initialize returned ${init.status}, expected 200`);
+  }
   const sessionId = init.headers.get('mcp-session-id');
   await init.text();
   if (!sessionId) throw new Error('initialize did not return a session id');
