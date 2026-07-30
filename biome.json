@@ -12,6 +12,7 @@
         "useArrayFind": "error",
         "noUselessReturn": "error",
         "noDivRegex": "error",
+        "noImplicitCoercions": "error",
         "noRedundantDefaultExport": "error",
         "noUselessCatchBinding": "error",
         "noUselessStringConcat": "error",

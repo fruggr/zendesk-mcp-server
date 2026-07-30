@@ -207,7 +207,12 @@ try {
     }
     const { median, min, max } = measure(command);
     console.log(`${label.padEnd(width)}${ms(median)}${ms(min)}${ms(max)}`);
-    results.push({ label, median: +median.toFixed(1), min: +min.toFixed(1), max: +max.toFixed(1) });
+    results.push({
+      label,
+      median: Number.parseFloat(median.toFixed(1)),
+      min: Number.parseFloat(min.toFixed(1)),
+      max: Number.parseFloat(max.toFixed(1)),
+    });
   }
 } finally {
   restoreWriteTargets();

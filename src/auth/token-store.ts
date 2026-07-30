@@ -191,7 +191,10 @@ export const createTokenStore = (
     // to be replaced or launching a competing refresh. Zendesk rotates the
     // refresh token on every use, so two concurrent refreshes would invalidate
     // each other — this makes the refresh exclusive.
-    if (refreshing) await refreshing;
+    // `!== undefined`, not truthiness: `refreshing` is a Promise handle used as
+    // a presence flag, and a bare `if (refreshing)` reads as if the promise's
+    // resolved value were being tested.
+    if (refreshing !== undefined) await refreshing;
 
     if (token && !needsRefresh(token)) {
       logger.debug('oauth_token_cache_hit');
@@ -202,7 +205,7 @@ export const createTokenStore = (
     // before falling back to a browser prompt. Concurrent callers share the one
     // attempt.
     if (token?.refreshToken) {
-      if (!refreshing) {
+      if (refreshing === undefined) {
         refreshing = tryRefresh(token).finally(() => {
           refreshing = undefined;
         });
@@ -211,7 +214,7 @@ export const createTokenStore = (
       if (refreshed) return refreshed;
     }
 
-    if (!starting) {
+    if (starting === undefined) {
       starting = beginAuth();
     }
 
