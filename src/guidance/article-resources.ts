@@ -22,11 +22,13 @@ export interface PromotedArticleList {
   truncated: boolean;
 }
 
-/** Result of the raw scan: the full promoted articles, plus the truncation flag. */
+/** Result of the raw scan: the full promoted articles, plus cost/coverage signals. */
 export interface PromotedArticleScan {
   articles: ZendeskArticle[];
   /** True when the page cap was hit with more pages remaining (some omitted). */
   truncated: boolean;
+  /** Article pages fetched = number of Zendesk API requests this scan cost. */
+  pagesScanned: number;
 }
 
 /**
@@ -72,7 +74,7 @@ export const fetchPromotedArticles = async (
     }
   } while (cursor);
 
-  return { articles: promoted, truncated };
+  return { articles: promoted, truncated, pagesScanned: pages };
 };
 
 /**

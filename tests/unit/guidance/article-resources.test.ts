@@ -16,9 +16,10 @@ const HC = `https://${SUBDOMAIN}.zendesk.com/api/v2/help_center`;
 describe('fetchPromotedArticles', () => {
   it('returns only the promoted articles (full objects), filtering the rest out client-side', async () => {
     mswServer.use(promotedArticlesHandler);
-    const { articles, truncated } = await fetchPromotedArticles(SUBDOMAIN, TOKEN);
+    const { articles, truncated, pagesScanned } = await fetchPromotedArticles(SUBDOMAIN, TOKEN);
 
     expect(truncated).toBe(false);
+    expect(pagesScanned).toBe(1);
     expect(articles.map((a) => a.id)).toEqual([5001]);
     expect(articles[0]).toMatchObject({ id: 5001, title: 'Featured guide', promoted: true });
   });
@@ -41,8 +42,9 @@ describe('fetchPromotedArticles', () => {
       ),
     );
 
-    const { articles, truncated } = await fetchPromotedArticles(SUBDOMAIN, TOKEN, 1);
+    const { articles, truncated, pagesScanned } = await fetchPromotedArticles(SUBDOMAIN, TOKEN, 1);
     expect(truncated).toBe(true);
+    expect(pagesScanned).toBe(1);
     expect(articles).toHaveLength(1);
   });
 });

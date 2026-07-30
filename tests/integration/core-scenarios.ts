@@ -162,12 +162,23 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         expect(uris).toContain('zendesk-hc://topology');
       });
 
-      it('exposes no article resources when the feature is disabled', async () => {
+      it('removes BOTH the resource and the list_promoted_articles tool when disabled', async () => {
         mswServer.use(promotedArticlesHandler);
-        connected = await harness.connect(makeConfig({ articleResources: false }));
-        const uris = (await connected.client.listResources()).resources.map((r) => r.uri);
+        connected = await harness.connect(makeConfig({ mode: 'all', articleResources: false }));
 
+        const uris = (await connected.client.listResources()).resources.map((r) => r.uri);
         expect(uris.some((u) => u.startsWith('zendesk-hc://article/'))).toBe(false);
+
+        // The companion tool must be gone too, so the feature makes zero Zendesk
+        // requests when off (not merely hidden as a resource).
+        const names = toolNames((await connected.client.listTools()).tools);
+        expect(names).not.toContain('list_promoted_articles');
+      });
+
+      it('exposes the list_promoted_articles tool when the feature is enabled (default)', async () => {
+        connected = await harness.connect(makeConfig({ mode: 'all' }));
+        const names = toolNames((await connected.client.listTools()).tools);
+        expect(names).toContain('list_promoted_articles');
       });
 
       it('honors a custom --hc-resource-scheme for both listing and reading (#169)', async () => {

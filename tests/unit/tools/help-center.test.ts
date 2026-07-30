@@ -47,7 +47,7 @@ describe('help center tools', () => {
       expect(result.content[0]?.text).toContain('No promoted articles');
     });
 
-    it('flags truncation when the scan hits the page cap', async () => {
+    it('flags truncation and the API cost when the scan hits the page cap', async () => {
       mswServer.use(
         http.get(`${HC_BASE}/articles`, () =>
           HttpResponse.json({
@@ -59,7 +59,28 @@ describe('help center tools', () => {
       );
       const tool = findTool('list_promoted_articles');
       const result = await tool.handler({});
-      expect(result.content[0]?.text).toMatch(/cap|omitted|missing/i);
+      const text = result.content[0]?.text ?? '';
+      expect(text).toMatch(/cap|omitted|missing/i);
+      expect(text).toMatch(/Zendesk API request/i); // surfaces the cost to the LLM
+    });
+
+    it('surfaces the scan cost when it fans out over several pages', async () => {
+      let n = 0;
+      mswServer.use(
+        http.get(`${HC_BASE}/articles`, () => {
+          n += 1;
+          return HttpResponse.json({
+            articles: [{ ...MOCK_ARTICLE, id: 5000 + n, promoted: true }],
+            meta: { has_more: n < 2, after_cursor: n < 2 ? 'next' : '' },
+            count: 2,
+          });
+        }),
+      );
+      const tool = findTool('list_promoted_articles');
+      const result = await tool.handler({});
+      const text = result.content[0]?.text ?? '';
+      expect(text).not.toMatch(/cap/i); // not truncated
+      expect(text).toContain('2 Zendesk API requests');
     });
   });
 

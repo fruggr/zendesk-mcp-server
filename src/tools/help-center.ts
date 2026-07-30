@@ -502,7 +502,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: true,
       title: 'List Promoted Help Center Articles',
       description:
-        'List the promoted ("featured") Help Center articles — the small, editorially-curated set surfaced at the top of their sections. Returns metadata only (no body); use get_article for full content. The Help Center API has no server-side promoted filter, so this scans article pages and filters client-side, bounded by a page cap (ZENDESK_ARTICLE_RESOURCES_SCAN_MAX_PAGES, default 20); on a very large Help Center some promoted articles may be omitted, and that is flagged in the output. Lists the default locale. To promote or unpromote an article, use update_article with `promoted` (requires Help Center admin / Guide admin rights).',
+        'List the promoted ("featured") Help Center articles — the small, editorially-curated set surfaced at the top of their sections. Returns metadata only (no body); use get_article for full content. COST: the Help Center API has no server-side promoted filter, so this scans article pages (one Zendesk API request per page, up to ZENDESK_ARTICLE_RESOURCES_SCAN_MAX_PAGES, default 20) and filters client-side — potentially costly on a large Help Center, and results are cached only briefly per session, so avoid calling it repeatedly. On a very large Help Center some promoted articles may be omitted, and both the omission and the number of pages scanned are flagged in the output. Lists the default locale. To promote or unpromote an article, use update_article with `promoted` (requires Help Center admin / Guide admin rights).',
       inputSchema: z.object({}),
       annotations: {
         readOnlyHint: true,
@@ -512,16 +512,20 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       },
       handler: async () => {
         const token = await getToken();
-        const { articles, truncated } = await fetchPromotedArticles(subdomain, token);
+        const { articles, truncated, pagesScanned } = await fetchPromotedArticles(subdomain, token);
         const header = `Promoted (featured) articles: ${articles.length}`;
         const body = articles.length
           ? articles.map(formatArticleSummary).join('\n\n')
           : '_No promoted articles found._';
-        // No silent caps: if the scan was bounded, say so rather than implying the
-        // list is exhaustive.
+        // Surface the API cost to the caller. No silent caps: if the scan was
+        // bounded, say so; and when it fanned out to several requests, tell the LLM
+        // it is a costly call so it doesn't re-issue it needlessly.
+        const cost = `${pagesScanned} Zendesk API request${pagesScanned === 1 ? '' : 's'}`;
         const note = truncated
-          ? `\n\n_Note: the scan hit its ${ARTICLE_RESOURCES_SCAN_MAX_PAGES}-page cap, so promoted articles deeper in the catalog may be missing. Raise ZENDESK_ARTICLE_RESOURCES_SCAN_MAX_PAGES to widen it._`
-          : '';
+          ? `\n\n_Note: the scan hit its ${ARTICLE_RESOURCES_SCAN_MAX_PAGES}-page cap (${cost}), so promoted articles deeper in the catalog may be missing. This call is costly on this Help Center — avoid repeating it; raise ZENDESK_ARTICLE_RESOURCES_SCAN_MAX_PAGES to widen coverage._`
+          : pagesScanned > 1
+            ? `\n\n_Note: this scan cost ${cost}; the result is cached briefly per session, so avoid calling it again right away._`
+            : '';
         return {
           content: [{ type: 'text', text: truncateIfNeeded(`${header}\n\n${body}${note}`) }],
         };

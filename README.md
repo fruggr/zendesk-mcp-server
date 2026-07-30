@@ -173,14 +173,23 @@ channels (all active only when the `help_center` namespace is), each fetched
 - **`zendesk-hc://article/{id}`** (pull-only [MCP resources](https://modelcontextprotocol.io/docs/concepts/resources)):
   the listing surfaces the promoted (*featured*) articles so a user can pin one as
   first-class context in clients that support resource pinning / @-mention; any
-  article id can then be read on demand, returned as Markdown. Clients that don't
-  support resources ignore these silently.
+  article id can then be read on demand, returned as Markdown. The companion
+  `list_promoted_articles` tool returns the same set. Clients that don't support
+  resources ignore these silently.
+  <br>**Cost:** finding promoted articles has no server-side filter, so the listing
+  (and the tool) scans article pages — one Zendesk API request per page, capped and
+  cached briefly per session. It runs only on a client's `resources/list` or a tool
+  call, never at connect, and consumes no LLM context until an article is actually
+  pinned/read. On a large Help Center this can be several requests; see
+  [`ZENDESK_ARTICLE_RESOURCES_SCAN_MAX_PAGES`](docs/configuration.md#zendesk_article_resources_scan_max_pages).
 
 The `instructions` blob and the topology resource are toggled together with
 `--no-topology`; the article resources are toggled independently with
-`--no-article-resources`. Clients that don't consume `instructions` or
-`resources` simply ignore them — the feature degrades silently. The `zendesk-hc://`
-URI scheme is the default; a deployer can brand it with
+`--no-article-resources` — which removes both the resource **and** the
+`list_promoted_articles` tool, so the server makes zero Zendesk requests for the
+feature. Clients that don't consume `instructions` or `resources` simply ignore
+them — the feature degrades silently. The `zendesk-hc://` URI scheme is the
+default; a deployer can brand it with
 [`--hc-resource-scheme` / `HC_RESOURCE_SCHEME`](docs/configuration.md#hc_resource_scheme)
 (e.g. `wiki` → `wiki://topology`, `wiki://article/{id}`).
 

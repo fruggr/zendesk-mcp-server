@@ -190,7 +190,9 @@ Safety threshold for `reorder_article`. When moving an article would rewrite mor
 ### `ZENDESK_ARTICLE_RESOURCES_SCAN_MAX_PAGES`
 **Required:** no · **Default:** `20`
 
-Hard cap on the number of article pages scanned to find promoted articles for the `zendesk-hc://article/{id}` resources' listing. The Help Center API has no server-side promoted filter, so the listing pages through the articles and filters them client-side; this bounds that scan on a very large Help Center (promoted articles beyond the cap are omitted from the listing, and the truncation is logged). Raise it if promoted articles live deep in a large catalog.
+Hard cap on the number of article pages scanned to find promoted ("featured") articles. This backs both the `<scheme>://article/{id}` resource listing (`resources/list`) and the `list_promoted_articles` tool. The Help Center API has no server-side promoted filter, so the scan pages through the articles and filters them client-side; this bounds that scan on a very large Help Center (promoted articles beyond the cap are omitted, and the truncation is flagged). Raise it if promoted articles live deep in a large catalog.
+
+**Cost note.** Each scanned page is one Zendesk API request (Zendesk rate-limits all plans), so on a large Help Center a single listing/tool call can fan out to several requests. Results are cached per session for a few minutes (`ARTICLE_RESOURCES_TTL_MS`) to coalesce repeats, and the scan runs only when a resource-capable client calls `resources/list` or the LLM calls `list_promoted_articles` — never at connect. The worst case is a large catalog with few or no promoted articles (a full-cap scan for little result); if that matters for your tenant's quota, lower this cap or disable the feature entirely with **`--no-article-resources`**, which removes both the resource and the tool so the server makes **zero** Zendesk requests for this feature.
 
 ---
 

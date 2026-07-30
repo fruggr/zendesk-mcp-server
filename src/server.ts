@@ -234,7 +234,13 @@ export const registerToolset = (
     readOnly: config.readOnly,
     namespaces: config.namespaces,
     tools: config.tools,
-  });
+  })
+    // When article resources are disabled (`--no-article-resources`), also drop the
+    // companion `list_promoted_articles` tool. The feature must then make ZERO
+    // Zendesk calls: gating only the resource (below) would leave the tool callable,
+    // and its promoted-article scan would still hit the API. `!== false` so an
+    // unset flag (hand-built configs) keeps the default-on behaviour.
+    .filter((t) => config.articleResources !== false || t.name !== 'list_promoted_articles');
 
   // Registration is atomic: if any registerTool/registerResource throws partway
   // (e.g. a hot-reloaded module introduced a duplicate tool name), roll back the
