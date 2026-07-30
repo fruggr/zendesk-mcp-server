@@ -106,6 +106,31 @@ const fetchAllTicketComments = async (
   return all;
 };
 
+// Fetch specific attachments by id. A 404 is swallowed: attachment ids come
+// from an earlier listing the caller may have been holding for a while, and one
+// stale id should drop out rather than fail the whole request. Any other error
+// still propagates.
+const fetchAttachmentsByIds = async (
+  subdomain: string,
+  token: string,
+  ids: number[],
+): Promise<ZendeskTicketAttachment[]> => {
+  const attachments: ZendeskTicketAttachment[] = [];
+  for (const id of ids) {
+    try {
+      const { attachment } = await zendeskGet<{ attachment: ZendeskTicketAttachment }>(
+        subdomain,
+        token,
+        `/attachments/${id}`,
+      );
+      attachments.push(attachment);
+    } catch (error) {
+      if (!(error instanceof ZendeskApiError) || error.status !== 404) throw error;
+    }
+  }
+  return attachments;
+};
+
 const collectAttachmentBlocks = async (
   subdomain: string,
   token: string,
@@ -322,23 +347,34 @@ const hydrateViewTickets = async (
 // Collect the user and group ids referenced across a page of audits so their
 // names can be resolved in one batched call each: users = every audit author plus
 // assignee/requester/submitter change values; groups = group_id change values.
+// Audit values arrive as unknown (string or number depending on the field), and
+// 0 / null / "" all mean "unset". Only real positive ids are worth resolving.
+const addPositiveId = (set: Set<number>, raw: unknown): void => {
+  const n = Number(raw);
+  if (Number.isInteger(n) && n > 0) set.add(n);
+};
+
+// A Change/Create event on a name-bearing field contributes its old and new
+// values to the matching id set. Every other event contributes nothing.
+const collectEventIds = (
+  event: ZendeskAudit['events'][number],
+  userIds: Set<number>,
+  groupIds: Set<number>,
+): void => {
+  if (event.type !== 'Change' && event.type !== 'Create') return;
+  const entity = event.field_name ? AUDIT_ENTITY_FIELDS[event.field_name] : undefined;
+  if (!entity) return;
+  const set = entity === 'user' ? userIds : groupIds;
+  addPositiveId(set, event.value);
+  addPositiveId(set, event.previous_value);
+};
+
 const collectAuditIds = (audits: ZendeskAudit[]): { userIds: number[]; groupIds: number[] } => {
   const userIds = new Set<number>();
   const groupIds = new Set<number>();
-  const addId = (set: Set<number>, raw: unknown): void => {
-    const n = Number(raw);
-    if (Number.isInteger(n) && n > 0) set.add(n);
-  };
   for (const audit of audits) {
-    addId(userIds, audit.author_id);
-    for (const event of audit.events) {
-      if (event.type !== 'Change' && event.type !== 'Create') continue;
-      const entity = event.field_name ? AUDIT_ENTITY_FIELDS[event.field_name] : undefined;
-      if (!entity) continue;
-      const set = entity === 'user' ? userIds : groupIds;
-      addId(set, event.value);
-      addId(set, event.previous_value);
-    }
+    addPositiveId(userIds, audit.author_id);
+    for (const event of audit.events) collectEventIds(event, userIds, groupIds);
   }
   return { userIds: [...userIds], groupIds: [...groupIds] };
 };
@@ -429,18 +465,12 @@ const diffLine = (label: string, before: unknown, after: unknown): string | null
 // actual effect; everything unchanged (identity fields, untouched custom fields)
 // drops out. The apply endpoint mutates nothing, so the text ends by pointing at
 // the write tools that persist the change — the deliberate two-step from #120.
-const formatMacroPreviewDiff = (
-  ticketId: number,
-  macroId: number,
-  before: ZendeskTicket | undefined,
-  result: ZendeskMacroApplyResult | undefined,
-): string => {
-  // Guard the whole path so a malformed body degrades to a clean "no changes"
-  // instead of a cryptic "cannot read properties of undefined" tool error.
-  const after = result?.ticket ?? {};
-  const beforeObj = (before ?? {}) as unknown as Record<string, unknown>;
-  const comment: ZendeskMacroApplyComment | undefined = after.comment ?? result?.comment;
-
+// Standard (non-custom) fields that the macro actually changed. Identity fields
+// and anything unchanged drop out.
+const diffStandardFields = (
+  beforeObj: Record<string, unknown>,
+  after: Record<string, unknown>,
+): string[] => {
   const changes: string[] = [];
   for (const [key, afterVal] of Object.entries(after)) {
     if (DIFF_SKIP_KEYS.has(key)) continue;
@@ -458,15 +488,41 @@ const formatMacroPreviewDiff = (
     const line = diffLine(key, beforeVal, afterVal);
     if (line) changes.push(line);
   }
+  return changes;
+};
 
-  // Custom fields diff by id: the apply response carries every custom field, so
-  // compare each against the ticket's current value and keep only what changed.
-  const afterFields = [after.fields ?? after.custom_fields ?? []].flat();
+// Custom fields diff by id: the apply response carries every custom field, so
+// compare each against the ticket's current value and keep only what changed.
+const diffCustomFields = (
+  before: ZendeskTicket | undefined,
+  after: ZendeskMacroApplyResult['ticket'],
+): string[] => {
+  const afterFields = [after?.fields ?? after?.custom_fields ?? []].flat();
   const beforeById = new Map((before?.custom_fields ?? []).map((f) => [f.id, f.value] as const));
+  const changes: string[] = [];
   for (const f of afterFields) {
     const line = diffLine(`custom field ${f.id}`, beforeById.get(f.id), f.value);
     if (line) changes.push(line);
   }
+  return changes;
+};
+
+const formatMacroPreviewDiff = (
+  ticketId: number,
+  macroId: number,
+  before: ZendeskTicket | undefined,
+  result: ZendeskMacroApplyResult | undefined,
+): string => {
+  // Guard the whole path so a malformed body degrades to a clean "no changes"
+  // instead of a cryptic "cannot read properties of undefined" tool error.
+  const after = result?.ticket ?? {};
+  const beforeObj = (before ?? {}) as unknown as Record<string, unknown>;
+  const comment: ZendeskMacroApplyComment | undefined = after.comment ?? result?.comment;
+
+  const changes = [
+    ...diffStandardFields(beforeObj, after as unknown as Record<string, unknown>),
+    ...diffCustomFields(before, after),
+  ];
 
   const lines = [
     `# Macro #${macroId} preview on ticket #${ticketId} (diff — nothing saved yet)`,
@@ -703,25 +759,12 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         };
         const token = await getToken();
 
-        let attachments: ZendeskTicketAttachment[];
-        if (attachment_ids && attachment_ids.length > 0) {
-          attachments = [];
-          for (const id of attachment_ids) {
-            try {
-              const { attachment } = await zendeskGet<{ attachment: ZendeskTicketAttachment }>(
-                subdomain,
-                token,
-                `/attachments/${id}`,
+        const attachments =
+          attachment_ids && attachment_ids.length > 0
+            ? await fetchAttachmentsByIds(subdomain, token, attachment_ids)
+            : (await fetchAllTicketComments(subdomain, token, ticket_id)).flatMap(
+                (c) => c.attachments ?? [],
               );
-              attachments.push(attachment);
-            } catch (error) {
-              if (!(error instanceof ZendeskApiError) || error.status !== 404) throw error;
-            }
-          }
-        } else {
-          const comments = await fetchAllTicketComments(subdomain, token, ticket_id);
-          attachments = comments.flatMap((c) => c.attachments ?? []);
-        }
 
         if (attachments.length === 0) {
           return {
