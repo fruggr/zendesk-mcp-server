@@ -370,6 +370,12 @@ export const formatArticleSummary = (article: ZendeskArticle): string =>
     `## ${article.title} (${article.id})`,
     `- **Locale**: ${article.locale} | **Source locale**: ${article.source_locale}`,
     `- **Section**: ${article.section_id} | **Draft**: ${article.draft}`,
+    // Surface promoted status only when the article IS promoted, with the caveat
+    // that changing it is admin-gated — so an editor doesn't try (and fail) to
+    // toggle it. Non-promoted articles omit the line entirely (via filter(Boolean)).
+    article.promoted
+      ? '- **Promoted**: featured in its section — changing this requires Help Center admin (Guide admin) rights; set via update_article `promoted`.'
+      : '',
     // Surface the visibility/edit IDs so an editor without Guide-admin rights can
     // reuse them (list_permission_groups / list_user_segments are admin-gated, #161).
     `- **Permission group**: ${article.permission_group_id} | **User segment**: ${

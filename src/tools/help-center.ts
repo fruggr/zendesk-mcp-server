@@ -10,6 +10,7 @@ import {
   zendeskPost,
 } from '../client/zendesk-api';
 import {
+  ARTICLE_RESOURCES_SCAN_MAX_PAGES,
   CONTENT_TAGS_MAX_PAGE_SIZE,
   DEFAULT_PAGE_SIZE,
   LARGE_ARTICLE_BODY_CHARS,
@@ -17,6 +18,7 @@ import {
   MAX_PAGE_SIZE,
   REORDER_CONFIRM_THRESHOLD,
 } from '../constants';
+import { fetchPromotedArticles, LIST_PROMOTED_ARTICLES_TOOL } from '../guidance/article-resources';
 import type {
   ZendeskArticle,
   ZendeskArticleAttachment,
@@ -218,6 +220,19 @@ const articleListPath = (sectionId: number | undefined, locale: string | undefin
 
 const sectionListPath = (categoryId: number | undefined, locale: string | undefined): string =>
   `${localePrefix(locale)}${categoryId ? `/categories/${categoryId}` : ''}/sections`;
+
+// Scan-cost footer for the promoted-article listing. Three states, so a nested
+// ternary at the call site: capped (coverage may be incomplete), multi-page
+// (costly, don't repeat), or a single cheap page (no note at all).
+const scanCostNote = (truncated: boolean, pagesScanned: number, cost: string): string => {
+  if (truncated) {
+    return `\n\n_Note: the scan hit its ${ARTICLE_RESOURCES_SCAN_MAX_PAGES}-page cap (${cost}), so promoted articles deeper in the catalog may be missing. This call is costly on this Help Center — avoid repeating it; raise ZENDESK_ARTICLE_RESOURCES_SCAN_MAX_PAGES to widen coverage._`;
+  }
+  if (pagesScanned > 1) {
+    return `\n\n_Note: this scan cost ${cost}; this tool performs a fresh scan every call (no caching), so avoid calling it again right away._`;
+  }
+  return '';
+};
 
 // `first`/`last` are absolute; `before`/`after` are relative and need a peer.
 const needsReferenceArticle = (target: ReorderTarget): boolean =>
@@ -662,6 +677,37 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           : '';
         const text = [header, ...formatted].filter(Boolean).join('\n\n');
         return { content: [{ type: 'text', text: truncateIfNeeded(text) }] };
+      },
+    },
+    {
+      name: LIST_PROMOTED_ARTICLES_TOOL,
+      namespace: 'help_center',
+      readOnly: true,
+      title: 'List Promoted Help Center Articles',
+      description:
+        'List the promoted ("featured") Help Center articles — the small, editorially-curated set surfaced at the top of their sections. Returns metadata only (no body); use get_article for full content. COST: the Help Center API has no server-side promoted filter, so this scans article pages (one Zendesk API request per page, up to ZENDESK_ARTICLE_RESOURCES_SCAN_MAX_PAGES, default 20) and filters client-side — potentially costly on a large Help Center. Each call performs a fresh, uncached scan, so avoid calling it repeatedly. On a very large Help Center some promoted articles may be omitted, and both the omission and the number of pages scanned are flagged in the output. Lists the default locale. To promote or unpromote an article, use update_article with `promoted` (requires Help Center admin / Guide admin rights).',
+      inputSchema: z.object({}),
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+      handler: async () => {
+        const token = await getToken();
+        const { articles, truncated, pagesScanned } = await fetchPromotedArticles(subdomain, token);
+        const header = `Promoted (featured) articles: ${articles.length}`;
+        const body = articles.length
+          ? articles.map(formatArticleSummary).join('\n\n')
+          : '_No promoted articles found._';
+        // Surface the API cost to the caller. No silent caps: if the scan was
+        // bounded, say so; and when it fanned out to several requests, tell the LLM
+        // it is a costly call so it doesn't re-issue it needlessly.
+        const cost = `${pagesScanned} Zendesk API request${pagesScanned === 1 ? '' : 's'}`;
+        const note = scanCostNote(truncated, pagesScanned, cost);
+        return {
+          content: [{ type: 'text', text: truncateIfNeeded(`${header}\n\n${body}${note}`) }],
+        };
       },
     },
     {

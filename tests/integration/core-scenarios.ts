@@ -1,5 +1,6 @@
+import { HttpResponse, http } from 'msw';
 import { afterEach, describe, expect, it } from 'vitest';
-import { errorHandlers } from '../msw-handlers';
+import { errorHandlers, MOCK_PROMOTED_ARTICLE, promotedArticlesHandler } from '../msw-handlers';
 import { mswServer } from '../setup';
 import { type ConnectedClient, type IntegrationHarness, makeConfig } from './harness';
 
@@ -61,10 +62,27 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         expect(connected.client.getServerCapabilities()?.resources).toBeUndefined();
       });
 
-      it('omits instructions and the resource when topology is disabled', async () => {
+      it('omits instructions and the topology resource when topology is disabled', async () => {
         connected = await harness.connect(makeConfig({ topology: false }));
         expect(connected.client.getInstructions()).toBeUndefined();
-        expect(connected.client.getServerCapabilities()?.resources).toBeUndefined();
+        // Instructions are topology-gated. The article resources are a separate,
+        // still-enabled feature, so the resources capability is still advertised
+        // — only the topology resource itself is gone from the listing.
+        expect(connected.client.getServerCapabilities()?.resources).toBeDefined();
+        const { resources } = await connected.client.listResources();
+        expect(resources.map((r) => r.uri)).not.toContain('zendesk-hc://topology');
+      });
+
+      it('keeps the read-by-id article resource (and the resources capability) when topology and promoted listing are both off', async () => {
+        connected = await harness.connect(makeConfig({ topology: false, promotedArticles: false }));
+        expect(connected.client.getInstructions()).toBeUndefined();
+        // Read-by-id stays registered whenever help_center is active, so the
+        // resources capability persists; only the topology resource and the promoted
+        // listing are gone. (Namespace filtering is what removes resources entirely.)
+        expect(connected.client.getServerCapabilities()?.resources).toBeDefined();
+        const uris = (await connected.client.listResources()).resources.map((r) => r.uri);
+        expect(uris).not.toContain('zendesk-hc://topology');
+        expect(uris.some((u) => u.startsWith('zendesk-hc://article/'))).toBe(false);
       });
 
       it('lists and reads the topology resource with the live tenant structure', async () => {
@@ -109,6 +127,96 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         expect(text).toContain('admin');
         // The admin-only section is flagged unavailable, not silently empty.
         expect(text).toMatch(/Guide.?admin/i);
+      });
+    });
+
+    describe('help-center article resources', () => {
+      it('lists only the promoted articles as article resources', async () => {
+        mswServer.use(promotedArticlesHandler);
+        connected = await harness.connect(makeConfig());
+        const { resources } = await connected.client.listResources();
+        const uris = resources.map((r) => r.uri);
+
+        expect(uris).toContain('zendesk-hc://article/5001'); // promoted
+        expect(uris).not.toContain('zendesk-hc://article/5000'); // not promoted
+
+        // Each article entry carries its own title/description (not the template's
+        // generic one) so a resource picker can tell them apart — the entry must
+        // not inherit the template metadata verbatim.
+        const promoted = resources.find((r) => r.uri === 'zendesk-hc://article/5001');
+        expect(promoted?.title).toBe('Featured guide');
+        expect(promoted?.description).toContain('Featured guide');
+        expect(promoted?.description).toContain('5001');
+      });
+
+      it('reads any article id as a Markdown resource', async () => {
+        connected = await harness.connect(makeConfig());
+        const read = await connected.client.readResource({ uri: 'zendesk-hc://article/5001' });
+        const text = (read.contents ?? [])
+          .map((c) => (typeof c.text === 'string' ? c.text : ''))
+          .join('\n');
+
+        expect(text).toContain('(5001)');
+        expect(text).toContain('Testing guide'); // body converted from HTML
+        expect(text).not.toContain('<p>'); // not a raw HTML dump
+      });
+
+      it('keeps resources/list working (topology still listed) when the promoted scan fails', async () => {
+        mswServer.use(errorHandlers.articlesListError);
+        connected = await harness.connect(makeConfig());
+        const uris = (await connected.client.listResources()).resources.map((r) => r.uri);
+
+        expect(uris).toContain('zendesk-hc://topology');
+      });
+
+      it('disables the promoted pre-listing (zero scan, tool gone) but keeps read-by-id when --no-promoted-articles', async () => {
+        // Count any /articles scan: with the pre-listing off there must be none. A
+        // successful handler (not an error one) would let an accidental scan pass
+        // silently on the "no entries" check alone, so assert the request count too.
+        let scanCount = 0;
+        mswServer.use(
+          http.get('https://testsubdomain.zendesk.com/api/v2/help_center/articles', () => {
+            scanCount += 1;
+            return HttpResponse.json({
+              articles: [MOCK_PROMOTED_ARTICLE],
+              meta: { has_more: false, after_cursor: '' },
+              count: 1,
+            });
+          }),
+        );
+        connected = await harness.connect(makeConfig({ mode: 'all', promotedArticles: false }));
+
+        // The list callback short-circuits → no promoted entries AND no scan request.
+        const uris = (await connected.client.listResources()).resources.map((r) => r.uri);
+        expect(uris.some((u) => u.startsWith('zendesk-hc://article/'))).toBe(false);
+        expect(scanCount).toBe(0);
+
+        // ...and the companion tool is gone.
+        const names = toolNames((await connected.client.listTools()).tools);
+        expect(names).not.toContain('list_promoted_articles');
+
+        // ...but reading an UNLISTED (non-promoted) article by id still works —
+        // read-by-id is NOT disabled by the flag. Article 5000 is never promoted.
+        const read = await connected.client.readResource({ uri: 'zendesk-hc://article/5000' });
+        expect(resourceTextOf(read)).toContain('(5000)');
+      });
+
+      it('exposes the list_promoted_articles tool when the feature is enabled (default)', async () => {
+        connected = await harness.connect(makeConfig({ mode: 'all' }));
+        const names = toolNames((await connected.client.listTools()).tools);
+        expect(names).toContain('list_promoted_articles');
+      });
+
+      it('honors a custom --hc-resource-scheme for both listing and reading (#169)', async () => {
+        mswServer.use(promotedArticlesHandler);
+        connected = await harness.connect(makeConfig({ hcResourceScheme: 'wiki' }));
+        const uris = (await connected.client.listResources()).resources.map((r) => r.uri);
+
+        expect(uris).toContain('wiki://article/5001');
+        expect(uris).not.toContain('zendesk-hc://article/5001');
+
+        const read = await connected.client.readResource({ uri: 'wiki://article/5001' });
+        expect(resourceTextOf(read)).toContain('(5001)');
       });
     });
 

@@ -372,6 +372,15 @@ describe('formatArticleSummary', () => {
     });
     expect(result).not.toContain('Position');
   });
+
+  it('surfaces promoted status with the admin-only caveat only when promoted', () => {
+    // MOCK_ARTICLE is not promoted → no line at all.
+    expect(formatArticleSummary(MOCK_ARTICLE)).not.toContain('Promoted');
+
+    const promoted = formatArticleSummary({ ...MOCK_ARTICLE, promoted: true });
+    expect(promoted).toContain('**Promoted**');
+    expect(promoted).toMatch(/Help Center admin|Guide admin/);
+  });
 });
 
 describe('formatTranslation', () => {
