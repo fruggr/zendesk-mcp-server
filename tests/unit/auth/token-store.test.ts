@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-type TokenResult = {
+interface TokenResult {
   access_token: string;
   refresh_token?: string;
   expires_in?: number;
-};
+}
 
 const startBrowserAuthMock =
   vi.fn<

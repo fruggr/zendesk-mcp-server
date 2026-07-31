@@ -28,14 +28,13 @@ describe('zendeskGet', () => {
   });
 
   it('throws ZendeskApiError on 404', async () => {
-    await expect(zendeskGet(SUB, TOKEN, '/tickets/404')).rejects.toThrow(ZendeskApiError);
-    try {
-      await zendeskGet(SUB, TOKEN, '/tickets/404');
-    } catch (e) {
-      expect(e).toBeInstanceOf(ZendeskApiError);
-      expect((e as ZendeskApiError).status).toBe(404);
-      expect((e as ZendeskApiError).message).toContain('not found');
-    }
+    // Capture the rejection rather than asserting inside a `catch`, which never
+    // runs — and so never fails — if the call stops throwing. Same idiom as
+    // tests/unit/auth/token-store.test.ts.
+    const error = await zendeskGet(SUB, TOKEN, '/tickets/404').catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ZendeskApiError);
+    expect((error as ZendeskApiError).status).toBe(404);
+    expect((error as ZendeskApiError).message).toContain('not found');
   });
 
   it('throws on 401 with auth message', async () => {
@@ -44,11 +43,7 @@ describe('zendeskGet', () => {
         HttpResponse.json({}, { status: 401 }),
       ),
     );
-    try {
-      await zendeskGet(SUB, TOKEN, '/forbidden');
-    } catch (e) {
-      expect((e as ZendeskApiError).message).toContain('expired');
-    }
+    await expect(zendeskGet(SUB, TOKEN, '/forbidden')).rejects.toThrow(/expired/);
   });
 
   it('throws on 429 with rate limit message', async () => {
@@ -57,11 +52,7 @@ describe('zendeskGet', () => {
         HttpResponse.json({}, { status: 429 }),
       ),
     );
-    try {
-      await zendeskGet(SUB, TOKEN, '/ratelimited');
-    } catch (e) {
-      expect((e as ZendeskApiError).message).toContain('Rate limit');
-    }
+    await expect(zendeskGet(SUB, TOKEN, '/ratelimited')).rejects.toThrow(/Rate limit/);
   });
 });
 

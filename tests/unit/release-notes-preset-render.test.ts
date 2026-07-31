@@ -23,7 +23,7 @@ import { generateNotes } from '../../scripts/release-notes-collapsed.js';
 
 // The collapsing plugin is the 2nd `.releaserc.json` plugin entry: [path, options].
 const rc = JSON.parse(readFileSync(new URL('../../.releaserc.json', import.meta.url), 'utf8')) as {
-  plugins: Array<unknown>;
+  plugins: unknown[];
 };
 const pluginConfig = (
   rc.plugins.find(

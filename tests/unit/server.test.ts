@@ -22,7 +22,10 @@ const ann = (overrides: Partial<ToolAnnotations> = {}): ToolAnnotations => ({
   ...overrides,
 });
 
-type RegisteredTool = { description?: string; annotations?: ToolAnnotations };
+interface RegisteredTool {
+  description?: string;
+  annotations?: ToolAnnotations;
+}
 const introspect = (server: ReturnType<typeof createMcpServer>): Record<string, RegisteredTool> =>
   (server as unknown as { _registeredTools: Record<string, RegisteredTool> })._registeredTools;
 

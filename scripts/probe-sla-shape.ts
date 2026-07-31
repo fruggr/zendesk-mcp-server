@@ -137,7 +137,7 @@ const main = async (): Promise<void> => {
   // empty metric_events result can't be blamed on "this ticket had no SLA".
   let targetId = cliTicketId;
   try {
-    const search = await zendeskGet<{ results?: Array<Record<string, unknown>> }>(
+    const search = await zendeskGet<{ results?: Record<string, unknown>[] }>(
       subdomain,
       token,
       '/search',
@@ -254,7 +254,7 @@ const main = async (): Promise<void> => {
   const targetTicket = (ticketSlas['ticket'] as Record<string, unknown> | undefined) ?? {};
   const requesterId = targetTicket['requester_id'];
   if (requesterId != null) {
-    const scoped = await zendeskGet<{ results?: Array<Record<string, unknown>>; count?: number }>(
+    const scoped = await zendeskGet<{ results?: Record<string, unknown>[]; count?: number }>(
       subdomain,
       token,
       '/search',

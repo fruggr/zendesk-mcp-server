@@ -116,6 +116,10 @@ test: if a running server behaves no differently for a client, it's tooling.
   automated callers go through `scripts/biome.mjs`, never
   `node_modules/.bin/biome`, which has no binary to run on Android/Termux.
   Why, and what the shim does: `docs/decisions/biome-on-android.md`.
+- Enable a lint rule only once the tree is already clean for it, so `pnpm check`
+  stays green in the same commit. Which rules are on, and a line on every rule
+  that is off: `docs/decisions/biome-rules.md`. `nursery` and the `types` domain
+  are closed by policy — read that file before proposing either.
 - Functional: pure functions, immutable data, no classes (except `ZendeskApiError`).
 - Tool handlers are standalone functions in `ToolDefinition[]` arrays.
 - ASCII-only error messages on auth paths — `node:http` rejects non-ASCII bytes

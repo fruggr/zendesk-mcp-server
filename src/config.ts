@@ -148,8 +148,10 @@ interface CliResult {
 // `console.error('Fatal error:', error)` in src/index.ts gets flagged as
 // `js/clear-text-logging`. The label alone tells the operator which knob is
 // wrong; they can re-read their env / CLI to see what they actually set.
+const DIGITS_ONLY = /^\d+$/;
+
 const parsePort = (raw: string, label: string): number => {
-  if (!/^\d+$/.test(raw)) {
+  if (!DIGITS_ONLY.test(raw)) {
     throw new Error(`Invalid ${label} value. Expected an integer 0-65535.`);
   }
   return Number(raw);
@@ -158,66 +160,164 @@ const parsePort = (raw: string, label: string): number => {
 const parsePortEnv = (raw: string | undefined, label: string): number | undefined =>
   raw === undefined || raw === '' ? undefined : parsePort(raw, label);
 
+// Append to a repeatable list flag, creating it on first use.
+const appendTo =
+  (key: 'namespaces' | 'tools' | 'corsOrigins') =>
+  (result: CliResult, value: string): void => {
+    const list = result[key] ?? [];
+    list.push(value);
+    result[key] = list;
+  };
+
+// Maps, not object literals: these are indexed by raw argv, and a plain object
+// would resolve inherited keys — a bare `toString` argument would hit
+// Object.prototype and be swallowed instead of taken as the subdomain.
+
+// Flags that stand alone. Adding one is a line here, not a branch below.
+const STANDALONE_FLAGS = new Map<string, (result: CliResult) => void>([
+  [
+    '--read-only',
+    (result) => {
+      result.readOnly = true;
+    },
+  ],
+  [
+    '--no-topology',
+    (result) => {
+      result.topology = false;
+    },
+  ],
+  [
+    '--no-promoted-articles',
+    (result) => {
+      result.promotedArticles = false;
+    },
+  ],
+  [
+    '--dev',
+    (result) => {
+      result.dev = true;
+    },
+  ],
+]);
+
+// Flags that consume the following argument. Repeatable ones append; the rest
+// last-wins, both matching the previous if/else chain.
+const VALUED_FLAGS = new Map<string, (result: CliResult, value: string) => void>([
+  [
+    '--mode',
+    (result, value) => {
+      result.mode = value;
+    },
+  ],
+  [
+    '--hc-resource-scheme',
+    (result, value) => {
+      result.hcResourceScheme = value;
+    },
+  ],
+  [
+    '--log-level',
+    (result, value) => {
+      result.logLevel = value;
+    },
+  ],
+  [
+    '--transport',
+    (result, value) => {
+      result.transport = value;
+    },
+  ],
+  [
+    '--host',
+    (result, value) => {
+      result.host = value;
+    },
+  ],
+  [
+    '--public-url',
+    (result, value) => {
+      result.publicUrl = value;
+    },
+  ],
+  [
+    '--port',
+    (result, value) => {
+      result.port = parsePort(value, '--port');
+    },
+  ],
+  [
+    '--callback-port',
+    (result, value) => {
+      result.callbackPort = parsePort(value, '--callback-port');
+    },
+  ],
+  ['--namespace', appendTo('namespaces')],
+  ['--tool', appendTo('tools')],
+  ['--cors-origin', appendTo('corsOrigins')],
+]);
+
 const parseCliArgs = (args: string[]): CliResult => {
   const result: CliResult = {};
-  let positionalIndex = 0;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === undefined) continue;
-    const next = args[i + 1];
 
-    if (arg === '--mode' && next) {
-      result.mode = next;
+    const standalone = STANDALONE_FLAGS.get(arg);
+    if (standalone) {
+      standalone(result);
+      continue;
+    }
+
+    // Truthiness, not `!== undefined`: a valued flag with an empty or missing
+    // value is ignored rather than recorded, as it was before.
+    const valued = VALUED_FLAGS.get(arg);
+    const next = args[i + 1];
+    if (valued && next) {
+      valued(result, next);
       i++;
-    } else if (arg === '--read-only') {
-      result.readOnly = true;
-    } else if (arg === '--no-topology') {
-      result.topology = false;
-    } else if (arg === '--no-promoted-articles') {
-      result.promotedArticles = false;
-    } else if (arg === '--hc-resource-scheme' && next) {
-      result.hcResourceScheme = next;
-      i++;
-    } else if (arg === '--dev') {
-      result.dev = true;
-    } else if (arg === '--namespace' && next) {
-      result.namespaces = result.namespaces ?? [];
-      result.namespaces.push(next);
-      i++;
-    } else if (arg === '--tool' && next) {
-      result.tools = result.tools ?? [];
-      result.tools.push(next);
-      i++;
-    } else if (arg === '--log-level' && next) {
-      result.logLevel = next;
-      i++;
-    } else if (arg === '--transport' && next) {
-      result.transport = next;
-      i++;
-    } else if (arg === '--host' && next) {
-      result.host = next;
-      i++;
-    } else if (arg === '--port' && next) {
-      result.port = parsePort(next, '--port');
-      i++;
-    } else if (arg === '--public-url' && next) {
-      result.publicUrl = next;
-      i++;
-    } else if (arg === '--cors-origin' && next) {
-      result.corsOrigins = result.corsOrigins ?? [];
-      result.corsOrigins.push(next);
-      i++;
-    } else if (arg === '--callback-port' && next) {
-      result.callbackPort = parsePort(next, '--callback-port');
-      i++;
-    } else if (!arg.startsWith('-') && positionalIndex === 0) {
+      continue;
+    }
+
+    // Only the first non-flag argument is taken; `subdomain` being unset is
+    // exactly the "no positional seen yet" state.
+    if (!arg.startsWith('-') && result.subdomain === undefined) {
       result.subdomain = arg;
-      positionalIndex++;
     }
   }
 
   return result;
+};
+
+interface TransportSettings {
+  transport: string;
+  host: string;
+  port: number;
+  publicUrl: string | undefined;
+  corsOrigins: string[];
+}
+
+// The five HTTP-transport knobs, resolved together because they share one
+// precedence rule (CLI flag > env var > built-in default) and one audience —
+// they are the surface documented in docs/http-deployment.md. stdio ignores all
+// of them.
+const resolveTransportSettings = (cli: CliResult): TransportSettings => {
+  // CORS allowlist extension: CLI flags first, then comma-separated env var.
+  // The defaults (major web MCP clients + localhost-any-port) are baked into
+  // the HTTP transport — this list ADDS to them, never replaces them.
+  const corsFromEnv = (process.env['CORS_ORIGIN'] ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+
+  return {
+    transport: cli.transport ?? process.env['TRANSPORT'] ?? 'stdio',
+    host: cli.host ?? process.env['HOST'] ?? '0.0.0.0',
+    port: cli.port ?? parsePortEnv(process.env['PORT'], 'PORT') ?? 3000,
+    publicUrl: cli.publicUrl ?? process.env['PUBLIC_URL'],
+    corsOrigins: [...(cli.corsOrigins ?? []), ...corsFromEnv],
+  };
 };
 
 export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
@@ -228,20 +328,6 @@ export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
     process.env['ZENDESK_OAUTH_CLIENT_ID'] ?? (subdomain ? `${subdomain}_zendesk` : '');
 
   const mode = cli.tools?.length ? 'all' : (cli.mode ?? 'namespace');
-
-  const transport = cli.transport ?? process.env['TRANSPORT'] ?? 'stdio';
-  const host = cli.host ?? process.env['HOST'] ?? '0.0.0.0';
-  const port = cli.port ?? parsePortEnv(process.env['PORT'], 'PORT') ?? 3000;
-  const publicUrl = cli.publicUrl ?? process.env['PUBLIC_URL'];
-
-  // CORS allowlist extension: CLI flags first, then comma-separated env var.
-  // The defaults (major web MCP clients + localhost-any-port) are baked into
-  // the HTTP transport — this list ADDS to them, never replaces them.
-  const corsFromEnv = (process.env['CORS_ORIGIN'] ?? '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
-  const corsOrigins = [...(cli.corsOrigins ?? []), ...corsFromEnv];
 
   const callbackPort =
     cli.callbackPort ??
@@ -263,11 +349,7 @@ export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
     promotedArticles: cli.promotedArticles ?? true,
     hcResourceScheme,
     dev: cli.dev ?? false,
-    transport,
-    host,
-    port,
-    publicUrl,
-    corsOrigins,
     callbackPort,
+    ...resolveTransportSettings(cli),
   });
 };

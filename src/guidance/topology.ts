@@ -109,26 +109,28 @@ export const fetchTopology = async (subdomain: string, token: string): Promise<T
   };
 };
 
-const renderTree = (data: TopologyData): string[] => {
-  // Too many categories or sections to enumerate honestly from one page: omit the
-  // tree and point at the list_* tools rather than showing a misleading partial
-  // tree. When categories overflow, the category list below is itself partial.
-  if (data.categoriesHasMore || data.sectionsHasMore) {
-    const reasons: string[] = [];
-    if (data.categoriesHasMore) reasons.push(`more than ${MAX_PAGE_SIZE} categories`);
-    if (data.sectionsHasMore) reasons.push(`more than ${MAX_PAGE_SIZE} sections`);
-    return [
-      `Large Help Center (${reasons.join(' and ')}) — the full tree is omitted to stay concise.`,
-      data.categoriesHasMore ? 'Categories (partial list):' : 'Categories:',
-      ...data.categories.map(formatCategory),
-      '',
-      ...(data.categoriesHasMore
-        ? ['Use the `list_categories` tool to enumerate all categories.']
-        : []),
-      'Use the `list_sections` tool (filtered by `category_id`) to enumerate sections under a category.',
-    ];
-  }
+// Too many categories or sections to enumerate honestly from one page: omit the
+// tree and point at the list_* tools rather than showing a misleading partial
+// tree. When categories overflow, the category list here is itself partial.
+const renderOversizedTreeNotice = (data: TopologyData): string[] => {
+  const reasons: string[] = [];
+  if (data.categoriesHasMore) reasons.push(`more than ${MAX_PAGE_SIZE} categories`);
+  if (data.sectionsHasMore) reasons.push(`more than ${MAX_PAGE_SIZE} sections`);
+  return [
+    `Large Help Center (${reasons.join(' and ')}) — the full tree is omitted to stay concise.`,
+    data.categoriesHasMore ? 'Categories (partial list):' : 'Categories:',
+    ...data.categories.map(formatCategory),
+    '',
+    ...(data.categoriesHasMore
+      ? ['Use the `list_categories` tool to enumerate all categories.']
+      : []),
+    'Use the `list_sections` tool (filtered by `category_id`) to enumerate sections under a category.',
+  ];
+};
 
+// The two-level tree: every category, each followed by its indented sections.
+// A category with no sections still appears, so the LLM sees it exists.
+const renderCategoryTree = (data: TopologyData): string[] => {
   const byCategory = new Map<number, ZendeskSection[]>();
   for (const section of data.sections) {
     const list = byCategory.get(section.category_id) ?? [];
@@ -145,6 +147,11 @@ const renderTree = (data: TopologyData): string[] => {
   }
   return lines.length ? lines : ['_(no categories)_'];
 };
+
+const renderTree = (data: TopologyData): string[] =>
+  data.categoriesHasMore || data.sectionsHasMore
+    ? renderOversizedTreeNotice(data)
+    : renderCategoryTree(data);
 
 /**
  * Render an admin-gated section as one of three states so the LLM never mistakes

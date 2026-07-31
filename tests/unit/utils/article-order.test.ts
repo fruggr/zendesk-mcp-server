@@ -7,7 +7,7 @@ import {
   type OrderedArticle,
 } from '../../../src/utils/article-order';
 
-const ord = (pairs: Array<[number, number]>): OrderedArticle[] =>
+const ord = (pairs: [number, number][]): OrderedArticle[] =>
   pairs.map(([id, position]) => ({ id, position }));
 
 describe('hasPositionInversion', () => {

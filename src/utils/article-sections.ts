@@ -23,10 +23,12 @@ export interface Section {
 
 const HEADING_LEVELS = new Set(['h1', 'h2', 'h3']);
 
+const WHITESPACE_RUN = /\s+/;
+
 const countWords = (text: string): number => {
   const trimmed = text.trim();
   if (!trimmed) return 0;
-  return trimmed.split(/\s+/).length;
+  return trimmed.split(WHITESPACE_RUN).length;
 };
 
 const textOf = (html: string): string => {

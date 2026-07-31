@@ -10,20 +10,116 @@
       "complexity": {
         "useLiteralKeys": "off",
         "useArrayFind": "error",
-        "noUselessReturn": "error"
+        "noUselessReturn": "error",
+        "noDivRegex": "error",
+        "noExcessiveCognitiveComplexity": "error",
+        "noImplicitCoercions": "error",
+        "noRedundantDefaultExport": "error",
+        "noUselessCatchBinding": "error",
+        "noUselessStringConcat": "error",
+        "useWhile": "error"
+      },
+      "correctness": {
+        "noGlobalDirnameFilename": "error",
+        "noPrivateImports": "error",
+        "noUndeclaredDependencies": "error",
+        "noUndeclaredVariables": "error",
+        "noUnusedInstantiation": "error",
+        "useJsonImportAttributes": "error",
+        "useSingleJsDocAsterisk": "error"
+      },
+      "performance": {
+        "noBarrelFile": "error",
+        "useTopLevelRegex": "error",
+        "noReExportAll": "error"
       },
       "suspicious": {
         "useArraySortCompare": "error",
         "noDuplicatedSpreadProps": "error",
         "noReturnAssign": "error",
-        "noProto": "error"
+        "noProto": "error",
+        "noBitwiseOperators": "error",
+        "noConstantBinaryExpressions": "error",
+        "noDeprecatedImports": "error",
+        "noEmptySource": "error",
+        "noEvolvingTypes": "error",
+        "noExportsInTest": "error",
+        "noForIn": "error",
+        "noImportCycles": "error",
+        "noMisplacedAssertion": "error",
+        "noParametersOnlyUsedInRecursion": "error",
+        "noShadow": "error",
+        "noSkippedTests": "error",
+        "noUnassignedVariables": "error",
+        "noUnusedExpressions": "error",
+        "noVar": "error",
+        "useErrorMessage": "error",
+        "useGuardForIn": "error",
+        "useNumberToFixedDigitsArgument": "error",
+        "useStaticResponseMethods": "error"
       },
       "style": {
         "useErrorCause": "error",
-        "useGlobalThis": "error"
+        "useGlobalThis": "error",
+        "useGroupedAccessorPairs": "error",
+        "noCommonJs": "error",
+        "noDefaultExport": "error",
+        "noDoneCallback": "error",
+        "noEnum": "error",
+        "noExcessiveClassesPerFile": "error",
+        "noExportedImports": "error",
+        "noInferrableTypes": "error",
+        "noMultiAssign": "error",
+        "noNestedTernary": "error",
+        "noNamespace": "error",
+        "noParameterAssign": "error",
+        "noShoutyConstants": "error",
+        "noSubstr": "error",
+        "noUselessElse": "error",
+        "noYodaExpression": "error",
+        "useAsConstAssertion": "error",
+        "useAtIndex": "error",
+        "useCollapsedElseIf": "error",
+        "useCollapsedIf": "error",
+        "useConsistentArrayType": "error",
+        "useConsistentArrowReturn": "error",
+        "useConsistentBuiltinInstantiation": "error",
+        "useConsistentObjectDefinitions": "error",
+        "useConsistentTypeDefinitions": "error",
+        "useDefaultParameterLast": "error",
+        "useDefaultSwitchClause": "error",
+        "useEnumInitializers": "error",
+        "useFilenamingConvention": "error",
+        "useNodeAssertStrict": "error",
+        "useNumberNamespace": "error",
+        "useObjectSpread": "error",
+        "useReadonlyClassProperties": "error",
+        "useShorthandAssign": "error",
+        "useSingleVarDeclarator": "error",
+        "useSpreadOverApply": "error",
+        "useSymbolDescription": "error",
+        "useThrowNewError": "error",
+        "useThrowOnlyError": "error",
+        "useTrimStartEnd": "error",
+        "useUnifiedTypeSignatures": "error"
       }
     }
   },
+  "overrides": [
+    {
+      "includes": ["**/*.config.ts", "**/*.config.mts"],
+      "linter": { "rules": { "style": { "noDefaultExport": "off" } } }
+    },
+    {
+      "includes": ["tests/**", "scripts/**"],
+      "linter": {
+        "rules": {
+          "complexity": { "noExcessiveCognitiveComplexity": "off" },
+          "performance": { "useTopLevelRegex": "off" }
+        }
+      }
+    }
+  ],
   "formatter": {
     "enabled": true,
     "indentStyle": "space",
