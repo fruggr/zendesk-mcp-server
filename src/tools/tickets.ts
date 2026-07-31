@@ -63,6 +63,10 @@ import {
 } from '../utils/pagination';
 import type { ToolContext, ToolDefinition, ToolImageContent, ToolTextContent } from './definitions';
 
+// The per-image cap in MB, for the skip message. Derived once: both operands
+// are module constants.
+const MAX_ATTACHMENT_MB = Number.parseFloat((MAX_ATTACHMENT_BYTES / (1024 * 1024)).toFixed(2));
+
 const formatReference = (attachment: ZendeskTicketAttachment): string =>
   `**${attachment.file_name}** (id ${attachment.id}, ${attachment.content_type}, ${attachment.size} bytes) — ${attachment.content_url}`;
 
@@ -150,8 +154,7 @@ const collectAttachmentBlocks = async (
 
     let skipReason: string | null = null;
     if (attachment.size > MAX_ATTACHMENT_BYTES) {
-      const limitMb = Number.parseFloat((MAX_ATTACHMENT_BYTES / (1024 * 1024)).toFixed(2));
-      skipReason = `skipped: exceeds ${limitMb} MB per-image limit`;
+      skipReason = `skipped: exceeds ${MAX_ATTACHMENT_MB} MB per-image limit`;
     } else if (embeddedCount >= MAX_EMBEDDED_IMAGE_COUNT) {
       skipReason = `skipped: max ${MAX_EMBEDDED_IMAGE_COUNT} embedded images reached`;
     }
@@ -459,20 +462,20 @@ const diffLine = (label: string, before: unknown, after: unknown): string | null
   return b === a ? null : `- **${label}**: ${b} → ${a}`;
 };
 
-// Preview a macro's effect on a ticket as a real before → after diff. The apply
-// endpoint returns the WHOLE resulting ticket (not just the macro's changes), so
-// diffing it against the ticket's current state is what isolates the macro's
-// actual effect; everything unchanged (identity fields, untouched custom fields)
-// drops out. The apply endpoint mutates nothing, so the text ends by pointing at
-// the write tools that persist the change — the deliberate two-step from #120.
+// Both diff passes walk Zendesk payloads as bags of unknown values; the domain
+// types describe the fields we care about, not the full API shape.
+const asRecord = (value: unknown): Record<string, unknown> =>
+  (value ?? {}) as Record<string, unknown>;
+
 // Standard (non-custom) fields that the macro actually changed. Identity fields
 // and anything unchanged drop out.
 const diffStandardFields = (
-  beforeObj: Record<string, unknown>,
-  after: Record<string, unknown>,
+  before: ZendeskTicket | undefined,
+  after: ZendeskMacroApplyResult['ticket'],
 ): string[] => {
+  const beforeObj = asRecord(before);
   const changes: string[] = [];
-  for (const [key, afterVal] of Object.entries(after)) {
+  for (const [key, afterVal] of Object.entries(asRecord(after))) {
     if (DIFF_SKIP_KEYS.has(key)) continue;
     const beforeVal = beforeObj[key];
     if (valuesEqual(beforeVal, afterVal)) continue;
@@ -507,6 +510,12 @@ const diffCustomFields = (
   return changes;
 };
 
+// Preview a macro's effect on a ticket as a real before → after diff. The apply
+// endpoint returns the WHOLE resulting ticket (not just the macro's changes), so
+// diffing it against the ticket's current state is what isolates the macro's
+// actual effect; everything unchanged (identity fields, untouched custom fields)
+// drops out. The apply endpoint mutates nothing, so the text ends by pointing at
+// the write tools that persist the change — the deliberate two-step from #120.
 const formatMacroPreviewDiff = (
   ticketId: number,
   macroId: number,
@@ -516,13 +525,9 @@ const formatMacroPreviewDiff = (
   // Guard the whole path so a malformed body degrades to a clean "no changes"
   // instead of a cryptic "cannot read properties of undefined" tool error.
   const after = result?.ticket ?? {};
-  const beforeObj = (before ?? {}) as unknown as Record<string, unknown>;
   const comment: ZendeskMacroApplyComment | undefined = after.comment ?? result?.comment;
 
-  const changes = [
-    ...diffStandardFields(beforeObj, after as unknown as Record<string, unknown>),
-    ...diffCustomFields(before, after),
-  ];
+  const changes = [...diffStandardFields(before, after), ...diffCustomFields(before, after)];
 
   const lines = [
     `# Macro #${macroId} preview on ticket #${ticketId} (diff — nothing saved yet)`,

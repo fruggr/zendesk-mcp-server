@@ -147,69 +147,105 @@ const parsePort = (raw: string, label: string): number => {
 const parsePortEnv = (raw: string | undefined, label: string): number | undefined =>
   raw === undefined || raw === '' ? undefined : parsePort(raw, label);
 
+// Append to a repeatable list flag, creating it on first use.
+const appendTo =
+  (key: 'namespaces' | 'tools' | 'corsOrigins') =>
+  (result: CliResult, value: string): void => {
+    const list = result[key] ?? [];
+    list.push(value);
+    result[key] = list;
+  };
+
+// Maps, not object literals: these are indexed by raw argv, and a plain object
+// would resolve inherited keys — a bare `toString` argument would hit
+// Object.prototype and be swallowed instead of taken as the subdomain.
+
 // Flags that stand alone. Adding one is a line here, not a branch below.
-const STANDALONE_FLAGS: Record<string, (result: CliResult) => void> = {
-  '--read-only': (result) => {
-    result.readOnly = true;
-  },
-  '--no-topology': (result) => {
-    result.topology = false;
-  },
-  '--dev': (result) => {
-    result.dev = true;
-  },
-};
+const STANDALONE_FLAGS = new Map<string, (result: CliResult) => void>([
+  [
+    '--read-only',
+    (result) => {
+      result.readOnly = true;
+    },
+  ],
+  [
+    '--no-topology',
+    (result) => {
+      result.topology = false;
+    },
+  ],
+  [
+    '--dev',
+    (result) => {
+      result.dev = true;
+    },
+  ],
+]);
 
 // Flags that consume the following argument. Repeatable ones append; the rest
 // last-wins, both matching the previous if/else chain.
-const VALUED_FLAGS: Record<string, (result: CliResult, value: string) => void> = {
-  '--mode': (result, value) => {
-    result.mode = value;
-  },
-  '--hc-resource-scheme': (result, value) => {
-    result.hcResourceScheme = value;
-  },
-  '--log-level': (result, value) => {
-    result.logLevel = value;
-  },
-  '--transport': (result, value) => {
-    result.transport = value;
-  },
-  '--host': (result, value) => {
-    result.host = value;
-  },
-  '--public-url': (result, value) => {
-    result.publicUrl = value;
-  },
-  '--port': (result, value) => {
-    result.port = parsePort(value, '--port');
-  },
-  '--callback-port': (result, value) => {
-    result.callbackPort = parsePort(value, '--callback-port');
-  },
-  '--namespace': (result, value) => {
-    result.namespaces = result.namespaces ?? [];
-    result.namespaces.push(value);
-  },
-  '--tool': (result, value) => {
-    result.tools = result.tools ?? [];
-    result.tools.push(value);
-  },
-  '--cors-origin': (result, value) => {
-    result.corsOrigins = result.corsOrigins ?? [];
-    result.corsOrigins.push(value);
-  },
-};
+const VALUED_FLAGS = new Map<string, (result: CliResult, value: string) => void>([
+  [
+    '--mode',
+    (result, value) => {
+      result.mode = value;
+    },
+  ],
+  [
+    '--hc-resource-scheme',
+    (result, value) => {
+      result.hcResourceScheme = value;
+    },
+  ],
+  [
+    '--log-level',
+    (result, value) => {
+      result.logLevel = value;
+    },
+  ],
+  [
+    '--transport',
+    (result, value) => {
+      result.transport = value;
+    },
+  ],
+  [
+    '--host',
+    (result, value) => {
+      result.host = value;
+    },
+  ],
+  [
+    '--public-url',
+    (result, value) => {
+      result.publicUrl = value;
+    },
+  ],
+  [
+    '--port',
+    (result, value) => {
+      result.port = parsePort(value, '--port');
+    },
+  ],
+  [
+    '--callback-port',
+    (result, value) => {
+      result.callbackPort = parsePort(value, '--callback-port');
+    },
+  ],
+  ['--namespace', appendTo('namespaces')],
+  ['--tool', appendTo('tools')],
+  ['--cors-origin', appendTo('corsOrigins')],
+]);
 
 const parseCliArgs = (args: string[]): CliResult => {
   const result: CliResult = {};
-  let positionalIndex = 0;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === undefined) continue;
 
-    const standalone = STANDALONE_FLAGS[arg];
+    const standalone = STANDALONE_FLAGS.get(arg);
     if (standalone) {
       standalone(result);
       continue;
@@ -217,7 +253,7 @@ const parseCliArgs = (args: string[]): CliResult => {
 
     // Truthiness, not `!== undefined`: a valued flag with an empty or missing
     // value is ignored rather than recorded, as it was before.
-    const valued = VALUED_FLAGS[arg];
+    const valued = VALUED_FLAGS.get(arg);
     const next = args[i + 1];
     if (valued && next) {
       valued(result, next);
@@ -225,9 +261,10 @@ const parseCliArgs = (args: string[]): CliResult => {
       continue;
     }
 
-    if (!arg.startsWith('-') && positionalIndex === 0) {
+    // Only the first non-flag argument is taken; `subdomain` being unset is
+    // exactly the "no positional seen yet" state.
+    if (!arg.startsWith('-') && result.subdomain === undefined) {
       result.subdomain = arg;
-      positionalIndex++;
     }
   }
 

@@ -14,15 +14,6 @@ import { mswServer } from '../../setup';
 const SUB = 'testsubdomain';
 const TOKEN = 'test-bearer-token';
 
-// Resolves to the rejection reason, or to `null` if the promise fulfilled.
-// Lets a test assert on the thrown error at the top level of the `it()` body
-// rather than inside a `catch` that a non-throwing call would simply skip.
-const rejectionOf = (promise: Promise<unknown>): Promise<unknown> =>
-  promise.then(
-    () => null,
-    (error: unknown) => error,
-  );
-
 describe('zendeskGet', () => {
   it('fetches data with Bearer auth', async () => {
     const result = await zendeskGet<{ user: { id: number } }>(SUB, TOKEN, '/users/me');
@@ -37,11 +28,10 @@ describe('zendeskGet', () => {
   });
 
   it('throws ZendeskApiError on 404', async () => {
-    // Capture the rejection instead of asserting inside a `catch`: a `catch`
-    // block that never runs makes the test pass vacuously if the call stops
-    // throwing. `rejectionOf` resolves to `null` on success, so the assertions
-    // below fail loudly in that case.
-    const error = await rejectionOf(zendeskGet(SUB, TOKEN, '/tickets/404'));
+    // Capture the rejection rather than asserting inside a `catch`, which never
+    // runs — and so never fails — if the call stops throwing. Same idiom as
+    // tests/unit/auth/token-store.test.ts.
+    const error = await zendeskGet(SUB, TOKEN, '/tickets/404').catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ZendeskApiError);
     expect((error as ZendeskApiError).status).toBe(404);
     expect((error as ZendeskApiError).message).toContain('not found');

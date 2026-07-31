@@ -18,6 +18,16 @@ describe('loadConfig', () => {
     expect(config.subdomain).toBe('mycompany');
   });
 
+  // The flag tables are indexed by raw argv. Held in a plain object they would
+  // resolve inherited keys, so a positional named after an Object.prototype
+  // member matched a "flag" and was swallowed instead of read as the subdomain.
+  it.each(['toString', 'constructor', 'valueOf'])(
+    'takes %s as a positional subdomain, not a prototype key',
+    (name) => {
+      expect(loadConfig([name]).subdomain).toBe(name);
+    },
+  );
+
   // biome-ignore lint/suspicious/noTemplateCurlyInString: documents the literal default value ${subdomain}_zendesk
   it('defaults oauthClientId to ${subdomain}_zendesk', () => {
     const config = loadConfig(['mycompany']);

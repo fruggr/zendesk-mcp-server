@@ -462,10 +462,10 @@ export const startHttpTransport = async (
   // GET endpoints answered straight from static metadata — the two RFC 9728 /
   // RFC 8414 discovery documents plus the health probe. Everything else routes
   // to /mcp or 404s.
-  const staticGetRoutes: Record<string, () => unknown> = {
-    '/.well-known/oauth-protected-resource': () => metadata.protectedResource,
-    '/.well-known/oauth-authorization-server': () => metadata.authorizationServer,
-    '/healthz': () => ({ status: 'ok', subdomain: config.subdomain }),
+  const staticGetRoutes: Record<string, unknown> = {
+    '/.well-known/oauth-protected-resource': metadata.protectedResource,
+    '/.well-known/oauth-authorization-server': metadata.authorizationServer,
+    '/healthz': { status: 'ok', subdomain: config.subdomain },
   };
 
   const requestListener = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
@@ -480,7 +480,7 @@ export const startHttpTransport = async (
 
       const staticRoute = req.method === 'GET' ? staticGetRoutes[url.pathname] : undefined;
       if (staticRoute) {
-        sendJson(res, 200, staticRoute());
+        sendJson(res, 200, staticRoute);
         return;
       }
       if (url.pathname === '/mcp') {

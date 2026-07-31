@@ -173,9 +173,7 @@ export const startBrowserAuth = (
     // request handler free of nested closures.
     const finishRequest = (
       res: ServerResponse,
-      status: number,
-      html: string,
-      outcome: CallbackOutcome,
+      { status, html, outcome }: CallbackResolution,
     ): void => {
       res.writeHead(status, { 'Content-Type': 'text/html' });
       res.end(html);
@@ -190,6 +188,12 @@ export const startBrowserAuth = (
     // settle, so the request handler stays pure plumbing.
     const resolveCallback = async (url: URL): Promise<CallbackResolution> => {
       const error = url.searchParams.get('error');
+      const code = url.searchParams.get('code');
+      logger.debug('oauth_callback_received', {
+        hasCode: Boolean(code),
+        hasError: Boolean(error),
+      });
+
       if (error) {
         const desc = url.searchParams.get('error_description') ?? error;
         return {
@@ -199,7 +203,6 @@ export const startBrowserAuth = (
         };
       }
 
-      const code = url.searchParams.get('code');
       if (!code) {
         return {
           status: 400,
@@ -231,13 +234,7 @@ export const startBrowserAuth = (
         return;
       }
 
-      logger.debug('oauth_callback_received', {
-        hasCode: Boolean(url.searchParams.get('code')),
-        hasError: Boolean(url.searchParams.get('error')),
-      });
-
-      const { status, html, outcome } = await resolveCallback(url);
-      finishRequest(res, status, html, outcome);
+      finishRequest(res, await resolveCallback(url));
     });
 
     const requestedPort = config.callbackPort ?? DEFAULT_CALLBACK_PORT;

@@ -118,6 +118,12 @@ test: if a running server behaves no differently for a client, it's tooling.
   Why, and what the shim does: `docs/decisions/biome-on-android.md`.
 - `nursery` rules stay off: they change semantics between Biome minors and
   Renovate bumps Biome automatically, so one would break CI unattended.
+- `tests/**` and `scripts/**` are exempted from `noExcessiveCognitiveComplexity`
+  and `useTopLevelRegex` (`biome.json` `overrides`). Both are directory-level
+  policy, not an escape hatch for a specific offender: cognitive complexity
+  counts nested callbacks, so a `describe`/`it` tree trips it structurally, and
+  a regex recompiled in a test or a one-shot probe script has no hot path to
+  slow down. Don't widen either exemption to `src/`.
 - Don't add a third `types`-domain rule. `useArrayFind` / `useArraySortCompare`
   are the two the hook pays the project-wide inference pass for; the rest of the
   domain isn't worth a third. Biome 2.5's inference misses even the documented

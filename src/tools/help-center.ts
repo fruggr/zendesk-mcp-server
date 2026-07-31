@@ -206,25 +206,18 @@ const renderSectionRows = (sourceSections: Section[], targetSections: Section[])
   return rows;
 };
 
-// Article listing endpoint. Section and locale scoping are independent and
-// combine; the locale-scoped variant is what a locale-dependent section sort
-// mode requires (see fetchSectionOrder). Truthiness matches the previous
-// ternary chain — a 0 id falls back to the unscoped path.
-const articleListPath = (sectionId: number | undefined, locale: string | undefined): string => {
-  if (sectionId && locale) return `/${locale}/sections/${sectionId}/articles`;
-  if (sectionId) return `/sections/${sectionId}/articles`;
-  if (locale) return `/${locale}/articles`;
-  return '/articles';
-};
+// Help Center paths carry two independent optional scopes: a locale prefix and a
+// parent-resource segment. Composing them beats enumerating the cross-product —
+// the locale-scoped variant is what a locale-dependent section sort mode
+// requires (see fetchSectionOrder). Truthiness matches the previous ternary
+// chains: a 0 id contributes no segment.
+const localePrefix = (locale: string | undefined): string => (locale ? `/${locale}` : '');
 
-// Section listing endpoint. Same two independent scoping dimensions as
-// articleListPath, and the same truthiness fallback.
-const sectionListPath = (categoryId: number | undefined, locale: string | undefined): string => {
-  if (categoryId && locale) return `/${locale}/categories/${categoryId}/sections`;
-  if (categoryId) return `/categories/${categoryId}/sections`;
-  if (locale) return `/${locale}/sections`;
-  return '/sections';
-};
+const articleListPath = (sectionId: number | undefined, locale: string | undefined): string =>
+  `${localePrefix(locale)}${sectionId ? `/sections/${sectionId}` : ''}/articles`;
+
+const sectionListPath = (categoryId: number | undefined, locale: string | undefined): string =>
+  `${localePrefix(locale)}${categoryId ? `/categories/${categoryId}` : ''}/sections`;
 
 // `first`/`last` are absolute; `before`/`after` are relative and need a peer.
 const needsReferenceArticle = (target: ReorderTarget): boolean =>
@@ -238,12 +231,13 @@ const assertReorderParamsCoherent = (
   target: ReorderTarget,
   referenceArticleId: number | undefined,
 ): void => {
-  if (needsReferenceArticle(target) && referenceArticleId === undefined) {
+  const needsReference = needsReferenceArticle(target);
+  if (needsReference && referenceArticleId === undefined) {
     throw new Error(
       `target "${target}" requires reference_article_id (the article to move ${target}).`,
     );
   }
-  if (!needsReferenceArticle(target) && referenceArticleId !== undefined) {
+  if (!needsReference && referenceArticleId !== undefined) {
     throw new Error(
       `reference_article_id must be omitted when target is "${target}" (it only applies to "before"/"after").`,
     );
@@ -295,7 +289,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
   // it is — "no such article" and "exists, but elsewhere" need different fixes.
   const assertReferenceInSection = async (
     effective: OrderedArticle[],
-    referenceArticleId: number | undefined,
+    referenceArticleId: number,
     articleId: number,
     sectionId: number,
     token: string,
@@ -479,7 +473,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           cursor?: string;
         };
         const token = await getToken();
-        const path = locale ? `/${locale}/categories` : '/categories';
+        const path = `${localePrefix(locale)}/categories`;
         const response = await helpCenterGet<ZendeskListResponse<ZendeskCategory>>(
           subdomain,
           token,
@@ -1109,7 +1103,10 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
 
         const effective = await fetchSectionOrder(sectionId, locale, token);
 
-        if (needsReference) {
+        // Guarding on the value, not the derived flag: after
+        // assertReorderParamsCoherent the two are equivalent, and this one
+        // narrows the type so the error strings cannot render `#undefined`.
+        if (reference_article_id !== undefined) {
           await assertReferenceInSection(
             effective,
             reference_article_id,
