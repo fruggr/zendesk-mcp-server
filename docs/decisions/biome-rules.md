@@ -8,7 +8,7 @@
 | | |
 | --- | --- |
 | **Status** | Applied |
-| **Measured on** | Biome 2.5.5 |
+| **Measured on** | Biome 2.5.5, against this branch merged with `main` |
 | **Companion** | [`lint-tooling.md`](lint-tooling.md) (where lint runs), [`biome-on-android.md`](biome-on-android.md) (how it runs) |
 
 `biome.json` rejects comments, so the rationale that cannot live next to the
@@ -92,29 +92,29 @@ enabled. One line each; the count is diagnostics across `src/ tests/ scripts/`.
 
 | Rule | Hits | Why off |
 | --- | ---: | --- |
-| `useNamingConvention` | 981 | Zendesk API fields are snake_case; renaming them would fight the wire format. |
-| `noMagicNumbers` | 308 | Mostly test fixtures and HTTP status codes that are clearer inline. |
-| `useBlockStatements` | 175 | The codebase uses single-line guard clauses deliberately. |
-| `useImportExtensions` | 163 | Imports are extensionless by design (bundler resolution). |
+| `useNamingConvention` | 992 | Zendesk API fields are snake_case; renaming them would fight the wire format. |
+| `noMagicNumbers` | 318 | Mostly test fixtures and HTTP status codes that are clearer inline. |
+| `useBlockStatements` | 178 | The codebase uses single-line guard clauses deliberately. |
+| `useImportExtensions` | 176 | Imports are extensionless by design (bundler resolution). |
 | `noProcessGlobal` | 154 | It is a Node CLI; `process` is the platform, not a leak. |
-| `noTernary` | 150 | Ternaries are idiomatic here; `noNestedTernary` is enabled instead. |
+| `noTernary` | 159 | Ternaries are idiomatic here; `noNestedTernary` is enabled instead. |
 | `noConsole` | 88 | 79 of 88 are in `scripts/`, whose output *is* console; the 4 in `src/` are deliberate and commented (logger sink, fatal handler, the OAuth URL that must bypass the level-gated logger). |
 | `noProcessEnv` | 76 | `config.ts` reads env by design; that is its job. |
 | `useNumericSeparators` | 52 | Mostly 3–4 digit test fixtures where separators add noise. |
-| `noExcessiveLinesPerFunction` | 47 | The big hits are `ToolDefinition[]` factories — line count measures how many tools exist, not complexity. Contradicts the documented architecture. |
+| `noExcessiveLinesPerFunction` | 49 | The big hits are `ToolDefinition[]` factories — line count measures how many tools exist, not complexity. Contradicts the documented architecture. |
 | `noNodejsModules` | 46 | It is a Node application. |
-| `noUnresolvedImports` | 29 | All false positives: Biome cannot read the export maps of `msw` and `@modelcontextprotocol/sdk`. Was 110 on 2.5.4; worth re-checking on future bumps. |
+| `noUnresolvedImports` | 31 | All false positives: Biome cannot read the export maps of `msw` and `@modelcontextprotocol/sdk`. Was 110 on 2.5.4; worth re-checking on future bumps. |
 | `noExcessiveLinesPerFile` | 18 | Same as `noExcessiveLinesPerFunction`: a namespace of tools is legitimately long. |
-| `useExportsLast` | 16 | Pure ordering preference; the repo interleaves exports with the code they belong to. |
+| `useExportsLast` | 17 | Pure ordering preference; the repo interleaves exports with the code they belong to. |
 | `noUselessUndefined` | 14 | `return undefined` is *clearer* in a function typed `T \| undefined`. |
 | `useDestructuring` | 14 | Stylistic; the explicit form reads better at several sites. |
 | `noDelete` | 13 | All in tests unsetting env vars. The alternative assigns the *string* `"undefined"` — a real footgun. |
 | `noContinue` | 12 | Guard-style `continue` keeps the loop bodies flat. |
-| `noSecrets` | 12 | All false positives on PKCE strings and URLs. |
-| `useConsistentMethodSignatures` | 12 | Property-vs-method syntax preference with no practical consequence here. |
-| `noAwaitInLoops` | 11 | The pagination loops are sequential *by necessity* — each cursor depends on the previous response. |
+| `noSecrets` | 13 | All false positives on PKCE strings and URLs. |
+| `useConsistentMethodSignatures` | 14 | Property-vs-method syntax preference with no practical consequence here. |
+| `noAwaitInLoops` | 12 | The pagination loops are sequential *by necessity* — each cursor depends on the previous response. |
 | `noUnusedTemplateLiteral` | 11 | Cosmetic. |
-| `useExplicitLengthCheck` | 11 | Its autofix rewrites `x?.length &&` to `x?.length > 0 &&`, which does not type-check, and the manual form loses the narrowing the truthiness check provides. 11 type errors for a cosmetic gain. |
+| `useExplicitLengthCheck` | 12 | Its autofix rewrites `x?.length &&` to `x?.length > 0 &&`, which does not type-check, and the manual form loses the narrowing the truthiness check provides. 11 type errors for a cosmetic gain. |
 | `noEqualsToNull` | 9 | `!= null` is the intended nullish check, not an accident. |
 | `noIncrementDecrement` | 9 | `i++` in a counted loop is clearer than `i += 1`. |
 | `noNamespaceImport` | 9 | `import * as z from 'zod/v4'` is the documented zod idiom. |
@@ -138,6 +138,9 @@ promoted out of nursery, it can be enabled with no code change.
 `noUnnecessaryTemplateExpression`, `useArraySome`, `useImportsFirst`,
 `useReduceTypeParameter`, `useRegexpTest`, `useThisInClassMethods`,
 `useVarsOnTop` — all at zero.
+
+`noBaseToString` (1) is the one nursery rule with a live hit; it is also a
+`types` rule, so it is closed by both policies.
 
 `noIdenticalTestTitle`, `useConsistentTestIt`, `useTestHooksInOrder`,
 `useTestHooksOnTop`, `noConditionalExpect`, `useExpect` — test-quality rules,
