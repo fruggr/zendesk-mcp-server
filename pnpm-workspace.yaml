@@ -17,8 +17,13 @@ overrides:
 # just install, so the just-published yuku 0.8.3 (first release with an upstream
 # android-arm64 binding) would fail CI for everyone until its 7-day gate clears.
 # yuku only; every other package keeps the full gate.
+# Pinned to 0.8.3 so a later yuku still faces the gate. The binding globs carry
+# no version (pnpm rejects pattern@version), but each binding is an exact-version
+# dependency of a pinned parent, so no other version can reach the tree.
 minimumReleaseAgeExclude:
-  - yuku-*
+  - yuku-ast@0.8.3
+  - yuku-codegen@0.8.3
+  - yuku-parser@0.8.3
+  - '@yuku-toolchain/types@0.8.3'
   - '@yuku-codegen/*'
   - '@yuku-parser/*'
-  - '@yuku-toolchain/*'
