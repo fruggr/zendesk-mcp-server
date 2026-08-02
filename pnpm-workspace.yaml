@@ -12,19 +12,11 @@ overrides:
   ip-address: ^10.2.0
   conventional-changelog-writer: ^9.2.0
 
-# TEMPORARY — remove on or after 2026-08-09, then re-run `pnpm install`.
-#
-# yuku 0.8.3 (published 2026-08-02) is the first release to declare
-# `@yuku-{codegen,parser}/binding-android-arm64` in its optionalDependencies,
-# which retires the hand-built binding graft this file used to carry. pnpm
-# re-checks minimumReleaseAge against the lockfile on *every* command, not just
-# install, so without this narrow exemption the locked 0.8.3 would fail
-# `pnpm test`, `pnpm check` and CI for everyone until the 7-day gate clears on
-# 2026-08-09.
-#
-# Scoped to the yuku family only; the gate stays at 10080 minutes for every
-# other package. Delete these five lines once the date has passed — the
-# lockfile keeps resolving 0.8.3 and nothing else changes.
+# TEMPORARY — delete on or after 2026-08-09, then re-run `pnpm install`.
+# pnpm re-checks minimumReleaseAge against the lockfile on every command, not
+# just install, so the just-published yuku 0.8.3 (first release with an upstream
+# android-arm64 binding) would fail CI for everyone until its 7-day gate clears.
+# yuku only; every other package keeps the full gate.
 minimumReleaseAgeExclude:
   - yuku-*
   - '@yuku-codegen/*'
