@@ -1,13 +1,5 @@
 import { defineConfig } from 'tsdown';
 
-// TypeScript 7 emits d.ts through its native compiler (tsgo), and Microsoft
-// publishes no @typescript/typescript-android-arm64 — on Termux the dts step
-// dies with "Unable to resolve @typescript/typescript-android-arm64". Skip
-// d.ts emission there: releases are built by CI on linux, and on-device dev
-// (tsx, tests, MCP runtime) never reads dist/*.d.ts. Retire the gate if
-// upstream ships an android build (https://github.com/microsoft/typescript-go).
-const dtsAvailable = process.platform !== 'android';
-
 export default defineConfig({
   entry: ['src/index.ts'],
   format: ['esm'],
@@ -15,7 +7,14 @@ export default defineConfig({
   outDir: 'dist',
   clean: true,
   sourcemap: true,
-  dts: dtsAvailable,
+  // This package is a binary, not a library: `src/index.ts` exports nothing, so
+  // the emitted declaration was `export {}` — ten bytes typing an API that does
+  // not exist. Emitting it ran TypeScript's native compiler (tsgo) on every
+  // build, and tsgo has no android build, which is what forced a
+  // `process.platform !== 'android'` special case here. Turn dts back on only
+  // if `src/index.ts` starts exporting a real API, and restore `types` in
+  // `package.json` with it.
+  dts: false,
   fixedExtension: false,
   banner: {
     js: '#!/usr/bin/env node',
