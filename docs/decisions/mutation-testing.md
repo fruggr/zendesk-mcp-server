@@ -19,10 +19,11 @@ Every number below was measured on this repository, on the 4-vCPU CI container.
 ## 1. TL;DR
 
 `vitest run --coverage` answers "was this line executed?". Mutation testing
-answers "if this line were wrong, would a test notice?". On `src/utils` the two
-answers are 26 points apart:
+answers "if this line were wrong, would a test notice?". Measured on `src/utils`
+**before** any test was written for this decision, the two answers were 27
+points apart:
 
-| | `src/utils` |
+| `src/utils`, baseline (2026-08-02, pre-change) | |
 | --- | ---: |
 | Line coverage | 98.58 % |
 | Branch coverage | 83.96 % |
@@ -32,18 +33,42 @@ Of 982 mutants injected into `src/utils`, 47 (4.8 %) were never reached by any
 test — that part coverage already reports. The other **232 (23.6 %) were
 executed by the tests and went undetected**, which no coverage metric can see.
 
-The most eloquent single file is `logger.ts`: **100 % branch coverage**, 66.28 %
-mutation score. The strictest classical metric is maxed out and has nothing
-left to say about it.
+The most eloquent single file was `logger.ts`: **100 % branch coverage**, 66.28 %
+mutation score. The strictest classical metric maxed out, with nothing left to
+say about the file.
+
+**After** the round of test work that shipped with this decision, `src/utils`
+stands at **76.78 %** (187 survivors, 41 unreached), with `pagination.ts` at
+100 %. The per-file breakdown lives in the PR that introduced this document;
+the number to re-measure against is the 71.59 % baseline above.
+
+> **Reading the coverage figures in this document.** Percentages quoted for
+> `src/utils` (98.58 / 83.96 lines / branches) are that directory alone;
+> [§6](#6-what-this-replaces-and-what-it-does-not) quotes repo-wide figures
+> (97.47 lines, 83.34 branches) against the `vitest.config.ts` thresholds. Same
+> date, different scope — they are not meant to reconcile.
 
 ## 2. Why StrykerJS and not something else
 
-There is no second option in JS/TS. StrykerJS is the only actively maintained
-mutation testing framework for this ecosystem; the alternatives that surface in
-a search are either abandoned (mutode, mutant.js — last released ~2019) or are
-test runners misfiled as alternatives. The remaining live approach — having an
-LLM agent generate mutants — exists to work around cases Stryker cannot handle
-(Vitest browser mode), which is not our situation.
+Surveying the field on **2026-08-02**, no comparable alternative turned up. The
+named alternatives are either long abandoned (mutode, mutant.js — last releases
+~2019) or test runners misfiled as mutation tools in comparison listicles. The
+one live *approach* that is not Stryker — having an LLM agent generate the
+mutants — exists to work around cases Stryker cannot handle (Vitest browser
+mode), which is not our situation.
+
+So the choice was made on fit rather than on a shortlist:
+
+- a **first-party Vitest runner**, so the existing suite and MSW setup run
+  unchanged;
+- **per-test coverage analysis**, which is what keeps a mutant's test set small
+  enough for the run times in [§4](#4-cost-and-why-the-gate-can-live-in-the-pr);
+- **incremental mode**, without which a PR-time gate is not affordable here;
+- a **report format** (`mutation-testing-report-schema`) that is consumable
+  without the vendor's dashboard.
+
+Treat the "no alternative" half as time-sensitive and re-check it if this
+decision is ever revisited; the fit criteria above are the durable part.
 
 ## 3. The TypeScript 7 workaround
 
@@ -114,8 +139,36 @@ reports too late.
 > **Note on Vitest and incremental mode.** Stryker's per-test change detection
 > is fine-grained for Jest and CucumberJS only. For Vitest it works per *file*:
 > touching a test file marks all of its tests as changed. That is why one edited
-> test file re-runs 102 mutants rather than a handful. It costs time, never
-> correctness.
+> test file re-runs 102 mutants rather than a handful. *This particular
+> coarseness* only ever re-runs more than strictly needed, so it costs time, not
+> correctness — which is **not** true of incremental mode in general, see below.
+
+### The baseline can go stale, and Stryker will not tell you
+
+Incremental mode diffs **mutated sources and test files, and nothing else**.
+[Upstream documents](https://stryker-mutator.io/docs/stryker-js/incremental/)
+that changes to dependencies (including devDependencies), environment variables
+and snapshot files are not detected. Neither is a change to
+`stryker.config.mjs` itself. Any of those can silently invalidate a reused
+verdict: a mutant recorded as `Killed` against an old version of a library is
+replayed as `Killed` without being re-run.
+
+So a stale baseline is a *correctness* problem, not just a stale-number problem,
+and it has to be invalidated deliberately:
+
+| Trigger | Action |
+| --- | --- |
+| `pnpm-lock.yaml` changed | `--force` (rebuilds the baseline) |
+| `stryker.config.mjs` changed | `--force` |
+| Node version / `.nvmrc` changed | `--force` |
+| Only `src/**` or `tests/**` changed | incremental, as normal |
+
+For the CI design in this section that means the `push: main` job must run
+`--force` when the lockfile, the Stryker config or the Node version moved in
+that push, and plain `--incremental` otherwise — the cache key should include
+hashes of those three inputs so a change misses the cache rather than reusing
+it. Locally, `pnpm test:mutation -- --force` is the escape hatch whenever a
+result looks impossible.
 
 **Two rules the CI wiring depends on**, both easy to get wrong:
 

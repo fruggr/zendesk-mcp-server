@@ -33,6 +33,12 @@ export default {
 
   reporters: ['html', 'clear-text', 'progress'],
   htmlReporter: { fileName: 'reports/mutation/index.html' },
+  // Incremental mode diffs mutated sources and test files only. Dependency,
+  // environment and config changes are NOT detected, so a verdict recorded
+  // against an older lockfile is replayed rather than re-run — a stale baseline
+  // is a correctness problem, not just a stale number. Rebuild it with `--force`
+  // whenever pnpm-lock.yaml, this file or the Node version moved; the table in
+  // `docs/decisions/mutation-testing.md` (§4) is the full list.
   incremental: true,
   incrementalFile: 'reports/mutation/stryker-incremental.json',
 

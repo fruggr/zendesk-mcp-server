@@ -107,7 +107,7 @@
   },
   "overrides": [
     {
-      "includes": ["**/*.config.ts", "**/*.config.mts"],
+      "includes": ["**/*.config.ts", "**/*.config.mts", "**/*.config.mjs"],
       "linter": { "rules": { "style": { "noDefaultExport": "off" } } }
     },
     {
