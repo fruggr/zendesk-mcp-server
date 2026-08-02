@@ -1,10 +1,16 @@
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
     setupFiles: ['./tests/setup.ts'],
+    // Stryker copies the whole project into `.stryker-tmp/sandbox-*` for each
+    // of its runners. Those copies contain a full `tests/` tree, so without
+    // this a plain `pnpm test` collects every suite two or three times over —
+    // against *mutated* sources — and reports failures that do not exist in the
+    // working tree. Not covered by Vitest's defaults; keep it.
+    exclude: [...configDefaults.exclude, '**/.stryker-tmp/**'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'text-summary', 'html', 'lcov', 'json-summary'],

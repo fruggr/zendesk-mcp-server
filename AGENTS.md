@@ -81,6 +81,12 @@ quality bar still hold — the freedom is from Zendesk's shape, not from craft.)
 - Inter-LLM functional tests (proxy annotations, `[RO]` prefix on `tools/list`)
   live in `tests/functional/`; invoke via `/functional-testing`. Details in
   `tests/functional/README.md`.
+- `pnpm test:mutation` (StrykerJS) scores whether the tests *assert* anything,
+  not just whether a line ran — coverage is saturated here and no longer
+  discriminates. A surviving mutant means an assertion is missing or too loose
+  (`toContain` where the whole output should be pinned). Never weaken an
+  assertion to make a run green. Scope, the TypeScript 7 workaround the config
+  carries, and the cost figures: `docs/decisions/mutation-testing.md`.
 
 ## Planning
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { CHARACTER_LIMIT } from '../../../src/constants';
 import {
   formatArticle,
   formatArticleSummary,
@@ -44,6 +45,25 @@ describe('truncateIfNeeded', () => {
     const result = truncateIfNeeded(long);
     expect(result.length).toBeLessThan(long.length);
     expect(result).toContain('truncated');
+  });
+
+  it('leaves text of exactly CHARACTER_LIMIT untouched', () => {
+    // The bound is inclusive; `<` instead of `<=` would truncate a payload
+    // that fits exactly.
+    const exact = 'x'.repeat(CHARACTER_LIMIT);
+    expect(truncateIfNeeded(exact)).toBe(exact);
+  });
+
+  it('keeps exactly CHARACTER_LIMIT characters and appends the notice verbatim', () => {
+    const over = `${'x'.repeat(CHARACTER_LIMIT)}yz`;
+    const result = truncateIfNeeded(over);
+
+    expect(result.slice(0, CHARACTER_LIMIT)).toBe('x'.repeat(CHARACTER_LIMIT));
+    // The notice states the real size and the limit — that is what tells the
+    // caller how much to narrow the query by.
+    expect(result.slice(CHARACTER_LIMIT)).toBe(
+      `\n\n--- Response truncated (${CHARACTER_LIMIT + 2} chars, limit ${CHARACTER_LIMIT}). Use pagination or filters to reduce results. ---`,
+    );
   });
 });
 
@@ -458,6 +478,34 @@ describe('formatMacro', () => {
     expect(result).toContain('Scope**: restricted');
     expect(result).toContain('…');
     expect(result).not.toContain('x'.repeat(500));
+  });
+
+  it('previews an over-long action value at exactly 120 characters plus an ellipsis', () => {
+    const result = formatMacro({
+      ...MOCK_MACRO,
+      actions: [{ field: 'comment_value', value: 'x'.repeat(121) }],
+    });
+    expect(result).toContain(`comment_value → ${'x'.repeat(120)}…`);
+  });
+
+  it('leaves an action value of exactly 120 characters whole', () => {
+    const value = 'x'.repeat(120);
+    const result = formatMacro({
+      ...MOCK_MACRO,
+      actions: [{ field: 'comment_value', value }],
+    });
+    expect(result).toContain(`comment_value → ${value}`);
+    expect(result).not.toContain('…');
+  });
+
+  it('collapses whitespace runs in an action value onto one line', () => {
+    // A canned reply arrives with newlines and indentation; the macro list has
+    // to stay scannable.
+    const result = formatMacro({
+      ...MOCK_MACRO,
+      actions: [{ field: 'comment_value', value: '  Hello\n\n   there  ' }],
+    });
+    expect(result).toContain('comment_value → Hello there');
   });
 
   it('treats an empty-object restriction as shared, not restricted', () => {

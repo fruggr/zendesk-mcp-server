@@ -22,6 +22,10 @@ Thumbs.db
 coverage/
 *.lcov
 
+# Mutation testing
+reports/
+.stryker-tmp/
+
 # Logs
 *.log
 npm-debug.log*
