@@ -16,11 +16,11 @@ overrides:
 #
 # yuku 0.8.3 (published 2026-08-02) is the first release to declare
 # `@yuku-{codegen,parser}/binding-android-arm64` in its optionalDependencies,
-# which is what makes `pnpm run build` work on Android/Termux again and let the
-# hand-built binding graft be deleted from this file. pnpm re-checks minimumReleaseAge
-# against the lockfile on *every* command, not just install, so without this
-# narrow exemption the locked 0.8.3 would fail `pnpm test`, `pnpm check` and CI
-# for everyone until the 7-day gate clears on 2026-08-09.
+# which retires the hand-built binding graft this file used to carry. pnpm
+# re-checks minimumReleaseAge against the lockfile on *every* command, not just
+# install, so without this narrow exemption the locked 0.8.3 would fail
+# `pnpm test`, `pnpm check` and CI for everyone until the 7-day gate clears on
+# 2026-08-09.
 #
 # Scoped to the yuku family only; the gate stays at 10080 minutes for every
 # other package. Delete these five lines once the date has passed — the
