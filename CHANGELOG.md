@@ -1,3 +1,20 @@
+## [2.16.1](https://github.com/fruggr/zendesk-mcp-server/compare/v2.16.0...v2.16.1) (2026-08-03)
+
+### Bug Fixes
+
+* **logger:** stop a circular field from crashing the caller ([#199](https://github.com/fruggr/zendesk-mcp-server/issues/199)) ([9ffa008](https://github.com/fruggr/zendesk-mcp-server/commit/9ffa00897187b3109075f8f9cdbeb6d36ee01f49))
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Chores
+
+* **build:** trim build dependencies and drop the empty d.ts ([#196](https://github.com/fruggr/zendesk-mcp-server/issues/196)) ([1302fcc](https://github.com/fruggr/zendesk-mcp-server/commit/1302fcc486651dec97b4de66e15128f2b94a22df))
+* **deps:** lock file maintenance ([#195](https://github.com/fruggr/zendesk-mcp-server/issues/195)) ([6a085d9](https://github.com/fruggr/zendesk-mcp-server/commit/6a085d97f0613b36fa0fd8f9d485a1f7ef66748e))
+* **deps:** update pnpm to v11.17.0 ([#194](https://github.com/fruggr/zendesk-mcp-server/issues/194)) ([8951c29](https://github.com/fruggr/zendesk-mcp-server/commit/8951c293a7acdfe1619ded5c7a965f2176c0ae27))
+* **lint:** widen the Biome rule set, and clear what stood in the way ([#188](https://github.com/fruggr/zendesk-mcp-server/issues/188)) ([a44a48e](https://github.com/fruggr/zendesk-mcp-server/commit/a44a48e09556fbbc8dad40de2f918a8a21b76b75))
+</details>
+
 ## [2.16.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.15.0...v2.16.0) (2026-07-30)
 
 ### Features
