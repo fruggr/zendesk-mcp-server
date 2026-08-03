@@ -258,23 +258,37 @@ information is.
 ## Appendix — reproducing
 
 ```sh
-pnpm test:mutation                  # full configured scope, cold — always trustworthy
-pnpm test:mutation -- --mutate 'src/utils/**/*.ts'   # one directory
-pnpm test:mutation -- --incremental # reuse the baseline (see the staleness table in section 4)
-pnpm test:mutation -- --incremental --force   # rebuild the baseline from scratch
+# Flags go straight after the script name — pnpm 11 forwards a `--` separator
+# literally, and `stryker run -- --incremental` fails with "too many arguments".
+pnpm test:mutation                                # full scope, cold — always trustworthy
+pnpm test:mutation --mutate 'src/utils/**/*.ts'   # one directory
+pnpm test:mutation --incremental                  # reuse the baseline (see the table in section 4)
+pnpm test:mutation --incremental --force          # rebuild the baseline from scratch
+
+# What the PR gate runs: derive the changed lines, mutate them, judge the report.
+node scripts/mutation-scope.mjs diff origin/main HEAD
+node scripts/mutation-scope.mjs summary           # score of the last report, as Markdown
 ```
 
 The HTML report lands in `reports/mutation/index.html`; the incremental baseline
 next to it. Both are git-ignored.
 
-To reproduce what the PR gate does, against any base:
+The gate is **one command**, and CI runs the same one. It derives the changed
+line ranges, mutates exactly those, and judges the report it just produced —
+exiting 0 with a note when the diff touches nothing in the mutate scope, and 1
+when a mutant escaped:
 
 ```sh
-specs=$(node scripts/mutation-scope.mjs plan origin/main HEAD)   # "" when nothing is in scope
-pnpm exec stryker run --incremental --reporters json,progress --mutate "$specs"
-node scripts/mutation-scope.mjs gate                             # exits 1 on an escaped mutant
+node scripts/mutation-scope.mjs diff origin/main HEAD              # local
+node scripts/mutation-scope.mjs diff <base> <head> --incremental   # what CI runs
 ```
 
-`plan` also writes the ranges it chose to `reports/mutation/diff-scope.json`, and
-`gate` reads them back from there — the two commands must agree on the scope, so
-they share a file rather than each re-deriving it from git.
+One command rather than three deliberately: the ranges stay in memory for the
+whole operation, so the verdict necessarily describes the run that just
+happened. Passing them through a file on disk would let a stale scope be paired
+with a fresh report — a confident verdict about the wrong lines, with nothing
+failing to say so.
+
+Its parsing and range arithmetic are unit-tested in
+`tests/unit/mutation-scope.test.ts`: an off-by-one there would quietly stop
+guarding a line, which no other test would notice.

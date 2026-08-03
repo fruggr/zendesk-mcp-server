@@ -1,78 +1,52 @@
 #!/usr/bin/env node
 // Diff-scoped mutation testing for the PR gate.
 //
-// Two commands, sharing one definition of "the lines this PR changed":
-//
-//   plan <baseSha> <headSha>   Write the changed line ranges to a plan file and
-//                             print Stryker `--mutate` specs on stdout (empty if
-//                             the diff touches nothing in the mutate scope).
-//   gate                      Read the plan and Stryker's JSON report; fail if a
-//                             mutant inside those ranges survived.
+//   diff <baseSha> <headSha> [...strykerFlags]
+//       Mutate only the lines the diff changed, then fail if any of those
+//       mutants survived. Derives the scope, runs Stryker over it and judges the
+//       report in one operation — exits 0 with a note when the diff touches
+//       nothing in the mutate scope.
+//   summary
+//       Print the whole report's score as a Markdown table (for CI summaries).
 //
 // Why line ranges and not whole files: a PR that touches one line of a file
 // whose existing tests are weak would otherwise be judged on every mutant in
-// that file. The gate has to answer "did this PR's changes get tested", not
-// "is this file's history good". Stryker supports `file:startLine-endLine`
-// natively (`--mutate`), so the range is passed straight through.
+// that file. The gate has to answer "did this PR's changes get tested", not "is
+// this file's history good". Stryker supports `file:startLine-endLine` natively
+// (`--mutate`), so the range is passed straight through.
 //
-// Why the gate reads a plan file instead of recomputing: with `--incremental`
-// Stryker emits the *full* project report, reusing verdicts for files outside
-// the requested scope. Filtering by the exact ranges that were planned is what
-// keeps the gate about this PR.
+// Why one command and not plan/run/gate as three: with `--incremental` Stryker
+// emits the *full* project report, reusing verdicts for files outside the
+// requested scope, so the gate has to filter by the exact ranges that were
+// mutated. Holding those ranges in memory for the whole operation is what
+// guarantees the verdict describes the run that just happened — three steps
+// sharing a file on disk can be replayed out of order, and a stale scope beside
+// a fresh report yields a confident verdict about the wrong lines.
+//
+// `--incremental` is deliberately NOT implied: pass it explicitly (CI does,
+// because its cache key encodes every input incremental mode cannot diff).
 
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join, matchesGlob } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-
-const PLAN_PATH = 'reports/mutation/diff-scope.json';
-const REPORT_PATH = 'reports/mutation/mutation.json';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 
-/**
- * Turn one `mutate` glob from stryker.config.mjs into a predicate. Only the two
- * shapes the config actually uses are recognised; anything else throws rather
- * than being silently mis-scoped, since a wrong scope here means the gate
- * quietly stops guarding part of the tree.
- */
-const patternToPredicate = (pattern) => {
-  if (pattern.endsWith('/**/*.ts')) {
-    const prefix = pattern.slice(0, -'**/*.ts'.length);
-    return (path) => path.startsWith(prefix) && path.endsWith('.ts');
-  }
-  if (!pattern.includes('*')) {
-    return (path) => path === pattern;
-  }
-  throw new Error(
-    `Unsupported mutate pattern ${JSON.stringify(pattern)} in stryker.config.mjs. ` +
-      'scripts/mutation-scope.mjs understands "<dir>/**/*.ts" and exact paths only — ' +
-      'teach it the new shape rather than letting the PR gate mis-scope.',
-  );
-};
-
-const loadScopePredicate = async () => {
-  const { default: config } = await import(pathToFileURL(join(repoRoot, 'stryker.config.mjs')));
-  const predicates = (config.mutate ?? []).map(patternToPredicate);
-  if (predicates.length === 0) throw new Error('stryker.config.mjs declares no `mutate` patterns.');
-  return (path) => predicates.some((matches) => matches(path));
-};
+/** Statuses that mean "this change went unnoticed by every test". */
+const ESCAPED = new Set(['Survived', 'NoCoverage']);
 
 /**
- * Changed line ranges on the head side, per file. `--unified=0` keeps hunks
- * minimal so the ranges stay tight; `--diff-filter=d` drops deletions, which
- * have no head-side lines to mutate.
+ * Changed line ranges on the head side, per in-scope file, from a unified diff.
+ * Pure: callers supply the diff text so `git` stays at the edge.
+ *
+ * Expects `--unified=0` (minimal hunks keep the ranges tight) and
+ * `--diff-filter=d` (deletions have no head-side lines to mutate).
  */
-const changedRanges = (baseSha, headSha, inScope) => {
-  const diff = execFileSync(
-    'git',
-    ['diff', '--unified=0', '--diff-filter=d', `${baseSha}...${headSha}`],
-    { cwd: repoRoot, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
-  );
-
+export const changedRanges = (diffText, inScope) => {
   const ranges = [];
   let file = null;
-  for (const line of diff.split('\n')) {
+  for (const line of diffText.split('\n')) {
     const header = /^\+\+\+ b\/(.+)$/.exec(line);
     if (header?.[1]) {
       file = inScope(header[1]) ? header[1] : null;
@@ -90,54 +64,109 @@ const changedRanges = (baseSha, headSha, inScope) => {
   return ranges;
 };
 
-const writePlan = (ranges) => {
-  mkdirSync(join(repoRoot, dirname(PLAN_PATH)), { recursive: true });
-  writeFileSync(join(repoRoot, PLAN_PATH), `${JSON.stringify({ ranges }, null, 2)}\n`);
-};
+/** Stryker `--mutate` value for a set of ranges (comma-separated specs). */
+export const specsFor = (ranges) => ranges.map((r) => `${r.file}:${r.start}-${r.end}`).join(',');
 
-const plan = async (baseSha, headSha) => {
-  const ranges = changedRanges(baseSha, headSha, await loadScopePredicate());
-  writePlan(ranges);
-  // One spec per range; Stryker accepts a comma-separated list.
-  process.stdout.write(ranges.map((r) => `${r.file}:${r.start}-${r.end}`).join(','));
-};
-
-const gate = () => {
-  const { ranges } = JSON.parse(readFileSync(join(repoRoot, PLAN_PATH), 'utf8'));
-  const report = JSON.parse(readFileSync(join(repoRoot, REPORT_PATH), 'utf8'));
-
-  const byFile = new Map();
-  for (const range of ranges) {
-    if (!byFile.has(range.file)) byFile.set(range.file, []);
-    byFile.get(range.file).push(range);
-  }
-
+/**
+ * Split the mutants that fall inside `ranges` into judged/escaped. Pure.
+ * A mutant counts as in-range when its span overlaps a changed range at all.
+ */
+export const escapedMutants = (ranges, report) => {
   const escaped = [];
   let judged = 0;
   for (const [file, fileReport] of Object.entries(report.files ?? {})) {
-    const fileRanges = byFile.get(file);
-    if (!fileRanges) continue;
     for (const mutant of fileReport.mutants ?? []) {
       const { start, end } = mutant.location;
-      const touched = fileRanges.some((r) => start.line <= r.end && end.line >= r.start);
-      if (!touched) continue;
+      const inRange = ranges.some(
+        (r) => r.file === file && start.line <= r.end && end.line >= r.start,
+      );
+      if (!inRange) continue;
       judged += 1;
-      if (mutant.status === 'Survived' || mutant.status === 'NoCoverage') {
-        escaped.push({ file, line: start.line, mutant });
-      }
+      if (ESCAPED.has(mutant.status)) escaped.push({ file, line: start.line, mutant });
     }
   }
+  return { judged, escaped };
+};
 
+/** Tally every mutant in a report by status. Pure. */
+export const tallyStatuses = (report) => {
+  const counts = {};
+  for (const fileReport of Object.values(report.files ?? {})) {
+    for (const mutant of fileReport.mutants ?? []) {
+      counts[mutant.status] = (counts[mutant.status] ?? 0) + 1;
+    }
+  }
+  return counts;
+};
+
+/** Mutation score from a status tally, or null when there is nothing to score. */
+export const scoreOf = (counts) => {
+  const detected = (counts.Killed ?? 0) + (counts.Timeout ?? 0);
+  const total = detected + (counts.Survived ?? 0) + (counts.NoCoverage ?? 0);
+  return total === 0 ? null : (detected / total) * 100;
+};
+
+// --- edges: config, git, stryker -------------------------------------------
+
+/**
+ * The two facts this script needs from `stryker.config.mjs`, read from the
+ * config itself rather than restated: which paths are in the mutate scope, and
+ * where the JSON reporter writes.
+ */
+const loadConfig = async () => {
+  const { default: config } = await import(pathToFileURL(join(repoRoot, 'stryker.config.mjs')));
+  const mutate = config.mutate ?? [];
+  if (mutate.length === 0) throw new Error('stryker.config.mjs declares no `mutate` patterns.');
+  const reportPath = config.jsonReporter?.fileName;
+  if (!reportPath) {
+    throw new Error('stryker.config.mjs must set `jsonReporter.fileName` — the gate reads it.');
+  }
+  return { inScope: (path) => mutate.some((pattern) => matchesGlob(path, pattern)), reportPath };
+};
+
+const gitDiff = (baseSha, headSha) =>
+  execFileSync('git', ['diff', '--unified=0', '--diff-filter=d', `${baseSha}...${headSha}`], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
+  });
+
+const readReport = (reportPath) => {
+  const absolute = join(repoRoot, reportPath);
+  if (!existsSync(absolute)) {
+    throw new Error(`${reportPath} not found — Stryker did not produce a JSON report.`);
+  }
+  return JSON.parse(readFileSync(absolute, 'utf8'));
+};
+
+// --- commands ---------------------------------------------------------------
+
+const diffGate = async (baseSha, headSha, strykerFlags) => {
+  const { inScope, reportPath } = await loadConfig();
+  const ranges = changedRanges(gitDiff(baseSha, headSha), inScope);
+
+  if (ranges.length === 0) {
+    console.log('No changed lines inside the mutate scope — nothing to gate.');
+    return;
+  }
+
+  const specs = specsFor(ranges);
+  console.log(`Mutating the changed lines: ${specs}\n`);
+  execFileSync('pnpm', ['exec', 'stryker', 'run', ...strykerFlags, '--mutate', specs], {
+    cwd: repoRoot,
+    stdio: 'inherit',
+  });
+
+  const { judged, escaped } = escapedMutants(ranges, readReport(reportPath));
   if (judged === 0) {
     console.log('No mutants in the changed lines — nothing to gate.');
     return;
   }
 
-  const killed = judged - escaped.length;
   console.log(
-    `Mutants in the changed lines: ${judged}. Killed: ${killed}. Escaped: ${escaped.length}.`,
+    `\nMutants in the changed lines: ${judged}. Killed: ${judged - escaped.length}. ` +
+      `Escaped: ${escaped.length}.`,
   );
-
   if (escaped.length === 0) {
     console.log('Every mutant in the changed lines was detected.');
     return;
@@ -158,17 +187,36 @@ const gate = () => {
   process.exitCode = 1;
 };
 
-const [command, ...args] = process.argv.slice(2);
-if (command === 'plan') {
-  const [baseSha, headSha] = args;
-  if (!baseSha || !headSha) {
-    console.error('usage: mutation-scope.mjs plan <baseSha> <headSha>');
+const summary = async () => {
+  const { reportPath } = await loadConfig();
+  const counts = tallyStatuses(readReport(reportPath));
+  const score = scoreOf(counts);
+  const lines = ['| Metric | Value |', '| --- | --- |'];
+  lines.push(`| Mutation score | ${score === null ? 'n/a' : `${score.toFixed(2)}%`} |`);
+  for (const status of Object.keys(counts).sort()) lines.push(`| ${status} | ${counts[status]} |`);
+  console.log(lines.join('\n'));
+};
+
+const USAGE =
+  'usage: mutation-scope.mjs diff <baseSha> <headSha> [...strykerFlags]\n' +
+  '       mutation-scope.mjs summary';
+
+// Only dispatch when run as a program — the exports above are unit-tested.
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const [command, ...args] = process.argv.slice(2);
+  if (command === 'diff') {
+    const [baseSha, headSha, ...strykerFlags] = args;
+    // A leading `-` means a flag landed where a commit-ish belongs; passing it
+    // through would make `git diff` print its own usage and bury the cause.
+    if (!baseSha || !headSha || baseSha.startsWith('-') || headSha.startsWith('-')) {
+      console.error(`${USAGE}\n\n<baseSha> and <headSha> are positional commit-ishes, not flags.`);
+      process.exit(2);
+    }
+    await diffGate(baseSha, headSha, strykerFlags);
+  } else if (command === 'summary') {
+    await summary();
+  } else {
+    console.error(USAGE);
     process.exit(2);
   }
-  await plan(baseSha, headSha);
-} else if (command === 'gate') {
-  gate();
-} else {
-  console.error('usage: mutation-scope.mjs plan <baseSha> <headSha> | mutation-scope.mjs gate');
-  process.exit(2);
 }

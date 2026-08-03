@@ -45,8 +45,13 @@ export default {
     'src/config.ts',
   ],
 
-  reporters: ['html', 'clear-text', 'progress'],
+  // `json` is not CI-only: it is what `scripts/mutation-scope.mjs` reads to
+  // judge a diff, so it belongs here rather than as a `--reporters` override
+  // that has to restate the whole list. Both report paths are declared so the
+  // script can read them from the config instead of hardcoding a default.
+  reporters: ['html', 'json', 'clear-text', 'progress'],
   htmlReporter: { fileName: 'reports/mutation/index.html' },
+  jsonReporter: { fileName: 'reports/mutation/mutation.json' },
 
   // Where `--incremental` keeps its baseline. Incremental mode is deliberately
   // NOT enabled by default: it diffs mutated sources and test files only, so a
