@@ -56,14 +56,10 @@ const isSensitive = (key: string): boolean =>
 // Recursively redact: a sensitive *key* anywhere in the tree (top-level or
 // nested in objects/arrays) has its value replaced, so `{ oauth: { token } }`
 // can't leak. Primitives are returned as-is.
-//
-// `path` holds the objects on the current branch, so a back-reference to an
-// ancestor becomes `[circular]` instead of recursing until the stack blows
-// (Node errors, HTTP request/response pairs and socket handles all
-// self-reference). The walk still descends everywhere else — a cycle must
-// never become an escape hatch that skips redaction of the keys inside it —
-// and only true cycles are marked, not values merely shared between siblings.
-// The result is therefore always a finite tree that `JSON.stringify` accepts.
+// `path` holds the objects on the current branch: a back-reference to an
+// ancestor becomes `[circular]` instead of recursing until the stack blows,
+// while the walk descends everywhere else so a cycle can't skip the redaction
+// of the keys inside it. A value shared between siblings is not a cycle.
 const redactValue = (value: unknown, path: WeakSet<object> = new WeakSet()): unknown => {
   if (!value || typeof value !== 'object') return value;
   if (path.has(value)) return '[circular]';
