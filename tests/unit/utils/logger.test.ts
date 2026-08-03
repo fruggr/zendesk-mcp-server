@@ -133,6 +133,29 @@ describe('createLogger', () => {
     expect(() => JSON.stringify(arg.data)).not.toThrow();
   });
 
+  it('neutralises a caller-supplied toJSON that would re-expose a redacted value', () => {
+    const send = vi.fn().mockResolvedValue(undefined);
+    const log = createLogger('debug');
+    log.attachServer({ sendLoggingMessage: send } as never);
+
+    // The walk redacts `token`, but an own enumerable `toJSON` copied into the
+    // sanitised tree would be invoked by JSON.stringify and hand back the
+    // original, unredacted object.
+    const hostile = {
+      token: 'tojson-secret',
+      toJSON: () => ({ token: 'tojson-secret' }),
+    };
+
+    log.error('hostile_tojson', { hostile });
+
+    const line = errSpy.mock.calls[0]?.[0] as string;
+    expect(line).not.toContain('tojson-secret');
+    expect(line).toContain('[REDACTED]');
+
+    const arg = send.mock.calls[0]?.[0] as { data: unknown };
+    expect(JSON.stringify(arg.data)).not.toContain('tojson-secret');
+  });
+
   it('does not throw when a field getter throws during redaction', () => {
     const log = createLogger('debug');
     const hostile = {

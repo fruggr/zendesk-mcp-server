@@ -61,6 +61,10 @@ const isSensitive = (key: string): boolean =>
 // while the walk descends everywhere else so a cycle can't skip the redaction
 // of the keys inside it. A value shared between siblings is not a cycle.
 const redactValue = (value: unknown, path: WeakSet<object> = new WeakSet()): unknown => {
+  // Functions never survive the walk: an own enumerable `toJSON` copied into
+  // the output would be invoked by `JSON.stringify` and hand back the original,
+  // unredacted object — a redaction bypass the caller controls.
+  if (typeof value === 'function') return '[function]';
   if (!value || typeof value !== 'object') return value;
   if (path.has(value)) return '[circular]';
 
