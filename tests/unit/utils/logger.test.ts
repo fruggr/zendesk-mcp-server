@@ -222,9 +222,14 @@ describe('createLogger', () => {
 
     log.error('hostile_tojson', { hostile });
 
-    const line = errSpy.mock.calls[0]?.[0] as string;
-    expect(line).not.toContain('tojson-secret');
-    expect(line).toContain('[REDACTED]');
+    // Pinned whole: the `[function]` marker is what proves the callable was
+    // *replaced* rather than merely omitted. Asserting only the absence of the
+    // secret passes just as well if the marker becomes an empty string, which
+    // would leave `JSON.stringify` a `toJSON` of `""` — no longer callable, but
+    // no longer evidence of anything either.
+    expect(errSpy.mock.calls[0]?.[0]).toBe(
+      '[zendesk-mcp] [error] hostile_tojson hostile={"token":"[REDACTED]","toJSON":"[function]"}',
+    );
 
     const arg = send.mock.calls[0]?.[0] as { data: unknown };
     expect(JSON.stringify(arg.data)).not.toContain('tojson-secret');
@@ -240,7 +245,11 @@ describe('createLogger', () => {
 
     expect(() => log.info('hostile', { hostile })).not.toThrow();
     expect(errSpy).toHaveBeenCalledTimes(1);
-    expect(errSpy.mock.calls[0]?.[0] as string).toContain('hostile');
+    // `toContain('hostile')` matched the *event name*, which is in the line
+    // whatever redaction does — so it held even if the whole fallback vanished.
+    // The line is pinned instead: losing the fields is acceptable, losing the
+    // trace that they were dropped is not.
+    expect(errSpy.mock.calls[0]?.[0]).toBe('[zendesk-mcp] [info] hostile fields=[unredactable]');
   });
 
   it('does not throw when the stderr write itself fails', () => {
