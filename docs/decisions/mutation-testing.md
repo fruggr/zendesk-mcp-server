@@ -114,11 +114,11 @@ explicitly in `plugins` instead.
 
 ## 4. Cost, and why the gate can live in the PR
 
-> **The CI design in this section is not wired yet.** What shipped with this
-> decision is `stryker.config.mjs` and the `pnpm test:mutation` script — there is
-> no mutation job in `.github/workflows/`. Everything below about jobs, caches
-> and gates is the design these measurements argue for, recorded so the job can
-> be built against it. Read it as a specification, not a description.
+> **This is wired.** `.github/workflows/mutation.yml` implements it, backed by
+> `stryker.config.mjs`, `scripts/mutation-scope.mjs` and the `pnpm test:mutation`
+> script. The gate runs on every pull request but **does not block a merge until
+> branch protection marks the `Changed lines` check required** — flip that once
+> one real PR has been through it.
 
 The Vitest runner only supports `threads: true` and sets the pool itself,
 overriding this repo's default (`forks`). The suite passes under both — 10.2 s
@@ -183,19 +183,47 @@ enabled in `stryker.config.mjs`**: `pnpm test:mutation` is always a trustworthy
 cold run, and the speed-up is an explicit `--incremental` on the invocation that
 knows its baseline is good. Correctness by default, speed on request.
 
-For the CI design that means the `push: main` job must run `--force` when the
-lockfile, the Stryker config or the Node version moved in that push, and plain
-`--incremental` otherwise — the cache key should include hashes of those three
-inputs so a change misses the cache rather than reusing it.
+### How CI enforces that, without anyone having to remember
 
-**Two rules the CI wiring depends on**, both easy to get wrong:
+**The cache key carries the invalidation.** `mutation.yml` hashes exactly the
+inputs from that "anything else" list into the cache-key prefix
+(`pnpm-lock.yaml`, `stryker.config.mjs`, `vitest.config.ts`, `tests/setup.ts`,
+`tests/msw-handlers.ts`, `tests/integration/harness.ts`, `.nvmrc`). Change one
+and no entry matches; no baseline on disk means Stryker runs cold. The rule is
+structural rather than a conditional `--force` somebody has to keep in sync with
+this document.
 
-- **Only the `main` job writes the incremental baseline.** A PR job runs with a
-  narrow, diff-scoped `--mutate`; if it wrote back to the shared cache it would
-  publish a truncated baseline for every subsequent PR.
-- **The PR job scopes `--mutate` to the diff**, not just for speed but as a
-  bound. If the cache is cold (7-day eviction), a full-scope run would blow the
-  job timeout; a diff-scoped one stays in the minutes.
+Two details that make that work, both easy to get wrong:
+
+- **The key ends in the commit sha, and the fallback is the prefix.** Actions
+  cache entries are immutable, so a fixed key would freeze the first baseline
+  built for it forever. A per-commit key keeps every save fresh; the prefix
+  `restore-keys` lets a PR fall back to main's latest — and that fallback is safe
+  *only* because the inputs hash sits inside the prefix. A broader restore-key
+  would reintroduce exactly the stale reuse this guards against.
+- **Only the `baseline` job saves.** A PR job runs diff-scoped, so if it wrote
+  back it would publish a truncated baseline for every later PR. It uses
+  `cache/restore`, which cannot save, and the save step is `if: success()` so a
+  failed or cancelled run never publishes a partial baseline.
+
+**The gate is on changed lines, not changed files.** `scripts/mutation-scope.mjs`
+turns the PR diff into Stryker line ranges (`file:start-end`, which `--mutate`
+supports natively) and fails the job if a mutant inside them survived. File
+granularity would judge a one-line change against every mutant in the file — so
+touching `formatting.ts`, at 67 %, would fail on that file's history rather than
+on the PR. Measured: a two-line change produces 10 mutants instead of the 43 in
+the whole file.
+
+The gate asks for **no survivors in the changed lines**, not a percentage: on a
+handful of mutants a percentage is arbitrary (1 of 3 fails at 67 %, 1 of 10
+passes at 90 %), while "a change you made went unnoticed by every test" is
+predictable and explainable. For a genuinely equivalent mutant — an unreachable
+defensive guard — the escape hatch is
+`// Stryker disable next-line <mutatorName>: <why>` in the source, which puts the
+reasoning in the diff where a reviewer sees it.
+
+A PR that changes nothing inside the `mutate` scope skips the run entirely rather
+than reporting a vacuous pass.
 
 `break` is left `null` in `stryker.config.mjs`: this global baseline is
 advisory. A gate belongs on the score *of the diff* — "the mutants this PR
@@ -238,3 +266,15 @@ pnpm test:mutation -- --incremental --force   # rebuild the baseline from scratc
 
 The HTML report lands in `reports/mutation/index.html`; the incremental baseline
 next to it. Both are git-ignored.
+
+To reproduce what the PR gate does, against any base:
+
+```sh
+specs=$(node scripts/mutation-scope.mjs plan origin/main HEAD)   # "" when nothing is in scope
+pnpm exec stryker run --incremental --reporters json,progress --mutate "$specs"
+node scripts/mutation-scope.mjs gate                             # exits 1 on an escaped mutant
+```
+
+`plan` also writes the ranges it chose to `reports/mutation/diff-scope.json`, and
+`gate` reads them back from there — the two commands must agree on the scope, so
+they share a file rather than each re-deriving it from git.

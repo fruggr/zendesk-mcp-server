@@ -1,0 +1,191 @@
+name: Mutation testing
+
+# Two jobs with different questions.
+#
+# `diff-gate` (pull requests) asks "did this PR test what it changed?". It
+# mutates only the changed *lines* and fails if any of those mutants survived.
+# Scoping to lines rather than files is what keeps it fair: touching one line of
+# a file with weak legacy tests must not fail on that file's history.
+#
+# `baseline` (push to main, or on demand) asks "where does the whole scope
+# stand?" and refreshes the incremental cache the PR job restores. It is the
+# only writer of that cache — a PR run is diff-scoped, so if it wrote back it
+# would publish a truncated baseline for every later PR.
+#
+# The design and the measurements behind it: docs/decisions/mutation-testing.md
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diff-gate:
+    name: Changed lines
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    # A diff-scoped run is normally under a minute; this is slack for a PR that
+    # touches a lot of logic at once, or a cold cache.
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The gate diffs base...head, so both commits have to be present.
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The key carries the staleness rules from the decision record. Incremental
+      # mode diffs mutated sources and discovered test files and nothing else, so
+      # every *other* input that can change a verdict is hashed into the prefix:
+      # change one and no cache entry matches, and a missing baseline means
+      # Stryker runs cold — invalidation becomes structural instead of something
+      # a maintainer must remember to force.
+      #
+      # hashFiles has to run *after* checkout, hence a step rather than job-level
+      # env. The trailing commit sha keeps every save unique (Actions cache
+      # entries are immutable, so a fixed key would freeze the first baseline
+      # forever); the prefix restore-key is what allows falling back to main's
+      # latest, and it is safe precisely because the inputs hash is inside it.
+      - name: Compute the baseline cache key
+        id: key
+        env:
+          PREFIX: mutation-baseline-${{ hashFiles('pnpm-lock.yaml', 'stryker.config.mjs', 'vitest.config.ts', 'tests/setup.ts', 'tests/msw-handlers.ts', 'tests/integration/harness.ts', '.nvmrc') }}
+        run: |
+          echo "prefix=${PREFIX}-" >> "$GITHUB_OUTPUT"
+          echo "exact=${PREFIX}-${{ github.sha }}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the mutation baseline (read-only)
+        uses: actions/cache/restore@v4
+        with:
+          path: reports/mutation/stryker-incremental.json
+          key: ${{ steps.key.outputs.exact }}
+          restore-keys: ${{ steps.key.outputs.prefix }}
+
+      - name: Plan the scope from the diff
+        id: scope
+        run: |
+          specs="$(node scripts/mutation-scope.mjs plan \
+            '${{ github.event.pull_request.base.sha }}' \
+            '${{ github.event.pull_request.head.sha }}')"
+          echo "specs=${specs}" >> "$GITHUB_OUTPUT"
+          if [ -z "${specs}" ]; then
+            echo "No changed lines inside the mutate scope — nothing to gate." \
+              >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Mutating the changed lines: \`${specs}\`" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # `--incremental` is safe to pass unconditionally: the baseline is only on
+      # disk when a key matched, and the key encodes every input incremental mode
+      # cannot detect for itself.
+      - name: Mutate the changed lines
+        if: steps.scope.outputs.specs != ''
+        run: pnpm exec stryker run --incremental --reporters json,progress --mutate "${{ steps.scope.outputs.specs }}"
+
+      - name: Gate on escaped mutants
+        if: steps.scope.outputs.specs != ''
+        run: node scripts/mutation-scope.mjs gate | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the mutation report
+        if: always() && steps.scope.outputs.specs != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: mutation-report-pr
+          path: reports/mutation/
+          retention-days: 7
+          if-no-files-found: warn
+
+  baseline:
+    name: Full scope
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    # A cold run over the configured scope is ~1 700 mutants, measured at roughly
+    # an hour on 4 cores. That only happens when the cache prefix changed; an
+    # ordinary push to main reuses the baseline and finishes in minutes.
+    timeout-minutes: 120
+    # Superseding pushes make an in-flight baseline pointless.
+    concurrency:
+      group: mutation-baseline
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Same scheme as the gate job above — see the comment there for why the
+      # prefix is a hash of the inputs incremental mode cannot diff.
+      - name: Compute the baseline cache key
+        id: key
+        env:
+          PREFIX: mutation-baseline-${{ hashFiles('pnpm-lock.yaml', 'stryker.config.mjs', 'vitest.config.ts', 'tests/setup.ts', 'tests/msw-handlers.ts', 'tests/integration/harness.ts', '.nvmrc') }}
+        run: |
+          echo "prefix=${PREFIX}-" >> "$GITHUB_OUTPUT"
+          echo "exact=${PREFIX}-${{ github.sha }}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the mutation baseline
+        uses: actions/cache/restore@v4
+        with:
+          path: reports/mutation/stryker-incremental.json
+          key: ${{ steps.key.outputs.exact }}
+          restore-keys: ${{ steps.key.outputs.prefix }}
+
+      # Never `break`s: this job reports and refreshes the baseline. The gate
+      # belongs on the diff, in the job above.
+      - run: pnpm exec stryker run --incremental --reporters json,html,clear-text,progress
+
+      - name: Score summary
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ -f reports/mutation/mutation.json ]; then
+            node -e '
+              const r = require("./reports/mutation/mutation.json");
+              const t = {};
+              for (const f of Object.values(r.files)) {
+                for (const m of f.mutants) t[m.status] = (t[m.status] ?? 0) + 1;
+              }
+              const detected = (t.Killed ?? 0) + (t.Timeout ?? 0);
+              const total = detected + (t.Survived ?? 0) + (t.NoCoverage ?? 0);
+              console.log("| Metric | Value |");
+              console.log("| --- | --- |");
+              console.log(`| Mutation score | ${((detected / total) * 100).toFixed(2)}% |`);
+              for (const k of Object.keys(t).sort()) console.log(`| ${k} | ${t[k]} |`);
+            ' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Save the refreshed baseline
+        # The only writer. Skipped on a failed or cancelled run so a partial
+        # baseline never becomes the one every PR restores.
+        if: success()
+        uses: actions/cache/save@v4
+        with:
+          path: reports/mutation/stryker-incremental.json
+          key: ${{ steps.key.outputs.exact }}
+
+      - name: Upload the mutation report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mutation-report-baseline
+          path: reports/mutation/
+          retention-days: 30
+          if-no-files-found: warn
