@@ -185,13 +185,30 @@ knows its baseline is good. Correctness by default, speed on request.
 
 ### How CI enforces that, without anyone having to remember
 
-**The cache key carries the invalidation.** `mutation.yml` hashes exactly the
-inputs from that "anything else" list into the cache-key prefix
-(`pnpm-lock.yaml`, `stryker.config.mjs`, `vitest.config.ts`, `tests/setup.ts`,
-`tests/msw-handlers.ts`, `tests/integration/harness.ts`, `.nvmrc`). Change one
-and no entry matches; no baseline on disk means Stryker runs cold. The rule is
-structural rather than a conditional `--force` somebody has to keep in sync with
-this document.
+**The cache key carries the invalidation.** The composite action
+`.github/actions/mutation-baseline` hashes exactly the inputs from that "anything
+else" list into the cache-key prefix (`pnpm-lock.yaml`, `stryker.config.mjs`,
+`vitest.config.ts`, `tests/setup.ts`, `tests/msw-handlers.ts`,
+`tests/integration/harness.ts`, `.nvmrc`). Change one and no entry matches; no
+baseline on disk means Stryker runs cold. The rule is structural rather than a
+conditional `--force` somebody has to keep in sync with this document.
+
+That hash is **the only such list in the setup**, and both jobs get it from the
+one composite action — they have to agree on cache identity, and only one of them
+writes. A `paths:` filter on the `push` trigger would have been a second list of
+"what can change a verdict", kept in sync by hand, with asymmetric failure modes:
+too broad wastes a few minutes of CI, one entry short leaves every later PR
+restoring a stale baseline. So the trigger is unfiltered. What that filter would
+have saved is the cheap run anyway — with the baseline restored, a push touching
+nothing in scope is a dry run plus a report — and running on every push keeps the
+entry warm against the 7-day eviction.
+
+Note what is *absent* from the hash: `src/**` and `tests/**/*.test.ts`. That is
+the point of it. Those are exactly what incremental mode does diff correctly, so
+hashing them would discard the baseline on every commit and buy nothing. The list
+grows only when a file appears that changes how the tests behave without being a
+test file Stryker discovers — another setup file, another shared fixture or
+harness, a runner config.
 
 Two details that make that work, both easy to get wrong:
 
@@ -230,6 +247,43 @@ advisory. A gate belongs on the score *of the diff* — "the mutants this PR
 introduces or touches must be killed" — not on a repo-wide number that starts in
 the seventies.
 
+### Why a script, and not a library
+
+The fair question about `scripts/mutation-scope.mjs` is why any code is needed
+here at all. Checked, not assumed:
+
+- **StrykerJS has no git-aware scoping.** Its schema in 9.6.1 declares 53
+  options; none is `since`, `range`, `diff` or `changedFiles` (verified against
+  `node_modules/@stryker-mutator/core/schema/stryker-schema.json`). `--since` and
+  `--with-baseline` are **Stryker.NET**, a different product with a different
+  codebase — the single most common wrong turn when reading about this, and worth
+  stating because search results and LLMs conflate the two freely.
+- **Upstream knows.** [stryker-js#2843](https://github.com/stryker-mutator/stryker-js/issues/2843),
+  "Generate mutant only for the changed lines in a range of commits", is the open
+  request for exactly this, and it is marked stale. `--incremental` is the nearest
+  built-in, and it answers a different question: it makes a *full* run cheap by
+  reusing verdicts. It does not restrict the verdict to the diff, which is what a
+  gate needs.
+- **The one third-party option is unmaintained, and file-level.**
+  `stryker-diff-runner` last published 2.3.11 in November 2022 — Stryker 6 era,
+  against 9.6.1 today. It scopes by *file*, and #2843's own author describes the
+  consequence: mutants are generated for the whole file, so the break threshold
+  has to be turned off. That is the failure this gate exists to avoid; adopting it
+  would mean writing the line-range half anyway, on top of an abandoned
+  dependency.
+
+What is left is genuinely small: turn a unified diff into `--mutate` line specs,
+and read the JSON report (a published schema,
+`mutation-testing-report-schema`) back. Both halves are a few lines of pure
+function. What earns them a file of their own is that they are *testable* and
+tested — `tests/unit/mutation-scope.test.ts` pins the hunk parsing and the range
+arithmetic, because an off-by-one there would silently stop guarding a line and
+nothing else in the suite would notice. The same logic inlined in YAML would be
+none of those things.
+
+Reconsider if #2843 ships: native line-range scoping would replace the first
+half, and `thresholds.break` over a scoped run could replace the second.
+
 ## 5. Scope: why `src/tools/**` is out for now
 
 `mutate` covers `src/auth`, `src/client`, `src/routing`, `src/utils` and
@@ -266,8 +320,8 @@ pnpm test:mutation --incremental                  # reuse the baseline (see the 
 pnpm test:mutation --incremental --force          # rebuild the baseline from scratch
 
 # What the PR gate runs: derive the changed lines, mutate them, judge the report.
-node scripts/mutation-scope.mjs diff origin/main HEAD
-node scripts/mutation-scope.mjs summary           # score of the last report, as Markdown
+pnpm test:mutation:diff origin/main HEAD
+pnpm test:mutation:summary                        # score of the last report, as Markdown
 ```
 
 The HTML report lands in `reports/mutation/index.html`; the incremental baseline
@@ -279,8 +333,8 @@ exiting 0 with a note when the diff touches nothing in the mutate scope, and 1
 when a mutant escaped:
 
 ```sh
-node scripts/mutation-scope.mjs diff origin/main HEAD              # local
-node scripts/mutation-scope.mjs diff <base> <head> --incremental   # what CI runs
+pnpm test:mutation:diff origin/main HEAD              # local
+pnpm test:mutation:diff <base> <head> --incremental   # what CI runs
 ```
 
 One command rather than three deliberately: the ranges stay in memory for the

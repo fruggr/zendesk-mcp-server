@@ -20,21 +20,17 @@ on:
   # every docs-only PR forever. The job is cheap when the diff touches nothing
   # in scope — it says so and exits.
   pull_request:
+  # Deliberately unfiltered too, though for the opposite reason. A `paths:` list
+  # here would be a third copy of "what can change a mutation verdict" — after
+  # the config's `mutate` and the cache key in the composite action — and the two
+  # failure modes are not symmetric: an over-broad list wastes a few minutes of
+  # CI, a list missing one entry leaves the baseline every PR restores silently
+  # stale. Skipping is not worth much either, since the run this saves is the
+  # cheap one: with the baseline restored a push that changes nothing in scope is
+  # a dry run plus a report, and running on every push keeps the cache warm
+  # (Actions evicts entries unused for 7 days).
   push:
     branches: [main]
-    # The push job runs the *full* scope, so it is worth filtering: a docs or
-    # workflow commit cannot change a single verdict, and after a quiet week
-    # (Actions evicts caches unused for 7 days) it would rebuild cold.
-    paths:
-      - 'src/**'
-      - 'tests/**'
-      - 'pnpm-lock.yaml'
-      - 'stryker.config.mjs'
-      - 'vitest.config.ts'
-      - '.nvmrc'
-      - 'scripts/mutation-scope.mjs'
-      - '.github/workflows/mutation.yml'
-      - '.github/actions/mutation-baseline/action.yml'
   workflow_dispatch:
 
 permissions:
@@ -83,7 +79,7 @@ jobs:
         # evidence.
         shell: bash
         run: |
-          node scripts/mutation-scope.mjs diff \
+          pnpm test:mutation:diff \
             '${{ github.event.pull_request.base.sha }}' \
             '${{ github.event.pull_request.head.sha }}' \
             --incremental | tee -a "$GITHUB_STEP_SUMMARY"
@@ -129,7 +125,7 @@ jobs:
 
       - name: Score summary
         if: always()
-        run: node scripts/mutation-scope.mjs summary >> "$GITHUB_STEP_SUMMARY"
+        run: pnpm test:mutation:summary >> "$GITHUB_STEP_SUMMARY"
 
       - name: Save the refreshed baseline
         # The only writer. Skipped on a failed or cancelled run so a partial

@@ -81,18 +81,13 @@ quality bar still hold — the freedom is from Zendesk's shape, not from craft.)
 - Inter-LLM functional tests (proxy annotations, `[RO]` prefix on `tools/list`)
   live in `tests/functional/`; invoke via `/functional-testing`. Details in
   `tests/functional/README.md`.
-- `pnpm test:mutation` (StrykerJS) scores whether the tests *assert* anything,
-  not just whether a line ran — coverage is saturated here and no longer
-  discriminates. A surviving mutant means an assertion is missing or too loose
-  (`toContain` where the whole output should be pinned). Never weaken an
-  assertion to make a run green; for a genuinely equivalent mutant, say why with
-  `// Stryker disable next-line <mutator>: <reason>`.
-- CI mutates **the lines a PR changed** and fails if any of those mutants
-  survived (`.github/workflows/mutation.yml`). Reproduce it locally with
-  `scripts/mutation-scope.mjs` — the recipe is in the appendix of
-  `docs/decisions/mutation-testing.md`, which also covers the scope, the
-  TypeScript 7 workaround the config carries, why `incremental` is opt-in, and
-  the cost figures.
+- Mutation testing (StrykerJS) runs over the scope in `stryker.config.mjs`, and
+  CI fails a PR on a mutant that survived **in a line it changed**
+  (`pnpm test:mutation:diff origin/main HEAD` reproduces it). A survivor means an
+  assertion is missing or too loose — tighten it, never weaken one to go green;
+  for a genuinely equivalent mutant say why with
+  `// Stryker disable next-line <mutator>: <reason>`. Rationale, scope and costs:
+  `docs/decisions/mutation-testing.md`.
 
 ## Planning
 

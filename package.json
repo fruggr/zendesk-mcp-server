@@ -26,6 +26,8 @@
     "test:watch": "vitest watch",
     "test:coverage": "vitest run --coverage",
     "test:mutation": "stryker run",
+    "test:mutation:diff": "node scripts/mutation-scope.mjs diff",
+    "test:mutation:summary": "node scripts/mutation-scope.mjs summary",
     "test:smoke": "pnpm build && node scripts/smoke-test.mjs",
     "mcp:live": "tsx scripts/mcp-live.ts"
   },

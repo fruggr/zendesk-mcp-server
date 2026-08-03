@@ -25,12 +25,21 @@ runs:
     - run: pnpm install --frozen-lockfile
       shell: bash
 
-    # THE INVALIDATION RULE. Incremental mode diffs mutated sources and
-    # discovered test files and nothing else, so every *other* input that can
-    # change a verdict is hashed into the prefix: change one and no entry
-    # matches, and a missing baseline means Stryker runs cold. Invalidation is
-    # structural rather than something a maintainer must remember to force —
-    # which only holds while this list lives in one place, hence this action.
+    # THE INVALIDATION RULE — the only list of its kind in the setup, and the
+    # one place it belongs. It is *not* "the files that matter to mutation
+    # testing": it is the complement of what Stryker's incremental mode can
+    # diff for itself, which is mutated sources plus the test files it
+    # discovers. Those two are deliberately absent below — hashing `src/**` or
+    # `tests/**/*.test.ts` here would throw the baseline away on every commit
+    # and buy nothing, because incremental mode already handles them correctly.
+    # Everything else that can flip a verdict has to be hashed, because nothing
+    # else will notice it changed.
+    #
+    # When to add an entry: a new file that changes how the tests *behave*
+    # without being one of the test files Stryker discovers — another setup
+    # file, another shared fixture or harness, a runner config. Not docs, not
+    # workflows, not the mutate scope. The table in
+    # docs/decisions/mutation-testing.md states the same rule as an allowlist.
     #
     # The trailing commit sha keeps every save unique (Actions cache entries are
     # immutable, so a fixed key would freeze the first baseline forever); the

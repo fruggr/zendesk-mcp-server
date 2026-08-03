@@ -1,19 +1,23 @@
 #!/usr/bin/env node
-// Diff-scoped mutation testing for the PR gate.
+// Diff-scoped mutation testing for the PR gate. Entry points: `pnpm
+// test:mutation:diff <baseSha> <headSha> [...strykerFlags]` mutates only the
+// lines the diff changed and fails if any of those mutants survived;
+// `pnpm test:mutation:summary` prints the last report's score as Markdown.
 //
-//   diff <baseSha> <headSha> [...strykerFlags]
-//       Mutate only the lines the diff changed, then fail if any of those
-//       mutants survived. Derives the scope, runs Stryker over it and judges the
-//       report in one operation — exits 0 with a note when the diff touches
-//       nothing in the mutate scope.
-//   summary
-//       Print the whole report's score as a Markdown table (for CI summaries).
+// Why hand-written at all: StrykerJS has no git-aware scoping — 53 config
+// options, none of them `since`/`range`/`diff` (that is Stryker.NET, a different
+// product). The open request for it is stryker-js#2843. So the two halves here
+// are the whole job: turn a diff into `--mutate` line specs, and read the JSON
+// report back. Both are small; what earns the file is that they are *tested*
+// (tests/unit/mutation-scope.test.ts) — an off-by-one in the range arithmetic
+// would silently stop guarding a line. Alternatives weighed, with the numbers:
+// docs/decisions/mutation-testing.md ("Why a script and not a library").
 //
 // Why line ranges and not whole files: a PR that touches one line of a file
 // whose existing tests are weak would otherwise be judged on every mutant in
 // that file. The gate has to answer "did this PR's changes get tested", not "is
-// this file's history good". Stryker supports `file:startLine-endLine` natively
-// (`--mutate`), so the range is passed straight through.
+// this file's history good". Stryker takes `file:startLine-endLine` in
+// `--mutate` natively, so the range is passed straight through.
 //
 // Why one command and not plan/run/gate as three: with `--incremental` Stryker
 // emits the *full* project report, reusing verdicts for files outside the
@@ -198,8 +202,8 @@ const summary = async () => {
 };
 
 const USAGE =
-  'usage: mutation-scope.mjs diff <baseSha> <headSha> [...strykerFlags]\n' +
-  '       mutation-scope.mjs summary';
+  'usage: pnpm test:mutation:diff <baseSha> <headSha> [...strykerFlags]\n' +
+  '       pnpm test:mutation:summary';
 
 // Only dispatch when run as a program — the exports above are unit-tested.
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
