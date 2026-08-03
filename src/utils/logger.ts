@@ -56,16 +56,29 @@ const isSensitive = (key: string): boolean =>
 // Recursively redact: a sensitive *key* anywhere in the tree (top-level or
 // nested in objects/arrays) has its value replaced, so `{ oauth: { token } }`
 // can't leak. Primitives are returned as-is.
-const redactValue = (value: unknown): unknown => {
-  if (Array.isArray(value)) return value.map(redactValue);
-  if (value && typeof value === 'object') {
-    const out: Record<string, unknown> = {};
-    for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
-      out[key] = isSensitive(key) ? '[REDACTED]' : redactValue(val);
-    }
-    return out;
-  }
-  return value;
+//
+// `path` holds the objects on the current branch, so a back-reference to an
+// ancestor becomes `[circular]` instead of recursing until the stack blows
+// (Node errors, HTTP request/response pairs and socket handles all
+// self-reference). The walk still descends everywhere else — a cycle must
+// never become an escape hatch that skips redaction of the keys inside it —
+// and only true cycles are marked, not values merely shared between siblings.
+// The result is therefore always a finite tree that `JSON.stringify` accepts.
+const redactValue = (value: unknown, path: WeakSet<object> = new WeakSet()): unknown => {
+  if (!value || typeof value !== 'object') return value;
+  if (path.has(value)) return '[circular]';
+
+  path.add(value);
+  const out = Array.isArray(value)
+    ? value.map((item) => redactValue(item, path))
+    : Object.fromEntries(
+        Object.entries(value as Record<string, unknown>).map(([key, val]) => [
+          key,
+          isSensitive(key) ? '[REDACTED]' : redactValue(val, path),
+        ]),
+      );
+  path.delete(value);
+  return out;
 };
 
 const renderValue = (value: unknown): string => {
@@ -102,8 +115,22 @@ export const createLogger = (level: LogLevel): Logger => {
   const emit = (lvl: LogLevel, event: string, fields?: Fields): void => {
     if (SEVERITY[lvl] < min) return;
 
-    const safe = fields ? (redactValue(fields) as Fields) : {};
-    console.error(formatLine(lvl, event, safe));
+    // Redaction reads caller-supplied objects, which may fight back (a getter
+    // that throws, an exotic proxy). Losing the fields is acceptable; taking
+    // the caller down with them is not.
+    let safe: Fields;
+    try {
+      safe = fields ? (redactValue(fields) as Fields) : {};
+    } catch {
+      safe = { fields: '[unredactable]' };
+    }
+
+    try {
+      console.error(formatLine(lvl, event, safe));
+    } catch {
+      // Same contract as the MCP forward below: the stderr sink is
+      // best-effort and must never break the flow that emitted the log.
+    }
 
     if (server) {
       try {
