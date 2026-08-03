@@ -10,6 +10,7 @@
   },
   "files": [
     "dist/**/*",
+    "!dist/**/*.map",
     "glama.json"
   ],
   "scripts": {
