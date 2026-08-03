@@ -6,7 +6,8 @@ export default defineConfig({
   target: 'node20',
   outDir: 'dist',
   clean: true,
-  sourcemap: true,
+  // Nothing debugs the bundle: dev runs tsx on src/, and no code path reads `.stack`.
+  sourcemap: false,
   // Binary, not a library: src/index.ts exports nothing, so this only emitted `export {}`.
   dts: false,
   fixedExtension: false,
