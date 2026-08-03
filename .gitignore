@@ -22,9 +22,10 @@ Thumbs.db
 coverage/
 *.lcov
 
-# Mutation testing
-reports/
-.stryker-tmp/
+# Mutation testing — anchored: an unanchored `reports/` also swallows the
+# tracked `tests/functional/reports/`, silently hiding new scenario reports.
+/reports/
+/.stryker-tmp/
 
 # Logs
 *.log

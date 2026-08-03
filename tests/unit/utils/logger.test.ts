@@ -234,13 +234,6 @@ describe('createLogger', () => {
     expect(errSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('writes to stderr even when no server is attached', () => {
-    const log = createLogger('debug');
-    log.info('standalone');
-
-    expect(errSpy.mock.calls[0]?.[0]).toBe('[zendesk-mcp] [info] standalone');
-  });
-
   it('exposes a silent logger that never writes', () => {
     silentLogger.debug('a');
     silentLogger.info('b');

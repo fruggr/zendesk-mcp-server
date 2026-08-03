@@ -29,8 +29,10 @@ describe('createStrictParamsParser', () => {
   });
 
   it('lists every unknown parameter, not just the first', () => {
+    // Zod reports unrecognized keys in the caller's insertion order, so the
+    // whole message can be pinned here too rather than an order-agnostic regex.
     expect(() => parse({ per_page: 3, sort_by: 'id' })).toThrow(
-      /Unknown parameter\(s\): (per_page, sort_by|sort_by, per_page)\./,
+      'Unknown parameter(s): per_page, sort_by. Valid parameters: cursor, page_size.',
     );
   });
 

@@ -42,11 +42,9 @@ stands at **76.78 %** (187 survivors, 41 unreached), with `pagination.ts` at
 100 %. The per-file breakdown lives in the PR that introduced this document;
 the number to re-measure against is the 71.59 % baseline above.
 
-> **Reading the coverage figures in this document.** Percentages quoted for
-> `src/utils` (98.58 / 83.96 lines / branches) are that directory alone;
-> [§6](#6-what-this-replaces-and-what-it-does-not) quotes repo-wide figures
-> (97.47 lines, 83.34 branches) against the `vitest.config.ts` thresholds. Same
-> date, different scope — they are not meant to reconcile.
+> Every percentage in this document is `src/utils` alone, the scope the
+> measurements were taken on. Repo-wide coverage is one `pnpm test:coverage`
+> away and is not restated here.
 
 ## 2. Why StrykerJS and not something else
 
@@ -131,10 +129,16 @@ A cold run is expensive; incremental runs are not. Measured on `src/utils`
 | `--incremental`, one *test* file changed | 102 | **47 s** |
 
 Extrapolated to all of `src/`, a cold run is ~7 400 mutants ≈ 65 min — well past
-the CI job's `timeout-minutes: 10`. With the incremental baseline restored, a
-normal PR costs well under a minute, which is what makes a PR-time gate viable
-rather than a nightly one. A gate that only reports after merge is a gate that
-reports too late.
+the existing CI job's `timeout-minutes: 10`. With the incremental baseline
+restored, a normal PR costs well under a minute, which is what makes a PR-time
+gate viable rather than a nightly one. A gate that only reports after merge is a
+gate that reports too late.
+
+> **Nothing below is wired yet.** What shipped with this decision is the config
+> and the `pnpm test:mutation` script — there is no mutation job in
+> `.github/workflows/`. The rest of this section is the *design* the
+> measurements above argue for, recorded so the job can be built against it.
+> Treat it as a specification, not a description.
 
 > **Note on Vitest and incremental mode.** Stryker's per-test change detection
 > is fine-grained for Jest and CucumberJS only. For Vitest it works per *file*:
@@ -163,12 +167,15 @@ and it has to be invalidated deliberately:
 | Node version / `.nvmrc` changed | `--force` |
 | Only `src/**` or `tests/**` changed | incremental, as normal |
 
-For the CI design in this section that means the `push: main` job must run
-`--force` when the lockfile, the Stryker config or the Node version moved in
-that push, and plain `--incremental` otherwise — the cache key should include
-hashes of those three inputs so a change misses the cache rather than reusing
-it. Locally, `pnpm test:mutation -- --force` is the escape hatch whenever a
-result looks impossible.
+Because that hazard has no automatic guard, **`incremental` is deliberately not
+enabled in `stryker.config.mjs`**: `pnpm test:mutation` is always a trustworthy
+cold run, and the speed-up is an explicit `--incremental` on the invocation that
+knows its baseline is good. Correctness by default, speed on request.
+
+For the CI design that means the `push: main` job must run `--force` when the
+lockfile, the Stryker config or the Node version moved in that push, and plain
+`--incremental` otherwise — the cache key should include hashes of those three
+inputs so a change misses the cache rather than reusing it.
 
 **Two rules the CI wiring depends on**, both easy to get wrong:
 
@@ -201,20 +208,21 @@ Nothing. The coverage thresholds in `vitest.config.ts` stay exactly where they
 are: 15 s of run time to catch "nobody tested this path at all" is cheap, and it
 remains the right first filter.
 
-What changes is where the *next* effort goes. Line and statement coverage are at
-97–98 % against thresholds of 94–95 — the remaining points are defensive
-guards, expensive to reach and low-yield. Branch coverage (83.34 % real, 77
-threshold) is the classical metric closest to what mutation testing measures and
-still has room: `users.ts` at 50 %, `reload.ts` at 57.14 %,
-`browser-oauth.ts` at 67.74 %. Past that, the 232 survivors are where the new
+What changes is where the *next* effort goes. Line and statement coverage sit a
+few points above their thresholds, and those remaining points are defensive
+guards — expensive to reach, low-yield. **Branch** coverage is the classical
+metric closest to what mutation testing measures, and the one still carrying
+real slack against its threshold; `pnpm test:coverage` names the weakest files
+on any given day. Past that, the surviving mutants are where the new
 information is.
 
 ## Appendix — reproducing
 
 ```sh
-pnpm test:mutation                  # full configured scope, incremental
-pnpm test:mutation -- --force       # ignore the baseline, re-run everything
+pnpm test:mutation                  # full configured scope, cold — always trustworthy
 pnpm test:mutation -- --mutate 'src/utils/**/*.ts'   # one directory
+pnpm test:mutation -- --incremental # reuse the baseline (see the staleness table in section 4)
+pnpm test:mutation -- --incremental --force   # rebuild the baseline from scratch
 ```
 
 The HTML report lands in `reports/mutation/index.html`; the incremental baseline

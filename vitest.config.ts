@@ -1,16 +1,19 @@
-import { configDefaults, defineConfig } from 'vitest/config';
+import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
     setupFiles: ['./tests/setup.ts'],
-    // Stryker copies the whole project into `.stryker-tmp/sandbox-*` for each
-    // of its runners. Those copies contain a full `tests/` tree, so without
-    // this a plain `pnpm test` collects every suite two or three times over —
-    // against *mutated* sources — and reports failures that do not exist in the
-    // working tree. Not covered by Vitest's defaults; keep it.
-    exclude: [...configDefaults.exclude, '**/.stryker-tmp/**'],
+    // Every suite lives under `tests/`, so say that instead of relying on
+    // Vitest's repo-wide default glob. The default collects any *copy* of the
+    // tree too: Stryker leaves a full project clone (tests included) in
+    // `.stryker-tmp/sandbox-*`, so a plain `pnpm test` was picking up every
+    // suite three times over, against *mutated* sources, reporting failures
+    // that do not exist here. Same hazard for a git worktree, an unpacked
+    // tarball or a vendored checkout inside the repo — an allowlist closes all
+    // of them at once, where excluding `.stryker-tmp` would close only one.
+    include: ['tests/**/*.test.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'text-summary', 'html', 'lcov', 'json-summary'],

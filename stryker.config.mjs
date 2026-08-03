@@ -1,5 +1,27 @@
+import { existsSync } from 'node:fs';
+
 // Mutation testing config. Rationale, scope choices and the TypeScript 7
-// workaround below are detailed in `docs/decisions/mutation-testing.md`.
+// workaround are detailed in `docs/decisions/mutation-testing.md`.
+
+// WORKAROUND (TypeScript 7): Stryker's sandbox runs a TSConfigPreprocessor that
+// does a bare `import('typescript')` and calls `ts.parseConfigFileTextToJson`,
+// absent from TS 7's experimental JS API — it throws before any mutant runs.
+// Pointing `tsconfigFile` at a path that does not exist skips the preprocessor,
+// which is safe here because it only rewrites relative `extends`/`references`
+// paths and ours are package names. Why that holds, and the routes rejected:
+// `docs/decisions/mutation-testing.md` (§3). Remove once stryker-js#6110 ships.
+//
+// The sentinel's absence is what makes this work, so assert it: creating the
+// file would otherwise resurface the upstream crash as an unrelated-looking
+// `ts.parseConfigFileTextToJson is not a function`.
+const TSCONFIG_SENTINEL = 'tsconfig.stryker-absent.json';
+if (existsSync(TSCONFIG_SENTINEL)) {
+  throw new Error(
+    `${TSCONFIG_SENTINEL} must not exist — it is a sentinel that skips Stryker's ` +
+      'tsconfig preprocessor, which crashes on TypeScript 7. Delete the file, or see ' +
+      'docs/decisions/mutation-testing.md (section 3) before changing this.',
+  );
+}
 
 /** @type {import('@stryker-mutator/api/core').PartialStrykerOptions} */
 export default {
@@ -10,15 +32,7 @@ export default {
   // not resolve the runner under pnpm's symlinked layout. Declare it.
   plugins: ['@stryker-mutator/vitest-runner'],
 
-  // WORKAROUND (TypeScript 7): Stryker's sandbox runs a TSConfigPreprocessor
-  // that does a bare `import('typescript')` and calls
-  // `ts.parseConfigFileTextToJson`, absent from TS 7's experimental JS API —
-  // it throws before any mutant runs. The preprocessor only rewrites relative
-  // `extends`/`references` paths that would fall outside the sandbox; our
-  // tsconfig extends package names (`@tsconfig/node20`), so it has nothing to
-  // rewrite and pointing it at a file that does not exist skips it entirely.
-  // Remove once stryker-js#6110 ships TS 7 support.
-  tsconfigFile: 'tsconfig.stryker-absent.json',
+  tsconfigFile: TSCONFIG_SENTINEL,
 
   // Scope: logic code, where a surviving mutant is a genuine test gap.
   // `src/tools/**` is deliberately out for now — its 151 `.describe()` calls
@@ -33,18 +47,15 @@ export default {
 
   reporters: ['html', 'clear-text', 'progress'],
   htmlReporter: { fileName: 'reports/mutation/index.html' },
-  // Incremental mode diffs mutated sources and test files only. Dependency,
-  // environment and config changes are NOT detected, so a verdict recorded
-  // against an older lockfile is replayed rather than re-run — a stale baseline
-  // is a correctness problem, not just a stale number. Rebuild it with `--force`
-  // whenever pnpm-lock.yaml, this file or the Node version moved; the table in
-  // `docs/decisions/mutation-testing.md` (§4) is the full list.
-  incremental: true,
-  incrementalFile: 'reports/mutation/stryker-incremental.json',
 
-  // The vitest runner only supports `threads: true`; it sets the pool itself,
-  // overriding the project default (`forks`). The suite passes under both.
-  vitest: { configFile: 'vitest.config.ts' },
+  // Where `--incremental` keeps its baseline. Incremental mode is deliberately
+  // NOT enabled by default: it diffs mutated sources and test files only, so a
+  // dependency, config or Node change leaves verdicts replayed instead of
+  // re-run — a correctness problem, not just a stale number. Opting in per
+  // invocation keeps `pnpm test:mutation` trustworthy and makes the speed-up an
+  // explicit choice. When to rebuild with `--force`:
+  // `docs/decisions/mutation-testing.md` (§4).
+  incrementalFile: 'reports/mutation/stryker-incremental.json',
 
   // A mutant that makes the code loop forever is detected by hanging the run.
   // The default budget is tight for the HTTP/OAuth suites, which stand up real
@@ -52,6 +63,6 @@ export default {
   timeoutMS: 20000,
 
   // Advisory only — `break` stays null so a mutation run never fails a build
-  // on its own. The PR gate scores the diff, not this global baseline.
+  // on its own. A gate belongs on the diff's score, not this global baseline.
   thresholds: { high: 85, low: 70, break: null },
 };
