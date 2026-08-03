@@ -114,6 +114,12 @@ explicitly in `plugins` instead.
 
 ## 4. Cost, and why the gate can live in the PR
 
+> **The CI design in this section is not wired yet.** What shipped with this
+> decision is `stryker.config.mjs` and the `pnpm test:mutation` script — there is
+> no mutation job in `.github/workflows/`. Everything below about jobs, caches
+> and gates is the design these measurements argue for, recorded so the job can
+> be built against it. Read it as a specification, not a description.
+
 The Vitest runner only supports `threads: true` and sets the pool itself,
 overriding this repo's default (`forks`). The suite passes under both — 10.2 s
 against 9.0 s — so nothing else had to change.
@@ -134,12 +140,6 @@ restored, a normal PR costs well under a minute, which is what makes a PR-time
 gate viable rather than a nightly one. A gate that only reports after merge is a
 gate that reports too late.
 
-> **Nothing below is wired yet.** What shipped with this decision is the config
-> and the `pnpm test:mutation` script — there is no mutation job in
-> `.github/workflows/`. The rest of this section is the *design* the
-> measurements above argue for, recorded so the job can be built against it.
-> Treat it as a specification, not a description.
-
 > **Note on Vitest and incremental mode.** Stryker's per-test change detection
 > is fine-grained for Jest and CucumberJS only. For Vitest it works per *file*:
 > touching a test file marks all of its tests as changed. That is why one edited
@@ -158,14 +158,25 @@ verdict: a mutant recorded as `Killed` against an old version of a library is
 replayed as `Killed` without being re-run.
 
 So a stale baseline is a *correctness* problem, not just a stale-number problem,
-and it has to be invalidated deliberately:
+and it has to be invalidated deliberately. Stated as an allowlist, because an
+enumeration of undetected inputs is one upstream change away from being wrong:
 
-| Trigger | Action |
+| Diff since the baseline | Action |
 | --- | --- |
-| `pnpm-lock.yaml` changed | `--force` (rebuilds the baseline) |
-| `stryker.config.mjs` changed | `--force` |
-| Node version / `.nvmrc` changed | `--force` |
-| Only `src/**` or `tests/**` changed | incremental, as normal |
+| **Confined to `src/**` and `tests/**/*.test.ts`** | `--incremental` is sound |
+| **Anything else** | `--force` — rebuilds the baseline |
+
+"Anything else" is deliberately broad, and it includes files *inside* `tests/`.
+Stryker diffs the **test files it discovered**, so the suite's shared scaffolding
+is invisible to it: `tests/setup.ts`, `tests/msw-handlers.ts` (which defines
+every mocked Zendesk response the assertions rest on), `tests/integration/harness.ts`.
+Edit one of those and verdicts get replayed against the old fixtures.
+
+Outside `tests/` it covers `pnpm-lock.yaml` and `package.json` (dependency and
+devDependency versions), `stryker.config.mjs`, `vitest.config.ts`, `.nvmrc` and
+the Node version, environment variables the suite reads through `src/config.ts`,
+and snapshot files should the suite ever grow any. The point of stating it as an
+allowlist is that this enumeration cannot be relied on to stay complete.
 
 Because that hazard has no automatic guard, **`incremental` is deliberately not
 enabled in `stryker.config.mjs`**: `pnpm test:mutation` is always a trustworthy
