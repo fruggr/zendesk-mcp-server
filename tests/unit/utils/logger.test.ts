@@ -76,6 +76,106 @@ describe('createLogger', () => {
     expect(line).toContain('keep-me');
   });
 
+  it('collapses a circular reference instead of blowing the stack', () => {
+    const log = createLogger('debug');
+    const circular: Record<string, unknown> = { label: 'root' };
+    circular.self = circular;
+
+    expect(() => log.info('evt', { circular })).not.toThrow();
+
+    const line = errSpy.mock.calls[0]?.[0] as string;
+    expect(line).toContain('evt');
+    expect(line).toContain('[circular]');
+    expect(line).toContain('root');
+  });
+
+  it('still redacts sensitive keys inside a cycle', () => {
+    const log = createLogger('debug');
+    const node: Record<string, unknown> = { token: 'cyclic-secret' };
+    node.self = node;
+
+    log.error('cyclic', { node });
+
+    const line = errSpy.mock.calls[0]?.[0] as string;
+    expect(line).not.toContain('cyclic-secret');
+    expect(line).toContain('[REDACTED]');
+    expect(line).toContain('[circular]');
+  });
+
+  it('marks only true cycles, not values shared between siblings', () => {
+    const log = createLogger('debug');
+    const shared = { label: 'shared-value' };
+
+    log.info('dag', { a: shared, b: shared });
+
+    const line = errSpy.mock.calls[0]?.[0] as string;
+    expect(line).not.toContain('[circular]');
+    expect(line).toContain('a={"label":"shared-value"}');
+    expect(line).toContain('b={"label":"shared-value"}');
+  });
+
+  it('forwards the same sanitised payload to the MCP sink for a circular value', () => {
+    const send = vi.fn().mockResolvedValue(undefined);
+    const log = createLogger('debug');
+    log.attachServer({ sendLoggingMessage: send } as never);
+
+    const node: Record<string, unknown> = { token: 'cyclic-secret' };
+    node.self = node;
+
+    expect(() => log.warn('cyclic', { node })).not.toThrow();
+
+    const arg = send.mock.calls[0]?.[0] as {
+      data: { node: { token: string; self: string } };
+    };
+    expect(arg.data.node.token).toBe('[REDACTED]');
+    expect(arg.data.node.self).toBe('[circular]');
+    // The payload must be a finite tree the transport can serialise.
+    expect(() => JSON.stringify(arg.data)).not.toThrow();
+  });
+
+  it('neutralises a caller-supplied toJSON that would re-expose a redacted value', () => {
+    const send = vi.fn().mockResolvedValue(undefined);
+    const log = createLogger('debug');
+    log.attachServer({ sendLoggingMessage: send } as never);
+
+    // See the `[function]` branch in redactValue.
+    const hostile = {
+      token: 'tojson-secret',
+      toJSON: () => ({ token: 'tojson-secret' }),
+    };
+
+    log.error('hostile_tojson', { hostile });
+
+    const line = errSpy.mock.calls[0]?.[0] as string;
+    expect(line).not.toContain('tojson-secret');
+    expect(line).toContain('[REDACTED]');
+
+    const arg = send.mock.calls[0]?.[0] as { data: unknown };
+    expect(JSON.stringify(arg.data)).not.toContain('tojson-secret');
+  });
+
+  it('does not throw when a field getter throws during redaction', () => {
+    const log = createLogger('debug');
+    const hostile = {
+      get boom(): never {
+        throw new Error('getter exploded');
+      },
+    };
+
+    expect(() => log.info('hostile', { hostile })).not.toThrow();
+    expect(errSpy).toHaveBeenCalledTimes(1);
+    expect(errSpy.mock.calls[0]?.[0] as string).toContain('hostile');
+  });
+
+  it('does not throw when the stderr write itself fails', () => {
+    errSpy.mockImplementation(() => {
+      throw new Error('EPIPE');
+    });
+    const log = createLogger('debug');
+
+    expect(() => log.info('x', { a: 1 })).not.toThrow();
+  });
+
   it('keeps the canonical event name even if a field named "event" is passed', () => {
     const send = vi.fn().mockResolvedValue(undefined);
     const log = createLogger('debug');
