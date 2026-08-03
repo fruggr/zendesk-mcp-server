@@ -5,15 +5,12 @@
 [![npm version](https://img.shields.io/npm/v/@fruggr/zendesk-mcp-server?logo=npm&color=cb3837)](https://www.npmjs.com/package/@fruggr/zendesk-mcp-server)
 [![License: MIT](https://img.shields.io/npm/l/@fruggr/zendesk-mcp-server?color=blue)](LICENSE)
 [![Node.js](https://img.shields.io/node/v/@fruggr/zendesk-mcp-server?logo=nodedotjs&logoColor=white&color=339933)](https://nodejs.org)
-[![Renovate enabled](https://img.shields.io/badge/renovate-enabled-brightgreen?logo=renovatebot&logoColor=white)](https://renovatebot.com)
-[![semantic-release](https://img.shields.io/badge/semantic--release-e10079?logo=semantic-release&logoColor=white)](https://github.com/semantic-release/semantic-release)
 
 **Bring Zendesk deep into your AI assistant.** A
 [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server: find
 answers in the Help Center, **draft, update and translate** articles (keeping
 languages in sync), and **manage Support tickets** end to end — comments, triage
-and image attachments — all in plain language,
-**without switching apps**.
+and image attachments — all in plain language, **without switching apps**.
 
 Think of it as the [Zendesk agent for Microsoft 365 Copilot](https://support.zendesk.com/hc/en-us/articles/9958331458458-Using-the-Zendesk-agent-in-Microsoft-365-Copilot),
 but **vendor-neutral** — it drops into any MCP client (Claude Desktop, Claude
@@ -42,172 +39,66 @@ the right tools on your behalf:
   a large one **one section at a time** so the whole HTML body never has to
   round-trip through the model.
 
-Because it runs on the **user's own OAuth session**, the assistant only ever sees
-and touches what that person is allowed to — the same scoping you'd get signing
-into Zendesk directly.
-
-## How it's different
+## Why this server
 
 Most Zendesk integrations use a shared admin API key, giving every user full
-access to every ticket, and bolt on a fixed set of tools. This server is built
+access to every ticket, and bolt on a fixed set of tools. This one is built
 differently:
 
-- **Per-user authentication, OAuth-only** — In both transports, auth is OAuth 2.1 PKCE: each user authenticates with their own Zendesk credentials, so the assistant sees exactly what the user is allowed to see. Static API tokens are deliberately **not** supported (see [below](#what-this-server-does-not-do)).
-- **Two deployment shapes, same auth story** — Run it on your laptop as a stdio MCP server (Claude Desktop / Claude Code / VS Code) or deploy it as a private remote MCP server with one user, one Zendesk session per HTTP request.
-- **Context-friendly tool modes** — Expose every operation as its own tool, group them into namespace proxies, or collapse to a single unified tool. Tools are segmented into namespaces you can selectively enable, so each context loads only the surface it needs.
-- **Section-based article editing** — For large Help Center articles, read and rewrite one section at a time (parsed by h1/h2/h3 headings) instead of shuffling the full HTML body through the assistant. Reduces tokens by 10–100× on targeted edits.
-- **Native multimodal attachments** — ticket images are delivered as native MCP image content for the **client's own model** to analyze: no server-side vision model, **no extra API key**, fully vendor-neutral (see [Attachments & vision](#attachments--vision)).
-- **Read-only mode** — Restrict the server to read operations only, ideal for assistants that should never modify data.
-- **Lean stack** — Built on the official `@modelcontextprotocol/sdk` plus `zod`.
-
-Under the hood it speaks to the **Zendesk Support & Help Center (Guide) APIs**,
-runs locally over **stdio** or as a private **remote MCP server** over HTTP, and
-ships fine-grained tool-visibility controls — the specifics are below.
-
-### Attachments & vision
-
-Ticket image attachments are returned as **native MCP multimodal content**, so the
-assistant's own model (Claude, GPT, Gemini, …) sees the pixels directly. There is
-no server-side vision model and **no extra API key** — the opposite of servers
-that expose an `analyze_ticket_images`-style tool calling a vision model with the
-operator's own key.
-
-| | This server | Server-side-analysis alternatives |
-|---|---|---|
-| Who sees the image | The **client's own model** receives the pixels as multimodal input | The **server** calls a vision model with **its own API key** |
-| Extra dependencies | None | Vision-model API key + billing on the server |
-| Vendor neutrality | ✅ Full | ❌ Locked to one provider |
-
-Non-image attachments come back as text references. The per-image size cap and the
-number of embedded images are **configurable** — see
-[`ZENDESK_MAX_ATTACHMENT_BYTES`](docs/configuration.md#zendesk_max_attachment_bytes)
-and [`ZENDESK_MAX_EMBEDDED_IMAGES`](docs/configuration.md#zendesk_max_embedded_images).
-
-## When to use this server
-
-**Reach for it when:**
-
-- You want an LLM to read or triage **Zendesk tickets** and **Help Center articles** on behalf of a real user, with that user's own permissions — not a shared admin key.
-- You're editing **large Help Center articles** and want section-scoped reads/rewrites instead of round-tripping the full HTML body through the model.
-- You need to **cap the tool surface** — read-only assistants, a single namespace, or one unified tool to fit a tight context budget.
-- You run a **stdio MCP client** (Claude Desktop, Claude Code, Cursor, VS Code, Cline, …) and want a `npx`-installable server with no extra infrastructure, **or** you want to **deploy it as a private remote MCP server** that web/native clients reach over HTTP — each MCP client still carries its own user's OAuth token.
+- **Per-user authentication, OAuth-only.** Both transports use OAuth 2.1 PKCE:
+  each user signs in with their own Zendesk credentials, so the assistant sees
+  and touches exactly what that person is allowed to — the same scoping you'd get
+  signing into Zendesk directly. Static API tokens are deliberately **not**
+  supported ([why](#what-this-server-does-not-do)).
+- **Section-based article editing.** For large Help Center articles, read and
+  rewrite one section at a time (parsed by `h1`/`h2`/`h3` headings) instead of
+  shuffling the full HTML body through the assistant. Reduces tokens by 10–100×
+  on targeted edits.
+- **Native multimodal attachments.** Ticket images are returned as native MCP
+  image content, so the **client's own model** (Claude, GPT, Gemini, …) sees the
+  pixels directly: no server-side vision model, no extra API key, no lock-in to
+  one provider. Non-image attachments come back as text references, and both
+  image caps are configurable.
+- **A tool surface you can cap.** Expose every operation as its own tool, group
+  them into namespace proxies, or collapse to a single unified tool — and filter
+  by namespace or to read-only operations, so each context loads only the surface
+  it needs (see [Tool surface](#tool-surface)).
+- **Two deployment shapes, same auth story.** Run it on your laptop as a stdio
+  MCP server, or deploy it as a private remote MCP server reached over HTTP —
+  one Zendesk session per request, each client carrying its own user's token.
+- **Lean stack.** The official `@modelcontextprotocol/sdk` plus `zod`, speaking
+  to the Zendesk Support & Help Center (Guide) APIs.
 
 **Look elsewhere when:**
 
-- You need Zendesk products outside Support & Guide (e.g. Talk, Explore analytics, Sell) — those endpoints aren't covered.
-- You need a single shared service account, or static API-token auth — this server doesn't support either, by design (see [What this server does *not* do](#what-this-server-does-not-do)).
+- You need Zendesk products outside Support & Guide (Talk, Explore analytics,
+  Sell) — those endpoints aren't covered.
+- You need a single shared service account, or static API-token auth — this
+  server supports neither, by design (see below).
 
 ## What this server does *not* do
 
-**No API-token authentication.** This server is OAuth 2.1 PKCE only — there is no `ZENDESK_EMAIL` + `ZENDESK_API_TOKEN` (Basic auth) mode, in any transport. This is a deliberate design choice:
+**No API-token authentication.** This server is OAuth 2.1 PKCE only — there is no
+`ZENDESK_EMAIL` + `ZENDESK_API_TOKEN` (Basic auth) mode, in any transport. This is
+a deliberate design choice:
 
-- **API tokens are insufficiently secure.** A Zendesk API token is a long-lived, static, shared secret that carries the full rights of the issuing user — no per-user scoping, no short expiry, no per-user consent or revocation. OAuth 2.1 PKCE issues per-user, revocable tokens instead, so the LLM only ever sees what the authenticated user is allowed to see.
-- **API tokens don't scale.** A single static credential can't attribute actions to individual users or be revoked granularly, and it makes a multi-user remote deployment unsafe (in HTTP it would expose the issuing user's rights to every caller). OAuth scales naturally: each MCP client carries its own user's token.
+- **API tokens are insufficiently secure.** A Zendesk API token is a long-lived,
+  static, shared secret carrying the full rights of the issuing user — no per-user
+  scoping, no short expiry, no per-user consent or revocation. OAuth 2.1 PKCE
+  issues per-user, revocable tokens instead.
+- **API tokens don't scale.** A single static credential can't attribute actions
+  to individual users or be revoked granularly, and it makes a multi-user remote
+  deployment unsafe: over HTTP it would expose the issuing user's rights to every
+  caller.
 
-If you specifically need an API-token / service-account mode (e.g. headless CI with a shared account), use one of the other Zendesk MCP servers that support it — see [Inspiration & related projects](#inspiration--related-projects).
-
-## Use cases
-
-| Persona | Transport | Auth | Quick start |
-|---------|-----------|------|-------------|
-| **Run it on your laptop** — single user, plugged into Claude Desktop / Claude Code / VS Code | `stdio` (default) | OAuth 2.1 PKCE in your browser | [Quick start: local](#quick-start-local-stdio) |
-| **Deploy a private remote MCP server** — one server per Zendesk account, each MCP client carries its own user's OAuth token | `http` | Per-user OAuth 2.1 PKCE bearer in `Authorization:` header | [Quick start: remote](#quick-start-remote-http) |
-
-## Tool modes
-
-The server registers tools in one of three modes, controlled by `--mode`:
-
-| Mode | Tools exposed | Best for |
-|------|--------------|----------|
-| **`all`** | Every operation as its own tool (`get_ticket`, `search_articles`, ...) | Clients with good tool selection, full granularity |
-| **`namespace`** (default) | One proxy tool per namespace (`zendesk_tickets`, `zendesk_help_center`, `zendesk_users`) | Balanced context usage, grouped operations |
-| **`single`** | A single proxy tool (`zendesk`) | Minimal context footprint, single entry point |
-
-In `namespace` and `single` modes, the proxy tool accepts `{ "operation": "<tool_name>", "params": { ... } }` and dispatches to the appropriate handler after validating params through the original Zod schema. Proxy descriptions include only the first sentence of each sub-operation to stay compact; the full schema is applied when the operation is actually called.
-
-> **Tip:** The `single` mode is particularly useful for models with limited tool slots — one tool handles every operation.
-
-### Scoping the surface
-
-`--namespace` and `--read-only` apply to every mode (including the default `namespace` mode) — they filter tools **before** the proxies are built, so the description of each proxy reflects only the operations that survive the filters. Combine them to register a focused surface:
-
-```bash
-# Only the Help Center proxy, only read-only operations
-zendesk-mcp-server acme --namespace help_center --read-only
-
-# Only the Tickets proxy (read + write)
-zendesk-mcp-server acme --namespace tickets
-```
-
-`--namespace` is repeatable. `--tool` is also available for cherry-picking individual operations but forces `--mode all`.
-
-## Available tools
-
-The tools are grouped into four namespaces — **Tickets**, **Help Center**,
-**Users & Organizations**, and **Search** — each of which you can enable
-selectively with `--namespace` (see [Tool modes](#tool-modes)).
-
-The full tool-by-tool reference — every tool with its description and its
-`read`/`write` mode — lives in
-**[docs/mcp-tools-reference.md](docs/mcp-tools-reference.md)**.
-
-## Help Center context (instructions + resources)
-
-Beyond tools, the server hands an LLM the structural context it needs to work
-against *your* Help Center — so it stops guessing locales or fuzzy-matching
-section names and uses real IDs instead. This is delivered through MCP-native
-channels (all active only when the `help_center` namespace is), each fetched
-**with the caller's own token** so it respects that user's read permissions:
-
-- **`instructions`** (sent on `initialize`): a short, static blob auto-loaded by
-  compliant clients. It names the subdomain and points at the topology resource.
-- **`zendesk-hc://topology`** (a pull-only [MCP resource](https://modelcontextprotocol.io/docs/concepts/resources)):
-  read on demand, it returns Markdown describing the active locales (and the
-  default), the category → section tree with IDs, the visibility user segments,
-  the permission groups, and the calling user's role. Listing the permission
-  groups and user segments needs Guide-admin / Help Center manager rights; with a
-  content-editor token those two sections are marked *unavailable* (not empty) and
-  the rest still renders — reuse those IDs from an existing article (`get_article`)
-  instead. On a very large Help Center the section tree is summarized (per-category,
-  with a pointer to `list_sections`) to stay concise.
-- **`zendesk-hc://article/{id}`** (pull-only [MCP resources](https://modelcontextprotocol.io/docs/concepts/resources)):
-  two distinct capabilities. **Read-by-id** — any article id can be read on demand,
-  returned as Markdown (a cheap single fetch, no preloading). **Promoted pre-listing** —
-  the resource's listing surfaces the promoted (*featured*) articles so a user can
-  pin one in clients that support resource pinning / @-mention, and the companion
-  `list_promoted_articles` tool returns the same set. Clients that don't support
-  resources ignore these silently.
-  <br>**Cost:** only the *pre-listing* costs requests — finding promoted articles has
-  no server-side filter, so it scans article pages (one Zendesk API request per page,
-  capped). The resource listing is cached briefly per session (repeated `resources/list`
-  calls coalesce); the `list_promoted_articles` tool performs a fresh scan on every
-  call. It runs only on a client's `resources/list` or a tool call, never at connect,
-  and consumes no LLM context until an article is pinned/read. Read-by-id costs one
-  fetch, only when a specific article is opened. See
-  [`ZENDESK_ARTICLE_RESOURCES_SCAN_MAX_PAGES`](docs/configuration.md#zendesk_article_resources_scan_max_pages).
-
-The `instructions` blob and the topology resource are toggled together with
-`--no-topology`. The **promoted pre-listing** is toggled independently with
-`--no-promoted-articles` — which turns off the resource `list` scan **and** the
-`list_promoted_articles` tool, so the server makes zero preloading requests;
-**reading a known article by id stays available** (it never preloads). Clients that
-don't consume `instructions` or `resources` simply ignore them — the feature
-degrades silently. The `zendesk-hc://` URI scheme is the default; a deployer can
-brand it with
-[`--hc-resource-scheme` / `HC_RESOURCE_SCHEME`](docs/configuration.md#hc_resource_scheme)
-(e.g. `wiki` → `wiki://topology`, `wiki://article/{id}`).
-
-## Prerequisites
-
-- **Node.js** >= 20 (runtime — declared in `package.json#engines.node`)
-- A **Zendesk** instance (Support or Suite)
-
-> Contributors and maintainers run the toolchain on a newer Node + pnpm —
-> see [Development](#development).
+If you specifically need an API-token / service-account mode (e.g. headless CI
+with a shared account), use one of the other Zendesk MCP servers that support it
+— see [Inspiration & related projects](#inspiration--related-projects).
 
 ## Quick start: local (stdio)
 
-The default mode. One developer, one Zendesk account, OAuth 2.1 PKCE in the browser.
+The default shape: one developer, one Zendesk account, OAuth 2.1 PKCE in the
+browser. Requires **Node.js >= 20** and a **Zendesk** instance (Support or Suite).
 
 ### Install
 
@@ -220,7 +111,7 @@ npm install -g @fruggr/zendesk-mcp-server
 zendesk-mcp-server <your-subdomain>
 ```
 
-> Cloning from source and running a development branch is covered in the [Development](#development) section.
+Sign-in needs a Zendesk OAuth client — register one first (next section).
 
 ### Zendesk OAuth setup
 
@@ -231,34 +122,12 @@ zendesk-mcp-server <your-subdomain>
      `ZENDESK_OAUTH_CALLBACK_PORT` / `--callback-port` if you override it; Zendesk
      accepts several redirect URLs, one per line)
 
-### Run
-
-```bash
-zendesk-mcp-server <your-subdomain>
-```
-
-On the first tool call, the server starts the sign-in flow: it opens a browser
-window **and** returns a tool message containing the authorize URL. The call
-does not block waiting for sign-in — authenticate in the browser (or open the
-URL manually if it didn't open), then retry the request.
-
-Once authenticated, the token is **persisted to disk** (one owner-only `0600`
-file per subdomain in your OS config dir —
-`%APPDATA%\fruggr\zendesk-mcp-server\<subdomain>.json` on Windows,
-`${XDG_CONFIG_HOME:-~/.config}/fruggr/zendesk-mcp-server/<subdomain>.json`
-elsewhere; override the path with `ZENDESK_TOKEN_FILE`). It is reused across restarts, so you don't
-re-authenticate every time the MCP client respawns the server. If the Zendesk
-OAuth client has token expiration enabled, the stored refresh token is used to
-renew access silently — **proactively** (the token is refreshed before use when
-it's expired, near expiry, or of unknown age, so the first request after an
-overnight gap never hits a visible auth error) and **periodically** in the
-background so a long-lived, idle session never serves a stale token. Only an
-expired/invalid refresh token triggers a new browser sign-in.
-
-> **Port conflict?** If port `27439` is already in use the first tool call returns
-> a clear error telling you to set `ZENDESK_OAUTH_CALLBACK_PORT` (or
-> `--callback-port`) to a free port — remember to register the matching
-> `http://localhost:<port>/callback` redirect URL in your Zendesk OAuth client.
+On the first tool call the server starts the sign-in flow: it opens a browser
+window **and** returns the authorize URL in a tool message. The call does not
+block waiting for sign-in — authenticate in the browser, then retry the request.
+The token is then persisted to an owner-only file and reused across restarts, so
+you don't re-authenticate every time your MCP client respawns the server (path
+and overrides: [`ZENDESK_TOKEN_FILE`](docs/configuration.md#zendesk_token_file)).
 
 ### MCP client wiring
 
@@ -307,6 +176,8 @@ Add to your `.vscode/mcp.json`:
 
 </details>
 
+Something not working? See [Troubleshooting](docs/troubleshooting.md).
+
 ## Quick start: remote (HTTP)
 
 > 🧪 **Experimental.** The HTTP transport is shipped but not yet exercised
@@ -320,78 +191,70 @@ behind a reverse proxy, per-platform config, discovery endpoints, MCP client
 wiring, CORS and operator responsibilities — is in
 **[docs/http-deployment.md](docs/http-deployment.md)**.
 
+## Tool surface
+
+Tools are grouped into four namespaces — **Tickets**, **Help Center**,
+**Users & Organizations** and **Search** — and the server registers them in one of
+three modes, so you can trade granularity against context budget:
+
+- **`all`** — every operation as its own tool, for clients with good tool selection;
+- **`namespace`** (default) — one proxy tool per namespace, a balanced middle ground;
+- **`single`** — a single `zendesk` tool, for models with limited tool slots.
+
+Proxies take `{ "operation": "<tool_name>", "params": { … } }` and validate
+`params` through the original schema. `--namespace`, `--tool` and `--read-only`
+filter tools **before** the proxies are built, so each proxy describes only the
+operations that survive.
+
+Every tool with its description and its `read`/`write` mode:
+**[docs/mcp-tools-reference.md](docs/mcp-tools-reference.md)**. The flags and
+worked examples: **[docs/configuration.md](docs/configuration.md)**.
+
+## Help Center context
+
+Beyond tools, the server hands the LLM the structure of *your* Help Center — the
+active locales, the category → section tree with IDs, the visibility segments and
+permission groups — so it uses real IDs instead of guessing or fuzzy-matching
+names. It arrives through MCP-native channels: the `instructions` blob sent on
+`initialize`, plus pull-only resources for the topology and for reading (or
+pinning) individual articles. Each is fetched with the caller's own token, and
+clients that don't support resources ignore them silently.
+
+What's exposed, what the promoted-article pre-listing costs in requests, and how
+to turn each piece off: **[docs/help-center-context.md](docs/help-center-context.md)**.
+
 ## Configuration
 
 The complete reference for the CLI flags (`--mode`, `--namespace`, `--read-only`,
-`--transport`, `--public-url`, …) and the environment variables (`ZENDESK_SUBDOMAIN`,
-`ZENDESK_TOKEN_FILE`, `PUBLIC_URL`, the attachment-vision caps, …) lives in
-**[docs/configuration.md](docs/configuration.md)** — with a per-variable anchor so
-you can deep-link a specific setting.
-
-The server uses per-user OAuth 2.1 PKCE for every transport (local stdio and remote HTTP). There is no static API-token mode — see [What this server does *not* do](#what-this-server-does-not-do).
+`--transport`, `--public-url`, …) and the environment variables
+(`ZENDESK_SUBDOMAIN`, `ZENDESK_TOKEN_FILE`, `PUBLIC_URL`, the attachment-vision
+caps, …) lives in **[docs/configuration.md](docs/configuration.md)** — with a
+per-variable anchor so you can deep-link a specific setting.
 
 ## Troubleshooting
 
 Browser not opening during OAuth login, the callback port already in use, having
-to re-authenticate every time, and where each client writes the server's stderr
-are covered in **[docs/troubleshooting.md](docs/troubleshooting.md)**. Restart
-with `LOG_LEVEL=debug` for the full OAuth flow trace.
+to re-authenticate every time, and `Permission denied` on the Guide-admin
+endpoints are covered in **[docs/troubleshooting.md](docs/troubleshooting.md)**.
+Restart with `LOG_LEVEL=debug` for the full OAuth flow trace.
 
 ## Development
 
-Setting up the repo, the toolchain (Node 24 + pnpm 11), dev mode and how to test
-a PR branch are covered in **[CONTRIBUTING.md](CONTRIBUTING.md#development-setup)**.
-Architecture and code-style conventions live in [`AGENTS.md`](AGENTS.md).
-
-## Inspiration & related projects
-
-This project was built with reference to:
-- The official [Zendesk API documentation](https://developer.zendesk.com/api-reference/)
-- [mattcoatsworth/zendesk-mcp-server](https://github.com/mattcoatsworth/zendesk-mcp-server)
-- [koundinya/zd-mcp-server](https://github.com/koundinya/zd-mcp-server)
-
-## Releases & versioning
-
-Versions follow [SemVer](https://semver.org/) and are calculated **automatically** from commit messages — no one bumps the version by hand. Every merge to `main` triggers [semantic-release](https://github.com/semantic-release/semantic-release), which inspects the new [Conventional Commits](https://www.conventionalcommits.org/) since the previous tag, computes the next version, updates [`CHANGELOG.md`](CHANGELOG.md), publishes to npm, creates the matching GitHub Release, and mirrors the release into the [official MCP registry](https://registry.modelcontextprotocol.io) as [`io.github.fruggr/zendesk-mcp-server`](https://registry.modelcontextprotocol.io/?search=io.github.fruggr/zendesk-mcp-server) so registry-driven clients discover the new version automatically.
-
-| Commit type | Resulting bump |
-|---|---|
-| `fix:`, `perf:` | patch |
-| `feat:` | minor |
-| `feat!:`, `fix!:`, or a `BREAKING CHANGE:` footer | major |
-| `docs:`, `chore:`, `refactor:`, `test:`, `ci:`, `style:`, `build:` | no release |
+Setting up the repo, the toolchain, dev mode and how to test a PR branch are
+covered in **[CONTRIBUTING.md](CONTRIBUTING.md#development-setup)**. Architecture
+and code-style conventions live in [`AGENTS.md`](AGENTS.md).
 
 ## FAQ
-
-**Do I need a Zendesk admin API key?**
-No — and the server doesn't support one. The OAuth 2.1 PKCE flow means each user
-authenticates with their own credentials and the server acts with exactly their
-permissions. Static API tokens are intentionally unsupported (see
-[What this server does *not* do](#what-this-server-does-not-do)).
 
 **Which Zendesk products are supported?**
 Zendesk Support (tickets, users, organizations) and the Help Center / Guide
 (articles, sections, categories, translations, labels, content tags, segments,
-attachments). Talk, Explore, and Sell are out of scope.
+attachments). Talk, Explore and Sell are out of scope.
 
-**How do I keep the model's context small?**
-Use `--mode single` (one `zendesk` tool) or `--mode namespace` (three proxies),
-and `--read-only` to drop write operations. For big articles, the section-based
-tools (`get_article_outline`, `get_article_section`, `update_article_section`)
-let the model touch one section at a time instead of the whole HTML body.
-
-**Can I restrict it to read-only?**
-Yes — pass `--read-only` and every write tool is filtered out before the proxies
-are built, in any mode.
-
-**Which Node.js version do I need?**
-Node.js >= 20 to run the published package (`engines.node`). The dev toolchain
-uses a newer Node — see [Development](#development).
-
-**The OAuth browser window didn't open. What now?**
-The authorization URL is also printed to stderr — open it manually. Restart with
-`LOG_LEVEL=debug` for the full flow trace. See
-[Troubleshooting](#troubleshooting).
+**Do I need a Zendesk admin API key?**
+No — and the server doesn't support one. Each user authenticates with their own
+credentials and the server acts with exactly their permissions
+([why](#what-this-server-does-not-do)).
 
 **Is it safe to run via `npx`?**
 Releases are published from CI via npm Trusted Publishing (OIDC), so each version
@@ -401,18 +264,20 @@ are ever logged by the server.
 
 ## Contributing
 
-Pull requests are welcome — including AI-assisted ones, as long as the human author has read and validated every line.
+Pull requests are welcome — including AI-assisted ones, as long as the human
+author has read and validated every line. The guide, the author checklist and the
+review workflow are in **[CONTRIBUTING.md](CONTRIBUTING.md)**.
 
-The full guide is in [`CONTRIBUTING.md`](CONTRIBUTING.md). The short version:
+Versions follow [SemVer](https://semver.org/) and are released automatically from
+[Conventional Commits](https://www.conventionalcommits.org/) — see
+[`CHANGELOG.md`](CHANGELOG.md).
 
-1. Fork and create a feature branch from `main`.
-2. Practice TDD: write the failing test first, then implement.
-3. Use [Conventional Commits](https://www.conventionalcommits.org/) — they drive the next version bump via semantic-release.
-4. Make `pnpm check`, `pnpm typecheck`, and `pnpm test` pass locally.
-5. Run a Claude Code review on your diff before pushing.
-6. Open a PR.
+## Inspiration & related projects
 
-Every PR is reviewed automatically by [CodeRabbit](https://www.coderabbit.ai) in CI, on top of the author-side AI review. The project is maintained in part with [Claude Code](https://www.anthropic.com/claude-code) assistance; that workflow is documented in [`CONTRIBUTING.md`](CONTRIBUTING.md).
+This project was built with reference to:
+- The official [Zendesk API documentation](https://developer.zendesk.com/api-reference/)
+- [mattcoatsworth/zendesk-mcp-server](https://github.com/mattcoatsworth/zendesk-mcp-server)
+- [koundinya/zd-mcp-server](https://github.com/koundinya/zd-mcp-server)
 
 ## License
 

@@ -34,10 +34,23 @@ OAuth client.
 
 ## I have to re-authenticate every time
 
-The OAuth token is persisted to an owner-only file in your OS config dir and
-reused across restarts, so this shouldn't happen. If it does, check that the file
-is writable (`ZENDESK_TOKEN_FILE` to relocate it) and look for
-`token_persist_failed` in the logs.
+The OAuth token is persisted to an owner-only (`0600`) file in your OS config dir
+— one per subdomain — and reused across restarts, so this shouldn't happen:
+
+- `%APPDATA%\fruggr\zendesk-mcp-server\<subdomain>.json` on Windows;
+- `${XDG_CONFIG_HOME:-~/.config}/fruggr/zendesk-mcp-server/<subdomain>.json`
+  elsewhere.
+
+If the Zendesk OAuth client has token expiration enabled, the stored refresh
+token renews access silently — **proactively** (refreshed before use when it's
+expired, near expiry, or of unknown age, so the first request after an overnight
+gap never surfaces an auth error) and **periodically** in the background, so a
+long-lived idle session never serves a stale token. Only an expired or invalid
+refresh token triggers a new browser sign-in.
+
+If you still re-authenticate every time, check that the file is writable
+([`ZENDESK_TOKEN_FILE`](configuration.md#zendesk_token_file) to relocate it) and
+look for `token_persist_failed` in the logs.
 
 ## `Permission denied` on `list_permission_groups`, `list_user_segments`, or the topology resource
 
