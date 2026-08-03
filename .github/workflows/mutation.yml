@@ -67,7 +67,7 @@ jobs:
           echo "exact=${PREFIX}-${{ github.sha }}" >> "$GITHUB_OUTPUT"
 
       - name: Restore the mutation baseline (read-only)
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: reports/mutation/stryker-incremental.json
           key: ${{ steps.key.outputs.exact }}
@@ -142,7 +142,7 @@ jobs:
           echo "exact=${PREFIX}-${{ github.sha }}" >> "$GITHUB_OUTPUT"
 
       - name: Restore the mutation baseline
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: reports/mutation/stryker-incremental.json
           key: ${{ steps.key.outputs.exact }}
@@ -176,7 +176,7 @@ jobs:
         # The only writer. Skipped on a failed or cancelled run so a partial
         # baseline never becomes the one every PR restores.
         if: success()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: reports/mutation/stryker-incremental.json
           key: ${{ steps.key.outputs.exact }}
