@@ -58,6 +58,10 @@ jobs:
         with:
           # The gate diffs base...head, so both commits have to be present.
           fetch-depth: 0
+          # Neither job pushes, and both run `pnpm install`, which executes
+          # dependency lifecycle scripts — no reason to leave a usable git
+          # credential on disk for them (zizmor `artipacked`).
+          persist-credentials: false
 
       - uses: ./.github/actions/mutation-baseline
 
@@ -69,6 +73,15 @@ jobs:
       # only on disk when a key matched, and the key encodes every input
       # incremental mode cannot detect for itself.
       - name: Gate the changed lines
+        # `shell: bash` is load-bearing, not decoration: it runs the step as
+        # `bash --noprofile --norc -eo pipefail`, whereas the default is `bash -e`
+        # with NO pipefail. Without it the pipe into `tee` reports tee's status,
+        # so a run with escaped mutants exits 1 and the step still passes —
+        # measured, exit 0 vs exit 1, with "Escaped: 4" printed in the summary.
+        # That would have made the gate report success on the failures it exists
+        # to catch, which is worse than not having it: the green check reads as
+        # evidence.
+        shell: bash
         run: |
           node scripts/mutation-scope.mjs diff \
             '${{ github.event.pull_request.base.sha }}' \
@@ -102,6 +115,8 @@ jobs:
       cancel-in-progress: true
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - uses: ./.github/actions/mutation-baseline
         id: cache
