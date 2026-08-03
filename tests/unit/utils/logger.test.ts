@@ -138,9 +138,7 @@ describe('createLogger', () => {
     const log = createLogger('debug');
     log.attachServer({ sendLoggingMessage: send } as never);
 
-    // The walk redacts `token`, but an own enumerable `toJSON` copied into the
-    // sanitised tree would be invoked by JSON.stringify and hand back the
-    // original, unredacted object.
+    // See the `[function]` branch in redactValue.
     const hostile = {
       token: 'tojson-secret',
       toJSON: () => ({ token: 'tojson-secret' }),

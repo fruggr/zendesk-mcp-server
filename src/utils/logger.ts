@@ -53,17 +53,13 @@ const REDACTED_KEYS = new Set([
 const isSensitive = (key: string): boolean =>
   REDACTED_KEYS.has(key.toLowerCase().replace(/[_-]/g, ''));
 
-// Recursively redact: a sensitive *key* anywhere in the tree (top-level or
-// nested in objects/arrays) has its value replaced, so `{ oauth: { token } }`
-// can't leak. Primitives are returned as-is.
-// `path` holds the objects on the current branch: a back-reference to an
-// ancestor becomes `[circular]` instead of recursing until the stack blows,
-// while the walk descends everywhere else so a cycle can't skip the redaction
-// of the keys inside it. A value shared between siblings is not a cycle.
+// Recursively redact: a sensitive *key* anywhere in the tree has its value
+// replaced, so `{ oauth: { token } }` can't leak. `path` is the current branch
+// only (add/delete around the descent), so a back-reference to an ancestor
+// becomes `[circular]` while a value shared between siblings is still walked.
+// Functions are dropped: an own enumerable `toJSON` copied into the output
+// would be invoked by `JSON.stringify` and hand back the unredacted original.
 const redactValue = (value: unknown, path: WeakSet<object> = new WeakSet()): unknown => {
-  // Functions never survive the walk: an own enumerable `toJSON` copied into
-  // the output would be invoked by `JSON.stringify` and hand back the original,
-  // unredacted object — a redaction bypass the caller controls.
   if (typeof value === 'function') return '[function]';
   if (!value || typeof value !== 'object') return value;
   if (path.has(value)) return '[circular]';
@@ -79,6 +75,18 @@ const redactValue = (value: unknown, path: WeakSet<object> = new WeakSet()): unk
       );
   path.delete(value);
   return out;
+};
+
+// Total over anything a caller can hand us: redaction reads objects that may
+// fight back (a throwing getter, an exotic proxy), and losing the fields beats
+// taking the caller down with them.
+const sanitise = (fields?: Fields): Fields => {
+  if (!fields) return {};
+  try {
+    return redactValue(fields) as Fields;
+  } catch {
+    return { fields: '[unredactable]' };
+  }
 };
 
 const renderValue = (value: unknown): string => {
@@ -115,21 +123,12 @@ export const createLogger = (level: LogLevel): Logger => {
   const emit = (lvl: LogLevel, event: string, fields?: Fields): void => {
     if (SEVERITY[lvl] < min) return;
 
-    // Redaction reads caller-supplied objects, which may fight back (a getter
-    // that throws, an exotic proxy). Losing the fields is acceptable; taking
-    // the caller down with them is not.
-    let safe: Fields;
-    try {
-      safe = fields ? (redactValue(fields) as Fields) : {};
-    } catch {
-      safe = { fields: '[unredactable]' };
-    }
+    const safe = sanitise(fields);
 
     try {
       console.error(formatLine(lvl, event, safe));
     } catch {
-      // Same contract as the MCP forward below: the stderr sink is
-      // best-effort and must never break the flow that emitted the log.
+      // Best-effort sink: a dead stderr must not break the caller.
     }
 
     if (server) {
