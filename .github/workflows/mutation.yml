@@ -1,34 +1,15 @@
 name: Mutation testing
 
-# Two jobs with different questions.
-#
-# `diff-gate` (pull requests) asks "did this PR test what it changed?". It
-# mutates only the changed *lines* and fails if any of those mutants survived.
-# Scoping to lines rather than files is what keeps it fair: touching one line of
-# a file with weak legacy tests must not fail on that file's history.
-#
-# `baseline` (push to main, or on demand) asks "where does the whole scope
-# stand?" and refreshes the incremental cache the PR job restores. It is the
-# only writer of that cache — a PR run is diff-scoped, so if it wrote back it
-# would publish a truncated baseline for every later PR.
-#
-# The design and the measurements behind it: docs/decisions/mutation-testing.md
+# `diff-gate` mutates a PR's changed *lines*; `baseline` runs the full scope on
+# main and is the only writer of the incremental cache the gate restores.
+# Design, costs and the reasoning behind every choice below:
+# docs/decisions/mutation-testing.md
 
 on:
-  # Deliberately unfiltered: `Changed lines` is meant to be a required check,
-  # and a path-filtered required check never reports at all, which would block
-  # every docs-only PR forever. The job is cheap when the diff touches nothing
-  # in scope — it says so and exits.
+  # Both unfiltered on purpose: a path-filtered *required* check never reports,
+  # and a `paths:` list here would be a second copy of the cache key's rule. Why
+  # that trade is right: the ADR, §4.
   pull_request:
-  # Deliberately unfiltered too, though for the opposite reason. A `paths:` list
-  # here would be a third copy of "what can change a mutation verdict" — after
-  # the config's `mutate` and the cache key in the composite action — and the two
-  # failure modes are not symmetric: an over-broad list wastes a few minutes of
-  # CI, a list missing one entry leaves the baseline every PR restores silently
-  # stale. Skipping is not worth much either, since the run this saves is the
-  # cheap one: with the baseline restored a push that changes nothing in scope is
-  # a dry run plus a report, and running on every push keeps the cache warm
-  # (Actions evicts entries unused for 7 days).
   push:
     branches: [main]
   workflow_dispatch:
@@ -41,54 +22,26 @@ jobs:
     name: Changed lines
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    # A diff-scoped run is normally under a minute; this is slack for a PR that
-    # touches a lot of logic at once, or a cold cache.
+    # Normally under a minute; slack for a lot of logic at once, or a cold cache.
     timeout-minutes: 25
-    # Draft-early, push-often is the documented workflow (AGENTS.md), so
-    # superseded runs are the common case, not the exception.
     concurrency:
       group: mutation-gate-${{ github.ref }}
       cancel-in-progress: true
     steps:
       - uses: actions/checkout@v7
         with:
-          # The gate diffs the PR base against the checked-out merge commit, so
-          # the base commit has to be present too.
-          fetch-depth: 0
-          # Neither job pushes, and both run `pnpm install`, which executes
-          # dependency lifecycle scripts — no reason to leave a usable git
-          # credential on disk for them (zizmor `artipacked`).
-          persist-credentials: false
+          fetch-depth: 0 # the gate diffs the PR base against this merge commit
+          persist-credentials: false # neither job pushes (zizmor `artipacked`)
 
       - uses: ./.github/actions/mutation-baseline
 
-      # One command: derives the scope, mutates it, and judges the report it
-      # just produced. Splitting it would let a stale scope be paired with a
-      # fresh report, which reads as a confident verdict about the wrong lines.
-      #
-      # `--incremental` is safe here and nowhere else by default: the baseline is
-      # only on disk when a key matched, and the key encodes every input
-      # incremental mode cannot detect for itself.
+      # Two things here are load-bearing and look removable. `shell: bash` gives
+      # `-eo pipefail`; the default `bash -e` has none, so `tee` would swallow the
+      # gate's exit 1 and every failure would report green (measured). `HEAD`, not
+      # `head.sha`: checkout gives us the merge commit, and the line numbers must
+      # match the tree Stryker mutates. Both explained in full in the ADR, §4.
       - name: Gate the changed lines
-        # `shell: bash` is load-bearing, not decoration: it runs the step as
-        # `bash --noprofile --norc -eo pipefail`, whereas the default is `bash -e`
-        # with NO pipefail. Without it the pipe into `tee` reports tee's status,
-        # so a run with escaped mutants exits 1 and the step still passes —
-        # measured, exit 0 vs exit 1, with "Escaped: 4" printed in the summary.
-        # That would have made the gate report success on the failures it exists
-        # to catch, which is worse than not having it: the green check reads as
-        # evidence.
         shell: bash
-        # `HEAD`, not `pull_request.head.sha`: on a `pull_request` event checkout
-        # gives us the PR's *merge* commit, and the line numbers Stryker is handed
-        # have to be the ones in the tree it mutates. Diffing to `head.sha`
-        # instead numbers the hunks against the head commit's files, so once the
-        # base branch has moved with any change to a file the PR also touches,
-        # every range points at the wrong lines — mutating untouched code while
-        # leaving the changed lines ungated. `base.sha` is an ancestor of the
-        # merge commit, so `base.sha...HEAD` is the PR's own changes against the
-        # base, and it fails loudly if that commit is missing rather than
-        # silently resolving to something else (which `HEAD^1` would).
         run: |
           pnpm test:mutation:diff \
             '${{ github.event.pull_request.base.sha }}' \
@@ -100,8 +53,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: mutation-report-pr
-          # The incremental baseline is excluded: it is a copy of the cache entry
-          # this job restored (~2 MB) and nothing consumes it from the artifact.
+          # The baseline is excluded: a copy of the restored cache entry, ~2 MB.
           path: |
             reports/mutation/
             !reports/mutation/stryker-incremental.json
@@ -112,11 +64,8 @@ jobs:
     name: Full scope
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    # A cold run over the configured scope is ~1 700 mutants, measured at roughly
-    # an hour on 4 cores. That only happens when the cache prefix changed; an
-    # ordinary push to main reuses the baseline and finishes in minutes.
+    # Only a changed cache prefix costs the full cold run (~1h on 4 cores).
     timeout-minutes: 120
-    # Superseding pushes make an in-flight baseline pointless.
     concurrency:
       group: mutation-baseline
       cancel-in-progress: true
@@ -128,10 +77,7 @@ jobs:
       - uses: ./.github/actions/mutation-baseline
         id: cache
 
-      # Never `break`s: this job reports and refreshes the baseline. The gate
-      # belongs on the diff, in the job above. Reporters come from the config.
-      # No `--` before the flag: pnpm 11 forwards the separator itself, and
-      # `stryker run -- --incremental` fails with "too many arguments".
+      # Reports, never `break`s. No `--`: pnpm 11 forwards the separator itself.
       - run: pnpm test:mutation --incremental
 
       - name: Score summary
@@ -139,8 +85,7 @@ jobs:
         run: pnpm test:mutation:summary >> "$GITHUB_STEP_SUMMARY"
 
       - name: Save the refreshed baseline
-        # The only writer. Skipped on a failed or cancelled run so a partial
-        # baseline never becomes the one every PR restores.
+        # The only writer; skipped on failure so no partial baseline is published.
         if: success()
         uses: actions/cache/save@v6
         with:

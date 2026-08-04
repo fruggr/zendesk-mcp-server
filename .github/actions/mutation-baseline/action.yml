@@ -1,8 +1,7 @@
 name: Mutation baseline cache
 description: >-
-  Set up Node/pnpm, then compute the mutation baseline cache key and restore it.
-  Both mutation jobs use this so the invalidation rule exists in exactly one
-  place: the two jobs must agree on cache identity, and only one of them writes.
+  Set up Node/pnpm, compute the mutation baseline cache key, restore it. Both
+  jobs use this so the invalidation rule below lives in exactly one place.
 
 outputs:
   prefix:
@@ -25,35 +24,17 @@ runs:
     - run: pnpm install --frozen-lockfile
       shell: bash
 
-    # THE INVALIDATION RULE — the only list of its kind in the setup, and the
-    # one place it belongs. It is *not* "the files that matter to mutation
-    # testing": it is the complement of what Stryker's incremental mode can
-    # diff for itself, which is mutated sources plus the test files it
-    # discovers. Those two are deliberately absent below — hashing `src/**` or
-    # `tests/**/*.test.ts` here would throw the baseline away on every commit
-    # and buy nothing, because incremental mode already handles them correctly.
-    # Everything else that can flip a verdict has to be hashed, because nothing
-    # else will notice it changed.
+    # THE INVALIDATION RULE. Selection is mechanical, in two parts:
+    #   1. the toolchain and runner inputs — lockfile, both configs, .nvmrc;
+    #   2. every file under tests/ except *.test.ts and tests/functional/.
+    # Part 2 is asserted by tests/unit/mutation-scope.test.ts, so this list
+    # cannot drift silently. `src/**` and *.test.ts are absent on purpose:
+    # Stryker's incremental mode diffs those itself. Why each part is what it is:
+    # docs/decisions/mutation-testing.md, §4.
     #
-    # When to add an entry: a new file that changes how the tests *behave*
-    # without being one of the test files Stryker discovers — another setup
-    # file, another shared fixture or harness, a runner config. Not docs, not
-    # workflows, not the mutate scope. The table in
-    # docs/decisions/mutation-testing.md states the same rule as an allowlist.
-    #
-    # In practice that means *every* non-`*.test.ts` file under `tests/` is
-    # listed: `core-scenarios.ts` and `stdio-harness.ts` carry the shared
-    # integration assertions as surely as `harness.ts` carries the config, and
-    # Stryker sees none of the three. That equivalence is enforced by a test
-    # (`tests/unit/mutation-scope.test.ts`) rather than left to memory, because
-    # forgetting one fails silently: verdicts get replayed against assertions
-    # that no longer exist.
-    #
-    # The trailing commit sha keeps every save unique (Actions cache entries are
-    # immutable, so a fixed key would freeze the first baseline forever); the
-    # prefix restore-key is what allows falling back to main's latest, and it is
-    # safe precisely because the inputs hash sits inside it. A broader
-    # restore-key would reintroduce the stale reuse this exists to prevent.
+    # Key = prefix + sha (cache entries are immutable, so a fixed key would
+    # freeze the first baseline); the prefix restore-key is safe to fall back on
+    # only because the inputs hash sits inside it.
     - name: Compute the baseline cache key
       id: key
       shell: bash
