@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import {
   changedRanges,
   escapedMutants,
+  scopeMatcher,
   scoreOf,
   specsFor,
   tallyStatuses,
@@ -176,6 +177,44 @@ describe('escapedMutants', () => {
       judged: 0,
       escaped: [],
     });
+  });
+});
+
+describe('scopeMatcher', () => {
+  // Mirrors Stryker's own `mutate` handling. Worth pinning because the gate
+  // hands its ranges to `--mutate`, which *replaces* the configured scope: get
+  // the negation wrong and an excluded file is mutated and gated regardless.
+  const patterns = ['src/utils/**/*.ts', '!src/utils/formatting.ts', 'src/config.ts'];
+
+  it('includes a file matched by a positive pattern', () => {
+    expect(scopeMatcher(patterns)('src/utils/logger.ts')).toBe(true);
+    expect(scopeMatcher(patterns)('src/config.ts')).toBe(true);
+  });
+
+  it('excludes a file a later `!` pattern unsets', () => {
+    expect(scopeMatcher(patterns)('src/utils/formatting.ts')).toBe(false);
+  });
+
+  it('excludes a file no pattern matches', () => {
+    expect(scopeMatcher(patterns)('src/tools/help-center.ts')).toBe(false);
+    expect(scopeMatcher(patterns)('README.md')).toBe(false);
+  });
+
+  it('applies patterns in order, so a later positive re-includes', () => {
+    // Stryker resolves these as a sequence of set/unset operations, not as two
+    // independent lists — the order is the whole contract.
+    expect(
+      scopeMatcher(['src/**/*.ts', '!src/utils/formatting.ts'])('src/utils/formatting.ts'),
+    ).toBe(false);
+    expect(
+      scopeMatcher(['src/**/*.ts', '!src/utils/**', 'src/utils/formatting.ts'])(
+        'src/utils/formatting.ts',
+      ),
+    ).toBe(true);
+  });
+
+  it('includes nothing when given no patterns', () => {
+    expect(scopeMatcher([])('src/utils/logger.ts')).toBe(false);
   });
 });
 

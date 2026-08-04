@@ -119,6 +119,29 @@ export const tallyStatuses = (report) => {
   return counts;
 };
 
+/**
+ * Predicate for "is this path in the `mutate` scope", with the same semantics
+ * Stryker applies: patterns in order, a `!`-prefixed one *unsetting* what an
+ * earlier one included (`project-reader`, `resolveFileDescriptions`). Pure.
+ *
+ * A naive `patterns.some(...)` would ignore the negations, and the consequence
+ * is not a cosmetic mismatch: the gate passes its ranges to `--mutate`, and that
+ * flag *replaces* the configured scope rather than intersecting with it. An
+ * excluded file would be silently mutated and gated anyway — the exclusion
+ * defeated in the one place it has to hold.
+ */
+export const scopeMatcher = (patterns) => (path) => {
+  let included = false;
+  for (const pattern of patterns) {
+    if (pattern.startsWith('!')) {
+      if (matchesGlob(path, pattern.slice(1))) included = false;
+    } else if (matchesGlob(path, pattern)) {
+      included = true;
+    }
+  }
+  return included;
+};
+
 /** Mutation score from a status tally, or null when there is nothing to score. */
 export const scoreOf = (counts) => {
   const detected = (counts.Killed ?? 0) + (counts.Timeout ?? 0);
@@ -141,7 +164,7 @@ const loadConfig = async () => {
   if (!reportPath) {
     throw new Error('stryker.config.mjs must set `jsonReporter.fileName` — the gate reads it.');
   }
-  return { inScope: (path) => mutate.some((pattern) => matchesGlob(path, pattern)), reportPath };
+  return { inScope: scopeMatcher(mutate), reportPath };
 };
 
 // `--src-prefix`/`--dst-prefix` are not decoration: a contributor with

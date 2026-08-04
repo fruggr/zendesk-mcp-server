@@ -35,13 +35,26 @@ export default {
   tsconfigFile: TSCONFIG_SENTINEL,
 
   // Scope: logic code, where a surviving mutant is a genuine test gap.
-  // `src/tools/**` is deliberately out for now — its 151 `.describe()` calls
-  // would yield one StringLiteral survivor each, drowning the signal.
+  //
+  // Two exclusions, same reason, both temporary. A file whose survivors are
+  // mostly label strings does not merely score badly — it *booby-traps the PR
+  // gate*, because editing any line carrying one fails CI for debt the author
+  // did not create. Bringing a file in is therefore a decision to do its
+  // assertion work first, tracked per file:
+  //   - `src/tools/**`: its `.describe()` calls would each yield a StringLiteral
+  //     survivor, drowning the signal.
+  //   - `src/utils/formatting.ts`: 171 escaped mutants, 58 % of them label
+  //     strings. #203 owns both the remaining work and the decision on how to
+  //     treat those strings; delete the negation below when it lands.
+  // Excluded from *mutation* only — its tests still run and still count for
+  // coverage. `!` ordering matters: Stryker applies these as set/unset in
+  // sequence (`project-reader`), and `scopeMatcher` in the gate mirrors that.
   mutate: [
     'src/auth/**/*.ts',
     'src/client/**/*.ts',
     'src/routing/**/*.ts',
     'src/utils/**/*.ts',
+    '!src/utils/formatting.ts',
     'src/config.ts',
   ],
 

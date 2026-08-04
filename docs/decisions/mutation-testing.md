@@ -240,10 +240,15 @@ Two details that make that work, both easy to get wrong:
 **The gate is on changed lines, not changed files.** `scripts/mutation-scope.mjs`
 turns the PR diff into Stryker line ranges (`file:start-end`, which `--mutate`
 supports natively) and fails the job if a mutant inside them survived. File
-granularity would judge a one-line change against every mutant in the file — so
-touching `formatting.ts`, at 67 %, would fail on that file's history rather than
-on the PR. Measured: a two-line change produces 10 mutants instead of the 43 in
+granularity would judge a one-line change against every mutant in the file, so a
+weakly-tested file would fail on its own history rather than on the PR. Measured
+on `pagination.ts`: a two-line change produces 10 mutants instead of the 43 in
 the whole file.
+
+Line granularity narrows that problem but does not remove it — a line that
+already carries a survivor still fails the PR that touches it. That residual is
+what keeps label-heavy files out of scope until their assertion work is done
+([§5](#5-scope-and-why-label-heavy-files-stay-out-of-it)).
 
 The gate asks for **no survivors in the changed lines**, not a percentage: on a
 handful of mutants a percentage is arbitrary (1 of 3 fails at 67 %, 1 of 10
@@ -324,16 +329,39 @@ none of those things.
 Reconsider if #2843 ships: native line-range scoping would replace the first
 half, and `thresholds.break` over a scoped run could replace the second.
 
-## 5. Scope: why `src/tools/**` is out for now
+## 5. Scope, and why label-heavy files stay out of it
 
 `mutate` covers `src/auth`, `src/client`, `src/routing`, `src/utils` and
 `src/config.ts` — the logic code, where a surviving mutant is a real test gap.
 
-`src/tools/**` is excluded deliberately. It holds 151 `.describe()` calls across
-3 770 lines, and Stryker's `StringLiteral` mutator empties each one, producing a
-survivor per description that means nothing about test quality. Bringing that
-directory in needs `excludedMutations: ["StringLiteral"]` scoped to it, which is
-a follow-up, not a prerequisite.
+Two exclusions, both for the same reason and both temporary.
+
+**A label-heavy file does not merely score badly — it booby-traps the gate.**
+Because the gate fails a PR on a survivor in a line that PR changed, a file whose
+survivors are mostly label strings makes every future edit to those lines fail CI
+for debt the author did not create. The author's only ways out are to write
+assertions for someone else's code or to stop touching the file, and a gate that
+punishes unrelated work is a gate that gets switched off. So bringing a file into
+scope is a decision to do its assertion work *first*:
+
+| Excluded | Why | Owner |
+| --- | --- | --- |
+| `src/tools/**` | `.describe()` calls, each emptied by `StringLiteral` into a survivor that says nothing about test quality | needs `excludedMutations` or per-file directives |
+| `src/utils/formatting.ts` | 171 escaped mutants, 58 % of them label strings; 42 distinct lines carry one | [#203](https://github.com/fruggr/zendesk-mcp-server/issues/203) |
+
+Excluded from *mutation* only: both still run under `pnpm test` and still count
+towards the coverage thresholds. `formatting.ts` also keeps the boundary tests
+added alongside this decision — the exclusion defers the score, not the testing.
+
+**The `!` ordering is load-bearing.** Stryker resolves `mutate` as a sequence of
+set/unset operations rather than two independent lists (`project-reader`,
+`resolveFileDescriptions`), so a negation only excludes what an *earlier* pattern
+included. `scopeMatcher` in `scripts/mutation-scope.mjs` mirrors that exactly, and
+has to: the gate hands its ranges to `--mutate`, which **replaces** the configured
+scope rather than intersecting with it. A `patterns.some(...)` that ignored
+negations would have let the gate mutate an excluded file anyway — the exclusion
+defeated in the one place it has to hold. Pinned in
+`tests/unit/mutation-scope.test.ts`.
 
 ## 6. What this replaces, and what it does not
 
