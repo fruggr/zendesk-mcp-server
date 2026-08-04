@@ -191,9 +191,8 @@ knows its baseline is good. Correctness by default, speed on request.
 **The cache key carries the invalidation.** The composite action
 `.github/actions/mutation-baseline` hashes exactly the inputs from that "anything
 else" list into the cache-key prefix (`pnpm-lock.yaml`, `stryker.config.mjs`,
-`vitest.config.ts`, `tests/setup.ts`, `tests/msw-handlers.ts`, the three
-`tests/integration/` scaffolding files, `.nvmrc`). Change one and no entry
-matches; no
+`vitest.config.ts`, `tests/setup.ts`, `tests/msw-handlers.ts`, the
+`tests/integration/` scaffolding, `.nvmrc`). Change one and no entry matches; no
 baseline on disk means Stryker runs cold. The rule is structural rather than a
 conditional `--force` somebody has to keep in sync with this document.
 
@@ -207,9 +206,16 @@ have saved is the cheap run anyway — with the baseline restored, a push touchi
 nothing in scope is a dry run plus a report — and running on every push keeps the
 entry warm against the 7-day eviction.
 
-That equivalence — the hash covering *every* non-`*.test.ts` file under
-`tests/` — is enforced by a unit test rather than by this paragraph, because
-forgetting one is exactly the silent failure the rule exists to prevent.
+That equivalence is enforced by a unit test rather than by this paragraph,
+because forgetting one is the silent failure the rule exists to prevent. The test
+compares the hashed paths against every file under `tests/` — whatever its
+extension, so a JSON fixture or an `.mjs` helper a suite reads at runtime cannot
+slip through — with one deliberate exemption: `tests/functional/`. That directory
+is the inter-LLM harness driven by hand through `/functional-testing`, and
+`vitest.config.ts` loads only `tests/**/*.test.ts`, so nothing in it can change a
+verdict. It also *must* stay exempt: the harness writes a report per scenario
+run, and hashing those would discard the baseline on every recorded run — a cold
+hour bought for nothing.
 
 Note what is *absent* from the hash: `src/**` and `tests/**/*.test.ts`. That is
 the point of it. Those are exactly what incremental mode does diff correctly, so
@@ -286,8 +292,8 @@ the seventies.
 The fair question about `scripts/mutation-scope.mjs` is why any code is needed
 here at all. Checked, not assumed:
 
-- **StrykerJS has no git-aware scoping.** Its schema in 9.6.1 declares 53
-  options; none is `since`, `range`, `diff` or `changedFiles` (verified against
+- **StrykerJS has no git-aware scoping.** Nothing in its 9.6.1 schema is
+  `since`, `range`, `diff` or `changedFiles` (verified against
   `node_modules/@stryker-mutator/core/schema/stryker-schema.json`). `--since` and
   `--with-baseline` are **Stryker.NET**, a different product with a different
   codebase — the single most common wrong turn when reading about this, and worth

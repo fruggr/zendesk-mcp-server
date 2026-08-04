@@ -188,14 +188,26 @@ describe('the mutation baseline cache key', () => {
   // hence this test rather than a line in a document asking people to remember.
   const repoRoot = fileURLToPath(new URL('../../', import.meta.url));
 
-  const nonTestFilesUnder = (dir: string): string[] =>
+  // `tests/functional/` is exempt *by path, deliberately*: it is the inter-LLM
+  // harness driven by hand through `/functional-testing`, and `vitest.config.ts`
+  // loads only `tests/**/*.test.ts`, so nothing in it can change a mutation
+  // verdict. It also has to stay out — the harness writes a report per scenario
+  // run, and hashing those would discard the baseline (a ~1h cold run) every
+  // time someone records one, buying nothing.
+  const EXEMPT = 'tests/functional';
+
+  // Every remaining file, whatever its extension — not just `.ts`. Filtering by
+  // extension would pass today by coincidence and miss the case this exists to
+  // catch: a JSON fixture or an `.mjs` helper that a suite reads at runtime.
+  const suiteInputsUnder = (dir: string): string[] =>
     readdirSync(join(repoRoot, dir), { withFileTypes: true }).flatMap((entry) => {
       const rel = `${dir}/${entry.name}`;
-      if (entry.isDirectory()) return nonTestFilesUnder(rel);
-      return entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts') ? [rel] : [];
+      if (rel === EXEMPT) return [];
+      if (entry.isDirectory()) return suiteInputsUnder(rel);
+      return entry.name.endsWith('.test.ts') ? [] : [rel];
     });
 
-  it('hashes every non-test file under tests/', () => {
+  it('hashes every file under tests/ that the suite can load', () => {
     const action = readFileSync(
       join(repoRoot, '.github/actions/mutation-baseline/action.yml'),
       'utf8',
@@ -207,7 +219,7 @@ describe('the mutation baseline cache key', () => {
     // Sorted comparison, so the failure message names the missing file.
     const alphabetically = (a: string, b: string) => a.localeCompare(b);
     expect(hashed.filter((f) => f.startsWith('tests/')).sort(alphabetically)).toEqual(
-      nonTestFilesUnder('tests').sort(alphabetically),
+      suiteInputsUnder('tests').sort(alphabetically),
     );
   });
 });

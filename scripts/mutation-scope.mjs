@@ -4,9 +4,9 @@
 // lines the diff changed and fails if any of those mutants survived;
 // `pnpm test:mutation:summary` prints the last report's score as Markdown.
 //
-// Why hand-written at all: StrykerJS has no git-aware scoping — 53 config
-// options, none of them `since`/`range`/`diff` (that is Stryker.NET, a different
-// product). The open request for it is stryker-js#2843. So the two halves here
+// Why hand-written at all: StrykerJS has no git-aware scoping — nothing in its
+// schema is `since`/`range`/`diff` (those are Stryker.NET, a different product).
+// The open request for it is stryker-js#2843. So the two halves here
 // are the whole job: turn a diff into `--mutate` line specs, and read the JSON
 // report back. Both are small; what earns the file is that they are *tested*
 // (tests/unit/mutation-scope.test.ts) — an off-by-one in the range arithmetic
