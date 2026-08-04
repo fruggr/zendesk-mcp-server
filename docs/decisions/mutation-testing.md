@@ -168,9 +168,12 @@ enumeration of undetected inputs is one upstream change away from being wrong:
 
 "Anything else" is deliberately broad, and it includes files *inside* `tests/`.
 Stryker diffs the **test files it discovered**, so the suite's shared scaffolding
-is invisible to it: `tests/setup.ts`, `tests/msw-handlers.ts` (which defines
-every mocked Zendesk response the assertions rest on), `tests/integration/harness.ts`.
-Edit one of those and verdicts get replayed against the old fixtures.
+is invisible to it — in practice every non-`*.test.ts` file under `tests/`:
+`tests/setup.ts`, `tests/msw-handlers.ts` (which defines every mocked Zendesk
+response the assertions rest on), and the integration scaffolding (`harness.ts`,
+`core-scenarios.ts`, `stdio-harness.ts` — `core-scenarios.ts` alone holds the
+shared assertions every transport is checked against). Edit one of those and
+verdicts get replayed against the old fixtures.
 
 Outside `tests/` it covers `pnpm-lock.yaml` and `package.json` (dependency and
 devDependency versions), `stryker.config.mjs`, `vitest.config.ts`, `.nvmrc` and
@@ -188,8 +191,9 @@ knows its baseline is good. Correctness by default, speed on request.
 **The cache key carries the invalidation.** The composite action
 `.github/actions/mutation-baseline` hashes exactly the inputs from that "anything
 else" list into the cache-key prefix (`pnpm-lock.yaml`, `stryker.config.mjs`,
-`vitest.config.ts`, `tests/setup.ts`, `tests/msw-handlers.ts`,
-`tests/integration/harness.ts`, `.nvmrc`). Change one and no entry matches; no
+`vitest.config.ts`, `tests/setup.ts`, `tests/msw-handlers.ts`, the three
+`tests/integration/` scaffolding files, `.nvmrc`). Change one and no entry
+matches; no
 baseline on disk means Stryker runs cold. The rule is structural rather than a
 conditional `--force` somebody has to keep in sync with this document.
 
@@ -202,6 +206,10 @@ restoring a stale baseline. So the trigger is unfiltered. What that filter would
 have saved is the cheap run anyway — with the baseline restored, a push touching
 nothing in scope is a dry run plus a report — and running on every push keeps the
 entry warm against the 7-day eviction.
+
+That equivalence — the hash covering *every* non-`*.test.ts` file under
+`tests/` — is enforced by a unit test rather than by this paragraph, because
+forgetting one is exactly the silent failure the rule exists to prevent.
 
 Note what is *absent* from the hash: `src/**` and `tests/**/*.test.ts`. That is
 the point of it. Those are exactly what incremental mode does diff correctly, so
@@ -241,6 +249,32 @@ reasoning in the diff where a reviewer sees it.
 
 A PR that changes nothing inside the `mutate` scope skips the run entirely rather
 than reporting a vacuous pass.
+
+### What the gate cannot see
+
+Line-range scoping has one blind spot, and it is a consequence of getting the
+range check *right* rather than a bug left in.
+
+Stryker mutates a construct only when the construct is **contained** in a
+requested range — `locationIncluded` in the instrumenter's `syntax-helpers`, used
+by `babel-transformer` — confirmed by measurement: asking for a single line in
+the middle of a 20-line expression in `formatting.ts` instrumented **0 mutants**.
+So an edit inside a construct larger than the edit produces nothing for the gate
+to judge, and the gate says so explicitly rather than reporting a pass.
+
+The alternative is worse. Judging mutants that merely *overlap* the changed lines
+pulls in the ones Stryker deliberately did not instrument; under `--incremental`
+those are replayed out of the baseline carrying **main's** verdicts
+(`incremental-differ`: "old mutants that didn't run this time around"). A PR
+touching one line of a 40-line expression would then fail on a survivor it never
+created, and the author could not fix it except by writing tests for code they did
+not write. A gate that fails for reasons the author cannot act on gets switched
+off, so the blind spot is the better trade — stated, not hidden.
+
+One related subtlety: `escapedMutants` compares lines where Stryker compares line
+*and* column. That is equivalent only because `specsFor` emits whole-line ranges,
+which Stryker widens to column 0 through `MAX_SAFE_INTEGER` (`project-reader`).
+Narrowing a range to columns would require the comparison to grow columns too.
 
 `break` is left `null` in `stryker.config.mjs`: this global baseline is
 advisory. A gate belongs on the score *of the diff* — "the mutants this PR

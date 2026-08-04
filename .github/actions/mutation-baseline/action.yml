@@ -41,6 +41,14 @@ runs:
     # workflows, not the mutate scope. The table in
     # docs/decisions/mutation-testing.md states the same rule as an allowlist.
     #
+    # In practice that means *every* non-`*.test.ts` file under `tests/` is
+    # listed: `core-scenarios.ts` and `stdio-harness.ts` carry the shared
+    # integration assertions as surely as `harness.ts` carries the config, and
+    # Stryker sees none of the three. That equivalence is enforced by a test
+    # (`tests/unit/mutation-scope.test.ts`) rather than left to memory, because
+    # forgetting one fails silently: verdicts get replayed against assertions
+    # that no longer exist.
+    #
     # The trailing commit sha keeps every save unique (Actions cache entries are
     # immutable, so a fixed key would freeze the first baseline forever); the
     # prefix restore-key is what allows falling back to main's latest, and it is
@@ -50,7 +58,7 @@ runs:
       id: key
       shell: bash
       env:
-        PREFIX: mutation-baseline-${{ hashFiles('pnpm-lock.yaml', 'stryker.config.mjs', 'vitest.config.ts', 'tests/setup.ts', 'tests/msw-handlers.ts', 'tests/integration/harness.ts', '.nvmrc') }}
+        PREFIX: mutation-baseline-${{ hashFiles('pnpm-lock.yaml', 'stryker.config.mjs', 'vitest.config.ts', 'tests/setup.ts', 'tests/msw-handlers.ts', 'tests/integration/harness.ts', 'tests/integration/core-scenarios.ts', 'tests/integration/stdio-harness.ts', '.nvmrc') }}
       run: |
         echo "prefix=${PREFIX}-" >> "$GITHUB_OUTPUT"
         echo "exact=${PREFIX}-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"

@@ -73,7 +73,23 @@ export const specsFor = (ranges) => ranges.map((r) => `${r.file}:${r.start}-${r.
 
 /**
  * Split the mutants that fall inside `ranges` into judged/escaped. Pure.
- * A mutant counts as in-range when its span overlaps a changed range at all.
+ *
+ * A mutant counts as in-range when its span is *contained* in a changed range,
+ * which is the same test Stryker applies when it decides what to instrument
+ * (`locationIncluded` in the instrumenter's `syntax-helpers`, used by
+ * `babel-transformer`). Containment, not overlap: under `--incremental` the
+ * report also carries mutants Stryker chose NOT to instrument this run, replayed
+ * from the baseline with their old verdict (`incremental-differ`, "old mutants
+ * that didn't run this time around"). An overlap test would pull those in — a
+ * multi-line mutant spanning lines 100-140 that survived on main, judged against
+ * a PR that touched line 120 — and fail the PR on a stale verdict for code it
+ * did not write, which the author cannot fix. Judging exactly what this run
+ * mutated is the whole point of holding the ranges.
+ *
+ * Lines only, where Stryker's check is line+column: equivalent here because
+ * `specsFor` emits whole-line ranges, which Stryker widens to column 0 through
+ * MAX_SAFE_INTEGER (`project-reader`). Narrow a range to columns and this has to
+ * grow columns too.
  */
 export const escapedMutants = (ranges, report) => {
   const escaped = [];
@@ -82,7 +98,7 @@ export const escapedMutants = (ranges, report) => {
     for (const mutant of fileReport.mutants ?? []) {
       const { start, end } = mutant.location;
       const inRange = ranges.some(
-        (r) => r.file === file && start.line <= r.end && end.line >= r.start,
+        (r) => r.file === file && start.line >= r.start && end.line <= r.end,
       );
       if (!inRange) continue;
       judged += 1;
@@ -128,12 +144,31 @@ const loadConfig = async () => {
   return { inScope: (path) => mutate.some((pattern) => matchesGlob(path, pattern)), reportPath };
 };
 
+// `--src-prefix`/`--dst-prefix` are not decoration: a contributor with
+// `diff.noprefix` or `diff.mnemonicPrefix` set gets `+++ path` or `+++ w/path`,
+// which `changedRanges` cannot parse — the gate would then find no ranges and
+// pass silently on a PR full of in-scope changes. Verified: with
+// `diff.noprefix=true` the header comes out as `+++ src/utils/logger.ts`.
+// `--no-ext-diff` keeps a configured external differ from replacing the unified
+// format outright.
 const gitDiff = (baseSha, headSha) =>
-  execFileSync('git', ['diff', '--unified=0', '--diff-filter=d', `${baseSha}...${headSha}`], {
-    cwd: repoRoot,
-    encoding: 'utf8',
-    maxBuffer: 64 * 1024 * 1024,
-  });
+  execFileSync(
+    'git',
+    [
+      'diff',
+      '--unified=0',
+      '--diff-filter=d',
+      '--no-ext-diff',
+      '--src-prefix=a/',
+      '--dst-prefix=b/',
+      `${baseSha}...${headSha}`,
+    ],
+    {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
+    },
+  );
 
 const readReport = (reportPath) => {
   const absolute = join(repoRoot, reportPath);
@@ -163,7 +198,16 @@ const diffGate = async (baseSha, headSha, strykerFlags) => {
 
   const { judged, escaped } = escapedMutants(ranges, readReport(reportPath));
   if (judged === 0) {
-    console.log('No mutants in the changed lines — nothing to gate.');
+    // Not the same as "this change is safe", and worth saying so: Stryker only
+    // mutates constructs *contained* in the range, so a one-line edit inside a
+    // large multi-line expression can produce nothing to run. The gate is blind
+    // there rather than reassuring — see the ADR, "What the gate cannot see".
+    console.log(
+      'Stryker produced no mutants inside the changed lines, so there is nothing to\n' +
+        'gate. Note this is not a pass: an edit contained in a larger construct (a long\n' +
+        'multi-line expression, say) can yield no mutant of its own. Review the change\n' +
+        'on its merits.',
+    );
     return;
   }
 
@@ -176,12 +220,15 @@ const diffGate = async (baseSha, headSha, strykerFlags) => {
     return;
   }
 
-  console.error('\nThese mutants were introduced or touched by this PR and no test caught them:\n');
+  // stdout, not stderr: CI pipes this command's stdout into the job summary, and
+  // the list of what escaped is the one thing the author has to act on. On
+  // stderr it stayed in the raw log while only the count above reached them.
+  console.log('\nThese mutants were introduced or touched by this PR and no test caught them:\n');
   for (const { file, line, mutant } of escaped) {
-    console.error(`  ${file}:${line}  ${mutant.status}  ${mutant.mutatorName}`);
-    console.error(`    replaced with: ${JSON.stringify(mutant.replacement ?? '')}`);
+    console.log(`  ${file}:${line}  ${mutant.status}  ${mutant.mutatorName}`);
+    console.log(`    replaced with: ${JSON.stringify(mutant.replacement ?? '')}`);
   }
-  console.error(
+  console.log(
     '\nEach one is a change a test should have noticed. Add or tighten an assertion —\n' +
       'never weaken one to go green. If a mutant is genuinely equivalent to the\n' +
       'original (unreachable defensive guard, say), say so in the code with\n' +

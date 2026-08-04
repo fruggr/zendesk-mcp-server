@@ -1,3 +1,6 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error -- plain .mjs helper, no declaration file (same as the other
 // script tests in this directory).
@@ -137,10 +140,23 @@ describe('escapedMutants', () => {
     expect(escapedMutants(ranges, report)).toEqual({ judged: 1, escaped: [] });
   });
 
-  it('judges a mutant that straddles the range boundary', () => {
-    // Starts before the range, ends inside it — the change is still implicated.
+  it('spares a mutant that straddles the range boundary', () => {
+    // Starts before the range, ends inside it. Stryker's own `--mutate` filter
+    // only instruments mutants *contained* in the range (`locationIncluded`), so
+    // this one was never run: under `--incremental` it is replayed out of the
+    // baseline with a verdict about main's code. Judging it would fail a PR that
+    // touched one line of a 40-line expression on a survivor it did not create.
+    // Measured: asking for a single line inside a 20-line expression in
+    // `formatting.ts` instruments 0 mutants.
     const report = { files: { 'src/utils/logger.ts': { mutants: [mutant(50, 'Survived', 57)] } } };
-    expect(escapedMutants(ranges, report).judged).toBe(1);
+    expect(escapedMutants(ranges, report)).toEqual({ judged: 0, escaped: [] });
+  });
+
+  it('judges a multi-line mutant fully contained in the range', () => {
+    // The counterpart: contained means Stryker did instrument and run it, so its
+    // verdict describes this run and the gate is entitled to act on it.
+    const report = { files: { 'src/utils/logger.ts': { mutants: [mutant(60, 'Survived', 70)] } } };
+    expect(escapedMutants(ranges, report).escaped.map((e) => e.line)).toEqual([60]);
   });
 
   it('ignores a file the diff did not touch, even when it has survivors', () => {
@@ -160,6 +176,39 @@ describe('escapedMutants', () => {
       judged: 0,
       escaped: [],
     });
+  });
+});
+
+describe('the mutation baseline cache key', () => {
+  // The one list in the setup that has to be maintained by hand, and the one
+  // whose failure is silent: Stryker's incremental mode diffs the test files it
+  // *discovers*, so shared scaffolding under `tests/` is invisible to it, and a
+  // file missing from the hash means every later PR restores verdicts replayed
+  // against fixtures that no longer exist. Nothing about that fails loudly —
+  // hence this test rather than a line in a document asking people to remember.
+  const repoRoot = fileURLToPath(new URL('../../', import.meta.url));
+
+  const nonTestFilesUnder = (dir: string): string[] =>
+    readdirSync(join(repoRoot, dir), { withFileTypes: true }).flatMap((entry) => {
+      const rel = `${dir}/${entry.name}`;
+      if (entry.isDirectory()) return nonTestFilesUnder(rel);
+      return entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts') ? [rel] : [];
+    });
+
+  it('hashes every non-test file under tests/', () => {
+    const action = readFileSync(
+      join(repoRoot, '.github/actions/mutation-baseline/action.yml'),
+      'utf8',
+    );
+    const call = /hashFiles\(([^)]*)\)/.exec(action);
+    expect(call?.[1], 'the action must compute the prefix with hashFiles(...)').toBeDefined();
+    const hashed = [...(call?.[1] ?? '').matchAll(/'([^']+)'/g)].map((m) => m[1]);
+
+    // Sorted comparison, so the failure message names the missing file.
+    const alphabetically = (a: string, b: string) => a.localeCompare(b);
+    expect(hashed.filter((f) => f.startsWith('tests/')).sort(alphabetically)).toEqual(
+      nonTestFilesUnder('tests').sort(alphabetically),
+    );
   });
 });
 

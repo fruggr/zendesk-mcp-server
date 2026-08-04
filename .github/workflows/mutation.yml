@@ -52,7 +52,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          # The gate diffs base...head, so both commits have to be present.
+          # The gate diffs the PR base against the checked-out merge commit, so
+          # the base commit has to be present too.
           fetch-depth: 0
           # Neither job pushes, and both run `pnpm install`, which executes
           # dependency lifecycle scripts — no reason to leave a usable git
@@ -78,10 +79,20 @@ jobs:
         # to catch, which is worse than not having it: the green check reads as
         # evidence.
         shell: bash
+        # `HEAD`, not `pull_request.head.sha`: on a `pull_request` event checkout
+        # gives us the PR's *merge* commit, and the line numbers Stryker is handed
+        # have to be the ones in the tree it mutates. Diffing to `head.sha`
+        # instead numbers the hunks against the head commit's files, so once the
+        # base branch has moved with any change to a file the PR also touches,
+        # every range points at the wrong lines — mutating untouched code while
+        # leaving the changed lines ungated. `base.sha` is an ancestor of the
+        # merge commit, so `base.sha...HEAD` is the PR's own changes against the
+        # base, and it fails loudly if that commit is missing rather than
+        # silently resolving to something else (which `HEAD^1` would).
         run: |
           pnpm test:mutation:diff \
             '${{ github.event.pull_request.base.sha }}' \
-            '${{ github.event.pull_request.head.sha }}' \
+            HEAD \
             --incremental | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Upload the mutation report

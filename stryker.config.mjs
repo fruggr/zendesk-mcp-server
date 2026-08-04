@@ -53,6 +53,14 @@ export default {
   htmlReporter: { fileName: 'reports/mutation/index.html' },
   jsonReporter: { fileName: 'reports/mutation/mutation.json' },
 
+  // Score table yes, per-mutant dump no. Under `--incremental` the report is
+  // project-wide, so `reportMutants` prints every survivor in the whole scope
+  // (hundreds, each with its source snippet and covering tests) to stdout — and
+  // the PR gate tees stdout into the job summary, which would bury the handful
+  // of mutants the PR is actually being judged on under the repo's backlog. The
+  // full per-mutant detail is in the uploaded HTML report.
+  clearTextReporter: { reportMutants: false },
+
   // Where `--incremental` keeps its baseline. Incremental mode is deliberately
   // NOT enabled by default: it diffs mutated sources and test files only, so a
   // dependency, config or Node change leaves verdicts replayed instead of
