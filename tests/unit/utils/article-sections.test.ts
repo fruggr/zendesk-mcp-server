@@ -72,6 +72,33 @@ describe('parseSections', () => {
     expect(parseSections('')).toEqual([]);
   });
 
+  it('treats whitespace-only html as empty', () => {
+    expect(parseSections('   \n\t  ')).toEqual([]);
+  });
+
+  it('recognises headings whatever their tag case', () => {
+    // cheerio preserves the source case; the split normalises it.
+    const sections = parseSections('<H2>Upper</H2><p>body</p>');
+    expect(sections).toHaveLength(1);
+    expect(sections[0]).toMatchObject({ heading: 'Upper', headingTag: 'h2', level: 2 });
+  });
+
+  it('counts a run of whitespace as a single separator', () => {
+    // `\s+`, not `\s`: without the quantifier, "one  two" counts 3 words.
+    const sections = parseSections('<h2>T</h2><p>one  two\n\nthree</p>');
+    expect(sections[0]?.wordCount).toBe(3);
+  });
+
+  it('reports a zero word count for a heading with no content', () => {
+    const sections = parseSections('<h2>Empty</h2>');
+    expect(sections[0]).toMatchObject({ heading: 'Empty', html: '', wordCount: 0 });
+  });
+
+  it('ignores markup when counting words', () => {
+    const sections = parseSections('<h2>T</h2><p><strong>one</strong> <em>two</em></p>');
+    expect(sections[0]?.wordCount).toBe(2);
+  });
+
   it('assigns sequential indexes starting at 0', () => {
     const html = '<p>I</p><h2>A</h2><p>1</p><h2>B</h2><p>2</p>';
     const sections = parseSections(html);
@@ -110,6 +137,37 @@ describe('replaceSectionContent', () => {
     const html = '<h2>A</h2><p>1</p>';
     expect(() => replaceSectionContent(html, 5, '<p>x</p>')).toThrow();
     expect(() => replaceSectionContent(html, -1, '<p>x</p>')).toThrow();
+  });
+
+  it('names the offending index and the valid range in the error', () => {
+    // The message is what the LLM sees and has to act on, so it is pinned in
+    // full rather than merely required to throw.
+    const html = '<h2>A</h2><p>1</p><h2>B</h2><p>2</p>';
+    expect(() => replaceSectionContent(html, 7, '<p>x</p>')).toThrow(
+      'Section index 7 out of range (valid: 0-1)',
+    );
+  });
+
+  it('reports the range as 0-0 rather than 0--1 when there is no section', () => {
+    expect(() => replaceSectionContent('', 0, '<p>x</p>')).toThrow(
+      'Section index 0 out of range (valid: 0-0)',
+    );
+  });
+
+  it('accepts the last valid index', () => {
+    // Guards the `>= sections.length` bound against an off-by-one that would
+    // reject a legitimate final section.
+    const html = '<h2>A</h2><p>a</p><h2>B</h2><p>b</p>';
+    expect(replaceSectionContent(html, 1, '<p>new</p>')).toBe(
+      '<h2>A</h2><p>a</p><h2>B</h2><p>new</p>',
+    );
+  });
+
+  it('rebuilds the document verbatim when replacing with identical content', () => {
+    // Pins the join and the heading re-wrapping: any stray separator or
+    // dropped tag shows up here.
+    const html = '<p>intro</p><h2>A</h2><p>a</p><h3>B</h3><p>b</p>';
+    expect(replaceSectionContent(html, 0, '<p>intro</p>')).toBe(html);
   });
 
   it('round-trips: parse, replace last, parse again', () => {

@@ -182,7 +182,10 @@ assumption that everything below has already been done.
    skipping them in the PR description.
 5. **Run the full local gate**: `pnpm check`, `pnpm typecheck`, `pnpm test`,
    `pnpm build`. A green CI on a non-green local run means a flaky check, not a
-   free pass.
+   free pass. If your PR changes anything under `src/`, also run the mutation
+   gate on your diff — CI does, and it fails on a surviving mutant in a line you
+   changed: `pnpm test:mutation:diff origin/main HEAD`. Background:
+   [`docs/decisions/mutation-testing.md`](docs/decisions/mutation-testing.md).
 6. **Scope discipline.** Don't bundle unrelated cleanups into a feature PR. If
    you spot something worth fixing along the way, note it and open a separate PR.
 7. **No invented behavior.** If a Zendesk API field, an SDK option, or a library
@@ -195,7 +198,10 @@ assumption that everything below has already been done.
 ## What happens after you open the PR
 
 1. CI runs lint, typecheck, tests with coverage thresholds, build, and a smoke
-   test (single `build-and-test` job in `.github/workflows/ci.yml`).
+   test (single `build-and-test` job in `.github/workflows/ci.yml`), plus the
+   mutation gate on the lines your diff changed (`Changed lines` in
+   `.github/workflows/mutation.yml`). The gate skips itself when the diff touches
+   nothing it mutates, so a docs-only PR is unaffected.
 2. CodeRabbit posts a high-level summary and review comments on the diff.
 3. The maintainer reviews everything.
 4. You address review findings.
