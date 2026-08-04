@@ -25,7 +25,9 @@ runs:
       shell: bash
 
     # THE INVALIDATION RULE. Selection is mechanical, in two parts:
-    #   1. the toolchain and runner inputs — lockfile, both configs, .nvmrc;
+    #   1. the toolchain and runner inputs — lockfile, package.json (its
+    #      `packageManager` field is where pnpm/action-setup reads the pnpm
+    #      version from, no `version:` input above), both configs, .nvmrc;
     #   2. every file under tests/ except *.test.ts and tests/functional/.
     # Part 2 is asserted by tests/unit/mutation-scope.test.ts, so this list
     # cannot drift silently. `src/**` and *.test.ts are absent on purpose:
@@ -39,7 +41,7 @@ runs:
       id: key
       shell: bash
       env:
-        PREFIX: mutation-baseline-${{ hashFiles('pnpm-lock.yaml', 'stryker.config.mjs', 'vitest.config.ts', 'tests/setup.ts', 'tests/msw-handlers.ts', 'tests/integration/harness.ts', 'tests/integration/core-scenarios.ts', 'tests/integration/stdio-harness.ts', '.nvmrc') }}
+        PREFIX: mutation-baseline-${{ hashFiles('pnpm-lock.yaml', 'package.json', 'stryker.config.mjs', 'vitest.config.ts', 'tests/setup.ts', 'tests/msw-handlers.ts', 'tests/integration/harness.ts', 'tests/integration/core-scenarios.ts', 'tests/integration/stdio-harness.ts', '.nvmrc') }}
       run: |
         echo "prefix=${PREFIX}-" >> "$GITHUB_OUTPUT"
         echo "exact=${PREFIX}-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
