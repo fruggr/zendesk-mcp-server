@@ -84,9 +84,8 @@ happened here. Before writing any code for an issue:
 2. Create a feature branch from `main`.
 3. Write code in small, reviewable commits.
 4. Use [Conventional Commits](https://www.conventionalcommits.org/) — they
-   directly drive the next version bump via semantic-release. See the
-   [release table in the README](README.md#releases--versioning) for which
-   prefixes trigger which bump.
+   directly drive the next version bump via semantic-release (see
+   [Releases](#releases) for which prefixes trigger which bump).
 5. Make the author checklist below pass locally.
 6. Push your branch and open a PR against `main`.
 
@@ -182,7 +181,10 @@ assumption that everything below has already been done.
    skipping them in the PR description.
 5. **Run the full local gate**: `pnpm check`, `pnpm typecheck`, `pnpm test`,
    `pnpm build`. A green CI on a non-green local run means a flaky check, not a
-   free pass.
+   free pass. If your PR changes anything under `src/`, also run the mutation
+   gate on your diff — CI does, and it fails on a surviving mutant in a line you
+   changed: `pnpm test:mutation:diff origin/main HEAD`. Background:
+   [`docs/decisions/mutation-testing.md`](docs/decisions/mutation-testing.md).
 6. **Scope discipline.** Don't bundle unrelated cleanups into a feature PR. If
    you spot something worth fixing along the way, note it and open a separate PR.
 7. **No invented behavior.** If a Zendesk API field, an SDK option, or a library
@@ -195,7 +197,10 @@ assumption that everything below has already been done.
 ## What happens after you open the PR
 
 1. CI runs lint, typecheck, tests with coverage thresholds, build, and a smoke
-   test (single `build-and-test` job in `.github/workflows/ci.yml`).
+   test (single `build-and-test` job in `.github/workflows/ci.yml`), plus the
+   mutation gate on the lines your diff changed (`Changed lines` in
+   `.github/workflows/mutation.yml`). The gate skips itself when the diff touches
+   nothing it mutates, so a docs-only PR is unaffected.
 2. CodeRabbit posts a high-level summary and review comments on the diff.
 3. The maintainer reviews everything.
 4. You address review findings.
@@ -214,7 +219,23 @@ assumption that everything below has already been done.
 
 ## Releases
 
-Versions are calculated and published automatically from Conventional Commit
-messages. See the [release section in the
-README](README.md#releases--versioning) and the [Release
-workflow](AGENTS.md#release-workflow) section in `AGENTS.md`.
+Versions follow [SemVer](https://semver.org/) and are calculated
+**automatically** from commit messages — nobody bumps the version by hand. Every
+merge to `main` triggers
+[semantic-release](https://github.com/semantic-release/semantic-release), which
+inspects the Conventional Commits since the previous tag, computes the next
+version, updates [`CHANGELOG.md`](CHANGELOG.md), publishes to npm, creates the
+matching GitHub Release, and mirrors it into the [official MCP
+registry](https://registry.modelcontextprotocol.io) so registry-driven clients
+discover the new version automatically.
+
+| Commit type | Resulting bump |
+|---|---|
+| `fix:`, `perf:` | patch |
+| `feat:` | minor |
+| `feat!:`, `fix!:`, or a `BREAKING CHANGE:` footer | major |
+| `docs:`, `chore:`, `refactor:`, `test:`, `ci:`, `style:`, `build:` | no release |
+
+The full pipeline — Renovate, the release gating, the registry manifest — is in
+[`docs/release-automation.md`](docs/release-automation.md); the short rules for
+agents are in [Release workflow](AGENTS.md#release-workflow).

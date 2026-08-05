@@ -1,0 +1,104 @@
+name: Mutation testing
+
+# `diff-gate` mutates a PR's changed *lines*; `baseline` runs the full scope on
+# main and is the only writer of the incremental cache the gate restores.
+# Design, costs and the reasoning behind every choice below:
+# docs/decisions/mutation-testing.md
+
+on:
+  # Both unfiltered on purpose: a path-filtered *required* check never reports,
+  # and a `paths:` list here would be a second copy of the cache key's rule. Why
+  # that trade is right: the ADR, §4.
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diff-gate:
+    name: Changed lines
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    # Normally under a minute; slack for a lot of logic at once, or a cold cache.
+    timeout-minutes: 25
+    concurrency:
+      group: mutation-gate-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # the gate diffs the PR base against this merge commit
+          persist-credentials: false # neither job pushes (zizmor `artipacked`)
+
+      - uses: ./.github/actions/mutation-baseline
+
+      # Two things here are load-bearing and look removable. `shell: bash` gives
+      # `-eo pipefail`; the default `bash -e` has none, so `tee` would swallow the
+      # gate's exit 1 and every failure would report green (measured). `HEAD`, not
+      # `head.sha`: checkout gives us the merge commit, and the line numbers must
+      # match the tree Stryker mutates. Both explained in full in the ADR, §4.
+      - name: Gate the changed lines
+        shell: bash
+        run: |
+          pnpm test:mutation:diff \
+            '${{ github.event.pull_request.base.sha }}' \
+            HEAD \
+            --incremental | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the mutation report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mutation-report-pr
+          # The baseline is excluded: a copy of the restored cache entry, ~2 MB.
+          path: |
+            reports/mutation/
+            !reports/mutation/stryker-incremental.json
+          retention-days: 7
+          if-no-files-found: warn
+
+  baseline:
+    name: Full scope
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    # Only a changed cache prefix costs the full cold run (~1h on 4 cores).
+    timeout-minutes: 120
+    concurrency:
+      group: mutation-baseline
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/mutation-baseline
+        id: cache
+
+      # Reports, never `break`s. No `--`: pnpm 11 forwards the separator itself.
+      - run: pnpm test:mutation --incremental
+
+      - name: Score summary
+        if: always()
+        run: pnpm test:mutation:summary >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Save the refreshed baseline
+        # The only writer; skipped on failure so no partial baseline is published.
+        if: success()
+        uses: actions/cache/save@v6
+        with:
+          path: reports/mutation/stryker-incremental.json
+          key: ${{ steps.cache.outputs.exact }}
+
+      - name: Upload the mutation report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mutation-report-baseline
+          path: |
+            reports/mutation/
+            !reports/mutation/stryker-incremental.json
+          retention-days: 30
+          if-no-files-found: warn

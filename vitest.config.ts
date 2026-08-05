@@ -5,6 +5,11 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     setupFiles: ['./tests/setup.ts'],
+    // An allowlist, not the default repo-wide glob: the default also collects
+    // any *copy* of the tree (Stryker's `.stryker-tmp` sandbox, a worktree, an
+    // unpacked tarball), which runs every suite twice over against mutated
+    // sources.
+    include: ['tests/**/*.test.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'text-summary', 'html', 'lcov', 'json-summary'],

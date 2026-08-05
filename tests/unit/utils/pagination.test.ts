@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildCursorParams,
+  buildOffsetParams,
   extractOffsetPaginationMeta,
   extractPaginationMeta,
+  extractSearchPaginationMeta,
 } from '../../../src/utils/pagination';
 
 describe('buildCursorParams', () => {
@@ -23,6 +25,26 @@ describe('buildCursorParams', () => {
   });
 });
 
+describe('buildOffsetParams', () => {
+  it('builds params with per_page only', () => {
+    expect(buildOffsetParams(50)).toEqual({ per_page: '50' });
+  });
+
+  it('omits page 1, which is what the API serves by default', () => {
+    // Sending `page=1` is redundant; the assertion pins the omission so the
+    // guard cannot be relaxed to `page >= 1` unnoticed.
+    expect(buildOffsetParams(50, 1)).toEqual({ per_page: '50' });
+  });
+
+  it('includes the page number from page 2 onwards', () => {
+    expect(buildOffsetParams(50, 2)).toEqual({ per_page: '50', page: '2' });
+  });
+
+  it('omits page 0 rather than sending it verbatim', () => {
+    expect(buildOffsetParams(50, 0)).toEqual({ per_page: '50' });
+  });
+});
+
 describe('extractOffsetPaginationMeta', () => {
   it('uses offset math when the count wrapper is present', () => {
     const meta = extractOffsetPaginationMeta({ macros: [], count: 150 }, 0, 100, 1);
@@ -32,6 +54,50 @@ describe('extractOffsetPaginationMeta', () => {
   it('falls back to the returned page length when count is absent', () => {
     const meta = extractOffsetPaginationMeta({ sla_policies: [] }, 7, 100, 1);
     expect(meta).toEqual({ count: 7, has_more: false, after_cursor: null });
+  });
+
+  it('treats an explicit zero count as present, not as absent', () => {
+    // `count: 0` is falsy but not missing: an endpoint reporting "no results"
+    // must go through the offset math and report 0, not fall back to the
+    // item count. Guards the `!= null` check against a truthiness rewrite.
+    const meta = extractOffsetPaginationMeta({ macros: [], count: 0 }, 7, 100, 1);
+    expect(meta).toEqual({ count: 0, has_more: false, after_cursor: null });
+  });
+});
+
+describe('extractSearchPaginationMeta', () => {
+  it('reports more pages while the count exceeds what has been served', () => {
+    expect(extractSearchPaginationMeta({ results: [], count: 101 }, 100, 1)).toEqual({
+      count: 101,
+      has_more: true,
+      after_cursor: '2',
+    });
+  });
+
+  it('stops at the exact boundary: a full final page is not "more"', () => {
+    // count === page * perPage. The off-by-one that `>=` would introduce
+    // advertises a page that does not exist.
+    expect(extractSearchPaginationMeta({ results: [], count: 100 }, 100, 1)).toEqual({
+      count: 100,
+      has_more: false,
+      after_cursor: null,
+    });
+  });
+
+  it('accounts for the pages already served when pointing at the next one', () => {
+    expect(extractSearchPaginationMeta({ results: [], count: 250 }, 100, 2)).toEqual({
+      count: 250,
+      has_more: true,
+      after_cursor: '3',
+    });
+  });
+
+  it('treats a missing count as zero', () => {
+    expect(extractSearchPaginationMeta({ results: [] }, 100, 1)).toEqual({
+      count: 0,
+      has_more: false,
+      after_cursor: null,
+    });
   });
 });
 

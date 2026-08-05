@@ -81,6 +81,13 @@ quality bar still hold — the freedom is from Zendesk's shape, not from craft.)
 - Inter-LLM functional tests (proxy annotations, `[RO]` prefix on `tools/list`)
   live in `tests/functional/`; invoke via `/functional-testing`. Details in
   `tests/functional/README.md`.
+- Mutation testing (StrykerJS) runs over the scope in `stryker.config.mjs`, and
+  CI fails a PR on a mutant that survived **in a line it changed**
+  (`pnpm test:mutation:diff origin/main HEAD` reproduces it). A survivor means an
+  assertion is missing or too loose — tighten it, never weaken one to go green;
+  for a genuinely equivalent mutant say why with
+  `// Stryker disable next-line <mutator>: <reason>`. Rationale, scope and costs:
+  `docs/decisions/mutation-testing.md`.
 
 ## Planning
 
@@ -159,15 +166,22 @@ schema: `docs/mcp-metadata.md`.
 
 Any change to the tool surface syncs the tool tables in
 `docs/mcp-tools-reference.md` (and, if a whole namespace appears or disappears,
-the namespace list in the `README.md` "Available tools" section) in the same PR.
+the namespace list in the `README.md` "Tool surface" section) in the same PR.
 Prose and section headers are deliberately count-free (no per-section
 `(N tools)` or global tool totals) — don't reintroduce hardcoded counts, they
 only go stale. Exact counts still live where they're load-bearing: namespace
 counts in `tests/unit/routing/registry.test.ts` and the length assertions in
 `tests/unit/tools/*.test.ts` — update those. Proxy descriptions surface only the
 first sentence of a tool's description — keep it standalone. Changes to the
-non-tool MCP surface (server `instructions`, `resources`, `prompts`) sync the
-relevant `README.md` section in the same PR.
+non-tool MCP surface (server `instructions`, `resources`, `prompts`) sync
+`docs/help-center-context.md` in the same PR — that's where the mechanics,
+per-flag toggles and request costs live; the `README.md` section is a short
+"why" summary and only changes when the pitch does.
+
+The `README.md` is deliberately **why/what, not how**: keep setup mechanics,
+flags, costs and internals in `docs/` and link them. Don't restate a point the
+README already makes elsewhere — the FAQ in particular is not a place to repeat
+the body.
 
 ## Submission quality bar
 

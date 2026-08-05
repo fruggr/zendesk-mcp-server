@@ -36,10 +36,51 @@ describe('createLogger', () => {
     const log = createLogger('debug');
     log.info('evt', { platform: 'win32', port: 3000 });
 
-    const line = errSpy.mock.calls[0]?.[0] as string;
-    expect(line).toContain('evt');
-    expect(line).toContain('platform=win32');
-    expect(line).toContain('port=3000');
+    // Pinned in full rather than by fragments: the prefix, the bracketed level
+    // and the ` `/`=` separators are the whole contract of a line that humans
+    // and log scrapers read.
+    expect(errSpy.mock.calls[0]?.[0]).toBe('[zendesk-mcp] [info] evt platform=win32 port=3000');
+  });
+
+  it('emits the bare event with no trailing separator when there are no fields', () => {
+    const log = createLogger('debug');
+    log.info('evt');
+
+    expect(errSpy.mock.calls[0]?.[0]).toBe('[zendesk-mcp] [info] evt');
+  });
+
+  it('labels each line with its own level', () => {
+    const log = createLogger('debug');
+    log.debug('d');
+    log.info('i');
+    log.warn('w');
+    log.error('e');
+
+    expect(errSpy.mock.calls.map((call) => call[0])).toEqual([
+      '[zendesk-mcp] [debug] d',
+      '[zendesk-mcp] [info] i',
+      '[zendesk-mcp] [warn] w',
+      '[zendesk-mcp] [error] e',
+    ]);
+  });
+
+  it('renders booleans, null and undefined field values', () => {
+    const log = createLogger('debug');
+    log.info('evt', { enabled: true, disabled: false, missing: null, absent: undefined });
+
+    expect(errSpy.mock.calls[0]?.[0]).toBe(
+      '[zendesk-mcp] [info] evt enabled=true disabled=false missing=null absent=undefined',
+    );
+  });
+
+  it('falls back to a placeholder for values JSON cannot serialize', () => {
+    // A BigInt stays a primitive, so redaction returns it untouched and it is
+    // renderValue's `JSON.stringify` guard that catches it — a different path
+    // from the cycles handled in redactValue below, which never reach here.
+    const log = createLogger('debug');
+    log.info('evt', { big: 10n });
+
+    expect(errSpy.mock.calls[0]?.[0]).toBe('[zendesk-mcp] [info] evt big=[unserializable]');
   });
 
   it('redacts sensitive field values but keeps technical fields', () => {
@@ -62,6 +103,32 @@ describe('createLogger', () => {
     expect(line).toContain('status=401');
   });
 
+  it('matches sensitive keys regardless of case and separators', () => {
+    // The key set is normalised (lowercased, `_`/`-` stripped) precisely so
+    // these spellings collapse onto the same entry. Nothing pinned that.
+    const log = createLogger('debug');
+    log.error('oauth_failed', {
+      'ACCESS-TOKEN': 'hyphen-upper',
+      refreshToken: 'camel',
+      Code_Verifier: 'mixed',
+    });
+
+    expect(errSpy.mock.calls[0]?.[0]).toBe(
+      '[zendesk-mcp] [error] oauth_failed ACCESS-TOKEN=[REDACTED] refreshToken=[REDACTED] Code_Verifier=[REDACTED]',
+    );
+  });
+
+  it('leaves a key that merely contains a sensitive word alone', () => {
+    // The match is on the whole normalised key, not a substring: `tokenCount`
+    // is a metric, not a credential.
+    const log = createLogger('debug');
+    log.info('stats', { tokenCount: 42, secretsScanned: 3 });
+
+    expect(errSpy.mock.calls[0]?.[0]).toBe(
+      '[zendesk-mcp] [info] stats tokenCount=42 secretsScanned=3',
+    );
+  });
+
   it('redacts sensitive values nested in objects and arrays', () => {
     const log = createLogger('debug');
     log.error('nested', {
@@ -74,6 +141,15 @@ describe('createLogger', () => {
     expect(line).not.toContain('arr-secret');
     expect(line).toContain('[REDACTED]');
     expect(line).toContain('keep-me');
+  });
+
+  it('keeps arrays as arrays rather than reshaping them into objects', () => {
+    // Redaction walks arrays element-wise; treating one as a plain object
+    // would turn `[a, b]` into `{"0":a,"1":b}` in the rendered line.
+    const log = createLogger('debug');
+    log.info('evt', { scopes: ['read', 'write'] });
+
+    expect(errSpy.mock.calls[0]?.[0]).toBe('[zendesk-mcp] [info] evt scopes=["read","write"]');
   });
 
   it('collapses a circular reference instead of blowing the stack', () => {
@@ -146,9 +222,14 @@ describe('createLogger', () => {
 
     log.error('hostile_tojson', { hostile });
 
-    const line = errSpy.mock.calls[0]?.[0] as string;
-    expect(line).not.toContain('tojson-secret');
-    expect(line).toContain('[REDACTED]');
+    // Pinned whole: the `[function]` marker is what proves the callable was
+    // *replaced* rather than merely omitted. Asserting only the absence of the
+    // secret passes just as well if the marker becomes an empty string, which
+    // would leave `JSON.stringify` a `toJSON` of `""` — no longer callable, but
+    // no longer evidence of anything either.
+    expect(errSpy.mock.calls[0]?.[0]).toBe(
+      '[zendesk-mcp] [error] hostile_tojson hostile={"token":"[REDACTED]","toJSON":"[function]"}',
+    );
 
     const arg = send.mock.calls[0]?.[0] as { data: unknown };
     expect(JSON.stringify(arg.data)).not.toContain('tojson-secret');
@@ -164,7 +245,11 @@ describe('createLogger', () => {
 
     expect(() => log.info('hostile', { hostile })).not.toThrow();
     expect(errSpy).toHaveBeenCalledTimes(1);
-    expect(errSpy.mock.calls[0]?.[0] as string).toContain('hostile');
+    // `toContain('hostile')` matched the *event name*, which is in the line
+    // whatever redaction does — so it held even if the whole fallback vanished.
+    // The line is pinned instead: losing the fields is acceptable, losing the
+    // trace that they were dropped is not.
+    expect(errSpy.mock.calls[0]?.[0]).toBe('[zendesk-mcp] [info] hostile fields=[unredactable]');
   });
 
   it('does not throw when the stderr write itself fails', () => {
@@ -205,12 +290,56 @@ describe('createLogger', () => {
     expect(arg.data.token).toBe('[REDACTED]');
   });
 
+  it('maps every level onto its MCP counterpart', () => {
+    const send = vi.fn().mockResolvedValue(undefined);
+    const log = createLogger('debug');
+    log.attachServer({ sendLoggingMessage: send } as never);
+
+    log.debug('d');
+    log.info('i');
+    log.warn('w');
+    log.error('e');
+
+    // Only `warn -> warning` was pinned; the identity mappings were not, so a
+    // typo in any of the other three would have gone unnoticed.
+    expect(send.mock.calls.map((call) => (call[0] as { level: string }).level)).toEqual([
+      'debug',
+      'info',
+      'warning',
+      'error',
+    ]);
+  });
+
+  it('tags every MCP notification with the server logger name', () => {
+    const send = vi.fn().mockResolvedValue(undefined);
+    const log = createLogger('debug');
+    log.attachServer({ sendLoggingMessage: send } as never);
+
+    log.info('x');
+
+    expect(send.mock.calls[0]?.[0]).toMatchObject({ logger: 'zendesk-mcp-server' });
+  });
+
   it('does not throw when the MCP forward rejects', () => {
     const send = vi.fn().mockRejectedValue(new Error('not connected'));
     const log = createLogger('debug');
     log.attachServer({ sendLoggingMessage: send } as never);
 
     expect(() => log.info('x')).not.toThrow();
+  });
+
+  it('does not throw when the MCP forward throws synchronously', () => {
+    // A transport that is not connected yet can reject before returning a
+    // promise at all — the `try` around the call is what covers that, and it
+    // was untested.
+    const send = vi.fn(() => {
+      throw new Error('transport not connected');
+    });
+    const log = createLogger('debug');
+    log.attachServer({ sendLoggingMessage: send } as never);
+
+    expect(() => log.info('x')).not.toThrow();
+    expect(errSpy).toHaveBeenCalledTimes(1);
   });
 
   it('exposes a silent logger that never writes', () => {
