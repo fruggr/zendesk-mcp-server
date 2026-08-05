@@ -10,14 +10,19 @@
 pre-commit:
   jobs:
     - name: biome
-      # Whole repository, like `pnpm check`, so pre-commit and CI cannot
-      # disagree: `biome.json` `files.includes` is the single source of truth
-      # for the perimeter on both sides. Don't narrow this back to a path list.
-      # Two patterns on purpose: `**/` requires at least one directory level in
-      # lefthook's matcher, so it alone would silently skip package.json,
-      # biome.json, vitest.config.ts and every other repository-root file.
-      glob:
-        - '*.{ts,mjs,cjs,js,json,jsonc}'
-        - '**/*.{ts,mjs,cjs,js,json,jsonc}'
+      # No `glob` on purpose: every staged file goes to Biome and Biome decides,
+      # which leaves `biome.json` `files.includes` the single source of truth
+      # for the perimeter on both the pre-commit and the `pnpm check` side, so
+      # the two cannot disagree. Don't add a filter back — a path list or an
+      # extension list is a second perimeter that drifts from the first. The
+      # extension list this replaced had already drifted: it omitted `.mts`
+      # (which `biome.json` carries an override for), `.tsx`, `.cts`, `.jsx` and
+      # `.css`, all of which Biome parses, so staging one skipped pre-commit and
+      # failed in CI instead.
+      # Files Biome cannot parse cost nothing and fail nothing — it skips them
+      # with a verbose-only `files/missingHandler`, so a docs-only commit
+      # reports `Checked 0 files` and exits 0 (`--no-errors-on-unmatched`
+      # covers the empty set). Why the glob went away rather than growing:
+      # docs/decisions/lint-tooling.md.
       run: node scripts/biome.mjs check --write --error-on-warnings --no-errors-on-unmatched {staged_files}
       stage_fixed: true

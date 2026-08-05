@@ -102,11 +102,14 @@ test: if a running server behaves no differently for a client, it's tooling.
 ## Code style
 
 - TypeScript strict; Biome for lint/format (`pnpm check`).
-- Biome's perimeter is the **whole repository**: `pnpm check` and the lefthook
-  glob both hand it everything and let `biome.json` `files.includes` decide
-  (`.gitignore` is honoured through `vcs.useIgnoreFile`). Don't reintroduce a
-  `src/ tests/ scripts/` path list in either — it silently left the
-  repository-root config files unchecked, and two lists drift apart.
+- Biome's perimeter is the **whole repository**, and `biome.json`
+  `files.includes` is the only place it is written down (`.gitignore` is honoured
+  through `vcs.useIgnoreFile`). `pnpm check` passes `.`; the lefthook job passes
+  every staged file with no `glob`. Don't reintroduce a filter on either side —
+  a `src/ tests/ scripts/` path list left the repository-root config files
+  unchecked, and an extension list left `.mts`/`.tsx`/`.cts`/`.jsx`/`.css`
+  checked in CI but not at pre-commit. Any second perimeter drifts from the
+  first. Why: `docs/decisions/lint-tooling.md`.
 - CI re-runs `biome migrate --write` and diffs `biome.json`. A Biome upgrade
   reports deprecated config as an `info`, which `--error-on-warnings` lets
   through until the next major makes it a hard error; that step is what forces a

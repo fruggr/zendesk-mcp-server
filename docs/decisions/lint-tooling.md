@@ -110,10 +110,16 @@ Parity on the one property that justified lint-staged in the first place.
 
 **Two traps found while wiring it up**, both worth keeping in mind:
 
-- `{src,tests,scripts}/**/*.{ts,…}` alone **silently skips top-level files** —
-  lefthook's matcher requires at least one directory level for `**/`, so
-  `src/index.ts`, `src/config.ts` and `tests/setup.ts` were never checked. The
-  config carries a second, single-level pattern for that reason.
+- **lefthook's `glob` was eventually removed rather than widened**, and its
+  matcher is why. `**/*.{ts,…}` alone **silently skips top-level files** — the
+  matcher requires at least one directory level for `**/` — whereas `*.{ts,…}`
+  alone matches at *every* depth, because lefthook's `*` crosses `/`. So the
+  two-pattern config that fixed the first problem handed Biome every nested file
+  **twice**, and its extension list was a second perimeter that had already
+  drifted from `biome.json`. Passing `{staged_files}` unfiltered and letting
+  Biome skip what it cannot parse removes all three problems at once. Measured,
+  not assumed — with both patterns lefthook emitted `root.json
+  src/deep/nested.ts src/top.ts top.ts src/deep/nested.ts src/top.ts`.
 - `pnpm add -D lefthook` writes a `lefthook: set this to true or false`
   placeholder into `allowBuilds`, which makes every later `pnpm` command fail
   until it is resolved. Set to `false`: the postinstall only downloads the Go
