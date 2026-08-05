@@ -76,11 +76,12 @@ rule lost (the two type-aware rules still run at pre-commit and in CI).
 | `PostToolUse` (per edit) | `biome lint --write --skip=types <file>` | `.claude/settings.json` | **137.0 ms** |
 | pre-commit (staged) | `biome check --write --error-on-warnings <files>` | lefthook (`lefthook.yml`) | 503.5 ms |
 | pre-push | *nothing* | — | — |
-| CI | `pnpm check` — the same command, project scope | `.github/workflows/ci.yml`, unchanged | 807.2 ms |
+| CI | `pnpm check` — the same command, repository scope | `.github/workflows/ci.yml` | 807.2 ms |
 
 The pre-commit stage runs through **lefthook** rather than a hand-written hook.
-Its glob is scoped to `src`/`tests`/`scripts`, the same paths as `pnpm check`,
-so pre-commit and CI cannot disagree, and `stage_fixed: true` re-stages whatever
+Its glob spans the whole repository, like `pnpm check`, so pre-commit and CI
+cannot disagree — both defer the perimeter to `biome.json` `files.includes`
+rather than repeating a path list — and `stage_fixed: true` re-stages whatever
 `--write` repaired.
 
 **Why lefthook and not husky + lint-staged.** That was the first implementation

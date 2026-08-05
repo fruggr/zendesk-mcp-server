@@ -102,6 +102,16 @@ test: if a running server behaves no differently for a client, it's tooling.
 ## Code style
 
 - TypeScript strict; Biome for lint/format (`pnpm check`).
+- Biome's perimeter is the **whole repository**: `pnpm check` and the lefthook
+  glob both hand it everything and let `biome.json` `files.includes` decide
+  (`.gitignore` is honoured through `vcs.useIgnoreFile`). Don't reintroduce a
+  `src/ tests/ scripts/` path list in either — it silently left the
+  repository-root config files unchecked, and two lists drift apart.
+- CI re-runs `biome migrate --write` and diffs `biome.json`. A Biome upgrade
+  reports deprecated config as an `info`, which `--error-on-warnings` lets
+  through until the next major makes it a hard error; that step is what forces a
+  bump to carry its own config migration instead of leaving it for whoever
+  opens the next PR.
 - Keep the `!!**/node_modules` force-ignore in `biome.json` `files.includes`: it
   stops Biome 2's scanner from opening every dependency file for its module graph
   (~40% of `pnpm check` wall time, worse on slow filesystems), and excludes them
