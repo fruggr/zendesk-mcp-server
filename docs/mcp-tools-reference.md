@@ -3,8 +3,8 @@
 The complete tool-by-tool reference for the [Zendesk MCP Server](../README.md),
 grouped by namespace. Each tool is exposed according to the active `--mode`
 (`all` exposes every tool individually; `namespace` and `single` wrap them in
-proxies) — see [Tool modes](../README.md#tool-modes) in the README for how modes
-and the `--namespace` / `--tool` filters shape the surface.
+proxies) — see [Tool surface](../README.md#tool-surface) in the README for how
+modes and the `--namespace` / `--tool` filters shape the surface.
 
 The **Mode** column marks each tool as `read` or `write`; `--read-only` filters
 out every `write` tool before the proxies are built.

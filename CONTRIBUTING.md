@@ -84,9 +84,8 @@ happened here. Before writing any code for an issue:
 2. Create a feature branch from `main`.
 3. Write code in small, reviewable commits.
 4. Use [Conventional Commits](https://www.conventionalcommits.org/) — they
-   directly drive the next version bump via semantic-release. See the
-   [release table in the README](README.md#releases--versioning) for which
-   prefixes trigger which bump.
+   directly drive the next version bump via semantic-release (see
+   [Releases](#releases) for which prefixes trigger which bump).
 5. Make the author checklist below pass locally.
 6. Push your branch and open a PR against `main`.
 
@@ -220,7 +219,23 @@ assumption that everything below has already been done.
 
 ## Releases
 
-Versions are calculated and published automatically from Conventional Commit
-messages. See the [release section in the
-README](README.md#releases--versioning) and the [Release
-workflow](AGENTS.md#release-workflow) section in `AGENTS.md`.
+Versions follow [SemVer](https://semver.org/) and are calculated
+**automatically** from commit messages — nobody bumps the version by hand. Every
+merge to `main` triggers
+[semantic-release](https://github.com/semantic-release/semantic-release), which
+inspects the Conventional Commits since the previous tag, computes the next
+version, updates [`CHANGELOG.md`](CHANGELOG.md), publishes to npm, creates the
+matching GitHub Release, and mirrors it into the [official MCP
+registry](https://registry.modelcontextprotocol.io) so registry-driven clients
+discover the new version automatically.
+
+| Commit type | Resulting bump |
+|---|---|
+| `fix:`, `perf:` | patch |
+| `feat:` | minor |
+| `feat!:`, `fix!:`, or a `BREAKING CHANGE:` footer | major |
+| `docs:`, `chore:`, `refactor:`, `test:`, `ci:`, `style:`, `build:` | no release |
+
+The full pipeline — Renovate, the release gating, the registry manifest — is in
+[`docs/release-automation.md`](docs/release-automation.md); the short rules for
+agents are in [Release workflow](AGENTS.md#release-workflow).
