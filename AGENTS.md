@@ -81,6 +81,13 @@ quality bar still hold — the freedom is from Zendesk's shape, not from craft.)
 - Inter-LLM functional tests (proxy annotations, `[RO]` prefix on `tools/list`)
   live in `tests/functional/`; invoke via `/functional-testing`. Details in
   `tests/functional/README.md`.
+- Mutation testing (StrykerJS) runs over the scope in `stryker.config.mjs`, and
+  CI fails a PR on a mutant that survived **in a line it changed**
+  (`pnpm test:mutation:diff origin/main HEAD` reproduces it). A survivor means an
+  assertion is missing or too loose — tighten it, never weaken one to go green;
+  for a genuinely equivalent mutant say why with
+  `// Stryker disable next-line <mutator>: <reason>`. Rationale, scope and costs:
+  `docs/decisions/mutation-testing.md`.
 
 ## Planning
 

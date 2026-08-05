@@ -12,30 +12,18 @@ overrides:
   ip-address: ^10.2.0
   conventional-changelog-writer: ^9.2.0
 
-# yuku publishes no android-arm64 binding, which breaks `pnpm run build`
-# (tsdown) on Android/Termux dev devices. Graft one onto the exact locked
-# version as an optionalDependency: pnpm applies the same os/cpu gate as any
-# platform package (installed on android/arm64 only, skipped elsewhere) and
-# pins the tarball integrity in the lockfile. Bindings are built from
-# https://github.com/dlecan/yuku/tree/android-arm64-poc (yuku v0.6.5; see its
-# README-ANDROID-POC.md for the recipe and provenance).
-#
-# blockExoticSubdeps must be off for pnpm to accept these URL-resolved
-# subdependencies — a deliberate trade-off: the two grafts below are the only
-# exotic subdeps in the tree (the lockfile pins their URL + integrity, so any
-# new one shows up in review), accepted until either the bindings are
-# published on the npm registry under a personal scope (registry deps are not
-# exotic — lets this flag come back on) or upstream ships android-arm64
-# bindings, which deletes this whole block.
-#
-# On a yuku version bump: rebuild from the matching upstream tag, publish new
-# release assets, update the two URLs and the version selectors below.
-blockExoticSubdeps: false
-
-packageExtensions:
-  yuku-codegen@0.6.5:
-    optionalDependencies:
-      '@yuku-codegen/binding-android-arm64': https://github.com/dlecan/yuku/releases/download/android-arm64-poc-v0.6.5/yuku-codegen-binding-android-arm64-0.6.5.tgz
-  yuku-parser@0.6.5:
-    optionalDependencies:
-      '@yuku-parser/binding-android-arm64': https://github.com/dlecan/yuku/releases/download/android-arm64-poc-v0.6.5/yuku-parser-binding-android-arm64-0.6.5.tgz
+# TEMPORARY — delete on or after 2026-08-09, then re-run `pnpm install`.
+# pnpm re-checks minimumReleaseAge against the lockfile on every command, not
+# just install, so the just-published yuku 0.8.3 (first release with an upstream
+# android-arm64 binding) would fail CI for everyone until its 7-day gate clears.
+# yuku only; every other package keeps the full gate.
+# Pinned to 0.8.3 so a later yuku still faces the gate. The binding globs carry
+# no version (pnpm rejects pattern@version), but each binding is an exact-version
+# dependency of a pinned parent, so no other version can reach the tree.
+minimumReleaseAgeExclude:
+  - yuku-ast@0.8.3
+  - yuku-codegen@0.8.3
+  - yuku-parser@0.8.3
+  - '@yuku-toolchain/types@0.8.3'
+  - '@yuku-codegen/*'
+  - '@yuku-parser/*'

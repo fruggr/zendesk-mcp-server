@@ -1,0 +1,54 @@
+name: Mutation baseline cache
+description: >-
+  Set up Node/pnpm, compute the mutation baseline cache key, restore it. Both
+  jobs use this so the invalidation rule below lives in exactly one place.
+
+outputs:
+  prefix:
+    description: Restore-key prefix — matches any baseline built from the same inputs.
+    value: ${{ steps.key.outputs.prefix }}
+  exact:
+    description: Full key for this commit. The save key; immutable once written.
+    value: ${{ steps.key.outputs.exact }}
+
+runs:
+  using: composite
+  steps:
+    - uses: pnpm/action-setup@v6
+
+    - uses: actions/setup-node@v7
+      with:
+        node-version-file: .nvmrc
+        cache: pnpm
+
+    - run: pnpm install --frozen-lockfile
+      shell: bash
+
+    # THE INVALIDATION RULE. Selection is mechanical, in two parts:
+    #   1. the toolchain and runner inputs — lockfile, package.json (its
+    #      `packageManager` field is where pnpm/action-setup reads the pnpm
+    #      version from, no `version:` input above), both configs, .nvmrc;
+    #   2. every file under tests/ except *.test.ts and tests/functional/.
+    # Part 2 is asserted by tests/unit/mutation-scope.test.ts, so this list
+    # cannot drift silently. `src/**` and *.test.ts are absent on purpose:
+    # Stryker's incremental mode diffs those itself. Why each part is what it is:
+    # docs/decisions/mutation-testing.md, §4.
+    #
+    # Key = prefix + sha (cache entries are immutable, so a fixed key would
+    # freeze the first baseline); the prefix restore-key is safe to fall back on
+    # only because the inputs hash sits inside it.
+    - name: Compute the baseline cache key
+      id: key
+      shell: bash
+      env:
+        PREFIX: mutation-baseline-${{ hashFiles('pnpm-lock.yaml', 'package.json', 'stryker.config.mjs', 'vitest.config.ts', 'tests/setup.ts', 'tests/msw-handlers.ts', 'tests/integration/harness.ts', 'tests/integration/core-scenarios.ts', 'tests/integration/stdio-harness.ts', '.nvmrc') }}
+      run: |
+        echo "prefix=${PREFIX}-" >> "$GITHUB_OUTPUT"
+        echo "exact=${PREFIX}-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+    - name: Restore the mutation baseline
+      uses: actions/cache/restore@v6
+      with:
+        path: reports/mutation/stryker-incremental.json
+        key: ${{ steps.key.outputs.exact }}
+        restore-keys: ${{ steps.key.outputs.prefix }}

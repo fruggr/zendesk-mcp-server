@@ -53,19 +53,40 @@ const REDACTED_KEYS = new Set([
 const isSensitive = (key: string): boolean =>
   REDACTED_KEYS.has(key.toLowerCase().replace(/[_-]/g, ''));
 
-// Recursively redact: a sensitive *key* anywhere in the tree (top-level or
-// nested in objects/arrays) has its value replaced, so `{ oauth: { token } }`
-// can't leak. Primitives are returned as-is.
-const redactValue = (value: unknown): unknown => {
-  if (Array.isArray(value)) return value.map(redactValue);
-  if (value && typeof value === 'object') {
-    const out: Record<string, unknown> = {};
-    for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
-      out[key] = isSensitive(key) ? '[REDACTED]' : redactValue(val);
-    }
-    return out;
+// Recursively redact: a sensitive *key* anywhere in the tree has its value
+// replaced, so `{ oauth: { token } }` can't leak. `path` is the current branch
+// only (add/delete around the descent), so a back-reference to an ancestor
+// becomes `[circular]` while a value shared between siblings is still walked.
+// Functions are dropped: an own enumerable `toJSON` copied into the output
+// would be invoked by `JSON.stringify` and hand back the unredacted original.
+const redactValue = (value: unknown, path: WeakSet<object> = new WeakSet()): unknown => {
+  if (typeof value === 'function') return '[function]';
+  if (!value || typeof value !== 'object') return value;
+  if (path.has(value)) return '[circular]';
+
+  path.add(value);
+  const out = Array.isArray(value)
+    ? value.map((item) => redactValue(item, path))
+    : Object.fromEntries(
+        Object.entries(value as Record<string, unknown>).map(([key, val]) => [
+          key,
+          isSensitive(key) ? '[REDACTED]' : redactValue(val, path),
+        ]),
+      );
+  path.delete(value);
+  return out;
+};
+
+// Total over anything a caller can hand us: redaction reads objects that may
+// fight back (a throwing getter, an exotic proxy), and losing the fields beats
+// taking the caller down with them.
+const sanitise = (fields?: Fields): Fields => {
+  if (!fields) return {};
+  try {
+    return redactValue(fields) as Fields;
+  } catch {
+    return { fields: '[unredactable]' };
   }
-  return value;
 };
 
 const renderValue = (value: unknown): string => {
@@ -102,8 +123,13 @@ export const createLogger = (level: LogLevel): Logger => {
   const emit = (lvl: LogLevel, event: string, fields?: Fields): void => {
     if (SEVERITY[lvl] < min) return;
 
-    const safe = fields ? (redactValue(fields) as Fields) : {};
-    console.error(formatLine(lvl, event, safe));
+    const safe = sanitise(fields);
+
+    try {
+      console.error(formatLine(lvl, event, safe));
+    } catch {
+      // Best-effort sink: a dead stderr must not break the caller.
+    }
 
     if (server) {
       try {
