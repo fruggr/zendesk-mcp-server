@@ -192,7 +192,7 @@ const requireNonEmptyEnv = (name: string): string | undefined => {
 // of a flag whose value is another dash-leading token, and of a value handed to a
 // standalone flag — so those guarantees cannot drift per-flag the way the
 // previous branch-per-flag chain could. Adding a flag is one entry here.
-export const CLI_OPTIONS = {
+const CLI_OPTIONS = {
   mode: { type: 'string' },
   namespace: { type: 'string', multiple: true },
   tool: { type: 'string', multiple: true },
