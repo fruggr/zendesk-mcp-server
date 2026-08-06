@@ -48,6 +48,24 @@ Options:
 
 `--namespace` and `--read-only` are applied before the proxies are registered, so they narrow the surface in every mode — in the default `namespace` mode, `--namespace help_center` registers a single proxy (`zendesk_help_center`) instead of the full set of namespace proxies.
 
+### A malformed invocation fails at startup
+
+The server refuses to boot rather than run with config it cannot honour. Four
+shapes are rejected, each naming the flag at fault:
+
+| Invocation | Why it is rejected |
+| --- | --- |
+| `--mode` (nothing after it) | the value was forgotten |
+| `--mode ""` or `--mode=` | an empty value, typically `--mode "$VAR"` with `VAR` unset |
+| `--host --read-only` | the value is another flag, so `--host` would swallow it |
+| `--read-only=false` | a standalone flag takes no value |
+| `--moed all` | unknown flag — a typo is not silently ignored |
+
+Values are never echoed back in these messages, so a mistyped
+`--token=<secret>` reports only the flag name. Both `--flag value` and
+`--flag=value` are accepted. Only the first positional argument is read as the
+subdomain.
+
 **Examples:**
 
 ```bash
@@ -102,6 +120,20 @@ Scope and limits, by design:
   sources to reload. It is meant for `tsx`-from-source development.
 
 ## Environment variables
+
+An **empty** variable is a misconfiguration, not "unset": `PORT=` in a compose
+file, and `PORT="$VAR"` with `VAR` unset, both arrive as an empty string, and
+applying the default there would boot a server whose config silently disagrees
+with the deployment. Every single-value variable below therefore fails at
+startup when set but empty, naming the variable — unset it to get the default.
+
+Two deliberate exceptions:
+
+- `CORS_ORIGIN` is a *list*, where an empty value legitimately means "no extra
+  origins" on top of the built-in allowlist.
+- A variable that a CLI flag overrides is never consulted, so `--port 8080`
+  alongside a stray `PORT=` still boots. Validation applies to the value the
+  server actually uses.
 
 ### `ZENDESK_SUBDOMAIN`
 **Required:** yes (or the CLI `<subdomain>` argument) · **Default:** —
