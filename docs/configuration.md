@@ -59,7 +59,7 @@ shapes are rejected, each naming the knob at fault:
 | `--mode ""` or `--mode=` | an empty value, typically `--mode "$VAR"` with `VAR` unset |
 | `--host --read-only` | the value is another flag, so `--host` would swallow it |
 | `--read-only=false` | a standalone flag takes no value |
-| `--moed all` | unknown flag — a typo is not silently ignored |
+| `--moed all` | an unknown flag. A typo is not silently ignored |
 | `mycompany extra` | a second positional argument, so one of them would be dropped |
 
 Values are never echoed back in these messages, so a mistyped
@@ -67,10 +67,10 @@ Values are never echoed back in these messages, so a mistyped
 `--flag=value` are accepted.
 
 Exactly one positional argument is read, as the subdomain. A repeatable flag
-(`--namespace`, `--tool`, `--cors-origin`) has to be repeated —
-`--namespace tickets --namespace help_center`, never
-`--namespace tickets help_center`, which would leave `help_center` sitting where
-the subdomain belongs.
+(`--namespace`, `--tool`, `--cors-origin`) has to be repeated:
+`--namespace tickets --namespace help_center`. Writing
+`--namespace tickets help_center` instead leaves `help_center` sitting where the
+subdomain belongs.
 
 **Examples:**
 
@@ -131,7 +131,7 @@ An **empty** variable is a misconfiguration, not "unset": `PORT=` in a compose
 file, and `PORT="$VAR"` with `VAR` unset, both arrive as an empty string, and
 applying the default there would boot a server whose config silently disagrees
 with the deployment. Every single-value variable below therefore fails at
-startup when set but empty, naming the variable — unset it to get the default.
+startup when set but empty, naming the variable. Unset it to get the default.
 
 Two deliberate exceptions:
 

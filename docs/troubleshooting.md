@@ -8,29 +8,29 @@ variables referenced below.
 
 The server would rather not boot than run with config it cannot honour, so a
 malformed invocation fails immediately. The message names the knob at fault, and
-never repeats the value you passed — a mistyped `--token=<secret>` reports only
+never repeats the value you passed: a mistyped `--token=<secret>` reports only
 the flag name.
 
 | What you get | What to look for |
 | --- | --- |
 | `option '--mode <value>' argument missing` | the flag is the last thing on the command line; its value was forgotten |
-| `Empty value for --mode.` | the value is an empty string — usually `--mode "$VAR"` with `VAR` unset in the shell or compose file |
+| `Empty value for --mode.` | the value is an empty string, usually `--mode "$VAR"` with `VAR` unset in the shell or compose file |
 | `Option '--host' argument is ambiguous` | the next token is another flag, so `--host` would have swallowed it. To pass a value that really does start with a dash, use `--host=-value` |
 | `Unknown option '--moed'` | a typo, or a flag from a different version. Check it against the [CLI reference](configuration.md#cli-reference) |
 | `Option '--read-only' does not take an argument` | a standalone flag was given a value |
-| `Expected one positional argument (the subdomain), got 2.` | a stray argument. Most often a repeatable flag given a space-separated list — write `--namespace tickets --namespace help_center` |
+| `Expected one positional argument (the subdomain), got 2.` | a stray argument. Most often a repeatable flag given a space-separated list, where `--namespace tickets --namespace help_center` is the right form |
 | `Empty PORT. Set it to a value, or unset it entirely.` | the variable is set but empty. Remove it entirely to fall back to the default |
 
 The rows starting `option` / `Option` / `Unknown option` come from Node's own
-argument parser, so treat that wording as indicative rather than exact — it can
-change between Node releases. The `Empty …` and `Expected one positional …`
+argument parser, so treat that wording as indicative rather than exact. It can
+change between Node releases. The `Empty ...` and `Expected one positional ...`
 messages are ours and stable.
 
 Two things that are *not* errors: `CORS_ORIGIN=` is a valid way to say "no extra
 origins", and a variable that a CLI flag overrides is never read, so `--port
 8080` alongside a stray `PORT=` starts normally.
 
-If a deployment that used to work now fails here, that is the point — it was
+If a deployment that used to work now fails here, that is the point. It was
 running with config that had been silently dropped. The most common case is an
 empty `HC_RESOURCE_SCHEME`, which used to fall back to `zendesk-hc` while
 runbooks expected a branded scheme.
