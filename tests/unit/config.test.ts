@@ -102,8 +102,12 @@ describe('loadConfig', () => {
     expect(config.subdomain).toBe('envcompany');
   });
 
-  it('throws on missing subdomain', () => {
-    expect(() => loadConfig([])).toThrow();
+  it('throws on missing subdomain, reporting only that', () => {
+    // oauthClientId is derived from the subdomain, so an empty subdomain used to
+    // fail twice — once for itself and once for a `''` client id the operator
+    // never set. Only the actionable issue is reported now.
+    expect(() => loadConfig([])).toThrow(/ZENDESK_SUBDOMAIN is required/);
+    expect(() => loadConfig([])).not.toThrow(/oauthClientId/);
   });
 
   it('parses --log-level flag', () => {

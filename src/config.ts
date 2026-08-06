@@ -120,7 +120,10 @@ export const ConfigSchema = z.object({
 export type Config = z.infer<typeof ConfigSchema>;
 
 interface CliResult {
-  subdomain?: string;
+  // Explicitly `| undefined` so the parser can assign the first positional
+  // unconditionally: `exactOptionalPropertyTypes` would otherwise force a guard
+  // that reads as behaviour but only ever satisfies the type checker.
+  subdomain?: string | undefined;
   mode?: string;
   readOnly?: boolean;
   namespaces?: string[];
@@ -178,7 +181,6 @@ const parsePortEnv = (raw: string | undefined, label: string): number | undefine
 // over (`--port 8080` next to a stray `PORT=` in a compose file is normal).
 const requireNonEmptyEnv = (name: string): string | undefined => {
   const raw = process.env[name];
-  if (raw === undefined) return undefined;
   if (raw === '') {
     throw new Error(`Empty ${name}. Set it to a value, or unset it entirely.`);
   }
@@ -252,9 +254,7 @@ const parseCliArgs = (args: string[]): CliResult => {
   });
 
   // Only the first positional is taken as the subdomain; extras stay ignored.
-  const result: CliResult = {};
-  const subdomain = positionals[0];
-  if (subdomain !== undefined) result.subdomain = subdomain;
+  const result: CliResult = { subdomain: positionals[0] };
 
   // parseArgs only reports flags that were actually passed, so iterating its
   // output visits exactly the operator's invocation.
@@ -322,8 +322,10 @@ export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
   const cli = parseCliArgs(argv);
 
   const subdomain = cli.subdomain ?? requireNonEmptyEnv('ZENDESK_SUBDOMAIN') ?? '';
-  const oauthClientId =
-    requireNonEmptyEnv('ZENDESK_OAUTH_CLIENT_ID') ?? (subdomain ? `${subdomain}_zendesk` : '');
+  // No empty-subdomain special case: a missing subdomain already fails the
+  // schema on its own, and derived-but-unused `_zendesk` here keeps that report
+  // down to the one issue the operator can act on.
+  const oauthClientId = requireNonEmptyEnv('ZENDESK_OAUTH_CLIENT_ID') ?? `${subdomain}_zendesk`;
 
   const mode = cli.tools?.length ? 'all' : (cli.mode ?? 'namespace');
 
