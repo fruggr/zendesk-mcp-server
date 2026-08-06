@@ -50,8 +50,8 @@ Options:
 
 ### A malformed invocation fails at startup
 
-The server refuses to boot rather than run with config it cannot honour. Four
-shapes are rejected, each naming the flag at fault:
+The server refuses to boot rather than run with config it cannot honour. These
+shapes are rejected, each naming the knob at fault:
 
 | Invocation | Why it is rejected |
 | --- | --- |
@@ -60,11 +60,17 @@ shapes are rejected, each naming the flag at fault:
 | `--host --read-only` | the value is another flag, so `--host` would swallow it |
 | `--read-only=false` | a standalone flag takes no value |
 | `--moed all` | unknown flag — a typo is not silently ignored |
+| `mycompany extra` | a second positional argument, so one of them would be dropped |
 
 Values are never echoed back in these messages, so a mistyped
 `--token=<secret>` reports only the flag name. Both `--flag value` and
-`--flag=value` are accepted. Only the first positional argument is read as the
-subdomain.
+`--flag=value` are accepted.
+
+Exactly one positional argument is read, as the subdomain. A repeatable flag
+(`--namespace`, `--tool`, `--cors-origin`) has to be repeated —
+`--namespace tickets --namespace help_center`, never
+`--namespace tickets help_center`, which would leave `help_center` sitting where
+the subdomain belongs.
 
 **Examples:**
 

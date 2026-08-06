@@ -253,7 +253,19 @@ const parseCliArgs = (args: string[]): CliResult => {
     allowPositionals: true,
   });
 
-  // Only the first positional is taken as the subdomain; extras stay ignored.
+  // A second positional is always a mistake, and dropping it silently is the
+  // exact failure this module refuses to commit elsewhere: `--namespace tickets
+  // help_center mycompany` would take `help_center` as the subdomain and discard
+  // `mycompany`, reaching the wrong Zendesk tenant with a narrowed tool surface
+  // and no diagnostic at all. Counted, never echoed (same policy as parsePort).
+  if (positionals.length > 1) {
+    throw new Error(
+      `Expected one positional argument (the subdomain), got ${positionals.length}. ` +
+        'A repeatable flag has to be repeated (--namespace tickets --namespace ' +
+        'help_center); it does not take a space-separated list.',
+    );
+  }
+
   const result: CliResult = { subdomain: positionals[0] };
 
   // parseArgs only reports flags that were actually passed, so iterating its

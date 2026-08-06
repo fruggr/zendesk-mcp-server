@@ -18,11 +18,13 @@ the flag name.
 | `Option '--host' argument is ambiguous` | the next token is another flag, so `--host` would have swallowed it. To pass a value that really does start with a dash, use `--host=-value` |
 | `Unknown option '--moed'` | a typo, or a flag from a different version. Check it against the [CLI reference](configuration.md#cli-reference) |
 | `Option '--read-only' does not take an argument` | a standalone flag was given a value |
+| `Expected one positional argument (the subdomain), got 2.` | a stray argument. Most often a repeatable flag given a space-separated list — write `--namespace tickets --namespace help_center` |
 | `Empty PORT. Set it to a value, or unset it entirely.` | the variable is set but empty. Remove it entirely to fall back to the default |
 
-The wording of the first, third, fourth and fifth comes from Node's own argument
-parser, so treat the examples above as indicative rather than exact — they can be
-reworded between Node releases. The `Empty …` messages are ours and stable.
+The rows starting `option` / `Option` / `Unknown option` come from Node's own
+argument parser, so treat that wording as indicative rather than exact — it can
+change between Node releases. The `Empty …` and `Expected one positional …`
+messages are ours and stable.
 
 Two things that are *not* errors: `CORS_ORIGIN=` is a valid way to say "no extra
 origins", and a variable that a CLI flag overrides is never read, so `--port

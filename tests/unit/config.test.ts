@@ -416,6 +416,44 @@ describe('loadConfig', () => {
       expect(() => loadConfig(['mycompany', '--read-only=false'])).toThrow();
     });
 
+    it('rejects a second positional instead of silently dropping it', () => {
+      expect(() => loadConfig(['mycompany', 'othercompany'])).toThrow(
+        /Expected one positional argument \(the subdomain\), got 2\./,
+      );
+    });
+
+    it('counts the positionals it actually got', () => {
+      // Pins the count to the real number rather than a fixed string, so the
+      // operator can tell two stray arguments from one.
+      expect(() => loadConfig(['mycompany', 'second', 'third'])).toThrow(/got 3\./);
+    });
+
+    it('rejects a space-separated list handed to a repeatable flag', () => {
+      // The natural wrong guess for a `multiple: true` flag. Used to boot against
+      // subdomain `help_center` with only the `tickets` namespace registered and
+      // `mycompany` dropped: the wrong tenant AND a narrowed tool surface, with
+      // no diagnostic — the same class of silent misconfiguration as issue #174.
+      expect(() => loadConfig(['--namespace', 'tickets', 'help_center', 'mycompany'])).toThrow(
+        /Expected one positional argument \(the subdomain\), got 2\./,
+      );
+      expect(() => loadConfig(['mycompany', '--tool', 'get_ticket', 'list_tickets'])).toThrow(
+        /Expected one positional argument/,
+      );
+    });
+
+    it('points at the repeated-flag form rather than just refusing', () => {
+      expect(() => loadConfig(['mycompany', 'extra'])).toThrow(
+        /--namespace tickets --namespace help_center/,
+      );
+    });
+
+    it('does not echo the extra positional values', () => {
+      // Same no-echo policy as parsePort: a stray argument can be a tenant name.
+      expect(() => loadConfig(['mycompany', 's3cr3t-tenant'])).toThrow(
+        expect.objectContaining({ message: expect.not.stringContaining('s3cr3t-tenant') }),
+      );
+    });
+
     it('still accepts every flag with a proper value', () => {
       const config = loadConfig([
         'mycompany',
