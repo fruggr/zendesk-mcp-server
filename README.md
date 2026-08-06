@@ -221,9 +221,9 @@ active locales, the category → section tree with IDs, the visibility segments
 and the permission groups. With those in hand it uses real IDs instead of
 guessing or fuzzy-matching names. It all arrives through MCP-native channels,
 namely the `instructions` blob sent on `initialize` plus pull-only resources for
-the topology and for reading (or pinning) individual articles. Each is fetched
-with the caller's own token, and clients that don't support resources ignore
-them silently.
+the topology and for reading (or pinning) individual articles. The resources are
+fetched with the caller's own token, and clients that don't support resources
+ignore them silently.
 
 What's exposed, what the promoted-article pre-listing costs in requests, and how
 to turn each piece off: **[docs/help-center-context.md](docs/help-center-context.md)**.

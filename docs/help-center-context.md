@@ -62,8 +62,9 @@ promoted articles, so finding them means scanning article pages, one API request
 per page, capped by
 [`ZENDESK_ARTICLE_RESOURCES_SCAN_MAX_PAGES`](configuration.md#zendesk_article_resources_scan_max_pages).
 
-- The scan runs only on a client's `resources/list` call or a tool call, **never
-  at connect time**.
+- The scan runs only on a client's `resources/list` call or a
+  `list_promoted_articles` call, **never at connect time**. No other tool
+  triggers it.
 - The resource listing is cached briefly per session, so repeated
   `resources/list` calls coalesce.
 - The `list_promoted_articles` tool performs a fresh scan on every call.
