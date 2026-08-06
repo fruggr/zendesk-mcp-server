@@ -26,7 +26,7 @@
  */
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { loadConfig } from '../src/config';
+import { loadConfig, VALUE_FLAG_NAMES } from '../src/config';
 import { createMcpServer } from '../src/server';
 
 const argv = process.argv.slice(2);
@@ -46,25 +46,12 @@ const fail = (message: string): never => {
 // arg), fall back to a placeholder. This keeps credential-free inspection
 // working; a real `call` still needs a real subdomain + token.
 // Skip values that follow a value-taking flag (e.g. `all` in `--mode all`),
-// otherwise the placeholder is wrongly skipped. Keep in sync with the
-// value-taking flags in `src/config.ts` `parseCliArgs`.
-const VALUE_FLAGS = new Set([
-  '--mode',
-  '--namespace',
-  '--tool',
-  '--log-level',
-  '--hc-resource-scheme',
-  '--transport',
-  '--host',
-  '--port',
-  '--public-url',
-  '--cors-origin',
-  '--callback-port',
-]);
+// otherwise the placeholder is wrongly skipped. The flag list comes from
+// `src/config.ts`, so it cannot drift from the parser's own view of it.
 const hasPositionalSubdomain = configArgs.some((arg, i) => {
   if (arg.startsWith('-')) return false;
   const prev = configArgs[i - 1];
-  return !(prev && VALUE_FLAGS.has(prev));
+  return !(prev && VALUE_FLAG_NAMES.has(prev));
 });
 if (!process.env['ZENDESK_SUBDOMAIN'] && !hasPositionalSubdomain) {
   process.env['ZENDESK_SUBDOMAIN'] = 'mcp-live-placeholder';
