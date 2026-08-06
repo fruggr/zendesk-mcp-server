@@ -266,6 +266,10 @@ const parseCliArgs = (args: string[]): CliResult => {
     );
   }
 
+  // Built up locally and returned once: `parseCliArgs` stays a pure function of
+  // its argv, and the accumulator never escapes. A `reduce` spreading `acc` per
+  // flag would read as more immutable but is what `noAccumulatingSpread`
+  // (enabled in biome.json) rejects, for its O(n^2) copying.
   const result: CliResult = { subdomain: positionals[0] };
 
   // parseArgs only reports flags that were actually passed, so iterating its
