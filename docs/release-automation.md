@@ -63,12 +63,12 @@ each new version automatically.
   `@semantic-release/git` commits `server.json` alongside `CHANGELOG.md` and
   `package.json`. The release commit therefore carries a clean one-line version
   diff, and `package.json` / `server.json` versions can never diverge. The
-  MCP-registry publish step reads this committed, freshly-bumped file directly —
+  MCP-registry publish step reads this committed, freshly-bumped file directly;
   there is no generate-from-scratch step in the release job.
 - **Ownership.** The registry proves npm ownership via the `mcpName` field in
   `package.json` (which the generator uses as the `server.json` `name`).
 - **Auth.** `mcp-publisher login github-oidc` reuses the workflow's
-  `id-token: write` GitHub OIDC token — the same permission npm Trusted
+  `id-token: write` GitHub OIDC token, the same permission npm Trusted
   Publishing already relies on. No new secret, and the `io.github.fruggr/*`
   namespace is authorized because the workflow runs in the `fruggr` org's repo.
 - **Resilience.** The publish is retried a few times to absorb npm propagation
@@ -77,12 +77,12 @@ each new version automatically.
 ## Release notes content
 
 semantic-release generates the notes from **every** commit between the previous
-tag and the release commit — including the non-triggering ones (`chore`, `ci`,
+tag and the release commit, including the non-triggering ones (`chore`, `ci`,
 `build`, `test`, `refactor`, `docs`, `style`). The `conventionalcommits` preset
 hides those types in its default type list (`effect: 'hidden'`), so they never
 surfaced in any changelog even though they belong to a release range. The
 `presetConfig.types` array in `.releaserc.json` replaces that list wholesale, and
-an entry without an `effect` defaults to visible — which is why the types are
+an entry without an `effect` defaults to visible. That is why the types are
 listed there with a `section` and nothing else.
 
 To keep them visible without drowning the consumer-facing notes (especially the
@@ -90,12 +90,12 @@ Renovate `chore(deps)` churn), the `release-notes-generator` step is replaced by
 thin local wrapper, [`scripts/release-notes-collapsed.js`](../scripts/release-notes-collapsed.js).
 It calls the official generator, then post-processes the markdown:
 
-- **Public sections** — Features, Bug Fixes, Performance Improvements, Reverts,
-  `⚠ BREAKING CHANGES` — stay at the top.
-- **Internal sections** — the non-triggering types above — are grouped into a single
-  collapsed `<details>` block placed underneath.
+- The public sections (Features, Bug Fixes, Performance Improvements, Reverts,
+  `⚠ BREAKING CHANGES`) stay at the top.
+- The internal sections, meaning the non-triggering types above, are grouped into
+  a single collapsed `<details>` block placed underneath.
 
-No Handlebars template is reimplemented — the wrapper only reorganizes rendered
+No Handlebars template is reimplemented: the wrapper only reorganizes rendered
 markdown, so it is insensitive to *how* the preset renders. It does not, however,
 shield the pipeline from the preset ↔ writer coupling below. The collapsed section
 titles and the `<summary>` label are configurable via the `collapsedSections` /
@@ -109,14 +109,14 @@ the same major as the one `semantic-release` bundles).
 strings with render functions. Only `conventional-changelog-writer@9` understands
 that shape, while `@semantic-release/release-notes-generator@14` (latest) still
 declares `conventional-changelog-writer@^8`. Paired as published, writer 8 finds no
-`mainTemplate` and renders **only the version header** — a release would still be
+`mainTemplate` and renders **only the version header**: a release would still be
 cut, with an empty CHANGELOG and GitHub Release. Upstream issue:
 [semantic-release/release-notes-generator#992](https://github.com/semantic-release/release-notes-generator/issues/992).
 
 `pnpm-workspace.yaml` therefore overrides the writer to `^9.2.0`. The override is
 unscoped because `@semantic-release/commit-analyzer` declares the writer but never
 imports it (it reads only the preset's `parserOpts`; release levels come from its
-own default release rules), so forcing the writer cannot affect version detection —
+own default release rules), so forcing the writer cannot affect version detection,
 only rendering. Verified on real repository history: the generated notes are
 byte-identical to the pre-upgrade output.
 

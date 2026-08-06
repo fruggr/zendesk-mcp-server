@@ -13,11 +13,11 @@ Both boot the same `createMcpServer` the production entry point uses
 
 ## Auth note (important)
 
-This server is **OAuth 2.1 PKCE only** — there is no API-token mode. The PKCE
-flow opens a **browser**, which does not work in a headless remote/web
+This server is **OAuth 2.1 PKCE only**; there is no API-token mode. The PKCE
+flow opens a **browser**, which does not work in a headless remote or web
 environment. So for live testing:
 
-- `list` and schema validation work **without any credentials** — no token needed.
+- `list` and schema validation work **without any credentials**, no token needed.
 - A real `call` needs a Zendesk OAuth **access token**. Obtain one via the normal
   OAuth flow (e.g. in a local session where the browser can open), then provide it:
 
@@ -29,7 +29,7 @@ environment. So for live testing:
 In a Claude Code web environment, inject these as environment variables in the
 environment configuration (not committed).
 
-## A. `.mcp.json` — live tools inside a session
+## A. `.mcp.json`: live tools inside a session
 
 A project-scoped `.mcp.json` is committed at the repo root:
 
@@ -60,7 +60,7 @@ MCP servers are connected at **session startup**, not hot-reloaded. So: commit
 `.mcp.json` to the branch, then open a **new** Claude Code session on that
 branch. The tools appear as `mcp__zendesk-local__*` and can be called live.
 
-## B. `scripts/mcp-live.ts` — one-shot client, no registration
+## B. `scripts/mcp-live.ts`: one-shot client, no registration
 
 Works immediately in any conversation/terminal, no session restart:
 
@@ -80,5 +80,5 @@ pnpm mcp:live read zendesk-hc://topology -- --mode all
 It links a real MCP `Client` to the server over an in-memory transport
 (identical to `tests/integration/stdio-harness.ts`), so `tools/list`,
 `tools/call`, `resources/list` and `resources/read` cross the wire and dispatch
-through the genuine handlers. Use it for quick manual checks or as a basis for
-scripted/CI assertions.
+through the genuine handlers. Use it for quick manual checks, or as a basis for
+scripted or CI assertions.

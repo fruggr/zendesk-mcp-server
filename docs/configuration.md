@@ -1,14 +1,14 @@
-# Configuration — CLI flags & environment variables
+# Configuration: CLI flags & environment variables
 
 Full reference for configuring the [Zendesk MCP Server](../README.md): the CLI
 flags and the environment variables. Each variable has its own anchor, so you can
 deep-link a specific setting (e.g.
 [`docs/configuration.md#zendesk_max_attachment_bytes`](#zendesk_max_attachment_bytes)).
 
-CLI flags generally take precedence over the matching environment variable; the
-exception is `--cors-origin`, which is additive and *extends* `CORS_ORIGIN`
-rather than replacing it. The server uses per-user OAuth 2.1 PKCE for every
-transport — there is no static API-token mode (see
+CLI flags generally take precedence over the matching environment variable. The
+one exception is `--cors-origin`, which is additive and *extends* `CORS_ORIGIN`
+rather than replacing it. The server uses per-user OAuth 2.1 PKCE on every
+transport; there is no static API-token mode (see
 [What this server does *not* do](../README.md#what-this-server-does-not-do)).
 
 ## CLI reference
@@ -46,7 +46,7 @@ Options:
                           below)
 ```
 
-`--namespace` and `--read-only` are applied before the proxies are registered, so they narrow the surface in every mode — in the default `namespace` mode, `--namespace help_center` registers a single proxy (`zendesk_help_center`) instead of the full set of namespace proxies.
+`--namespace` and `--read-only` are applied before the proxies are registered, so they narrow the surface in every mode. In the default `namespace` mode, `--namespace help_center` registers a single proxy (`zendesk_help_center`) instead of the full set of namespace proxies.
 
 ### A malformed invocation fails at startup
 
@@ -96,10 +96,10 @@ server exposes one extra tool, **`reload_tools`**. Calling it re-imports the
 tool modules from source and re-registers the toolset **in place** on the
 running server: the client is notified via `notifications/tools/list_changed`
 and refetches, so tool descriptions, schemas and handlers you just edited take
-effect **without restarting the process or reconnecting the client**. Unlike a
-file watcher, the reload happens only when *you* call `reload_tools` — at the
-end of an edit cycle, right before testing — which keeps the reload explicit and
-the notification noise to one burst per cycle. Point an MCP client's server
+effect without restarting the process or reconnecting the client. Unlike a file
+watcher, the reload happens only when *you* call `reload_tools`, at the end of
+an edit cycle and right before testing. That keeps the reload explicit and the
+notification noise down to one burst per cycle. Point an MCP client's server
 command at the source and add the flag:
 
 ```jsonc
@@ -118,9 +118,9 @@ Scope and limits, by design:
 - **Tool code only.** Reload re-imports the leaf tool modules
   (`src/tools/{tickets,search,help-center,users}.ts`). Edits to shared
   infrastructure below them (the HTTP client, `definitions.ts`, guidance, or the
-  server wiring itself) still require a full restart. A reload that throws (e.g.
-  a syntax error mid-edit) returns a tool error and leaves the previous tools
-  live — fix and call `reload_tools` again.
+  server wiring itself) still require a full restart. A reload that throws, say
+  on a syntax error caught mid-edit, returns a tool error and leaves the
+  previous tools live: fix it and call `reload_tools` again.
 - **Dev-only.** `reload_tools` is not part of the product tool surface and is
   never exposed without `--dev`; the published package ships compiled JS with no
   sources to reload. It is meant for `tsx`-from-source development.
@@ -142,7 +142,7 @@ Two deliberate exceptions:
   server actually uses.
 
 ### `ZENDESK_SUBDOMAIN`
-**Required:** yes (or the CLI `<subdomain>` argument) · **Default:** —
+**Required:** yes (or the CLI `<subdomain>` argument) · **Default:** none
 
 Zendesk subdomain (e.g. `acme` for `acme.zendesk.com`).
 
@@ -182,7 +182,7 @@ HTTP bind port (`0` to let the OS pick).
 Public URL advertised in OAuth discovery metadata. See [Public URL](http-deployment.md#public-url).
 
 ### `CORS_ORIGIN`
-**Required:** no · **Default:** —
+**Required:** no · **Default:** none
 
 Comma-separated browser origins added to the default CORS allowlist.
 
@@ -191,16 +191,16 @@ Comma-separated browser origins added to the default CORS allowlist.
 
 URI scheme of the Help Center MCP resources (also `--hc-resource-scheme`, which
 takes precedence). With the default, the topology resource is
-`zendesk-hc://topology`; set e.g. `wiki` to expose it as `wiki://topology` and
-have the `instructions` blob cite that URI. Strictly a **bare RFC 3986 scheme**
-— a lowercase letter followed by lowercase letters, digits, `+`, `-` or `.`;
-anything else (`wiki://`, `Wiki`, `-wiki`, `1wiki`) is rejected at startup. The
-WHATWG-special schemes (`http`, `https`, `ws`, `wss`, `ftp`, `file`) are also
-rejected: URL normalization appends a trailing slash to them, which would make
-the advertised resource URI unreadable by MCP clients. A
-generic scheme like `wiki` is safe collision-wise (MCP resource URIs are scoped
-per server), it is just less self-descriptive in a client connected to several
-servers.
+`zendesk-hc://topology`; set `wiki`, for instance, to expose it as
+`wiki://topology` and have the `instructions` blob cite that URI. It must be a
+**bare RFC 3986 scheme**: a lowercase letter followed by lowercase letters,
+digits, `+`, `-` or `.`. Anything else (`wiki://`, `Wiki`, `-wiki`, `1wiki`) is
+rejected at startup. The WHATWG-special schemes (`http`, `https`, `ws`, `wss`,
+`ftp`, `file`) are rejected too, because URL normalization appends a trailing
+slash to them and that would make the advertised resource URI unreadable by MCP
+clients. A generic scheme like `wiki` is safe collision-wise, since MCP resource
+URIs are scoped per server; it is just less self-descriptive in a client
+connected to several servers.
 
 ### `LOG_LEVEL`
 **Required:** no · **Default:** `info`
@@ -232,7 +232,7 @@ Safety threshold for `reorder_article`. When moving an article would rewrite mor
 
 Hard cap on the number of article pages scanned to find promoted ("featured") articles. This backs both the `<scheme>://article/{id}` resource listing (`resources/list`) and the `list_promoted_articles` tool. The Help Center API has no server-side promoted filter, so the scan pages through the articles and filters them client-side; this bounds that scan on a very large Help Center (promoted articles beyond the cap are omitted, and the truncation is flagged). Raise it if promoted articles live deep in a large catalog.
 
-**Cost note.** Each scanned page is one Zendesk API request (Zendesk rate-limits all plans), so on a large Help Center a single listing/tool call can fan out to several requests. The resource-listing scan is cached per session for a few minutes (`ARTICLE_RESOURCES_TTL_MS`) so repeated `resources/list` calls coalesce; the `list_promoted_articles` tool performs a fresh, uncached scan on every call. The scan runs only when a resource-capable client calls `resources/list` or the LLM calls `list_promoted_articles` — never at connect. The worst case is a large catalog with few or no promoted articles (a full-cap scan for little result); if that matters for your tenant's quota, lower this cap or disable the pre-listing with **`--no-promoted-articles`** — that turns off the resource `list` scan **and** the `list_promoted_articles` tool, so the server makes **zero** preloading requests. It does **not** disable reading a known article by id (`<scheme>://article/{id}` stays registered): that is a cheap, on-demand single fetch, not a preload.
+**Cost note.** Each scanned page is one Zendesk API request, and Zendesk rate-limits every plan, so on a large Help Center a single listing or tool call can fan out to several requests. The resource-listing scan is cached per session for a few minutes (`ARTICLE_RESOURCES_TTL_MS`) so repeated `resources/list` calls coalesce; the `list_promoted_articles` tool performs a fresh, uncached scan on every call. The scan runs only when a resource-capable client calls `resources/list` or the LLM calls `list_promoted_articles`, never at connect. The worst case is a large catalog with few or no promoted articles: a full-cap scan for little result. If that matters for your tenant's quota, lower this cap or disable the pre-listing with **`--no-promoted-articles`**, which turns off the resource `list` scan **and** the `list_promoted_articles` tool, so the server makes **zero** preloading requests. It does **not** disable reading a known article by id (`<scheme>://article/{id}` stays registered): that is a cheap, on-demand single fetch, not a preload.
 
 ---
 
