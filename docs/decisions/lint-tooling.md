@@ -89,10 +89,10 @@ whether or not a migration is pending — hence write-then-diff. Nothing is writ
 on the passing path.
 
 The pre-commit stage runs through **lefthook** rather than a hand-written hook.
-Its glob spans the whole repository, like `pnpm check`, so pre-commit and CI
-cannot disagree — both defer the perimeter to `biome.json` `files.includes`
-rather than repeating a path list — and `stage_fixed: true` re-stages whatever
-`--write` repaired.
+It defines no `glob`: `{staged_files}` reaches Biome unfiltered and `biome.json`
+`files.includes` decides — the same perimeter `pnpm check` uses, so pre-commit and
+CI cannot disagree — and `stage_fixed: true` re-stages whatever `--write`
+repaired.
 
 **Why lefthook and not husky + lint-staged.** That was the first implementation
 and it worked, but husky's last release is 2025-01-11 — 18 months stale — and
@@ -654,7 +654,7 @@ and no drift risk**.
 | # | Change | File |
 | --- | --- | --- |
 | 1 | `PostToolUse` hook: `check --write` → `lint --write --skip=types`. Lints on every edit, no longer formats. | `.claude/settings.json` |
-| 2 | pre-commit job: `biome check --write --error-on-warnings` on staged `src`/`tests`/`scripts` files, `stage_fixed: true` | `lefthook.yml` |
+| 2 | pre-commit job: `biome check --write --error-on-warnings` on staged `src`/`tests`/`scripts` files, `stage_fixed: true` — that scope filter was dropped later, see the trap list in §1 | `lefthook.yml` |
 | 3 | `lefthook` added; `prepare` extended with `lefthook install` so `pnpm install` wires the hook | `package.json` |
 | 4 | Why `--skip=types` exists, so it is not silently reverted | `AGENTS.md` (Code style) |
 | 5 | Stage table, `--no-verify` bypass, partial-staging caveat | `CONTRIBUTING.md` (Development setup) |
