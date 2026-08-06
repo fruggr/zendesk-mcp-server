@@ -1,4 +1,4 @@
-# Help Center context — instructions & MCP resources
+# Help Center context: instructions & MCP resources
 
 Beyond tools, the [Zendesk MCP Server](../README.md) hands an LLM the structural
 context it needs to work against *your* Help Center, so it stops guessing locales
@@ -6,7 +6,7 @@ or fuzzy-matching section names and uses real IDs instead. This document covers
 what is exposed, what it costs, and how to turn each piece off.
 
 Everything here is active only when the `help_center` namespace is, and every
-fetch uses **the caller's own OAuth token** — the context respects that user's
+fetch uses **the caller's own OAuth token**, so the context respects that user's
 read permissions exactly like the tools do.
 
 Clients that don't consume `instructions` or `resources` simply ignore them: the
@@ -32,12 +32,13 @@ read on demand, never pushed. It returns Markdown describing
 Prefer these IDs (`section_id`, `permission_group_id`, `user_segment_id`,
 `locale`) over guessing from names.
 
-**Partial results are explicit.** Listing permission groups and user segments
+Partial results are explicit. Listing permission groups and user segments
 requires **Guide-admin / Help Center manager** rights. With a content-editor
-token those two sections are marked *unavailable* — not empty — and the rest
-still renders; reuse those IDs from an existing article (`get_article`) instead.
+token those two sections are marked *unavailable* rather than empty, and the
+rest still renders; reuse those IDs from an existing article (`get_article`)
+instead.
 
-**Large Help Centers stay concise.** Past a size threshold the section tree is
+Large Help Centers stay concise. Past a size threshold the section tree is
 summarized per category, with a pointer to the `list_sections` tool for the
 detail.
 
@@ -45,11 +46,11 @@ detail.
 
 Two distinct capabilities behind one URI template.
 
-**Read-by-id.** Any article id can be read on demand and comes back as Markdown.
-One Zendesk fetch, no preloading, and it consumes no LLM context until an article
-is actually opened.
+Read-by-id: any article id can be read on demand and comes back as Markdown.
+That is one Zendesk fetch, with no preloading, and it consumes no LLM context
+until an article is actually opened.
 
-**Promoted pre-listing.** The resource's *listing* surfaces the promoted
+Promoted pre-listing: the resource's *listing* surfaces the promoted
 (*featured*) articles, so a user can pin one in clients that support resource
 pinning or `@`-mentions. The companion `list_promoted_articles` tool returns the
 same set.
@@ -57,11 +58,11 @@ same set.
 ### What the pre-listing costs
 
 Only the pre-listing costs requests. Zendesk has no server-side filter for
-promoted articles, so finding them means scanning article pages — one API request
+promoted articles, so finding them means scanning article pages, one API request
 per page, capped by
 [`ZENDESK_ARTICLE_RESOURCES_SCAN_MAX_PAGES`](configuration.md#zendesk_article_resources_scan_max_pages).
 
-- The scan runs only on a client's `resources/list` call or a tool call — **never
+- The scan runs only on a client's `resources/list` call or a tool call, **never
   at connect time**.
 - The resource listing is cached briefly per session, so repeated
   `resources/list` calls coalesce.
@@ -71,15 +72,15 @@ per page, capped by
 
 | Flag | Effect |
 |------|--------|
-| [`--no-topology`](configuration.md#cli-reference) | Disables the `instructions` blob **and** the topology resource — they toggle together. |
-| [`--no-promoted-articles`](configuration.md#cli-reference) | Disables the promoted pre-listing: both the resource `list` scan and the `list_promoted_articles` tool, so the server makes zero preloading requests. **Reading a known article by id stays available** — it never preloads. |
+| [`--no-topology`](configuration.md#cli-reference) | Disables the `instructions` blob **and** the topology resource. They toggle together. |
+| [`--no-promoted-articles`](configuration.md#cli-reference) | Disables the promoted pre-listing: both the resource `list` scan and the `list_promoted_articles` tool, so the server makes zero preloading requests. **Reading a known article by id stays available**, since it never preloads. |
 
 ## Branding the URI scheme
 
 `zendesk-hc://` is the default. A deployer can rebrand it with
-[`--hc-resource-scheme` / `HC_RESOURCE_SCHEME`](configuration.md#hc_resource_scheme)
-— e.g. `wiki` yields `wiki://topology` and `wiki://article/{id}`. It takes a bare
-RFC 3986 scheme, without `://`.
+[`--hc-resource-scheme` / `HC_RESOURCE_SCHEME`](configuration.md#hc_resource_scheme):
+`wiki`, for instance, yields `wiki://topology` and `wiki://article/{id}`. It
+takes a bare RFC 3986 scheme, without `://`.
 
 ## Troubleshooting
 

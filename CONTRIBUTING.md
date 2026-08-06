@@ -28,7 +28,7 @@ External contributions follow the same standard.
 
 | Tool | Version | Source of truth |
 | ---- | ------- | ---------------- |
-| Node | 24 | [`.nvmrc`](.nvmrc) — read by `nvm`, `fnm`, `mise`, `asdf`, `volta` |
+| Node | 24 | [`.nvmrc`](.nvmrc), read by `nvm`, `fnm`, `mise`, `asdf`, `volta` |
 | pnpm | 11 | [`package.json#packageManager`](package.json) (pinned with a corepack integrity hash) |
 
 The toolchain (Node 24 + pnpm 11) is used to build, lint, type-check and
@@ -52,7 +52,7 @@ pnpm dev -- <your-subdomain> --transport http --port 3000 --public-url http://lo
 pnpm build && pnpm typecheck && pnpm check && pnpm test
 ```
 
-To test a PR branch without publishing to npm — the `prepare` script builds on install:
+To test a PR branch without publishing to npm (the `prepare` script builds on install):
 
 ```bash
 npx -y github:fruggr/zendesk-mcp-server <your-subdomain>
@@ -62,20 +62,20 @@ npx -y github:fruggr/zendesk-mcp-server#my-feature-branch <your-subdomain>
 Architecture, code style, submission bar and release workflow live in
 [`AGENTS.md`](AGENTS.md).
 
-## Before you start — avoid duplicate work
+## Before you start: avoid duplicate work
 
 Two people building the same feature in parallel is wasted effort, and it has
 happened here. Before writing any code for an issue:
 
 1. **Check the issue is still live.** If it is closed as *completed* or labelled
-   `released`, it already shipped — stop and, if a follow-up is needed, open a
-   new issue for the delta.
+   `released`, it already shipped. Stop there and, if a follow-up is needed, open
+   a new issue for the delta.
 2. **Search open *and* merged PRs for the issue number** (`is:pr #<n>`). A merged
-   PR means it is done; an open PR means someone is mid-flight — comment there
+   PR means it is done; an open PR means someone is mid-flight, so comment there
    and coordinate instead of starting your own.
 3. **Claim it.** Self-assign the issue and leave a short "I'm picking this up"
    comment so others see it is taken.
-4. **Open your PR as a draft as early as possible** — the earliest signal to
+4. **Open your PR as a draft as early as possible.** It is the earliest signal to
    others that the work is in flight.
 
 ## Opening a pull request
@@ -83,7 +83,7 @@ happened here. Before writing any code for an issue:
 1. Fork the repository.
 2. Create a feature branch from `main`.
 3. Write code in small, reviewable commits.
-4. Use [Conventional Commits](https://www.conventionalcommits.org/) — they
+4. Use [Conventional Commits](https://www.conventionalcommits.org/). They
    directly drive the next version bump via semantic-release (see
    [Releases](#releases) for which prefixes trigger which bump).
 5. Make the author checklist below pass locally.
@@ -98,7 +98,7 @@ Closes #123
 
 `close` / `closes` / `closed`, `fix` / `fixes` / `fixed` and
 `resolve` / `resolves` / `resolved` all work. A bare `#123`, `Implements #123`
-or `Part of #123` only *references* the issue — it does not close it. Keep the
+or `Part of #123` only *references* the issue, it does not close it. Keep the
 keyword in the PR body (not just the title): the default squash merge discards
 individual commit messages, but GitHub still reads closing keywords from the PR
 description.
@@ -127,7 +127,7 @@ The same checklist appears on the
 
 ## Code standards
 
-- TypeScript with `@tsconfig/strictest` — no `any` escapes without a comment
+- TypeScript with `@tsconfig/strictest`. No `any` escapes without a comment
   explaining why.
 - Biome must be clean: `pnpm check` (and `pnpm check:fix` to auto-format). A
   pre-commit hook enforces this on staged files; `git commit --no-verify`
@@ -149,8 +149,8 @@ The same checklist appears on the
 
 ## Author-side AI review
 
-Before pushing, run a Claude Code pass on the diff. Suggested prompt — copy
-this into your `claude` CLI from the branch:
+Before pushing, run a Claude Code pass on the diff. Suggested prompt, to copy
+into your `claude` CLI from the branch:
 
 > Read the diff between this branch and `main`. Look for: potential bugs,
 > uncovered edge cases, inconsistencies with the project architecture,
@@ -164,7 +164,7 @@ you're not addressing it.
 
 The bar to clear before opening a PR or asking the maintainer to review. It
 applies the same way whether the code was written by a human or by an AI
-assistant — the goal is that the patch survives external scrutiny and that the
+assistant: the goal is that the patch survives external scrutiny and that the
 human author can defend every line. The maintainer's review starts from the
 assumption that everything below has already been done.
 
@@ -175,15 +175,15 @@ assumption that everything below has already been done.
    smallest version of the fix.
 3. **Look for what you didn't write.** Missing zod validation on an input,
    missing test for an edge case, missing README/AGENTS update on a renamed
-   tool, missing error path. Reviewers find these — find them first.
+   tool, missing error path. Reviewers find these, so find them first.
 4. **Self-review prompt.** Run the [Author-side AI review](#author-side-ai-review)
    pass on the diff against `main`. Address findings or document why you're
    skipping them in the PR description.
 5. **Run the full local gate**: `pnpm check`, `pnpm typecheck`, `pnpm test`,
    `pnpm build`. A green CI on a non-green local run means a flaky check, not a
    free pass. If your PR changes anything under `src/`, also run the mutation
-   gate on your diff — CI does, and it fails on a surviving mutant in a line you
-   changed: `pnpm test:mutation:diff origin/main HEAD`. Background:
+   gate on your diff, because CI does and it fails on a surviving mutant in a
+   line you changed: `pnpm test:mutation:diff origin/main HEAD`. Background:
    [`docs/decisions/mutation-testing.md`](docs/decisions/mutation-testing.md).
 6. **Scope discipline.** Don't bundle unrelated cleanups into a feature PR. If
    you spot something worth fixing along the way, note it and open a separate PR.
@@ -192,7 +192,7 @@ assumption that everything below has already been done.
    it `// TODO:` and surface the question in the PR description rather than
    guessing.
 8. **Mark the PR ready for review.** Flip a draft PR to "ready for review" once
-   dev is done and the local gate is green — never leave it as a draft.
+   dev is done and the local gate is green. Never leave it sitting as a draft.
 
 ## What happens after you open the PR
 
@@ -209,7 +209,7 @@ assumption that everything below has already been done.
 ## Merge policy
 
 - **Squash merge** is the default. The squashed commit message must follow
-  Conventional Commits — that's what semantic-release reads to compute the
+  Conventional Commits, since that's what semantic-release reads to compute the
   next version.
 - No force-push to `main`.
 - The maintainer can self-merge, given that two automated review passes
@@ -220,7 +220,7 @@ assumption that everything below has already been done.
 ## Releases
 
 Versions follow [SemVer](https://semver.org/) and are calculated
-**automatically** from commit messages — nobody bumps the version by hand. Every
+**automatically** from commit messages. Nobody bumps the version by hand. Every
 merge to `main` triggers
 [semantic-release](https://github.com/semantic-release/semantic-release), which
 inspects the Conventional Commits since the previous tag, computes the next
@@ -236,6 +236,6 @@ discover the new version automatically.
 | `feat!:`, `fix!:`, or a `BREAKING CHANGE:` footer | major |
 | `docs:`, `chore:`, `refactor:`, `test:`, `ci:`, `style:`, `build:` | no release |
 
-The full pipeline — Renovate, the release gating, the registry manifest — is in
-[`docs/release-automation.md`](docs/release-automation.md); the short rules for
-agents are in [Release workflow](AGENTS.md#release-workflow).
+The full pipeline, covering Renovate, the release gating and the registry
+manifest, is in [`docs/release-automation.md`](docs/release-automation.md); the
+short rules for agents are in [Release workflow](AGENTS.md#release-workflow).

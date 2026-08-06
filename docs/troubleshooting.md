@@ -1,4 +1,4 @@
-# Troubleshooting — Zendesk MCP Server
+# Troubleshooting: Zendesk MCP Server
 
 Common issues running the [Zendesk MCP Server](../README.md) and how to diagnose
 them. See also [Configuration](configuration.md) for the flags and environment
@@ -6,18 +6,18 @@ variables referenced below.
 
 ## The browser doesn't open during OAuth login
 
-The OAuth flow opens your default browser on the first tool call. The first call
+The OAuth flow opens your default browser on the first tool call. That first call
 fails fast with a message that includes the authorize URL, so even if the
 browser can't open (common in sandboxed or remote desktop environments) you can
-open that URL manually — it's also printed to the server's stderr. Sign in, then
+open that URL manually. It's also printed to the server's stderr. Sign in, then
 retry the request.
 
 To collect diagnostics, restart with `LOG_LEVEL=debug`. The server then emits
 structured logs through **two channels**, so they're reachable on any MCP client:
 
-- **stderr** — captured to a log file by every mainstream client.
-- **MCP logging notifications** (`notifications/message`) — surfaced by clients
-  that support the `logging` capability.
+- stderr, captured to a log file by every mainstream client.
+- MCP logging notifications (`notifications/message`), surfaced by clients that
+  support the `logging` capability.
 
 When the browser fails to open, look for the `oauth_browser_open_failed` event:
 it reports the underlying error, the platform, and which environment markers are
@@ -34,19 +34,20 @@ OAuth client.
 
 ## I have to re-authenticate every time
 
-The OAuth token is persisted to an owner-only (`0600`) file in your OS config dir
-— one per subdomain — and reused across restarts, so this shouldn't happen:
+The OAuth token is persisted to an owner-only (`0600`) file in your OS config
+dir, one per subdomain, and reused across restarts, so this shouldn't happen:
 
 - `%APPDATA%\fruggr\zendesk-mcp-server\<subdomain>.json` on Windows;
 - `${XDG_CONFIG_HOME:-~/.config}/fruggr/zendesk-mcp-server/<subdomain>.json`
   elsewhere.
 
 If the Zendesk OAuth client has token expiration enabled, the stored refresh
-token renews access silently — **proactively** (refreshed before use when it's
-expired, near expiry, or of unknown age, so the first request after an overnight
-gap never surfaces an auth error) and **periodically** in the background, so a
-long-lived idle session never serves a stale token. Only an expired or invalid
-refresh token triggers a new browser sign-in.
+token renews access silently, in two ways. It refreshes **proactively**, before
+use, when the token is expired, near expiry or of unknown age, so the first
+request after an overnight gap never surfaces an auth error. And it refreshes
+**periodically** in the background, so a long-lived idle session never serves a
+stale token. Only an expired or invalid refresh token triggers a new browser
+sign-in.
 
 If you still re-authenticate every time, check that the file is writable
 ([`ZENDESK_TOKEN_FILE`](configuration.md#zendesk_token_file) to relocate it) and
@@ -55,7 +56,7 @@ look for `token_persist_failed` in the logs.
 ## `Permission denied` on `list_permission_groups`, `list_user_segments`, or the topology resource
 
 Enumerating Guide permission groups and Help Center user segments requires
-**Guide-admin / Help Center manager** rights — a tier above the per-article edit
+**Guide-admin / Help Center manager** rights, a tier above the per-article edit
 rights an agent may already have. A content-editor token gets HTTP `403` on those
 two endpoints. This does **not** block content editing: the `zendesk-hc://topology`
 resource degrades gracefully (the two admin-only sections are marked *unavailable*
