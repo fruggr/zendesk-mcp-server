@@ -77,6 +77,16 @@ rule lost (the two type-aware rules still run at pre-commit and in CI).
 | pre-commit (staged) | `biome check --write --error-on-warnings <files>` | lefthook (`lefthook.yml`) | 503.5 ms |
 | pre-push | *nothing* | — | — |
 | CI | `pnpm check` — the same command, repository scope | `.github/workflows/ci.yml` | 807.2 ms |
+| CI | `biome migrate --write` + `git diff --exit-code biome.json` | `.github/workflows/ci.yml` | ~50 ms |
+
+**Why CI carries a second Biome step.** `pnpm check` runs Biome in check mode, so
+an upgrade that changes formatter or lint output fails on the bump PR itself
+rather than surfacing later in an unrelated contributor's diff. Deprecated
+*configuration* had no equivalent: Biome reports it as an `info` diagnostic,
+which `--error-on-warnings` does not fail on, so it slides through until the next
+major turns it into a hard error. `biome migrate` has no check mode — it exits 0
+whether or not a migration is pending — hence write-then-diff. Nothing is written
+on the passing path.
 
 The pre-commit stage runs through **lefthook** rather than a hand-written hook.
 Its glob spans the whole repository, like `pnpm check`, so pre-commit and CI
@@ -116,10 +126,17 @@ Parity on the one property that justified lint-staged in the first place.
   alone matches at *every* depth, because lefthook's `*` crosses `/`. So the
   two-pattern config that fixed the first problem handed Biome every nested file
   **twice**, and its extension list was a second perimeter that had already
-  drifted from `biome.json`. Passing `{staged_files}` unfiltered and letting
-  Biome skip what it cannot parse removes all three problems at once. Measured,
-  not assumed — with both patterns lefthook emitted `root.json
-  src/deep/nested.ts src/top.ts top.ts src/deep/nested.ts src/top.ts`.
+  drifted from `biome.json`: it omitted `.mts` — which `biome.json` carries an
+  override for — plus `.tsx`, `.cts`, `.jsx` and `.css`, all of which Biome 2.5.6
+  parses, so staging one of those skipped pre-commit and failed in CI instead.
+  Widening the list would only have moved the drift. Passing `{staged_files}`
+  unfiltered and letting Biome skip what it cannot parse removes all three
+  problems at once, and costs nothing when nothing matches: Biome skips
+  unparseable files with a verbose-only `files/missingHandler`, so a docs-only
+  commit reports `Checked 0 files` and exits 0 in 0.07 s
+  (`--no-errors-on-unmatched` covers the empty set). Measured, not assumed — with
+  both patterns lefthook emitted `root.json src/deep/nested.ts src/top.ts top.ts
+  src/deep/nested.ts src/top.ts`.
 - `pnpm add -D lefthook` writes a `lefthook: set this to true or false`
   placeholder into `allowBuilds`, which makes every later `pnpm` command fail
   until it is resolved. Set to `false`: the postinstall only downloads the Go

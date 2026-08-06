@@ -26,14 +26,8 @@ jobs:
 
       - run: pnpm check
 
-      # A Biome upgrade can deprecate configuration as well as change lint or
-      # formatter output. `pnpm check` catches the latter — it runs Biome in
-      # check mode, so a formatting change lands as a failure on the bump PR
-      # itself rather than in the next contributor's diff. A deprecated config
-      # field only surfaces as an `info` diagnostic, which `--error-on-warnings`
-      # lets through, until the next major turns it into a hard error. `migrate`
-      # has no check mode (it exits 0 whether or not a migration is pending),
-      # hence write-then-diff. Nothing is written on the passing path.
+      # Deprecated config is only an `info`, which `--error-on-warnings` lets
+      # through; `migrate` has no check mode, hence write-then-diff.
       - name: Biome config needs no migration
         run: |
           node scripts/biome.mjs migrate --write

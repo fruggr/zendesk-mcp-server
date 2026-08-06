@@ -109,19 +109,12 @@ test: if a running server behaves no differently for a client, it's tooling.
 ## Code style
 
 - TypeScript strict; Biome for lint/format (`pnpm check`).
-- Biome's perimeter is the **whole repository**, and `biome.json`
-  `files.includes` is the only place it is written down (`.gitignore` is honoured
-  through `vcs.useIgnoreFile`). `pnpm check` passes `.`; the lefthook job passes
-  every staged file with no `glob`. Don't reintroduce a filter on either side —
-  a `src/ tests/ scripts/` path list left the repository-root config files
-  unchecked, and an extension list left `.mts`/`.tsx`/`.cts`/`.jsx`/`.css`
-  checked in CI but not at pre-commit. Any second perimeter drifts from the
-  first. Why: `docs/decisions/lint-tooling.md`.
-- CI re-runs `biome migrate --write` and diffs `biome.json`. A Biome upgrade
-  reports deprecated config as an `info`, which `--error-on-warnings` lets
-  through until the next major makes it a hard error; that step is what forces a
-  bump to carry its own config migration instead of leaving it for whoever
-  opens the next PR.
+- Biome's perimeter is the whole repository and `biome.json` `files.includes` is
+  the only place it is written down: `pnpm check` passes `.`, lefthook passes
+  every staged file with no `glob`. Don't filter on either side — a second
+  perimeter drifts. CI also diffs `biome.json` after `biome migrate --write`, so
+  a bump carries its own config migration. Why:
+  `docs/decisions/lint-tooling.md`.
 - Keep the `!!**/node_modules` force-ignore in `biome.json` `files.includes`: it
   stops Biome 2's scanner from opening every dependency file for its module graph
   (~40% of `pnpm check` wall time, worse on slow filesystems), and excludes them
