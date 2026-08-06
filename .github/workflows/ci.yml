@@ -26,6 +26,13 @@ jobs:
 
       - run: pnpm check
 
+      # Deprecated config is only an `info`, which `--error-on-warnings` lets
+      # through; `migrate` has no check mode, hence write-then-diff.
+      - name: Biome config needs no migration
+        run: |
+          node scripts/biome.mjs migrate --write
+          git diff --exit-code biome.json
+
       - run: pnpm typecheck
 
       - run: pnpm test:coverage
