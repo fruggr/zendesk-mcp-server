@@ -109,12 +109,6 @@ test: if a running server behaves no differently for a client, it's tooling.
 ## Code style
 
 - TypeScript strict; Biome for lint/format (`pnpm check`).
-- Biome's perimeter is the whole repository and `biome.json` `files.includes` is
-  the only place it is written down: `pnpm check` passes `.`, lefthook passes
-  every staged file with no `glob`. Don't filter on either side — a second
-  perimeter drifts. CI also diffs `biome.json` after `biome migrate --write`, so
-  a bump carries its own config migration. Why:
-  `docs/decisions/lint-tooling.md`.
 - Keep the `!!**/node_modules` force-ignore in `biome.json` `files.includes`: it
   stops Biome 2's scanner from opening every dependency file for its module graph
   (~40% of `pnpm check` wall time, worse on slow filesystems), and excludes them
