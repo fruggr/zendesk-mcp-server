@@ -16,14 +16,15 @@ config lives here.
 
 ## The selection rule
 
-**Zero-violation ratchet.** A rule is enabled only once `src/`, `tests/` and
-`scripts/` are already clean for it, so `pnpm check` stays green in the same
-commit that turns it on. Cleanup lands first, the rule after — never a rule plus
-a bulk rewrite in one change.
+**Zero-violation ratchet.** A rule is enabled only once the whole repository is
+already clean for it, so `pnpm check` stays green in the same commit that turns
+it on. Cleanup lands first, the rule after — never a rule plus a bulk rewrite in
+one change.
 
 Everything below was measured the same way: each candidate enabled *alone*
-against `src/ tests/ scripts/`, diagnostics counted. Counts in this document are
-that measurement, not an estimate.
+against `src/ tests/ scripts/` — the check perimeter at the time of the
+measurement, since widened to the whole repository — diagnostics counted. Counts
+in this document are that measurement, not an estimate.
 
 ## What is on
 

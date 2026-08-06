@@ -76,12 +76,23 @@ rule lost (the two type-aware rules still run at pre-commit and in CI).
 | `PostToolUse` (per edit) | `biome lint --write --skip=types <file>` | `.claude/settings.json` | **137.0 ms** |
 | pre-commit (staged) | `biome check --write --error-on-warnings <files>` | lefthook (`lefthook.yml`) | 503.5 ms |
 | pre-push | *nothing* | — | — |
-| CI | `pnpm check` — the same command, project scope | `.github/workflows/ci.yml`, unchanged | 807.2 ms |
+| CI | `pnpm check` — the same command, repository scope | `.github/workflows/ci.yml` | 807.2 ms |
+| CI | `biome migrate --write` + `git diff --exit-code biome.json` | `.github/workflows/ci.yml` | ~50 ms |
+
+**Why CI carries a second Biome step.** `pnpm check` runs Biome in check mode, so
+an upgrade that changes formatter or lint output fails on the bump PR itself
+rather than surfacing later in an unrelated contributor's diff. Deprecated
+*configuration* had no equivalent: Biome reports it as an `info` diagnostic,
+which `--error-on-warnings` does not fail on, so it slides through until the next
+major turns it into a hard error. `biome migrate` has no check mode — it exits 0
+whether or not a migration is pending — hence write-then-diff. Nothing is written
+on the passing path.
 
 The pre-commit stage runs through **lefthook** rather than a hand-written hook.
-Its glob is scoped to `src`/`tests`/`scripts`, the same paths as `pnpm check`,
-so pre-commit and CI cannot disagree, and `stage_fixed: true` re-stages whatever
-`--write` repaired.
+It defines no `glob`: `{staged_files}` reaches Biome unfiltered and `biome.json`
+`files.includes` decides — the same perimeter `pnpm check` uses, so pre-commit and
+CI cannot disagree — and `stage_fixed: true` re-stages whatever `--write`
+repaired.
 
 **Why lefthook and not husky + lint-staged.** That was the first implementation
 and it worked, but husky's last release is 2025-01-11 — 18 months stale — and
@@ -109,10 +120,23 @@ Parity on the one property that justified lint-staged in the first place.
 
 **Two traps found while wiring it up**, both worth keeping in mind:
 
-- `{src,tests,scripts}/**/*.{ts,…}` alone **silently skips top-level files** —
-  lefthook's matcher requires at least one directory level for `**/`, so
-  `src/index.ts`, `src/config.ts` and `tests/setup.ts` were never checked. The
-  config carries a second, single-level pattern for that reason.
+- **lefthook's `glob` was eventually removed rather than widened**, and its
+  matcher is why. `**/*.{ts,…}` alone **silently skips top-level files** — the
+  matcher requires at least one directory level for `**/` — whereas `*.{ts,…}`
+  alone matches at *every* depth, because lefthook's `*` crosses `/`. So the
+  two-pattern config that fixed the first problem handed Biome every nested file
+  **twice**, and its extension list was a second perimeter that had already
+  drifted from `biome.json`: it omitted `.mts` — which `biome.json` carries an
+  override for — plus `.tsx`, `.cts`, `.jsx` and `.css`, all of which Biome 2.5.6
+  parses, so staging one of those skipped pre-commit and failed in CI instead.
+  Widening the list would only have moved the drift. Passing `{staged_files}`
+  unfiltered and letting Biome skip what it cannot parse removes all three
+  problems at once, and costs nothing when nothing matches: Biome skips
+  unparseable files with a verbose-only `files/missingHandler`, so a docs-only
+  commit reports `Checked 0 files` and exits 0 in 0.07 s
+  (`--no-errors-on-unmatched` covers the empty set). Measured, not assumed — with
+  both patterns lefthook emitted `root.json src/deep/nested.ts src/top.ts top.ts
+  src/deep/nested.ts src/top.ts`.
 - `pnpm add -D lefthook` writes a `lefthook: set this to true or false`
   placeholder into `allowBuilds`, which makes every later `pnpm` command fail
   until it is resolved. Set to `false`: the postinstall only downloads the Go
@@ -630,7 +654,7 @@ and no drift risk**.
 | # | Change | File |
 | --- | --- | --- |
 | 1 | `PostToolUse` hook: `check --write` → `lint --write --skip=types`. Lints on every edit, no longer formats. | `.claude/settings.json` |
-| 2 | pre-commit job: `biome check --write --error-on-warnings` on staged `src`/`tests`/`scripts` files, `stage_fixed: true` | `lefthook.yml` |
+| 2 | pre-commit job: `biome check --write --error-on-warnings` on staged `src`/`tests`/`scripts` files, `stage_fixed: true` — that scope filter was dropped later, see the trap list in §1 | `lefthook.yml` |
 | 3 | `lefthook` added; `prepare` extended with `lefthook install` so `pnpm install` wires the hook | `package.json` |
 | 4 | Why `--skip=types` exists, so it is not silently reverted | `AGENTS.md` (Code style) |
 | 5 | Stage table, `--no-verify` bypass, partial-staging caveat | `CONTRIBUTING.md` (Development setup) |

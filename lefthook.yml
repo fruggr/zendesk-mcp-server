@@ -10,12 +10,6 @@
 pre-commit:
   jobs:
     - name: biome
-      # Same paths as `pnpm check`, so pre-commit and CI cannot disagree.
-      # Two patterns on purpose: `**/` requires at least one directory level in
-      # lefthook's matcher, so it alone would silently skip src/index.ts,
-      # src/config.ts, tests/setup.ts and every other top-level file.
-      glob:
-        - '{src,tests,scripts}/*.{ts,mjs,cjs,js,json,jsonc}'
-        - '{src,tests,scripts}/**/*.{ts,mjs,cjs,js,json,jsonc}'
+      # No `glob`: Biome filters, so `biome.json` is the only perimeter (why: docs/decisions/lint-tooling.md).
       run: node scripts/biome.mjs check --write --error-on-warnings --no-errors-on-unmatched {staged_files}
       stage_fixed: true

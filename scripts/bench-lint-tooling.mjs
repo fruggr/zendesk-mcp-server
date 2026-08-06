@@ -50,7 +50,11 @@ const OXFMT = './node_modules/.bin/oxfmt';
 
 // A representative single file: the hook only ever lints what was just edited.
 const ONE_FILE = 'src/tools/tickets.ts';
-const BIOME_PATHS = 'src/ tests/ scripts/';
+// `.` so the `pnpm check` scenario really is the command CI runs; the perimeter
+// is `biome.json` `files.includes`, not a path list. The oxlint/oxfmt reference
+// lines keep the source dirs — they are a cross-tool sanity check, not a
+// like-for-like of the CI command.
+const BIOME_PATHS = '.';
 const OX_PATHS = 'src tests scripts';
 
 // Stand-in for a pre-commit hook's staged set: a handful of files, not the tree.
