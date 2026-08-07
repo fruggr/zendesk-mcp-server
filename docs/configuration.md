@@ -62,9 +62,10 @@ shapes are rejected, each naming the knob at fault:
 | `--moed all` | an unknown flag. A typo is not silently ignored |
 | `mycompany extra` | a second positional argument, so one of them would be dropped |
 
-Values are never echoed back in these messages, so a mistyped
-`--token=<secret>` reports only the flag name. Both `--flag value` and
-`--flag=value` are accepted.
+Values are never echoed back in these messages, so an unsupported flag written
+as `--anything=<secret>` is reported by name alone, with the value withheld. For
+the flags that take a value, both `--flag value` and `--flag=value` work;
+standalone flags such as `--read-only` accept no value in either form.
 
 Exactly one positional argument is read, as the subdomain. A repeatable flag
 (`--namespace`, `--tool`, `--cors-origin`) has to be repeated:
@@ -137,9 +138,10 @@ Two deliberate exceptions:
 
 - `CORS_ORIGIN` is a *list*, where an empty value legitimately means "no extra
   origins" on top of the built-in allowlist.
-- A variable that a CLI flag overrides is never consulted, so `--port 8080`
-  alongside a stray `PORT=` still boots. Validation applies to the value the
-  server actually uses.
+- A variable that the command line overrides is never consulted, so `--port
+  8080` alongside a stray `PORT=` still boots, and so does the positional
+  `<subdomain>` alongside an empty `ZENDESK_SUBDOMAIN`. Validation applies to
+  the value the server actually uses.
 
 ### `ZENDESK_SUBDOMAIN`
 **Required:** yes (or the CLI `<subdomain>` argument) · **Default:** none

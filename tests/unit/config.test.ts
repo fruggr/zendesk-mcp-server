@@ -555,6 +555,14 @@ describe('loadConfig', () => {
       expect(config.hcResourceScheme).toBe('wiki');
     });
 
+    it('ignores an empty ZENDESK_SUBDOMAIN that the positional argument overrides', () => {
+      // The positional subdomain is not a flag, but it shadows the variable the
+      // same way, so the same rule applies: the variable is never consulted and
+      // its emptiness is dead config rather than a reason to refuse to boot.
+      process.env['ZENDESK_SUBDOMAIN'] = '';
+      expect(loadConfig(['mycompany']).subdomain).toBe('mycompany');
+    });
+
     it('keeps CORS_ORIGIN tolerant of an empty value', () => {
       // A list variable: `CORS_ORIGIN=` means "no extra origins", which is a
       // normal way to write it in a compose file. The built-in allowlist (major
