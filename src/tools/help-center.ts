@@ -17,6 +17,7 @@ import {
   LARGE_ARTICLE_SECTION_COUNT,
   MAX_PAGE_SIZE,
   REORDER_CONFIRM_THRESHOLD,
+  TRANSLATION_GAP_SCAN_MAX_NODES,
 } from '../constants';
 import { fetchPromotedArticles, LIST_PROMOTED_ARTICLES_TOOL } from '../guidance/article-resources';
 import type {
@@ -26,6 +27,7 @@ import type {
   ZendeskContentTag,
   ZendeskLabel,
   ZendeskListResponse,
+  ZendeskLocalesResponse,
   ZendeskPermissionGroup,
   ZendeskSection,
   ZendeskTranslation,
@@ -55,6 +57,7 @@ import {
   formatContentTag,
   formatLabel,
   formatList,
+  formatNodeTranslationSummary,
   formatPermissionGroup,
   formatSection,
   formatTranslation,
@@ -93,6 +96,207 @@ const listTranslations = (
     token,
     `/articles/${articleId}/translations`,
   ).then((res) => res.translations);
+
+// --- Section / category translations.
+//
+// Sections and categories live on the same Translations endpoint family as
+// articles (`/{sections|categories}/{id}/translations`) and return the same
+// translation object, with two fields carrying different meanings: `title` is the
+// localized *name* and `body` the localized *description*. The tools speak
+// name/description — the vocabulary list_sections and list_categories already
+// return — and do the mapping here, so a caller never has to know about it.
+type TreeNodeKind = 'sections' | 'categories';
+
+const NODE_LABEL: Record<TreeNodeKind, string> = {
+  sections: 'section',
+  categories: 'category',
+};
+
+const SECTION_ID_DESC =
+  'Section ID — the numeric id of the Help Center section. Obtain it from list_sections or the zendesk-hc://topology resource.';
+
+const CATEGORY_ID_DESC =
+  'Category ID — the numeric id of the Help Center category. Obtain it from list_categories or the zendesk-hc://topology resource.';
+
+// `locales` narrows the response when the caller only cares about one language.
+// The result is filtered locally anyway (see findTranslation), so the tools stay
+// correct even where the server-side filter is not applied.
+const listNodeTranslations = (
+  subdomain: string,
+  token: string,
+  kind: TreeNodeKind,
+  nodeId: number,
+  locale?: string,
+): Promise<ZendeskTranslation[]> =>
+  helpCenterGet<{ translations: ZendeskTranslation[] }>(
+    subdomain,
+    token,
+    `/${kind}/${nodeId}/translations`,
+    locale ? { locales: locale } : undefined,
+  ).then((res) => res.translations ?? []);
+
+// Locales are matched case-insensitively: Zendesk normalizes its own to lower
+// case, but a caller (or a copy-paste from Guide) may well pass "fr-FR".
+const findTranslation = (
+  translations: ZendeskTranslation[],
+  locale: string,
+): ZendeskTranslation | undefined => {
+  const wanted = locale.toLowerCase();
+  return translations.find((t) => t.locale.toLowerCase() === wanted);
+};
+
+/**
+ * Create-or-update a section/category translation in one call.
+ *
+ * The probe that decides POST vs PUT is the very call `list_*_translations`
+ * makes, so the caller pays one request instead of being forced to list first —
+ * or to recover from the 400 the API returns when a POST targets a locale that
+ * already has a translation. Only the fields actually passed are sent on update,
+ * so omitting `description` never blanks an existing one and omitting `draft`
+ * never republishes (or unpublishes) by accident.
+ */
+const upsertNodeTranslation = async (
+  subdomain: string,
+  token: string,
+  kind: TreeNodeKind,
+  nodeId: number,
+  input: { locale: string; name?: string; description?: string; draft?: boolean },
+): Promise<{ translation: ZendeskTranslation; created: boolean }> => {
+  const { locale, name, description, draft } = input;
+  const existing = findTranslation(
+    await listNodeTranslations(subdomain, token, kind, nodeId, locale),
+    locale,
+  );
+
+  if (!existing) {
+    if (name === undefined) {
+      throw new Error(
+        `${NODE_LABEL[kind]} #${nodeId} has no "${locale}" translation yet, so one has to be created and "name" is required. Pass the localized name, or call list_${NODE_LABEL[kind]}_translations to see which locales already exist.`,
+      );
+    }
+    const { translation } = await helpCenterPost<{ translation: ZendeskTranslation }>(
+      subdomain,
+      token,
+      `/${kind}/${nodeId}/translations`,
+      { translation: { locale, title: name, body: description ?? '', draft: draft ?? false } },
+    );
+    return { translation, created: true };
+  }
+
+  const updates: Record<string, unknown> = {};
+  if (name !== undefined) updates['title'] = name;
+  if (description !== undefined) updates['body'] = description;
+  if (draft !== undefined) updates['draft'] = draft;
+  // Zendesk's own spelling of the locale, not the caller's: the PUT path has to
+  // match the existing translation even when the input was cased differently.
+  const { translation } = await helpCenterPut<{ translation: ZendeskTranslation }>(
+    subdomain,
+    token,
+    `/${kind}/${nodeId}/translations/${existing.locale}`,
+    { translation: updates },
+  );
+  return { translation, created: false };
+};
+
+const nodeTranslationWriteText = (
+  kind: TreeNodeKind,
+  nodeId: number,
+  translation: ZendeskTranslation,
+  created: boolean,
+): string =>
+  [
+    `Translation ${created ? 'created' : 'updated'} for ${NODE_LABEL[kind]} #${nodeId} in "${
+      translation.locale
+    }" (${translation.draft ? 'draft, not visible to end users' : 'published'}).`,
+    '',
+    formatNodeTranslationSummary(translation),
+  ].join('\n');
+
+// --- find_translation_gaps.
+//
+// A node is a gap when the target locale has no translation at all, or has one
+// that is still a draft. Those need different fixes (write a translation vs flip
+// `draft`), which is exactly what `list_sections?locale=…` cannot tell you: it
+// omits both cases alike.
+type GapReason = 'missing' | 'draft';
+
+interface TranslationGap {
+  id: number;
+  name: string;
+  reason: GapReason;
+}
+
+const GAP_REASON_TEXT: Record<GapReason, string> = {
+  missing: 'no translation',
+  draft: 'draft translation (not published)',
+};
+
+const classifyGap = (
+  node: { id: number; name: string },
+  translations: ZendeskTranslation[],
+  locale: string,
+): TranslationGap | null => {
+  const translation = findTranslation(translations, locale);
+  if (!translation) return { id: node.id, name: node.name, reason: 'missing' };
+  return translation.draft ? { id: node.id, name: node.name, reason: 'draft' } : null;
+};
+
+interface GapReport {
+  locale: string;
+  activeLocales: string[];
+  categoryGaps: TranslationGap[];
+  sectionGaps: TranslationGap[];
+  scanned: { categories: number; sections: number };
+  found: { categories: number; sections: number };
+  /** True when the category or section listing itself spilled past one page. */
+  listingIncomplete: boolean;
+}
+
+const renderGapLines = (heading: string, gaps: TranslationGap[], scanned: number): string[] => [
+  `## ${heading} (${scanned} scanned)`,
+  ...(gaps.length > 0
+    ? gaps.map((gap) => `- **${gap.name}** (${gap.id}) — ${GAP_REASON_TEXT[gap.reason]}`)
+    : ['_(none — every one scanned has a published translation)_']),
+];
+
+const renderGapReport = (report: GapReport): string => {
+  const { locale, categoryGaps, sectionGaps, scanned, found } = report;
+  const gapCount = categoryGaps.length + sectionGaps.length;
+  const capped = scanned.categories < found.categories || scanned.sections < found.sections;
+  return truncateIfNeeded(
+    [
+      `# Translation gaps — "${locale}"`,
+      '',
+      ...(report.activeLocales.some((l) => l.toLowerCase() === locale.toLowerCase())
+        ? []
+        : [
+            `> ⚠ "${locale}" is not an active locale of this Help Center (active: ${report.activeLocales.join(
+              ', ',
+            )}), so everything below reads as untranslated. Check the spelling, or activate the language in Guide first.`,
+            '',
+          ]),
+      ...renderGapLines('Categories', categoryGaps, scanned.categories),
+      '',
+      ...renderGapLines('Sections', sectionGaps, scanned.sections),
+      '',
+      gapCount === 0
+        ? `No gaps: all ${scanned.categories} category/ies and ${scanned.sections} section(s) scanned have a published "${locale}" translation.`
+        : `${gapCount} node(s) need a published "${locale}" translation. Fix a category with set_category_translation and a section with set_section_translation, passing draft: false to publish.`,
+      ...(capped
+        ? [
+            '',
+            `_Note: the scan stopped at its ${TRANSLATION_GAP_SCAN_MAX_NODES}-node cap, covering ${scanned.categories}/${found.categories} categories and ${scanned.sections}/${found.sections} sections. The rest were not checked — narrow the scan with category_id, or raise ZENDESK_TRANSLATION_GAP_SCAN_MAX_NODES._`,
+          ]
+        : []),
+      ...(report.listingIncomplete
+        ? [
+            '',
+            `_Note: this Help Center has more than ${MAX_PAGE_SIZE} categories or sections, so only the first page of each was considered. Narrow the scan with category_id to audit the rest._`,
+          ]
+        : []),
+    ].join('\n'),
+  );
+};
 
 const largeArticleHint = (body: string, sectionCount: number): string | null => {
   if (body.length < LARGE_ARTICLE_BODY_CHARS && sectionCount < LARGE_ARTICLE_SECTION_COUNT) {
@@ -842,6 +1046,307 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
             {
               type: 'text',
               text: `Translation updated for article #${article_id} in "${locale}".\n\n${formatTranslation(translation)}`,
+            },
+          ],
+        };
+      },
+    },
+    {
+      name: 'list_section_translations',
+      namespace: 'help_center',
+      readOnly: true,
+      title: 'List Section Translations',
+      description:
+        'List the translations of a Help Center section: for each locale, the localized name, whether a description is set, and whether the translation is published or still a draft. Reach for this when a section looks untranslated in a locale — list_sections with a locale omits a section that has no translation AND one whose translation is an unpublished draft, and only this tool tells the two apart. Fix either case with set_section_translation; to sweep every category and section at once, use find_translation_gaps.',
+      inputSchema: z.object({
+        section_id: z.number().int().describe(SECTION_ID_DESC),
+      }),
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+      handler: async (params) => {
+        const { section_id } = params as { section_id: number };
+        const token = await getToken();
+        const translations = await listNodeTranslations(subdomain, token, 'sections', section_id);
+        return {
+          content: [{ type: 'text', text: formatList(translations, formatNodeTranslationSummary) }],
+        };
+      },
+    },
+    {
+      name: 'list_category_translations',
+      namespace: 'help_center',
+      readOnly: true,
+      title: 'List Category Translations',
+      description:
+        'List the translations of a Help Center category: for each locale, the localized name, whether a description is set, and whether the translation is published or still a draft. Reach for this when a category looks untranslated in a locale — list_categories with a locale omits a category that has no translation AND one whose translation is an unpublished draft, and only this tool tells the two apart. Fix either case with set_category_translation; to sweep every category and section at once, use find_translation_gaps.',
+      inputSchema: z.object({
+        category_id: z.number().int().describe(CATEGORY_ID_DESC),
+      }),
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+      handler: async (params) => {
+        const { category_id } = params as { category_id: number };
+        const token = await getToken();
+        const translations = await listNodeTranslations(
+          subdomain,
+          token,
+          'categories',
+          category_id,
+        );
+        return {
+          content: [{ type: 'text', text: formatList(translations, formatNodeTranslationSummary) }],
+        };
+      },
+    },
+    {
+      name: 'find_translation_gaps',
+      namespace: 'help_center',
+      readOnly: true,
+      title: 'Find Help Center Translation Gaps',
+      description:
+        'Audit the Help Center tree for a target locale and report every category and section that has no translation, or one that is still an unpublished draft. Use it before or after translating articles: an article published in a second locale is unreachable while its parent section only exists in the source locale, and that gap is invisible to list_sections. Costs one extra request per node scanned, capped (the report says so when the cap bites) — pass category_id to narrow it. Fix what it reports with set_section_translation / set_category_translation.',
+      inputSchema: z.object({
+        locale: z
+          .string()
+          .describe(
+            'Locale to audit, e.g. "fr" or "de" — usually a non-default active locale of the Help Center (zendesk-hc://topology lists them). A locale that is not active is reported as a warning, since every node would then look untranslated.',
+          ),
+        category_id: z
+          .number()
+          .int()
+          .optional()
+          .describe(
+            'Restrict the audit to this category and the sections it contains (id from list_categories). Omit to sweep the whole tree, which costs one request per category and per section.',
+          ),
+      }),
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+      handler: async (params) => {
+        const { locale, category_id } = params as { locale: string; category_id?: number };
+        const token = await getToken();
+        const pageParams = buildCursorParams(MAX_PAGE_SIZE, undefined);
+        const [locales, categoriesRes, sectionsRes] = await Promise.all([
+          helpCenterGet<ZendeskLocalesResponse>(subdomain, token, '/locales'),
+          helpCenterGet<ZendeskListResponse<ZendeskCategory>>(
+            subdomain,
+            token,
+            '/categories',
+            pageParams,
+          ),
+          helpCenterGet<ZendeskListResponse<ZendeskSection>>(
+            subdomain,
+            token,
+            sectionListPath(category_id, undefined),
+            pageParams,
+          ),
+        ]);
+
+        // Scoping to one category filters the same listing rather than fetching
+        // the category on its own: the request is already paid for.
+        const allCategories = (categoriesRes.categories ?? []).filter(
+          (category) => category_id === undefined || category.id === category_id,
+        );
+        const allSections = sectionsRes.sections ?? [];
+
+        // Categories first, sections with whatever budget is left: a caller
+        // auditing a bilingual tree cares most about the top of it, and the note
+        // in the report names exactly what went unscanned.
+        const categories = allCategories.slice(0, TRANSLATION_GAP_SCAN_MAX_NODES);
+        const sections = allSections.slice(
+          0,
+          Math.max(0, TRANSLATION_GAP_SCAN_MAX_NODES - categories.length),
+        );
+
+        const [categoryGaps, sectionGaps] = await Promise.all([
+          Promise.all(
+            categories.map(async (category) =>
+              classifyGap(
+                category,
+                await listNodeTranslations(subdomain, token, 'categories', category.id, locale),
+                locale,
+              ),
+            ),
+          ),
+          Promise.all(
+            sections.map(async (section) =>
+              classifyGap(
+                section,
+                await listNodeTranslations(subdomain, token, 'sections', section.id, locale),
+                locale,
+              ),
+            ),
+          ),
+        ]);
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: renderGapReport({
+                locale,
+                activeLocales: locales.locales ?? [],
+                categoryGaps: categoryGaps.filter((gap): gap is TranslationGap => gap !== null),
+                sectionGaps: sectionGaps.filter((gap): gap is TranslationGap => gap !== null),
+                scanned: { categories: categories.length, sections: sections.length },
+                found: { categories: allCategories.length, sections: allSections.length },
+                listingIncomplete:
+                  extractPaginationMeta(categoriesRes, allCategories.length).has_more ||
+                  extractPaginationMeta(sectionsRes, allSections.length).has_more,
+              }),
+            },
+          ],
+        };
+      },
+    },
+    {
+      name: 'set_section_translation',
+      namespace: 'help_center',
+      readOnly: false,
+      title: 'Create or Update a Section Translation',
+      description:
+        'Create or update the translation of a Help Center section in one locale, and return the resulting translation (locale, localized name, draft state). Creates the translation when the locale has none and updates it otherwise, so no listing call is needed first; only the fields you pass are written, which makes "publish this draft" a single draft: false. Use it to make a section reachable in a locale where its articles are already translated — a gap find_translation_gaps reports and list_sections cannot explain.',
+      inputSchema: z.object({
+        section_id: z
+          .number()
+          .int()
+          .describe(
+            'Section ID — the numeric id of the section whose translation to write. Obtain it from list_sections, find_translation_gaps or the zendesk-hc://topology resource.',
+          ),
+        locale: z
+          .string()
+          .describe(
+            'Locale to write, e.g. "fr" or "de". Must be an active locale of the Help Center (zendesk-hc://topology lists them); list_section_translations shows which ones the section already has.',
+          ),
+        name: z
+          .string()
+          .min(1)
+          .optional()
+          .describe(
+            "Localized section name for this locale (sent as the API's translation `title`). Required when the locale has no translation yet; omit on an existing one to leave its name untouched, for instance when only publishing a draft.",
+          ),
+        description: z
+          .string()
+          .optional()
+          .describe(
+            "Localized section description for this locale (sent as the API's translation `body`). Omit to leave an existing description untouched; pass an empty string to clear it.",
+          ),
+        draft: z
+          .boolean()
+          .optional()
+          .describe(
+            'Publication state: false publishes the translation, making the section visible to end users in this locale; true keeps (or puts) it back as a draft. Defaults to false when creating; omit on an existing translation to leave its state unchanged.',
+          ),
+      }),
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+      handler: async (params) => {
+        const { section_id, ...input } = params as {
+          section_id: number;
+          locale: string;
+          name?: string;
+          description?: string;
+          draft?: boolean;
+        };
+        const token = await getToken();
+        const { translation, created } = await upsertNodeTranslation(
+          subdomain,
+          token,
+          'sections',
+          section_id,
+          input,
+        );
+        return {
+          content: [
+            {
+              type: 'text',
+              text: nodeTranslationWriteText('sections', section_id, translation, created),
+            },
+          ],
+        };
+      },
+    },
+    {
+      name: 'set_category_translation',
+      namespace: 'help_center',
+      readOnly: false,
+      title: 'Create or Update a Category Translation',
+      description:
+        'Create or update the translation of a Help Center category in one locale, and return the resulting translation (locale, localized name, draft state). Creates the translation when the locale has none and updates it otherwise, so no listing call is needed first; only the fields you pass are written, which makes "publish this draft" a single draft: false. Use it to make a category reachable in a locale where its sections or articles are already translated — a gap find_translation_gaps reports and list_categories cannot explain.',
+      inputSchema: z.object({
+        category_id: z
+          .number()
+          .int()
+          .describe(
+            'Category ID — the numeric id of the category whose translation to write. Obtain it from list_categories, find_translation_gaps or the zendesk-hc://topology resource.',
+          ),
+        locale: z
+          .string()
+          .describe(
+            'Locale to write, e.g. "fr" or "de". Must be an active locale of the Help Center (zendesk-hc://topology lists them); list_category_translations shows which ones the category already has.',
+          ),
+        name: z
+          .string()
+          .min(1)
+          .optional()
+          .describe(
+            "Localized category name for this locale (sent as the API's translation `title`). Required when the locale has no translation yet; omit on an existing one to leave its name untouched, for instance when only publishing a draft.",
+          ),
+        description: z
+          .string()
+          .optional()
+          .describe(
+            "Localized category description for this locale (sent as the API's translation `body`). Omit to leave an existing description untouched; pass an empty string to clear it.",
+          ),
+        draft: z
+          .boolean()
+          .optional()
+          .describe(
+            'Publication state: false publishes the translation, making the category visible to end users in this locale; true keeps (or puts) it back as a draft. Defaults to false when creating; omit on an existing translation to leave its state unchanged.',
+          ),
+      }),
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+      handler: async (params) => {
+        const { category_id, ...input } = params as {
+          category_id: number;
+          locale: string;
+          name?: string;
+          description?: string;
+          draft?: boolean;
+        };
+        const token = await getToken();
+        const { translation, created } = await upsertNodeTranslation(
+          subdomain,
+          token,
+          'categories',
+          category_id,
+          input,
+        );
+        return {
+          content: [
+            {
+              type: 'text',
+              text: nodeTranslationWriteText('categories', category_id, translation, created),
             },
           ],
         };

@@ -278,6 +278,10 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         expect(names).not.toContain('create_ticket');
         expect(names).not.toContain('update_ticket');
         expect(names).not.toContain('archive_article');
+        expect(names).not.toContain('set_section_translation');
+        expect(names).not.toContain('set_category_translation');
+        // The read side of the same feature survives the filter.
+        expect(names).toContain('find_translation_gaps');
       });
     });
 
@@ -406,6 +410,29 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         // Per-section presence status, not a word-count verdict.
         expect(text).toContain('| Idx | Heading | Status');
         expect(text).not.toContain('different');
+      });
+
+      it('audits then publishes a section translation through the help_center proxy (#224)', async () => {
+        connected = await harness.connect(makeConfig({ mode: 'namespace' }));
+
+        // Section 600 has a `fr` translation that is still a draft, so the audit
+        // must report it as a draft rather than as missing.
+        const audit = await connected.client.callTool({
+          name: 'zendesk_help_center',
+          arguments: { operation: 'find_translation_gaps', params: { locale: 'fr' } },
+        });
+        expect(audit.isError).toBeFalsy();
+        expect(textOf(audit)).toContain('(600) — draft translation (not published)');
+
+        const published = await connected.client.callTool({
+          name: 'zendesk_help_center',
+          arguments: {
+            operation: 'set_section_translation',
+            params: { section_id: 600, locale: 'fr', draft: false },
+          },
+        });
+        expect(published.isError).toBeFalsy();
+        expect(textOf(published)).toContain('Translation updated for section #600 in "fr"');
       });
 
       it('archives a Help Center article over the wire when confirmed', async () => {
