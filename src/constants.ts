@@ -45,6 +45,17 @@ export const ARTICLE_RESOURCES_SCAN_MAX_PAGES = positiveIntEnv(
   20,
 );
 
+// Max category + section nodes probed by find_translation_gaps. Sections and
+// categories have no "missing translations" endpoint and the locale-filtered
+// listing cannot substitute for one, so the answer costs one request per node;
+// this bounds the fan-out and the tool reports what it left unscanned. A
+// `translations` sideload could remove it — untaken, see #226. Override via
+// ZENDESK_TRANSLATION_GAP_SCAN_MAX_NODES.
+export const TRANSLATION_GAP_SCAN_MAX_NODES = positiveIntEnv(
+  'ZENDESK_TRANSLATION_GAP_SCAN_MAX_NODES',
+  60,
+);
+
 // Local port the OAuth PKCE flow listens on for the browser callback. Must match
 // the redirect URL registered in the Zendesk OAuth client. Deliberately picked
 // outside the usual dev range (3000/5000/8080…) and below the OS ephemeral

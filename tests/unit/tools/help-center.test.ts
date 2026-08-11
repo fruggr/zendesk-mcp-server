@@ -4,6 +4,10 @@ import type { ToolContext } from '../../../src/tools/definitions';
 import { createHelpCenterTools } from '../../../src/tools/help-center';
 import {
   MOCK_ARTICLE,
+  MOCK_CATEGORY,
+  MOCK_CATEGORY_TRANSLATION,
+  MOCK_SECTION,
+  MOCK_SECTION_TRANSLATION,
   MOCK_TRANSLATION,
   manyContentTagsHandler,
   promotedArticlesHandler,
@@ -21,8 +25,8 @@ const findTool = (name: string) => {
 };
 
 describe('help center tools', () => {
-  it('creates 24 tools', () => {
-    expect(createHelpCenterTools(ctx)).toHaveLength(24);
+  it('creates 29 tools', () => {
+    expect(createHelpCenterTools(ctx)).toHaveLength(29);
   });
 
   describe('list_promoted_articles', () => {
@@ -269,6 +273,454 @@ describe('help center tools', () => {
         title: 'Updated title',
       });
       expect(result.content[0]?.text).toContain('Translation updated');
+    });
+  });
+
+  // The tools originally told callers that a locale-filtered listing omits a
+  // draft-translated node just as it omits an untranslated one, so "absent from
+  // list_sections(locale)" was the whole story. Validating #225 against a live
+  // tenant disproved the draft half: with an admin token such a node IS returned,
+  // under its draft name. An agent reading the old wording would conclude
+  // "listed ⇒ published" on exactly the path these tools exist to fix.
+  describe('translation-gap tool descriptions', () => {
+    it.each(['list_section_translations', 'list_category_translations', 'find_translation_gaps'])(
+      '%s does not promise that a draft translation is hidden from the locale listing',
+      (name) => {
+        const { description } = findTool(name);
+        expect(description).toMatch(/draft.*may still be listed|may still be listed.*draft/is);
+        expect(description).not.toMatch(/omits.*unpublished draft|invisible to list_sections/is);
+      },
+    );
+  });
+
+  // Sections and categories are iso by design: the same endpoint family, the same
+  // translation object, and one shared upsertNodeTranslation behind both write
+  // tools. So every behaviour is asserted on BOTH levels from one table rather
+  // than written twice — a new case added here cannot land on one level only.
+  // This matters more than usual for categories: live validation of the category
+  // write path was skipped for want of an expendable category on the tenant
+  // (#225, S12), so these are the only proof that half carries.
+  const NODE_LEVELS = [
+    {
+      level: 'section',
+      listTool: 'list_section_translations',
+      writeTool: 'set_section_translation',
+      idParam: 'section_id',
+      nodeId: 600,
+      segment: 'sections',
+      fixture: MOCK_SECTION_TRANSLATION,
+      // Ids of the fixture's own translations, and a name only that level uses.
+      sourceTranslationId: 7100,
+      targetTranslationId: 7101,
+      localizedName: 'FAQ (fr)',
+    },
+    {
+      level: 'category',
+      listTool: 'list_category_translations',
+      writeTool: 'set_category_translation',
+      idParam: 'category_id',
+      nodeId: 800,
+      segment: 'categories',
+      fixture: MOCK_CATEGORY_TRANSLATION,
+      sourceTranslationId: 7200,
+      targetTranslationId: 7201,
+      localizedName: 'Général',
+    },
+  ] as const;
+
+  describe.each(NODE_LEVELS)('$listTool', (node) => {
+    const call = (extra: Record<string, unknown> = {}) =>
+      findTool(node.listTool).handler({ [node.idParam]: node.nodeId, ...extra });
+
+    it('reports each locale with its localized name, description state and draft state', async () => {
+      const text = (await call()).content[0]?.text ?? '';
+      expect(text).toContain(`Translation: en-us (${node.sourceTranslationId})`);
+      expect(text).toContain(`Translation: fr (${node.targetTranslationId})`);
+      // `title` is the localized NAME here, not an article title — the rendering
+      // has to say so, otherwise the caller maps the wrong field back.
+      expect(text).toContain(`**Name**: ${node.localizedName}`);
+      expect(text).not.toContain('**Title**');
+      expect(text).toContain('**Draft**: false');
+      expect(text).toContain('**Description**: set');
+    });
+
+    it('renders an empty description as "empty" rather than dropping the line', async () => {
+      mswServer.use(
+        http.get(`${HC_BASE}/${node.segment}/:id/translations`, () =>
+          HttpResponse.json({ translations: [{ ...node.fixture, body: '' }] }),
+        ),
+      );
+      expect((await call()).content[0]?.text).toContain('**Description**: empty');
+    });
+
+    it('surfaces the draft flag of an unpublished translation', async () => {
+      mswServer.use(
+        http.get(`${HC_BASE}/${node.segment}/:id/translations`, () =>
+          HttpResponse.json({
+            translations: [{ ...node.fixture, locale: 'fr', draft: true }],
+          }),
+        ),
+      );
+      expect((await call()).content[0]?.text).toContain('**Draft**: true');
+    });
+  });
+
+  describe.each(NODE_LEVELS)('$writeTool', (node) => {
+    // Captures what actually reached Zendesk: the method, the path (locale
+    // spelling included) and the `translation` payload.
+    const captureWrites = () => {
+      const writes: { method: string; path: string; payload: Record<string, unknown> }[] = [];
+      const record = async (method: string, request: Request) => {
+        const payload = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+        writes.push({
+          method,
+          path: new URL(request.url).pathname,
+          payload: (payload['translation'] as Record<string, unknown>) ?? {},
+        });
+      };
+      mswServer.use(
+        http.post(`${HC_BASE}/${node.segment}/:id/translations`, async ({ request }) => {
+          await record('POST', request.clone());
+          return HttpResponse.json({ translation: { ...node.fixture, locale: 'de' } });
+        }),
+        http.put(
+          `${HC_BASE}/${node.segment}/:id/translations/:locale`,
+          async ({ request, params }) => {
+            await record('PUT', request.clone());
+            return HttpResponse.json({
+              translation: {
+                ...node.fixture,
+                locale: params['locale'] as string,
+                draft: false,
+              },
+            });
+          },
+        ),
+      );
+      return writes;
+    };
+
+    const write = (extra: Record<string, unknown>) =>
+      findTool(node.writeTool).handler({ [node.idParam]: node.nodeId, ...extra });
+
+    it('creates the translation when the locale has none, mapping name/description', async () => {
+      const writes = captureWrites();
+      const result = await write({
+        locale: 'de',
+        name: 'Häufige Fragen',
+        description: 'Oft gestellte Fragen',
+      });
+      expect(writes).toHaveLength(1);
+      expect(writes[0]?.method).toBe('POST');
+      expect(writes[0]?.path).toBe(
+        `/api/v2/help_center/${node.segment}/${node.nodeId}/translations`,
+      );
+      expect(writes[0]?.payload).toEqual({
+        locale: 'de',
+        title: 'Häufige Fragen',
+        body: 'Oft gestellte Fragen',
+        // Creating publishes by default, so the node is actually reachable.
+        draft: false,
+      });
+      expect(result.content[0]?.text).toContain(
+        `Translation created for ${node.level} #${node.nodeId} in "de"`,
+      );
+      expect(result.content[0]?.text).toContain('(published)');
+    });
+
+    it('defaults the description to empty on creation rather than omitting it', async () => {
+      const writes = captureWrites();
+      await write({ locale: 'de', name: 'Häufige Fragen' });
+      expect(writes[0]?.payload).toEqual({
+        locale: 'de',
+        title: 'Häufige Fragen',
+        body: '',
+        draft: false,
+      });
+    });
+
+    it('honours draft: true on creation instead of publishing anyway', async () => {
+      const writes = captureWrites();
+      await write({ locale: 'de', name: 'Häufige Fragen', draft: true });
+      expect(writes[0]?.payload).toMatchObject({ draft: true });
+    });
+
+    it('refuses to create without a name, naming the node and the locale', async () => {
+      const writes = captureWrites();
+      await expect(write({ locale: 'de' })).rejects.toThrow(
+        new RegExp(
+          `${node.level} #${node.nodeId} has no "de" translation yet.*"name" is required`,
+          's',
+        ),
+      );
+      expect(writes).toHaveLength(0);
+    });
+
+    it('updates an existing translation, sending only the fields passed', async () => {
+      const writes = captureWrites();
+      const result = await write({ locale: 'fr', draft: false });
+      expect(writes).toHaveLength(1);
+      expect(writes[0]?.method).toBe('PUT');
+      // Publishing a draft must not blank the existing name or description.
+      expect(writes[0]?.payload).toEqual({ draft: false });
+      expect(result.content[0]?.text).toContain(
+        `Translation updated for ${node.level} #${node.nodeId} in "fr"`,
+      );
+      expect(result.content[0]?.text).toContain('(published)');
+    });
+
+    it('clears the description when an empty string is passed explicitly', async () => {
+      const writes = captureWrites();
+      await write({ locale: 'fr', description: '' });
+      expect(writes[0]?.payload).toEqual({ body: '' });
+    });
+
+    it("writes to Zendesk's spelling of the locale, not the caller's casing", async () => {
+      const writes = captureWrites();
+      await write({ locale: 'FR', name: 'Renamed' });
+      expect(writes[0]?.method).toBe('PUT');
+      expect(writes[0]?.path).toBe(
+        `/api/v2/help_center/${node.segment}/${node.nodeId}/translations/fr`,
+      );
+    });
+
+    it('refuses a no-op update rather than reporting a write that changed nothing', async () => {
+      const writes = captureWrites();
+      await expect(write({ locale: 'fr' })).rejects.toThrow(
+        /Nothing to write.*already has a "fr" translation/s,
+      );
+      expect(writes).toHaveLength(0);
+    });
+
+    it('reports a translation left as a draft as not visible to end users', async () => {
+      mswServer.use(
+        http.put(`${HC_BASE}/${node.segment}/:id/translations/:locale`, () =>
+          HttpResponse.json({ translation: { ...node.fixture, locale: 'fr', draft: true } }),
+        ),
+      );
+      const result = await write({ locale: 'fr', draft: true });
+      expect(result.content[0]?.text).toContain('(draft, not visible to end users)');
+    });
+  });
+
+  describe('find_translation_gaps', () => {
+    // The default fixtures give category 800 a published `fr` translation and
+    // section 600 a draft one, i.e. one gap of each interesting kind once the
+    // listing is widened.
+    const seedTree = (sectionIds: number[], categoryIds: number[]) => {
+      mswServer.use(
+        http.get(`${HC_BASE}/sections`, () =>
+          HttpResponse.json({
+            sections: sectionIds.map((id) => ({ ...MOCK_SECTION, id, name: `Section ${id}` })),
+            meta: { has_more: false, after_cursor: '' },
+            count: sectionIds.length,
+          }),
+        ),
+        http.get(`${HC_BASE}/categories`, () =>
+          HttpResponse.json({
+            categories: categoryIds.map((id) => ({
+              ...MOCK_CATEGORY,
+              id,
+              name: `Category ${id}`,
+            })),
+            meta: { has_more: false, after_cursor: '' },
+            count: categoryIds.length,
+          }),
+        ),
+      );
+    };
+
+    it('tells a missing translation apart from an unpublished draft', async () => {
+      seedTree([600, 601, 602], [800, 801]);
+      const result = await findTool('find_translation_gaps').handler({ locale: 'fr' });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('# Translation gaps — "fr"');
+      expect(text).toContain('**Section 600** (600) — draft translation (not published)');
+      expect(text).toContain('**Section 601** (601) — no translation');
+      // 602 and 800 have a published `fr` translation, so they are not gaps.
+      expect(text).not.toContain('(602)');
+      expect(text).not.toContain('(800)');
+      expect(text).toContain('**Category 801** (801) — no translation');
+      expect(text).toContain('3 node(s) need a published "fr" translation');
+      expect(text).toContain('set_section_translation');
+    });
+
+    it('reports the number of nodes actually scanned per level', async () => {
+      seedTree([600, 601, 602], [800, 801]);
+      const result = await findTool('find_translation_gaps').handler({ locale: 'fr' });
+      expect(result.content[0]?.text).toContain('## Sections (3 scanned)');
+      expect(result.content[0]?.text).toContain('## Categories (2 scanned)');
+    });
+
+    it('says so positively when nothing is missing', async () => {
+      seedTree([602], [800]);
+      const result = await findTool('find_translation_gaps').handler({ locale: 'fr' });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain(
+        'No gaps: all 1 category/ies and 1 section(s) scanned have a published "fr" translation',
+      );
+      expect(text).not.toContain('node(s) need a published');
+    });
+
+    it('narrows the audit to one category, fetching that category directly', async () => {
+      const paths: string[] = [];
+      seedTree([600], [800, 801]);
+      mswServer.use(
+        http.get(`${HC_BASE}/categories/:id`, ({ request, params }) => {
+          paths.push(new URL(request.url).pathname);
+          return HttpResponse.json({
+            category: { ...MOCK_CATEGORY, id: Number(params['id']), name: 'Legal' },
+          });
+        }),
+        http.get(`${HC_BASE}/categories/:cid/sections`, ({ request }) => {
+          paths.push(new URL(request.url).pathname);
+          return HttpResponse.json({
+            sections: [{ ...MOCK_SECTION, id: 601, name: 'Section 601' }],
+            meta: { has_more: false, after_cursor: '' },
+            count: 1,
+          });
+        }),
+      );
+      const result = await findTool('find_translation_gaps').handler({
+        locale: 'fr',
+        category_id: 801,
+      });
+      const text = result.content[0]?.text ?? '';
+      // The scoped category is read on its own, not filtered out of a capped
+      // listing that could omit it entirely.
+      expect(paths).toContain('/api/v2/help_center/categories/801');
+      expect(paths.some((p) => p.endsWith('/categories/801/sections'))).toBe(true);
+      expect(text).toContain('## Categories (1 scanned)');
+      expect(text).toContain('**Legal** (801) — no translation');
+      expect(text).toContain('**Section 601** (601) — no translation');
+      expect(text).not.toContain('(800)');
+      expect(text).not.toContain('(600)');
+    });
+
+    it('does not claim an empty level is fully translated', async () => {
+      seedTree([], [800]);
+      const result = await findTool('find_translation_gaps').handler({ locale: 'fr' });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('## Sections (0 scanned)');
+      expect(text).toContain('_(none to scan at this level)_');
+      expect(text).not.toContain('every one scanned has a published translation\n\n_(none to');
+    });
+
+    it('warns when the audited locale is not active, instead of crying gap', async () => {
+      seedTree([600], [800]);
+      const result = await findTool('find_translation_gaps').handler({ locale: 'es' });
+      const text = result.content[0]?.text ?? '';
+      // MOCK_LOCALES is en-us + fr.
+      expect(text).toContain('"es" is not an active locale');
+      expect(text).toContain('en-us, fr');
+      expect(text).toContain('**Section 600** (600) — no translation');
+    });
+
+    it('does not warn for an active locale spelled with a different case', async () => {
+      seedTree([600], [800]);
+      const result = await findTool('find_translation_gaps').handler({ locale: 'FR' });
+      expect(result.content[0]?.text).not.toContain('is not an active locale');
+    });
+
+    it('caps the scan and names what it left out', async () => {
+      seedTree(
+        Array.from({ length: 61 }, (_, i) => 1000 + i),
+        [800],
+      );
+      const result = await findTool('find_translation_gaps').handler({ locale: 'fr' });
+      const text = result.content[0]?.text ?? '';
+      // 1 category consumes one slot of the 60-node budget, leaving 59 sections.
+      expect(text).toContain('## Sections (59 scanned)');
+      expect(text).toContain('the scan stopped at its 60-node cap');
+      expect(text).toContain('covering 1/1 categories and 59/61 sections');
+      expect(text).toContain('ZENDESK_TRANSLATION_GAP_SCAN_MAX_NODES');
+    });
+
+    it('does not pass off a level the cap never reached as an empty one', async () => {
+      // 60 categories spend the whole budget, so the sections below it are not
+      // scanned at all. Saying "none to scan at this level" there would read as
+      // "this Help Center has no sections", the opposite of the truth.
+      seedTree(
+        [600, 601],
+        Array.from({ length: 60 }, (_, i) => 900 + i),
+      );
+      const result = await findTool('find_translation_gaps').handler({ locale: 'fr' });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('## Sections (0 scanned)');
+      expect(text).not.toContain('_(none to scan at this level)_');
+      expect(text).toContain('the 60-node cap was spent before this level');
+      expect(text).toContain('2 left unchecked');
+      expect(text).toContain('covering 60/60 categories and 0/2 sections');
+    });
+
+    it('probes the tree in bounded waves rather than one burst', async () => {
+      let inFlight = 0;
+      let peak = 0;
+      seedTree(
+        Array.from({ length: 20 }, (_, i) => 1000 + i),
+        [],
+      );
+      mswServer.use(
+        http.get(`${HC_BASE}/sections/:id/translations`, async () => {
+          inFlight += 1;
+          peak = Math.max(peak, inFlight);
+          await new Promise((resolve) => setTimeout(resolve, 1));
+          inFlight -= 1;
+          return HttpResponse.json({ translations: [] });
+        }),
+      );
+      const result = await findTool('find_translation_gaps').handler({ locale: 'fr' });
+      // Zendesk caps concurrent requests per account, and one 429 would sink the
+      // whole audit, so the fan-out stays small however many nodes are scanned.
+      expect(peak).toBeLessThanOrEqual(5);
+      expect(result.content[0]?.text).toContain('## Sections (20 scanned)');
+    });
+
+    it('flags a tree too large to enumerate from a single listing page', async () => {
+      mswServer.use(
+        http.get(`${HC_BASE}/sections`, () =>
+          HttpResponse.json({
+            sections: [MOCK_SECTION],
+            meta: { has_more: true, after_cursor: 'next' },
+            count: 1,
+          }),
+        ),
+      );
+      const result = await findTool('find_translation_gaps').handler({ locale: 'fr' });
+      expect(result.content[0]?.text).toContain('only the first page of each was considered');
+    });
+
+    it('asks Zendesk for the audited locale only', async () => {
+      const queries: string[] = [];
+      seedTree([600], [800]);
+      mswServer.use(
+        http.get(`${HC_BASE}/sections/:id/translations`, ({ request }) => {
+          queries.push(new URL(request.url).search);
+          return HttpResponse.json({ translations: [] });
+        }),
+      );
+      await findTool('find_translation_gaps').handler({ locale: 'fr' });
+      expect(queries).toEqual(['?locales=fr']);
+    });
+
+    it("asks for the locale in Zendesk's own casing, whatever the caller passed", async () => {
+      // Locales are stored lower-cased upstream. Should the `locales` filter be
+      // case-sensitive — undocumented either way — a verbatim "FR" would come back
+      // empty and report every node as untranslated, while the active-locale check
+      // (case-insensitive) stayed mute. Normalizing removes the question.
+      const queries: string[] = [];
+      seedTree([600], [800]);
+      mswServer.use(
+        http.get(`${HC_BASE}/sections/:id/translations`, ({ request }) => {
+          queries.push(new URL(request.url).search);
+          return HttpResponse.json({
+            translations: [{ ...MOCK_SECTION_TRANSLATION, locale: 'fr', draft: false }],
+          });
+        }),
+      );
+      const result = await findTool('find_translation_gaps').handler({ locale: 'FR' });
+      expect(queries).toEqual(['?locales=fr']);
+      expect(result.content[0]?.text).not.toContain('(600) — no translation');
     });
   });
 

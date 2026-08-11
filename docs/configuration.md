@@ -196,6 +196,13 @@ Hard cap on the number of article pages scanned to find promoted ("featured") ar
 
 **Cost note.** Each scanned page is one Zendesk API request, and Zendesk rate-limits every plan, so on a large Help Center a single listing or tool call can fan out to several requests. The resource-listing scan is cached per session for a few minutes (`ARTICLE_RESOURCES_TTL_MS`) so repeated `resources/list` calls coalesce; the `list_promoted_articles` tool performs a fresh, uncached scan on every call. The scan runs only when a resource-capable client calls `resources/list` or the LLM calls `list_promoted_articles`, never at connect. The worst case is a large catalog with few or no promoted articles: a full-cap scan for little result. If that matters for your tenant's quota, lower this cap or disable the pre-listing with **`--no-promoted-articles`**, which turns off the resource `list` scan **and** the `list_promoted_articles` tool, so the server makes **zero** preloading requests. It does **not** disable reading a known article by id (`<scheme>://article/{id}` stays registered): that is a cheap, on-demand single fetch, not a preload.
 
+### `ZENDESK_TRANSLATION_GAP_SCAN_MAX_NODES`
+**Required:** no · **Default:** `60`
+
+Hard cap on the number of categories and sections probed by `find_translation_gaps`. Categories are scanned first, then sections with whatever budget is left; the report names exactly what it left unscanned when the cap bites. Raise it to audit a larger tree in one call.
+
+**Cost note.** Unlike articles, sections and categories have no "missing translations" endpoint, and a locale-filtered listing (`list_sections` with a `locale`) cannot answer the question either: a node with no translation in that locale is simply absent from it, without saying why, and a node whose translation is an unpublished **draft** is still returned — observed on a live tenant with an admin token — rendered under the draft's own name. Absence is therefore ambiguous and presence does not mean published, so the audit reads the draft flag on each node. That costs **one Zendesk request per node scanned**, on top of the two listings and the locale fetch. The scan runs only when the LLM calls the tool, never at connect, and it is not cached. Pass `category_id` to audit a single branch instead of the whole tree when quota matters.
+
 ---
 
 ← Back to the [README](../README.md).
