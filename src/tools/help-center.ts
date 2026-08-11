@@ -221,9 +221,13 @@ const nodeTranslationWriteText = (
 // --- find_translation_gaps.
 //
 // A node is a gap when the target locale has no translation at all, or has one
-// that is still a draft. Those need different fixes (write a translation vs flip
-// `draft`), which is exactly what `list_sections?locale=…` cannot tell you: it
-// omits both cases alike.
+// that is still a draft. Those need different fixes — write a translation vs flip
+// `draft` — and `list_sections?locale=…` answers neither question. Measured on a
+// live tenant with an admin token (#225 validation): a node with no translation is
+// absent from that listing, but a node whose translation is a DRAFT is still
+// returned, rendered with the draft's own name. So absence there is ambiguous and
+// presence does not mean published, which is why this audit probes the
+// translations endpoint per node instead of diffing the two listings.
 type GapReason = 'missing' | 'draft';
 
 interface TranslationGap {
@@ -1132,7 +1136,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: true,
       title: 'List Section Translations',
       description:
-        'List the translations of a Help Center section: for each locale, the localized name, whether a description is set, and whether the translation is published or still a draft. Reach for this when a section looks untranslated in a locale — list_sections with a locale omits a section that has no translation AND one whose translation is an unpublished draft, and only this tool tells the two apart. Fix either case with set_section_translation; to sweep every category and section at once, use find_translation_gaps.',
+        'List the translations of a Help Center section: for each locale, the localized name, whether a description is set, and whether the translation is published or still a draft. Reach for this when a section looks wrong in a locale, because list_sections with that locale cannot settle it: a section with no translation is omitted from it, while a section whose translation is an unpublished draft may still be listed there under the draft name — so appearing in that listing does not mean published, and the draft flag here is what decides. Fix either case with set_section_translation; to sweep every category and section at once, use find_translation_gaps.',
       inputSchema: z.object({
         section_id: z
           .number()
@@ -1162,7 +1166,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: true,
       title: 'List Category Translations',
       description:
-        'List the translations of a Help Center category: for each locale, the localized name, whether a description is set, and whether the translation is published or still a draft. Reach for this when a category looks untranslated in a locale — list_categories with a locale omits a category that has no translation AND one whose translation is an unpublished draft, and only this tool tells the two apart. Fix either case with set_category_translation; to sweep every category and section at once, use find_translation_gaps.',
+        'List the translations of a Help Center category: for each locale, the localized name, whether a description is set, and whether the translation is published or still a draft. Reach for this when a category looks wrong in a locale, because list_categories with that locale cannot settle it: a category with no translation is omitted from it, while a category whose translation is an unpublished draft may still be listed there under the draft name — so appearing in that listing does not mean published, and the draft flag here is what decides. Fix either case with set_category_translation; to sweep every category and section at once, use find_translation_gaps.',
       inputSchema: z.object({
         category_id: z
           .number()
@@ -1197,7 +1201,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: true,
       title: 'Find Help Center Translation Gaps',
       description:
-        'Audit the Help Center tree for a target locale and report every category and section that has no translation, or one that is still an unpublished draft. Use it before or after translating articles: an article published in a second locale is unreachable while its parent section only exists in the source locale, and that gap is invisible to list_sections. Costs one extra request per node scanned, capped (the report says so when the cap bites) — pass category_id to narrow it. Fix what it reports with set_section_translation / set_category_translation.',
+        'Audit the Help Center tree for a target locale and report every category and section that has no translation, or one that is still an unpublished draft. Use it before or after translating articles: an article published in a second locale is unreachable while its parent section only exists in the source locale. Listing sections in that locale cannot answer this — a node with no translation is simply absent, without saying why, and a node whose translation is an unpublished draft may still be listed under its draft name — so this audit reads the draft flag on each node instead of trusting that listing. Costs one extra request per node scanned, capped (the report says so when the cap bites) — pass category_id to narrow it. Fix what it reports with set_section_translation / set_category_translation.',
       inputSchema: z.object({
         locale: z
           .string()

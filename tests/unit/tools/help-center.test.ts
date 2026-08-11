@@ -276,6 +276,23 @@ describe('help center tools', () => {
     });
   });
 
+  // The tools originally told callers that a locale-filtered listing omits a
+  // draft-translated node just as it omits an untranslated one, so "absent from
+  // list_sections(locale)" was the whole story. Validating #225 against a live
+  // tenant disproved the draft half: with an admin token such a node IS returned,
+  // under its draft name. An agent reading the old wording would conclude
+  // "listed ⇒ published" on exactly the path these tools exist to fix.
+  describe('translation-gap tool descriptions', () => {
+    it.each(['list_section_translations', 'list_category_translations', 'find_translation_gaps'])(
+      '%s does not promise that a draft translation is hidden from the locale listing',
+      (name) => {
+        const { description } = findTool(name);
+        expect(description).toMatch(/draft.*may still be listed|may still be listed.*draft/is);
+        expect(description).not.toMatch(/omits.*unpublished draft|invisible to list_sections/is);
+      },
+    );
+  });
+
   describe('list_section_translations', () => {
     it('reports each locale with its draft state and whether a description is set', async () => {
       const result = await findTool('list_section_translations').handler({ section_id: 600 });

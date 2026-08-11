@@ -47,8 +47,9 @@ export const ARTICLE_RESOURCES_SCAN_MAX_PAGES = positiveIntEnv(
 
 // Max category + section nodes probed by find_translation_gaps. Unlike articles,
 // sections and categories have no "missing translations" endpoint, and the
-// locale-filtered listing cannot tell an absent translation from a draft one, so
-// the only honest answer costs one translations request per node. This bounds
+// locale-filtered listing cannot answer the question either — it omits a node with
+// no translation without saying why, and still returns one whose translation is a
+// draft — so the only honest answer costs one translations request per node. This bounds
 // that fan-out on a large Help Center; nodes beyond the cap are left unscanned
 // and the tool says so. Override via ZENDESK_TRANSLATION_GAP_SCAN_MAX_NODES.
 export const TRANSLATION_GAP_SCAN_MAX_NODES = positiveIntEnv(
