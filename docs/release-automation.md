@@ -169,11 +169,32 @@ These cannot be versioned; a repository (or org) admin must apply them **once**:
    - Allow auto-merge ✓
    - Allow squash merging ✓
    - Default to PR title for squash merges ✓ (**critical**: without this, the `fix(security):` prefix is not carried into the squash commit on `main`, and no release is published)
-3. **Settings → Branches → Branch protection rules** for `main`:
-   - Require status checks to pass before merging ✓
-   - Required check: `CI / build-and-test`
-   - (Without this protection, `platformAutomerge` would merge the PR before CI finishes.)
-4. **Settings → Code security → Dependabot security updates**: OFF. Renovate takes over via `vulnerabilityAlerts` (GHSA) + `osvVulnerabilityAlerts` (Google OSV), and we avoid duplicate PRs.
+3. **Settings → Rules → Rulesets**: one ruleset on `main` carrying every rule.
+   - Require a pull request before merging (squash only); required status checks
+     `build-and-test`, `Changed lines` and `CodeQL`. (Without the status-check
+     rule, `platformAutomerge` would merge the PR before CI finishes.)
+   - Bypass list: the `fruggr-release-bot` App (point 4).
+   - Two constraints explain that shape. A bypass actor skips the rules of the
+     ruleset it is listed on and nothing else, so splitting the rules over two
+     rulesets means maintaining two bypass entries. And the rules cannot live in
+     a classic branch protection rule, which has no bypass list at all: the
+     `chore(release)` commit `semantic-release` pushes to `main` gets refused
+     with `GH006`, since `build-and-test` and `Changed lines` only run on
+     `pull_request` and no check can report on a commit the remote just refused.
+     The `[skip ci]` marker does not help, because rulesets ignore it.
+4. **A dedicated GitHub App, `fruggr-release-bot`**, on that bypass list:
+   - Repository permissions: Contents write for the push, the tag and the
+     release; Issues and Pull requests write for the comments
+     `@semantic-release/github` posts. No webhook, installed on this repo only.
+   - Repo secrets `RELEASE_APP_ID` and `RELEASE_APP_PRIVATE_KEY`, which
+     `release.yml` exchanges for a one-hour installation token through
+     `actions/create-github-app-token` (revoked in post-job).
+   - An admin PAT would also clear the ruleset while `enforce_admins` is off, at
+     the cost of a long-lived secret tied to one person. If required signed
+     commits are ever enabled, remember that `semantic-release` pushes through
+     the git CLI and signs nothing, so that rule has to sit in the bypassed
+     ruleset too.
+5. **Settings → Code security → Dependabot security updates**: OFF. Renovate takes over via `vulnerabilityAlerts` (GHSA) + `osvVulnerabilityAlerts` (Google OSV), and we avoid duplicate PRs.
 
 ## Pause or disable
 
