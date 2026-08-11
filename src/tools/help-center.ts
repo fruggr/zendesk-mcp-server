@@ -114,7 +114,12 @@ const NODE_LABEL: Record<TreeNodeKind, string> = {
 
 // `locales` narrows the response when the caller only cares about one language.
 // The result is filtered locally anyway (see findTranslation), so the tools stay
-// correct even where the server-side filter is not applied.
+// correct even where the server-side filter is not applied. The value is
+// lower-cased so the server-side filter cannot disagree with that local,
+// case-insensitive comparison: Zendesk stores locales lower-cased, and whether it
+// matches the filter case-sensitively is not documented — if it does, a caller's
+// "FR" would come back empty and every node would read as "no translation".
+// Normalizing costs nothing if the filter is case-insensitive after all.
 const listNodeTranslations = (
   subdomain: string,
   token: string,
@@ -126,7 +131,7 @@ const listNodeTranslations = (
     subdomain,
     token,
     `/${kind}/${nodeId}/translations`,
-    locale ? { locales: locale } : undefined,
+    locale ? { locales: locale.toLowerCase() } : undefined,
   ).then((res) => res.translations ?? []);
 
 // Locales are matched case-insensitively: Zendesk normalizes its own to lower
@@ -253,21 +258,52 @@ interface GapReport {
   listingIncomplete: boolean;
 }
 
-const renderGapLines = (heading: string, gaps: TranslationGap[], scanned: number): string[] => {
+const renderGapLines = (
+  heading: string,
+  gaps: TranslationGap[],
+  scanned: number,
+  found: number,
+): string[] => {
+  const header = `## ${heading} (${scanned} scanned)`;
   if (gaps.length > 0) {
     return [
-      `## ${heading} (${scanned} scanned)`,
+      header,
       ...gaps.map((gap) => `- **${gap.name}** (${gap.id}) — ${GAP_REASON_TEXT[gap.reason]}`),
     ];
   }
   // "every one scanned has a translation" would be a wrong reading of an empty
-  // scan (a category with no sections, a scope that matched nothing).
-  return [
-    `## ${heading} (${scanned} scanned)`,
-    scanned === 0
-      ? '_(none to scan at this level)_'
-      : '_(none — every one scanned has a published translation)_',
-  ];
+  // scan (a category with no sections, a scope that matched nothing) — and
+  // "nothing to scan" would be a wrong reading of a level the node cap never
+  // reached, which is the opposite of an all-clear.
+  if (scanned === 0) {
+    return [
+      header,
+      found === 0
+        ? '_(none to scan at this level)_'
+        : `_(none scanned — the ${TRANSLATION_GAP_SCAN_MAX_NODES}-node cap was spent before this level; ${found} left unchecked, see the note below)_`,
+    ];
+  }
+  return [header, '_(none — every one scanned has a published translation)_'];
+};
+
+// Nodes probed at a time. Zendesk enforces a per-account *concurrent* request
+// limit well below the node cap, and a single 429 rejects the whole audit, so the
+// scan goes in small waves instead of firing every node at once. Same requests,
+// same report — just a bounded burst.
+const GAP_SCAN_WAVE_SIZE = 5;
+
+const probeInWaves = async <T>(
+  nodes: T[],
+  probe: (node: T) => Promise<TranslationGap | null>,
+): Promise<TranslationGap[]> => {
+  const gaps: TranslationGap[] = [];
+  for (let i = 0; i < nodes.length; i += GAP_SCAN_WAVE_SIZE) {
+    const wave = await Promise.all(nodes.slice(i, i + GAP_SCAN_WAVE_SIZE).map(probe));
+    for (const gap of wave) {
+      if (gap !== null) gaps.push(gap);
+    }
+  }
+  return gaps;
 };
 
 // The categories to audit. Scoping to one fetches that category on its own
@@ -314,9 +350,9 @@ const renderGapReport = (report: GapReport): string => {
             )}), so everything below reads as untranslated. Check the spelling, or activate the language in Guide first.`,
             '',
           ]),
-      ...renderGapLines('Categories', categoryGaps, scanned.categories),
+      ...renderGapLines('Categories', categoryGaps, scanned.categories, found.categories),
       '',
-      ...renderGapLines('Sections', sectionGaps, scanned.sections),
+      ...renderGapLines('Sections', sectionGaps, scanned.sections, found.sections),
       '',
       gapCount === 0
         ? `No gaps: all ${scanned.categories} category/ies and ${scanned.sections} section(s) scanned have a published "${locale}" translation.`
@@ -1208,26 +1244,20 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           Math.max(0, TRANSLATION_GAP_SCAN_MAX_NODES - categories.length),
         );
 
-        const [categoryGaps, sectionGaps] = await Promise.all([
-          Promise.all(
-            categories.map(async (category) =>
-              classifyGap(
-                category,
-                await listNodeTranslations(subdomain, token, 'categories', category.id, locale),
-                locale,
-              ),
-            ),
+        const categoryGaps = await probeInWaves(categories, async (category) =>
+          classifyGap(
+            category,
+            await listNodeTranslations(subdomain, token, 'categories', category.id, locale),
+            locale,
           ),
-          Promise.all(
-            sections.map(async (section) =>
-              classifyGap(
-                section,
-                await listNodeTranslations(subdomain, token, 'sections', section.id, locale),
-                locale,
-              ),
-            ),
+        );
+        const sectionGaps = await probeInWaves(sections, async (section) =>
+          classifyGap(
+            section,
+            await listNodeTranslations(subdomain, token, 'sections', section.id, locale),
+            locale,
           ),
-        ]);
+        );
 
         return {
           content: [
@@ -1236,8 +1266,8 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
               text: renderGapReport({
                 locale,
                 activeLocales: locales.locales ?? [],
-                categoryGaps: categoryGaps.filter((gap): gap is TranslationGap => gap !== null),
-                sectionGaps: sectionGaps.filter((gap): gap is TranslationGap => gap !== null),
+                categoryGaps,
+                sectionGaps,
                 scanned: { categories: categories.length, sections: sections.length },
                 found: { categories: allCategories.length, sections: allSections.length },
                 listingIncomplete:

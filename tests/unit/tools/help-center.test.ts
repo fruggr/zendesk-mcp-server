@@ -624,6 +624,46 @@ describe('help center tools', () => {
       expect(text).toContain('ZENDESK_TRANSLATION_GAP_SCAN_MAX_NODES');
     });
 
+    it('does not pass off a level the cap never reached as an empty one', async () => {
+      // 60 categories spend the whole budget, so the sections below it are not
+      // scanned at all. Saying "none to scan at this level" there would read as
+      // "this Help Center has no sections", the opposite of the truth.
+      seedTree(
+        [600, 601],
+        Array.from({ length: 60 }, (_, i) => 900 + i),
+      );
+      const result = await findTool('find_translation_gaps').handler({ locale: 'fr' });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('## Sections (0 scanned)');
+      expect(text).not.toContain('_(none to scan at this level)_');
+      expect(text).toContain('the 60-node cap was spent before this level');
+      expect(text).toContain('2 left unchecked');
+      expect(text).toContain('covering 60/60 categories and 0/2 sections');
+    });
+
+    it('probes the tree in bounded waves rather than one burst', async () => {
+      let inFlight = 0;
+      let peak = 0;
+      seedTree(
+        Array.from({ length: 20 }, (_, i) => 1000 + i),
+        [],
+      );
+      mswServer.use(
+        http.get(`${HC_BASE}/sections/:id/translations`, async () => {
+          inFlight += 1;
+          peak = Math.max(peak, inFlight);
+          await new Promise((resolve) => setTimeout(resolve, 1));
+          inFlight -= 1;
+          return HttpResponse.json({ translations: [] });
+        }),
+      );
+      const result = await findTool('find_translation_gaps').handler({ locale: 'fr' });
+      // Zendesk caps concurrent requests per account, and one 429 would sink the
+      // whole audit, so the fan-out stays small however many nodes are scanned.
+      expect(peak).toBeLessThanOrEqual(5);
+      expect(result.content[0]?.text).toContain('## Sections (20 scanned)');
+    });
+
     it('flags a tree too large to enumerate from a single listing page', async () => {
       mswServer.use(
         http.get(`${HC_BASE}/sections`, () =>
@@ -649,6 +689,26 @@ describe('help center tools', () => {
       );
       await findTool('find_translation_gaps').handler({ locale: 'fr' });
       expect(queries).toEqual(['?locales=fr']);
+    });
+
+    it("asks for the locale in Zendesk's own casing, whatever the caller passed", async () => {
+      // Locales are stored lower-cased upstream. Should the `locales` filter be
+      // case-sensitive — undocumented either way — a verbatim "FR" would come back
+      // empty and report every node as untranslated, while the active-locale check
+      // (case-insensitive) stayed mute. Normalizing removes the question.
+      const queries: string[] = [];
+      seedTree([600], [800]);
+      mswServer.use(
+        http.get(`${HC_BASE}/sections/:id/translations`, ({ request }) => {
+          queries.push(new URL(request.url).search);
+          return HttpResponse.json({
+            translations: [{ ...MOCK_SECTION_TRANSLATION, locale: 'fr', draft: false }],
+          });
+        }),
+      );
+      const result = await findTool('find_translation_gaps').handler({ locale: 'FR' });
+      expect(queries).toEqual(['?locales=fr']);
+      expect(result.content[0]?.text).not.toContain('(600) — no translation');
     });
   });
 
