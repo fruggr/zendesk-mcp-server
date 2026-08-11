@@ -45,22 +45,12 @@ export const ARTICLE_RESOURCES_SCAN_MAX_PAGES = positiveIntEnv(
   20,
 );
 
-// Max category + section nodes probed by find_translation_gaps. Unlike articles,
-// sections and categories have no "missing translations" endpoint, and the
-// locale-filtered listing cannot answer the question either — it omits a node with
-// no translation without saying why, and still returns one whose translation is a
-// draft — so the only honest answer costs one translations request per node. This bounds
-// that fan-out on a large Help Center; nodes beyond the cap are left unscanned
-// and the tool says so. Override via ZENDESK_TRANSLATION_GAP_SCAN_MAX_NODES.
-//
-// A cheaper route may exist and is deliberately not taken yet: the sections and
-// categories LIST endpoints document a `translations` sideload
-// (`?include=translations`), which would collapse the whole fan-out — and this cap
-// with it — into the two listings already fetched. What the docs do not say is
-// whether a sideloaded translation carries `draft`, and `draft` is the entire
-// point here, so adopting it has to be measured against a live tenant first.
-// Tracked separately; until then this stays on the endpoint that is known to
-// return the flag.
+// Max category + section nodes probed by find_translation_gaps. Sections and
+// categories have no "missing translations" endpoint and the locale-filtered
+// listing cannot substitute for one, so the answer costs one request per node;
+// this bounds the fan-out and the tool reports what it left unscanned. A
+// `translations` sideload could remove it — untaken, see #226. Override via
+// ZENDESK_TRANSLATION_GAP_SCAN_MAX_NODES.
 export const TRANSLATION_GAP_SCAN_MAX_NODES = positiveIntEnv(
   'ZENDESK_TRANSLATION_GAP_SCAN_MAX_NODES',
   60,

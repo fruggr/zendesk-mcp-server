@@ -99,19 +99,12 @@ const listTranslations = (
 
 // --- Section / category translations.
 //
-// Sections and categories live on the same Translations endpoint family as
-// articles (`/{sections|categories}/{id}/translations`) and return the same
-// translation object, with two fields carrying different meanings: `title` is the
+// Same endpoint family as articles, same translation object, but `title` is the
 // localized *name* and `body` the localized *description*. The tools speak
-// name/description — the vocabulary list_sections and list_categories already
-// return — and do the mapping here, so a caller never has to know about it.
+// name/description (what list_sections/list_categories return) and map here.
 //
-// The two levels are treated as ISO: same endpoints, same object, same
-// behaviour, parameterised by kind rather than implemented twice. Anything done
-// to one level must be done to the other — schema, description, error message,
-// report line, test. The unit tests enforce that by running every case over both
-// levels from one table (see NODE_LEVELS in the tests), which is also what
-// stands in for the category write path's missing live validation (#225, S12).
+// The two levels are ISO: anything done to one must be done to the other. Tests
+// enforce it over both from one table (NODE_LEVELS).
 type TreeNodeKind = 'sections' | 'categories';
 
 const NODE_LABEL: Record<TreeNodeKind, string> = {
@@ -119,14 +112,10 @@ const NODE_LABEL: Record<TreeNodeKind, string> = {
   categories: 'category',
 };
 
-// `locales` narrows the response when the caller only cares about one language.
-// The result is filtered locally anyway (see findTranslation), so the tools stay
-// correct even where the server-side filter is not applied. The value is
-// lower-cased so the server-side filter cannot disagree with that local,
-// case-insensitive comparison: Zendesk stores locales lower-cased, and whether it
-// matches the filter case-sensitively is not documented — if it does, a caller's
-// "FR" would come back empty and every node would read as "no translation".
-// Normalizing costs nothing if the filter is case-insensitive after all.
+// `locales` only narrows the response; the result is filtered locally anyway, so
+// an unapplied server-side filter stays correct. Lower-cased because whether that
+// filter is case-sensitive is undocumented: if it is, a caller's "FR" comes back
+// empty and every node reads as untranslated.
 const listNodeTranslations = (
   subdomain: string,
   token: string,
@@ -141,8 +130,7 @@ const listNodeTranslations = (
     locale ? { locales: locale.toLowerCase() } : undefined,
   ).then((res) => res.translations ?? []);
 
-// Locales are matched case-insensitively: Zendesk normalizes its own to lower
-// case, but a caller (or a copy-paste from Guide) may well pass "fr-FR".
+// Case-insensitive: a caller may well pass "FR" or a copy-paste from Guide.
 const findTranslation = (
   translations: ZendeskTranslation[],
   locale: string,
@@ -152,14 +140,10 @@ const findTranslation = (
 };
 
 /**
- * Create-or-update a section/category translation in one call.
- *
- * The probe that decides POST vs PUT is the very call `list_*_translations`
- * makes, so the caller pays one request instead of being forced to list first —
- * or to recover from the 400 the API returns when a POST targets a locale that
- * already has a translation. Only the fields actually passed are sent on update,
- * so omitting `description` never blanks an existing one and omitting `draft`
- * never republishes (or unpublishes) by accident.
+ * Create-or-update a section/category translation in one call. The POST-vs-PUT
+ * probe spares the caller a listing round-trip, or the 400 a duplicate POST
+ * returns. Only the fields passed are sent on update, so omitting `description`
+ * never blanks it and omitting `draft` never (un)publishes by accident.
  */
 const upsertNodeTranslation = async (
   subdomain: string,
@@ -193,15 +177,13 @@ const upsertNodeTranslation = async (
   if (name !== undefined) updates['title'] = name;
   if (description !== undefined) updates['body'] = description;
   if (draft !== undefined) updates['draft'] = draft;
-  // An empty payload would round-trip to Zendesk and come back reported as an
-  // update, which is a lie. Say what is missing instead.
+  // An empty payload would round-trip and be reported as an update: a lie.
   if (Object.keys(updates).length === 0) {
     throw new Error(
       `Nothing to write: ${NODE_LABEL[kind]} #${nodeId} already has a "${existing.locale}" translation, so pass at least one of "name", "description" or "draft" to change it (draft: false publishes it).`,
     );
   }
-  // Zendesk's own spelling of the locale, not the caller's: the PUT path has to
-  // match the existing translation even when the input was cased differently.
+  // Zendesk's spelling, not the caller's, so the PUT path matches.
   const { translation } = await helpCenterPut<{ translation: ZendeskTranslation }>(
     subdomain,
     token,
@@ -227,14 +209,11 @@ const nodeTranslationWriteText = (
 
 // --- find_translation_gaps.
 //
-// A node is a gap when the target locale has no translation at all, or has one
-// that is still a draft. Those need different fixes — write a translation vs flip
-// `draft` — and `list_sections?locale=…` answers neither question. Measured on a
-// live tenant with an admin token (#225 validation): a node with no translation is
-// absent from that listing, but a node whose translation is a DRAFT is still
-// returned, rendered with the draft's own name. So absence there is ambiguous and
-// presence does not mean published, which is why this audit probes the
-// translations endpoint per node instead of diffing the two listings.
+// A gap is no translation at all, or a draft one — different fixes, and
+// `list_sections?locale=…` shows neither. Measured with an admin token (#225): a
+// missing translation is absent there, a DRAFT one is still listed under its
+// draft name. So absence is ambiguous and presence is not "published", hence the
+// per-node probe rather than a listing diff.
 type GapReason = 'missing' | 'draft';
 
 interface TranslationGap {
@@ -282,10 +261,8 @@ const renderGapLines = (
       ...gaps.map((gap) => `- **${gap.name}** (${gap.id}) — ${GAP_REASON_TEXT[gap.reason]}`),
     ];
   }
-  // "every one scanned has a translation" would be a wrong reading of an empty
-  // scan (a category with no sections, a scope that matched nothing) — and
-  // "nothing to scan" would be a wrong reading of a level the node cap never
-  // reached, which is the opposite of an all-clear.
+  // Three distinct states, and conflating any two reads as a false all-clear:
+  // nothing at this level, nothing left after the cap, nothing missing.
   if (scanned === 0) {
     return [
       header,
@@ -297,10 +274,8 @@ const renderGapLines = (
   return [header, '_(none — every one scanned has a published translation)_'];
 };
 
-// Nodes probed at a time. Zendesk enforces a per-account *concurrent* request
-// limit well below the node cap, and a single 429 rejects the whole audit, so the
-// scan goes in small waves instead of firing every node at once. Same requests,
-// same report — just a bounded burst.
+// Nodes probed at a time. Zendesk caps concurrent requests per account and one
+// 429 would sink the whole audit, so the burst stays bounded.
 const GAP_SCAN_WAVE_SIZE = 5;
 
 const probeInWaves = async <T>(
@@ -317,11 +292,9 @@ const probeInWaves = async <T>(
   return gaps;
 };
 
-// The categories to audit. Scoping to one fetches that category on its own
-// rather than filtering the paginated listing: the listing is capped at one page,
-// so filtering it would silently report "0 categories scanned" for a category
-// that merely sits further down — and a wrong id would look like an empty tree
-// instead of the 404 it is.
+// Scoping fetches the one category rather than filtering the one-page listing,
+// which would report "0 scanned" for a category further down, and an empty tree
+// instead of a 404 for a wrong id.
 const fetchGapCategories = async (
   subdomain: string,
   token: string,
