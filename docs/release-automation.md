@@ -194,14 +194,18 @@ These cannot be versioned; a repository (or org) admin must apply them **once**:
    - Repository permissions: Contents write for the push, the tag and the
      release; Issues and Pull requests write for the comments
      `@semantic-release/github` posts. No webhook, installed on this repo only.
-   - `RELEASE_APP_ID` and `RELEASE_APP_PRIVATE_KEY` live in a **`release`
-     environment** whose deployment branch policy admits `main` only, not in
-     repository secrets. `release.yml` names that environment and exchanges them
-     for a one-hour installation token through `actions/create-github-app-token`
-     (revoked in post-job). The boundary is the point: repository secrets are
-     readable by a workflow run on any branch, and the App bypasses every rule
-     in the ruleset, so a branch that could read the key could push anything to
-     `main` unchecked.
+   - The private key goes in `RELEASE_APP_PRIVATE_KEY`, a secret of a **`release`
+     environment** whose deployment branch policy admits `main` only, never a
+     repository secret. `release.yml` names that environment and exchanges the
+     key for a one-hour installation token through
+     `actions/create-github-app-token` (revoked in post-job). The boundary is the
+     point: repository secrets are readable by a workflow run on any branch, and
+     the App bypasses every rule in the ruleset, so a branch that could read the
+     key could push anything to `main` unchecked.
+   - The App's Client ID goes in the repository variable
+     `RELEASE_APP_CLIENT_ID`. It is public (`GET /apps/{slug}` serves it to
+     anyone), so it is a variable, not a secret. Use it with the action's
+     `client-id` input; `app-id` still works but is deprecated.
    - The ruleset grants no bypass to admins, so there is no manual fallback:
      a maintainer with a PAT gets the same `GH006` as `GITHUB_TOKEN`. Recovering
      a stuck release means fixing the App path, or temporarily adding a bypass

@@ -90,7 +90,11 @@ jobs:
       - uses: actions/create-github-app-token@v3
         id: app-token
         with:
-          app-id: ${{ secrets.RELEASE_APP_ID }}
+          # `client-id`, not the deprecated `app-id`. A variable rather than a
+          # secret because the Client ID is public: `GET /apps/{slug}` serves it
+          # to anyone. The private key is the credential, and it alone lives in
+          # this job's environment.
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
           # Without these the token inherits every permission the installation
           # holds. Pinning them stops a later permission grant to the App from
