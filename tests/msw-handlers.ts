@@ -920,6 +920,9 @@ export const handlers = [
       count: 1,
     }),
   ),
+  http.get(`${HC_BASE}/categories/:id`, ({ params }) =>
+    HttpResponse.json({ category: { ...MOCK_CATEGORY, id: Number(params['id']) } }),
+  ),
   http.get(`${HC_BASE}/sections`, () =>
     HttpResponse.json({
       sections: [MOCK_SECTION],

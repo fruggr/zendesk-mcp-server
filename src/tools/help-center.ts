@@ -112,12 +112,6 @@ const NODE_LABEL: Record<TreeNodeKind, string> = {
   categories: 'category',
 };
 
-const SECTION_ID_DESC =
-  'Section ID — the numeric id of the Help Center section. Obtain it from list_sections or the zendesk-hc://topology resource.';
-
-const CATEGORY_ID_DESC =
-  'Category ID — the numeric id of the Help Center category. Obtain it from list_categories or the zendesk-hc://topology resource.';
-
 // `locales` narrows the response when the caller only cares about one language.
 // The result is filtered locally anyway (see findTranslation), so the tools stay
 // correct even where the server-side filter is not applied.
@@ -187,6 +181,13 @@ const upsertNodeTranslation = async (
   if (name !== undefined) updates['title'] = name;
   if (description !== undefined) updates['body'] = description;
   if (draft !== undefined) updates['draft'] = draft;
+  // An empty payload would round-trip to Zendesk and come back reported as an
+  // update, which is a lie. Say what is missing instead.
+  if (Object.keys(updates).length === 0) {
+    throw new Error(
+      `Nothing to write: ${NODE_LABEL[kind]} #${nodeId} already has a "${existing.locale}" translation, so pass at least one of "name", "description" or "draft" to change it (draft: false publishes it).`,
+    );
+  }
   // Zendesk's own spelling of the locale, not the caller's: the PUT path has to
   // match the existing translation even when the input was cased differently.
   const { translation } = await helpCenterPut<{ translation: ZendeskTranslation }>(
@@ -252,12 +253,50 @@ interface GapReport {
   listingIncomplete: boolean;
 }
 
-const renderGapLines = (heading: string, gaps: TranslationGap[], scanned: number): string[] => [
-  `## ${heading} (${scanned} scanned)`,
-  ...(gaps.length > 0
-    ? gaps.map((gap) => `- **${gap.name}** (${gap.id}) — ${GAP_REASON_TEXT[gap.reason]}`)
-    : ['_(none — every one scanned has a published translation)_']),
-];
+const renderGapLines = (heading: string, gaps: TranslationGap[], scanned: number): string[] => {
+  if (gaps.length > 0) {
+    return [
+      `## ${heading} (${scanned} scanned)`,
+      ...gaps.map((gap) => `- **${gap.name}** (${gap.id}) — ${GAP_REASON_TEXT[gap.reason]}`),
+    ];
+  }
+  // "every one scanned has a translation" would be a wrong reading of an empty
+  // scan (a category with no sections, a scope that matched nothing).
+  return [
+    `## ${heading} (${scanned} scanned)`,
+    scanned === 0
+      ? '_(none to scan at this level)_'
+      : '_(none — every one scanned has a published translation)_',
+  ];
+};
+
+// The categories to audit. Scoping to one fetches that category on its own
+// rather than filtering the paginated listing: the listing is capped at one page,
+// so filtering it would silently report "0 categories scanned" for a category
+// that merely sits further down — and a wrong id would look like an empty tree
+// instead of the 404 it is.
+const fetchGapCategories = async (
+  subdomain: string,
+  token: string,
+  categoryId: number | undefined,
+): Promise<{ categories: ZendeskCategory[]; hasMore: boolean }> => {
+  if (categoryId !== undefined) {
+    const { category } = await helpCenterGet<{ category: ZendeskCategory }>(
+      subdomain,
+      token,
+      `/categories/${categoryId}`,
+    );
+    return { categories: [category], hasMore: false };
+  }
+  const response = await helpCenterGet<ZendeskListResponse<ZendeskCategory>>(
+    subdomain,
+    token,
+    '/categories',
+    buildCursorParams(MAX_PAGE_SIZE, undefined),
+  );
+  const categories = response.categories ?? [];
+  return { categories, hasMore: extractPaginationMeta(response, categories.length).has_more };
+};
 
 const renderGapReport = (report: GapReport): string => {
   const { locale, categoryGaps, sectionGaps, scanned, found } = report;
@@ -1059,7 +1098,12 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       description:
         'List the translations of a Help Center section: for each locale, the localized name, whether a description is set, and whether the translation is published or still a draft. Reach for this when a section looks untranslated in a locale — list_sections with a locale omits a section that has no translation AND one whose translation is an unpublished draft, and only this tool tells the two apart. Fix either case with set_section_translation; to sweep every category and section at once, use find_translation_gaps.',
       inputSchema: z.object({
-        section_id: z.number().int().describe(SECTION_ID_DESC),
+        section_id: z
+          .number()
+          .int()
+          .describe(
+            'Section ID — the numeric id of the Help Center section. Obtain it from list_sections or the zendesk-hc://topology resource.',
+          ),
       }),
       annotations: {
         readOnlyHint: true,
@@ -1084,7 +1128,12 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       description:
         'List the translations of a Help Center category: for each locale, the localized name, whether a description is set, and whether the translation is published or still a draft. Reach for this when a category looks untranslated in a locale — list_categories with a locale omits a category that has no translation AND one whose translation is an unpublished draft, and only this tool tells the two apart. Fix either case with set_category_translation; to sweep every category and section at once, use find_translation_gaps.',
       inputSchema: z.object({
-        category_id: z.number().int().describe(CATEGORY_ID_DESC),
+        category_id: z
+          .number()
+          .int()
+          .describe(
+            'Category ID — the numeric id of the Help Center category. Obtain it from list_categories or the zendesk-hc://topology resource.',
+          ),
       }),
       annotations: {
         readOnlyHint: true,
@@ -1136,28 +1185,18 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       handler: async (params) => {
         const { locale, category_id } = params as { locale: string; category_id?: number };
         const token = await getToken();
-        const pageParams = buildCursorParams(MAX_PAGE_SIZE, undefined);
-        const [locales, categoriesRes, sectionsRes] = await Promise.all([
+        const [locales, categoryScope, sectionsRes] = await Promise.all([
           helpCenterGet<ZendeskLocalesResponse>(subdomain, token, '/locales'),
-          helpCenterGet<ZendeskListResponse<ZendeskCategory>>(
-            subdomain,
-            token,
-            '/categories',
-            pageParams,
-          ),
+          fetchGapCategories(subdomain, token, category_id),
           helpCenterGet<ZendeskListResponse<ZendeskSection>>(
             subdomain,
             token,
             sectionListPath(category_id, undefined),
-            pageParams,
+            buildCursorParams(MAX_PAGE_SIZE, undefined),
           ),
         ]);
 
-        // Scoping to one category filters the same listing rather than fetching
-        // the category on its own: the request is already paid for.
-        const allCategories = (categoriesRes.categories ?? []).filter(
-          (category) => category_id === undefined || category.id === category_id,
-        );
+        const allCategories = categoryScope.categories;
         const allSections = sectionsRes.sections ?? [];
 
         // Categories first, sections with whatever budget is left: a caller
@@ -1202,7 +1241,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
                 scanned: { categories: categories.length, sections: sections.length },
                 found: { categories: allCategories.length, sections: allSections.length },
                 listingIncomplete:
-                  extractPaginationMeta(categoriesRes, allCategories.length).has_more ||
+                  categoryScope.hasMore ||
                   extractPaginationMeta(sectionsRes, allSections.length).has_more,
               }),
             },

@@ -425,6 +425,14 @@ describe('help center tools', () => {
       expect(writes[0]?.path).toMatch(/\/sections\/600\/translations\/fr$/);
     });
 
+    it('refuses a no-op update rather than reporting a write that changed nothing', async () => {
+      const writes = captureWrites();
+      await expect(
+        findTool('set_section_translation').handler({ section_id: 600, locale: 'fr' }),
+      ).rejects.toThrow(/Nothing to write.*already has a "fr" translation/s);
+      expect(writes).toHaveLength(0);
+    });
+
     it('reports a translation left as a draft as not visible to end users', async () => {
       mswServer.use(
         http.put(`${HC_BASE}/sections/:id/translations/:locale`, () =>
@@ -542,10 +550,16 @@ describe('help center tools', () => {
       expect(text).not.toContain('node(s) need a published');
     });
 
-    it('narrows the listing to one category when category_id is passed', async () => {
+    it('narrows the audit to one category, fetching that category directly', async () => {
       const paths: string[] = [];
       seedTree([600], [800, 801]);
       mswServer.use(
+        http.get(`${HC_BASE}/categories/:id`, ({ request, params }) => {
+          paths.push(new URL(request.url).pathname);
+          return HttpResponse.json({
+            category: { ...MOCK_CATEGORY, id: Number(params['id']), name: 'Legal' },
+          });
+        }),
         http.get(`${HC_BASE}/categories/:cid/sections`, ({ request }) => {
           paths.push(new URL(request.url).pathname);
           return HttpResponse.json({
@@ -560,10 +574,24 @@ describe('help center tools', () => {
         category_id: 801,
       });
       const text = result.content[0]?.text ?? '';
+      // The scoped category is read on its own, not filtered out of a capped
+      // listing that could omit it entirely.
+      expect(paths).toContain('/api/v2/help_center/categories/801');
       expect(paths.some((p) => p.endsWith('/categories/801/sections'))).toBe(true);
       expect(text).toContain('## Categories (1 scanned)');
-      expect(text).toContain('**Category 801** (801) — no translation');
+      expect(text).toContain('**Legal** (801) — no translation');
+      expect(text).toContain('**Section 601** (601) — no translation');
       expect(text).not.toContain('(800)');
+      expect(text).not.toContain('(600)');
+    });
+
+    it('does not claim an empty level is fully translated', async () => {
+      seedTree([], [800]);
+      const result = await findTool('find_translation_gaps').handler({ locale: 'fr' });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('## Sections (0 scanned)');
+      expect(text).toContain('_(none to scan at this level)_');
+      expect(text).not.toContain('every one scanned has a published translation\n\n_(none to');
     });
 
     it('warns when the audited locale is not active, instead of crying gap', async () => {
