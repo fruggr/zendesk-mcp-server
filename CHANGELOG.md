@@ -1,3 +1,38 @@
+## [2.17.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.16.1...v2.17.0) (2026-08-11)
+
+### Features
+
+* **help-center:** section & category translation tools ([#224](https://github.com/fruggr/zendesk-mcp-server/issues/224)) ([#225](https://github.com/fruggr/zendesk-mcp-server/issues/225)) ([6bbed8e](https://github.com/fruggr/zendesk-mcp-server/commit/6bbed8e2db1e3aa99a2fbc0c20c5aefc72377598))
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Documentation
+
+* humanize the README and its companion docs ([#217](https://github.com/fruggr/zendesk-mcp-server/issues/217)) ([193e8f6](https://github.com/fruggr/zendesk-mcp-server/commit/193e8f6677b7a020fb66c9a439f9d57e5add2a6f))
+* refocus the README on why/what and cut the internal redundancy ([#200](https://github.com/fruggr/zendesk-mcp-server/issues/200)) ([b04e642](https://github.com/fruggr/zendesk-mcp-server/commit/b04e64202991cc02b44fb80d2e242606802850b4))
+
+### Chores
+
+* **deps:** lock file maintenance ([#219](https://github.com/fruggr/zendesk-mcp-server/issues/219)) ([25b49da](https://github.com/fruggr/zendesk-mcp-server/commit/25b49dae41f906c1be16143854b5092a501f6e7e))
+* **deps:** lock file maintenance ([#220](https://github.com/fruggr/zendesk-mcp-server/issues/220)) ([e238355](https://github.com/fruggr/zendesk-mcp-server/commit/e2383550e274d424a519f5c339effcf17625eaee))
+* **deps:** update dependency @biomejs/biome to v2.5.6 ([#204](https://github.com/fruggr/zendesk-mcp-server/issues/204)) ([482e75d](https://github.com/fruggr/zendesk-mcp-server/commit/482e75da064fbd6d16e0aff10e4e133343d8cb0b))
+* **deps:** update dependency @biomejs/biome to v2.5.7 ([#227](https://github.com/fruggr/zendesk-mcp-server/issues/227)) ([ce0bdb7](https://github.com/fruggr/zendesk-mcp-server/commit/ce0bdb78ba5e4188e4e1dbb60ad1b38832981a25))
+* **deps:** update dependency @modelcontextprotocol/sdk to v1.30.0 ([#201](https://github.com/fruggr/zendesk-mcp-server/issues/201)) ([5689315](https://github.com/fruggr/zendesk-mcp-server/commit/5689315b90db1075bb4bc0a3fa7e6551a89cbdc7))
+* **deps:** update pnpm to v11.18.0 ([#216](https://github.com/fruggr/zendesk-mcp-server/issues/216)) ([98ada0d](https://github.com/fruggr/zendesk-mcp-server/commit/98ada0dfa620b10770ae13681567aa2eb473356c))
+* **deps:** update pnpm to v11.19.0 ([#221](https://github.com/fruggr/zendesk-mcp-server/issues/221)) ([854fef9](https://github.com/fruggr/zendesk-mcp-server/commit/854fef986156ded7d65248758475df48002c0e2e))
+* **deps:** update pnpm to v11.20.0 ([#222](https://github.com/fruggr/zendesk-mcp-server/issues/222)) ([c92be3a](https://github.com/fruggr/zendesk-mcp-server/commit/c92be3abddd0a99e4f1ae9608c21d2ecd98311fb))
+* **lint:** check the whole repository, and gate Biome config drift ([#215](https://github.com/fruggr/zendesk-mcp-server/issues/215)) ([1b669c4](https://github.com/fruggr/zendesk-mcp-server/commit/1b669c4084a4771114e2dcedcaf6151a58876e54))
+
+### Tests
+
+* **utils:** add mutation testing, gate PRs on it, and close the assertion gaps it found ([#197](https://github.com/fruggr/zendesk-mcp-server/issues/197)) ([31df70c](https://github.com/fruggr/zendesk-mcp-server/commit/31df70c74cd124a0dab90cb15f272385722aa478))
+
+### Continuous Integration
+
+* push the release commit with a GitHub App token ([#229](https://github.com/fruggr/zendesk-mcp-server/issues/229)) ([e98acd4](https://github.com/fruggr/zendesk-mcp-server/commit/e98acd47eb872e23b9c3bd1e06532d62f1b06c94))
+</details>
+
 ## [2.16.1](https://github.com/fruggr/zendesk-mcp-server/compare/v2.16.0...v2.16.1) (2026-08-03)
 
 ### Bug Fixes
