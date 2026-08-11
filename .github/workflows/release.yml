@@ -8,34 +8,22 @@ concurrency:
   group: release
   cancel-in-progress: false
 
+# Every write in this job goes through the App installation token minted
+# below, so the built-in GITHUB_TOKEN only ever reads the tree for checkout.
+# `id-token: write` is what NPM Trusted Publishing and the MCP registry login
+# exchange for their OIDC credentials.
 permissions:
-  contents: write
-  issues: write
-  pull-requests: write
+  contents: read
   id-token: write
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    # The whole pipeline runs in about a minute. A wedged step should fail
+    # rather than hold the runner for the 6-hour default, which would also
+    # outlive the App installation token minted below.
+    timeout-minutes: 30
     steps:
-      # semantic-release pushes the `chore(release)` commit straight to main,
-      # and main requires status checks that only ever report on a pull
-      # request — a direct push can never satisfy them, so the built-in
-      # GITHUB_TOKEN is rejected with GH006. This App is on the branch
-      # ruleset's bypass list; its installation token is what gets past it.
-      # Short-lived (1h) and revoked in post-job, unlike a PAT.
-      - uses: actions/create-github-app-token@v3
-        id: app-token
-        with:
-          app-id: ${{ secrets.RELEASE_APP_ID }}
-          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-          # Without these the token inherits every permission the installation
-          # holds. Pinning them stops a later permission grant to the App from
-          # silently widening what a release run can do.
-          permission-contents: write
-          permission-issues: write
-          permission-pull-requests: write
-
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
@@ -86,6 +74,26 @@ jobs:
         id: before
         run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
 
+      # main is protected by a ruleset that requires a pull request *and*
+      # status checks which only ever report on one, so a direct push of the
+      # `chore(release)` commit is refused twice over and the built-in
+      # GITHUB_TOKEN comes back with GH006. This App is on that ruleset's
+      # bypass list, and a bypass actor skips every rule in it. The token is
+      # minted here rather than at the top of the job because it lives one hour
+      # and is revoked in post-job: install, test and build must not eat into
+      # that window.
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          # Without these the token inherits every permission the installation
+          # holds. Pinning them stops a later permission grant to the App from
+          # silently widening what a release run can do.
+          permission-contents: write
+          permission-issues: write
+          permission-pull-requests: write
+
       - run: pnpm exec semantic-release
         env:
           # The App token, not secrets.GITHUB_TOKEN: it authenticates both the
@@ -95,9 +103,12 @@ jobs:
           # third-party identity, so unlike the repository-generated
           # GITHUB_TOKEN its pushes *do* start workflow runs. What keeps this
           # release commit from starting another Release run is the `[skip ci]`
-          # in its message, which suppresses `push` and `pull_request`
-          # workflows — the only events any workflow here listens on. Nothing
-          # listens on `release`, so publishing one starts nothing either.
+          # in its message (asserted by tests/unit/releaserc-skip-ci.test.ts,
+          # since nothing else would catch its removal). That marker only
+          # suppresses `push` and `pull_request`, so it is no help against the
+          # `pull_request_target` and `workflow_dispatch` triggers elsewhere in
+          # this repo — neither of which a push can raise. Nothing listens on
+          # `release` either, so publishing one starts nothing.
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           # Auth to npm is via NPM Trusted Publishing (OIDC), configured on
           # npmjs.com against this workflow file. The `id-token: write`

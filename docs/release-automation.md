@@ -170,18 +170,26 @@ These cannot be versioned; a repository (or org) admin must apply them **once**:
    - Allow squash merging ✓
    - Default to PR title for squash merges ✓ (**critical**: without this, the `fix(security):` prefix is not carried into the squash commit on `main`, and no release is published)
 3. **Settings → Rules → Rulesets**: one ruleset on `main` carrying every rule.
-   - Require a pull request before merging (squash only); required status checks
-     `build-and-test`, `Changed lines` and `CodeQL`. (Without the status-check
-     rule, `platformAutomerge` would merge the PR before CI finishes.)
-   - Bypass list: the `fruggr-release-bot` App (point 4).
+   Five of them, and re-creating the ruleset means re-creating all five:
+   - Require a pull request before merging, squash the only allowed method,
+     zero required approvals, conversation resolution required.
+   - Required status checks `build-and-test`, `Changed lines` and `CodeQL`, with
+     "require branches to be up to date" on. (Without the status-check rule,
+     `platformAutomerge` would merge the PR before CI finishes; without the
+     up-to-date policy, a PR behind `main` can auto-merge on stale green checks.)
+   - Restrict deletions, and block force pushes.
+   - Bypass list: the `fruggr-release-bot` App (point 4), bypass mode "always".
+     Not "pull request" — that mode would still force the release commit
+     through a PR, which is the thing being avoided.
    - Two constraints explain that shape. A bypass actor skips the rules of the
      ruleset it is listed on and nothing else, so splitting the rules over two
      rulesets means maintaining two bypass entries. And the rules cannot live in
      a classic branch protection rule, which has no bypass list at all: the
      `chore(release)` commit `semantic-release` pushes to `main` gets refused
-     with `GH006`, since `build-and-test` and `Changed lines` only run on
-     `pull_request` and no check can report on a commit the remote just refused.
-     The `[skip ci]` marker does not help, because rulesets ignore it.
+     with `GH006`, both by the pull-request rule and by the status checks, since
+     `build-and-test` and `Changed lines` only run on `pull_request` and no
+     check can report on a commit the remote just refused. Neither rulesets nor
+     classic protection honour `[skip ci]`; only a bypass actor gets through.
 4. **A dedicated GitHub App, `fruggr-release-bot`**, on that bypass list:
    - Repository permissions: Contents write for the push, the tag and the
      release; Issues and Pull requests write for the comments
@@ -189,11 +197,12 @@ These cannot be versioned; a repository (or org) admin must apply them **once**:
    - Repo secrets `RELEASE_APP_ID` and `RELEASE_APP_PRIVATE_KEY`, which
      `release.yml` exchanges for a one-hour installation token through
      `actions/create-github-app-token` (revoked in post-job).
-   - An admin PAT would also clear the ruleset while `enforce_admins` is off, at
-     the cost of a long-lived secret tied to one person. If required signed
-     commits are ever enabled, remember that `semantic-release` pushes through
-     the git CLI and signs nothing, so that rule has to sit in the bypassed
-     ruleset too.
+   - The ruleset grants no bypass to admins, so there is no manual fallback:
+     a maintainer with a PAT gets the same `GH006` as `GITHUB_TOKEN`. Recovering
+     a stuck release means fixing the App path, or temporarily adding a bypass
+     actor. If required signed commits are ever enabled, remember that
+     `semantic-release` pushes through the git CLI and signs nothing, so that
+     rule has to sit in the bypassed ruleset too.
 5. **Settings → Code security → Dependabot security updates**: OFF. Renovate takes over via `vulnerabilityAlerts` (GHSA) + `osvVulnerabilityAlerts` (Google OSV), and we avoid duplicate PRs.
 
 ## Pause or disable
