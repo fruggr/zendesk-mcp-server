@@ -293,49 +293,83 @@ describe('help center tools', () => {
     );
   });
 
-  describe('list_section_translations', () => {
-    it('reports each locale with its draft state and whether a description is set', async () => {
-      const result = await findTool('list_section_translations').handler({ section_id: 600 });
-      const text = result.content[0]?.text ?? '';
-      expect(text).toContain('Translation: en-us (7100)');
-      expect(text).toContain('Translation: fr (7101)');
+  // Sections and categories are iso by design: the same endpoint family, the same
+  // translation object, and one shared upsertNodeTranslation behind both write
+  // tools. So every behaviour is asserted on BOTH levels from one table rather
+  // than written twice — a new case added here cannot land on one level only.
+  // This matters more than usual for categories: live validation of the category
+  // write path was skipped for want of an expendable category on the tenant
+  // (#225, S12), so these are the only proof that half carries.
+  const NODE_LEVELS = [
+    {
+      level: 'section',
+      listTool: 'list_section_translations',
+      writeTool: 'set_section_translation',
+      idParam: 'section_id',
+      nodeId: 600,
+      segment: 'sections',
+      fixture: MOCK_SECTION_TRANSLATION,
+      // Ids of the fixture's own translations, and a name only that level uses.
+      sourceTranslationId: 7100,
+      targetTranslationId: 7101,
+      localizedName: 'FAQ (fr)',
+    },
+    {
+      level: 'category',
+      listTool: 'list_category_translations',
+      writeTool: 'set_category_translation',
+      idParam: 'category_id',
+      nodeId: 800,
+      segment: 'categories',
+      fixture: MOCK_CATEGORY_TRANSLATION,
+      sourceTranslationId: 7200,
+      targetTranslationId: 7201,
+      localizedName: 'Général',
+    },
+  ] as const;
+
+  describe.each(NODE_LEVELS)('$listTool', (node) => {
+    const call = (extra: Record<string, unknown> = {}) =>
+      findTool(node.listTool).handler({ [node.idParam]: node.nodeId, ...extra });
+
+    it('reports each locale with its localized name, description state and draft state', async () => {
+      const text = (await call()).content[0]?.text ?? '';
+      expect(text).toContain(`Translation: en-us (${node.sourceTranslationId})`);
+      expect(text).toContain(`Translation: fr (${node.targetTranslationId})`);
       // `title` is the localized NAME here, not an article title — the rendering
       // has to say so, otherwise the caller maps the wrong field back.
-      expect(text).toContain('**Name**: FAQ (fr)');
+      expect(text).toContain(`**Name**: ${node.localizedName}`);
       expect(text).not.toContain('**Title**');
-      expect(text).toContain('**Draft**: true');
       expect(text).toContain('**Draft**: false');
       expect(text).toContain('**Description**: set');
     });
 
     it('renders an empty description as "empty" rather than dropping the line', async () => {
       mswServer.use(
-        http.get(`${HC_BASE}/sections/:id/translations`, () =>
+        http.get(`${HC_BASE}/${node.segment}/:id/translations`, () =>
+          HttpResponse.json({ translations: [{ ...node.fixture, body: '' }] }),
+        ),
+      );
+      expect((await call()).content[0]?.text).toContain('**Description**: empty');
+    });
+
+    it('surfaces the draft flag of an unpublished translation', async () => {
+      mswServer.use(
+        http.get(`${HC_BASE}/${node.segment}/:id/translations`, () =>
           HttpResponse.json({
-            translations: [{ ...MOCK_SECTION_TRANSLATION, body: '' }],
+            translations: [{ ...node.fixture, locale: 'fr', draft: true }],
           }),
         ),
       );
-      const result = await findTool('list_section_translations').handler({ section_id: 600 });
-      expect(result.content[0]?.text).toContain('**Description**: empty');
+      expect((await call()).content[0]?.text).toContain('**Draft**: true');
     });
   });
 
-  describe('list_category_translations', () => {
-    it('lists the category translations with the localized names', async () => {
-      const result = await findTool('list_category_translations').handler({ category_id: 800 });
-      const text = result.content[0]?.text ?? '';
-      expect(text).toContain('Translation: en-us (7200)');
-      expect(text).toContain('**Name**: Général');
-      expect(text).not.toContain('**Draft**: true');
-    });
-  });
-
-  describe('set_section_translation', () => {
+  describe.each(NODE_LEVELS)('$writeTool', (node) => {
     // Captures what actually reached Zendesk: the method, the path (locale
     // spelling included) and the `translation` payload.
     const captureWrites = () => {
-      const writes: Array<{ method: string; path: string; payload: Record<string, unknown> }> = [];
+      const writes: { method: string; path: string; payload: Record<string, unknown> }[] = [];
       const record = async (method: string, request: Request) => {
         const payload = (await request.json().catch(() => ({}))) as Record<string, unknown>;
         writes.push({
@@ -345,53 +379,58 @@ describe('help center tools', () => {
         });
       };
       mswServer.use(
-        http.post(`${HC_BASE}/sections/:id/translations`, async ({ request }) => {
+        http.post(`${HC_BASE}/${node.segment}/:id/translations`, async ({ request }) => {
           await record('POST', request.clone());
-          return HttpResponse.json({ translation: { ...MOCK_SECTION_TRANSLATION, locale: 'de' } });
+          return HttpResponse.json({ translation: { ...node.fixture, locale: 'de' } });
         }),
-        http.put(`${HC_BASE}/sections/:id/translations/:locale`, async ({ request, params }) => {
-          await record('PUT', request.clone());
-          return HttpResponse.json({
-            translation: {
-              ...MOCK_SECTION_TRANSLATION,
-              id: 7101,
-              locale: params['locale'] as string,
-              draft: false,
-            },
-          });
-        }),
+        http.put(
+          `${HC_BASE}/${node.segment}/:id/translations/:locale`,
+          async ({ request, params }) => {
+            await record('PUT', request.clone());
+            return HttpResponse.json({
+              translation: {
+                ...node.fixture,
+                locale: params['locale'] as string,
+                draft: false,
+              },
+            });
+          },
+        ),
       );
       return writes;
     };
 
+    const write = (extra: Record<string, unknown>) =>
+      findTool(node.writeTool).handler({ [node.idParam]: node.nodeId, ...extra });
+
     it('creates the translation when the locale has none, mapping name/description', async () => {
       const writes = captureWrites();
-      const result = await findTool('set_section_translation').handler({
-        section_id: 600,
+      const result = await write({
         locale: 'de',
         name: 'Häufige Fragen',
         description: 'Oft gestellte Fragen',
       });
       expect(writes).toHaveLength(1);
       expect(writes[0]?.method).toBe('POST');
+      expect(writes[0]?.path).toBe(
+        `/api/v2/help_center/${node.segment}/${node.nodeId}/translations`,
+      );
       expect(writes[0]?.payload).toEqual({
         locale: 'de',
         title: 'Häufige Fragen',
         body: 'Oft gestellte Fragen',
-        // Creating publishes by default, so the section is actually reachable.
+        // Creating publishes by default, so the node is actually reachable.
         draft: false,
       });
-      expect(result.content[0]?.text).toContain('Translation created for section #600 in "de"');
+      expect(result.content[0]?.text).toContain(
+        `Translation created for ${node.level} #${node.nodeId} in "de"`,
+      );
       expect(result.content[0]?.text).toContain('(published)');
     });
 
     it('defaults the description to empty on creation rather than omitting it', async () => {
       const writes = captureWrites();
-      await findTool('set_section_translation').handler({
-        section_id: 600,
-        locale: 'de',
-        name: 'Häufige Fragen',
-      });
+      await write({ locale: 'de', name: 'Häufige Fragen' });
       expect(writes[0]?.payload).toEqual({
         locale: 'de',
         title: 'Häufige Fragen',
@@ -400,111 +439,67 @@ describe('help center tools', () => {
       });
     });
 
-    it('refuses to create without a name, naming the section and the locale', async () => {
-      await expect(
-        findTool('set_section_translation').handler({ section_id: 600, locale: 'de' }),
-      ).rejects.toThrow(/section #600 has no "de" translation yet.*"name" is required/s);
+    it('honours draft: true on creation instead of publishing anyway', async () => {
+      const writes = captureWrites();
+      await write({ locale: 'de', name: 'Häufige Fragen', draft: true });
+      expect(writes[0]?.payload).toMatchObject({ draft: true });
+    });
+
+    it('refuses to create without a name, naming the node and the locale', async () => {
+      const writes = captureWrites();
+      await expect(write({ locale: 'de' })).rejects.toThrow(
+        new RegExp(
+          `${node.level} #${node.nodeId} has no "de" translation yet.*"name" is required`,
+          's',
+        ),
+      );
+      expect(writes).toHaveLength(0);
     });
 
     it('updates an existing translation, sending only the fields passed', async () => {
       const writes = captureWrites();
-      const result = await findTool('set_section_translation').handler({
-        section_id: 600,
-        locale: 'fr',
-        draft: false,
-      });
+      const result = await write({ locale: 'fr', draft: false });
       expect(writes).toHaveLength(1);
       expect(writes[0]?.method).toBe('PUT');
       // Publishing a draft must not blank the existing name or description.
       expect(writes[0]?.payload).toEqual({ draft: false });
-      expect(result.content[0]?.text).toContain('Translation updated for section #600 in "fr"');
+      expect(result.content[0]?.text).toContain(
+        `Translation updated for ${node.level} #${node.nodeId} in "fr"`,
+      );
       expect(result.content[0]?.text).toContain('(published)');
     });
 
     it('clears the description when an empty string is passed explicitly', async () => {
       const writes = captureWrites();
-      await findTool('set_section_translation').handler({
-        section_id: 600,
-        locale: 'fr',
-        description: '',
-      });
+      await write({ locale: 'fr', description: '' });
       expect(writes[0]?.payload).toEqual({ body: '' });
     });
 
     it("writes to Zendesk's spelling of the locale, not the caller's casing", async () => {
       const writes = captureWrites();
-      await findTool('set_section_translation').handler({
-        section_id: 600,
-        locale: 'FR',
-        name: 'FAQ (fr)',
-      });
+      await write({ locale: 'FR', name: 'Renamed' });
       expect(writes[0]?.method).toBe('PUT');
-      expect(writes[0]?.path).toMatch(/\/sections\/600\/translations\/fr$/);
+      expect(writes[0]?.path).toBe(
+        `/api/v2/help_center/${node.segment}/${node.nodeId}/translations/fr`,
+      );
     });
 
     it('refuses a no-op update rather than reporting a write that changed nothing', async () => {
       const writes = captureWrites();
-      await expect(
-        findTool('set_section_translation').handler({ section_id: 600, locale: 'fr' }),
-      ).rejects.toThrow(/Nothing to write.*already has a "fr" translation/s);
+      await expect(write({ locale: 'fr' })).rejects.toThrow(
+        /Nothing to write.*already has a "fr" translation/s,
+      );
       expect(writes).toHaveLength(0);
     });
 
     it('reports a translation left as a draft as not visible to end users', async () => {
       mswServer.use(
-        http.put(`${HC_BASE}/sections/:id/translations/:locale`, () =>
-          HttpResponse.json({
-            translation: { ...MOCK_SECTION_TRANSLATION, locale: 'fr', draft: true },
-          }),
+        http.put(`${HC_BASE}/${node.segment}/:id/translations/:locale`, () =>
+          HttpResponse.json({ translation: { ...node.fixture, locale: 'fr', draft: true } }),
         ),
       );
-      const result = await findTool('set_section_translation').handler({
-        section_id: 600,
-        locale: 'fr',
-        draft: true,
-      });
+      const result = await write({ locale: 'fr', draft: true });
       expect(result.content[0]?.text).toContain('(draft, not visible to end users)');
-    });
-  });
-
-  describe('set_category_translation', () => {
-    it('creates the translation on the categories endpoint with the mapped fields', async () => {
-      let path = '';
-      let payload: Record<string, unknown> = {};
-      mswServer.use(
-        http.post(`${HC_BASE}/categories/:id/translations`, async ({ request }) => {
-          path = new URL(request.url).pathname;
-          const body = (await request.json()) as Record<string, unknown>;
-          payload = (body['translation'] as Record<string, unknown>) ?? {};
-          return HttpResponse.json({
-            translation: { ...MOCK_CATEGORY_TRANSLATION, locale: 'de', title: 'Allgemein' },
-          });
-        }),
-      );
-      const result = await findTool('set_category_translation').handler({
-        category_id: 800,
-        locale: 'de',
-        name: 'Allgemein',
-        draft: true,
-      });
-      expect(path).toMatch(/\/categories\/800\/translations$/);
-      expect(payload).toEqual({ locale: 'de', title: 'Allgemein', body: '', draft: true });
-      expect(result.content[0]?.text).toContain('Translation created for category #800 in "de"');
-    });
-
-    it('updates an existing category translation instead of creating a duplicate', async () => {
-      const result = await findTool('set_category_translation').handler({
-        category_id: 800,
-        locale: 'fr',
-        name: 'Général',
-      });
-      expect(result.content[0]?.text).toContain('Translation updated for category #800 in "fr"');
-    });
-
-    it('refuses to create without a name, naming the category', async () => {
-      await expect(
-        findTool('set_category_translation').handler({ category_id: 800, locale: 'de' }),
-      ).rejects.toThrow(/category #800 has no "de" translation yet/);
     });
   });
 

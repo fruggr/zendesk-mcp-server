@@ -433,6 +433,19 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         });
         expect(published.isError).toBeFalsy();
         expect(textOf(published)).toContain('Translation updated for section #600 in "fr"');
+
+        // The category level is iso with the section one and shares the same
+        // upsert, but its write path could not be validated against the live
+        // tenant (#225, S12), so it gets its own wire-level pass here.
+        const category = await connected.client.callTool({
+          name: 'zendesk_help_center',
+          arguments: {
+            operation: 'set_category_translation',
+            params: { category_id: 800, locale: 'fr', name: 'Général' },
+          },
+        });
+        expect(category.isError).toBeFalsy();
+        expect(textOf(category)).toContain('Translation updated for category #800 in "fr"');
       });
 
       it('archives a Help Center article over the wire when confirmed', async () => {

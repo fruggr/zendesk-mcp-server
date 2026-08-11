@@ -105,6 +105,13 @@ const listTranslations = (
 // localized *name* and `body` the localized *description*. The tools speak
 // name/description — the vocabulary list_sections and list_categories already
 // return — and do the mapping here, so a caller never has to know about it.
+//
+// The two levels are treated as ISO: same endpoints, same object, same
+// behaviour, parameterised by kind rather than implemented twice. Anything done
+// to one level must be done to the other — schema, description, error message,
+// report line, test. The unit tests enforce that by running every case over both
+// levels from one table (see NODE_LEVELS in the tests), which is also what
+// stands in for the category write path's missing live validation (#225, S12).
 type TreeNodeKind = 'sections' | 'categories';
 
 const NODE_LABEL: Record<TreeNodeKind, string> = {
