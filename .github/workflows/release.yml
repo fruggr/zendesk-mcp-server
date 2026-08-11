@@ -19,6 +19,11 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    # The App's private key lives in this environment, not in repository
+    # secrets, and the environment only admits workflows running on `main`.
+    # Without that boundary any branch could mint the App token and push
+    # straight to `main`, since the App bypasses every rule in the ruleset.
+    environment: release
     # The whole pipeline runs in about a minute. A wedged step should fail
     # rather than hold the runner for the 6-hour default, which would also
     # outlive the App installation token minted below.

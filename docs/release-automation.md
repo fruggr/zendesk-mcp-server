@@ -194,9 +194,14 @@ These cannot be versioned; a repository (or org) admin must apply them **once**:
    - Repository permissions: Contents write for the push, the tag and the
      release; Issues and Pull requests write for the comments
      `@semantic-release/github` posts. No webhook, installed on this repo only.
-   - Repo secrets `RELEASE_APP_ID` and `RELEASE_APP_PRIVATE_KEY`, which
-     `release.yml` exchanges for a one-hour installation token through
-     `actions/create-github-app-token` (revoked in post-job).
+   - `RELEASE_APP_ID` and `RELEASE_APP_PRIVATE_KEY` live in a **`release`
+     environment** whose deployment branch policy admits `main` only, not in
+     repository secrets. `release.yml` names that environment and exchanges them
+     for a one-hour installation token through `actions/create-github-app-token`
+     (revoked in post-job). The boundary is the point: repository secrets are
+     readable by a workflow run on any branch, and the App bypasses every rule
+     in the ruleset, so a branch that could read the key could push anything to
+     `main` unchecked.
    - The ruleset grants no bypass to admins, so there is no manual fallback:
      a maintainer with a PAT gets the same `GH006` as `GITHUB_TOKEN`. Recovering
      a stuck release means fixing the App path, or temporarily adding a bypass
