@@ -1,3 +1,4 @@
+import { type ParseArgsConfig, parseArgs } from 'node:util';
 import * as z from 'zod/v4';
 
 export const ToolMode = z.enum(['single', 'namespace', 'all']);
@@ -119,7 +120,10 @@ export const ConfigSchema = z.object({
 export type Config = z.infer<typeof ConfigSchema>;
 
 interface CliResult {
-  subdomain?: string;
+  // Explicitly `| undefined` so the parser can assign the first positional
+  // unconditionally: `exactOptionalPropertyTypes` would otherwise force a guard
+  // that reads as behaviour but only ever satisfies the type checker.
+  subdomain?: string | undefined;
   mode?: string;
   readOnly?: boolean;
   namespaces?: string[];
@@ -158,133 +162,141 @@ const parsePort = (raw: string, label: string): number => {
 };
 
 const parsePortEnv = (raw: string | undefined, label: string): number | undefined =>
-  raw === undefined || raw === '' ? undefined : parsePort(raw, label);
+  raw === undefined ? undefined : parsePort(raw, label);
 
-// Append to a repeatable list flag, creating it on first use.
-const appendTo =
-  (key: 'namespaces' | 'tools' | 'corsOrigins') =>
-  (result: CliResult, value: string): void => {
-    const list = result[key] ?? [];
-    list.push(value);
-    result[key] = list;
-  };
+// An empty environment variable is a misconfiguration, not "unset": `FOO=` in a
+// compose file, and `FOO="$BAR"` with BAR unset, both reach us as ''. Applying
+// the default there boots a server whose config silently disagrees with the
+// deployment's intent, so fail naming the variable instead (issue #174). The
+// value is not echoed, same policy as parsePort above.
+//
+// Deliberately not applied to CORS_ORIGIN: that one is a comma-separated *list*,
+// where `CORS_ORIGIN=` legitimately means "no extra origins" on top of the
+// built-in allowlist. Empty single-value variable is an error; empty list
+// variable is an empty list.
+//
+// Reached through `??`, so it only fires for a variable that is actually
+// consulted: a CLI flag wins over the env by contract, and the variable it
+// shadows is dead config rather than a misconfiguration worth refusing to boot
+// over (`--port 8080` next to a stray `PORT=` in a compose file is normal).
+const requireNonEmptyEnv = (name: string): string | undefined => {
+  const raw = process.env[name];
+  if (raw === '') {
+    throw new Error(`Empty ${name}. Set it to a value, or unset it entirely.`);
+  }
+  return raw;
+};
 
-// Maps, not object literals: these are indexed by raw argv, and a plain object
-// would resolve inherited keys — a bare `toString` argument would hit
-// Object.prototype and be swallowed instead of taken as the subdomain.
+// The whole CLI surface as one declarative table. `parseArgs` derives from it the
+// rejection of an unknown flag, of a value-taking flag left at the end of argv,
+// of a flag whose value is another dash-leading token, and of a value handed to a
+// standalone flag — so those guarantees cannot drift per-flag the way the
+// previous branch-per-flag chain could. Adding a flag is one entry here.
+const CLI_OPTIONS = {
+  mode: { type: 'string' },
+  namespace: { type: 'string', multiple: true },
+  tool: { type: 'string', multiple: true },
+  'log-level': { type: 'string' },
+  'hc-resource-scheme': { type: 'string' },
+  transport: { type: 'string' },
+  host: { type: 'string' },
+  port: { type: 'string' },
+  'public-url': { type: 'string' },
+  'cors-origin': { type: 'string', multiple: true },
+  'callback-port': { type: 'string' },
+  'read-only': { type: 'boolean' },
+  'no-topology': { type: 'boolean' },
+  'no-promoted-articles': { type: 'boolean' },
+  dev: { type: 'boolean' },
+} as const satisfies ParseArgsConfig['options'];
 
-// Flags that stand alone. Adding one is a line here, not a branch below.
-const STANDALONE_FLAGS = new Map<string, (result: CliResult) => void>([
-  [
-    '--read-only',
-    (result) => {
-      result.readOnly = true;
-    },
-  ],
-  [
-    '--no-topology',
-    (result) => {
-      result.topology = false;
-    },
-  ],
-  [
-    '--no-promoted-articles',
-    (result) => {
-      result.promotedArticles = false;
-    },
-  ],
-  [
-    '--dev',
-    (result) => {
-      result.dev = true;
-    },
-  ],
+// The value-taking subset, spelled as they appear on the command line. Exported
+// so scripts/mcp-live.ts can tell `all` in `--mode all` from a positional
+// subdomain without maintaining its own copy of the list.
+export const VALUE_FLAG_NAMES: ReadonlySet<string> = new Set(
+  Object.entries(CLI_OPTIONS)
+    .filter(([, spec]) => spec.type === 'string')
+    .map(([name]) => `--${name}`),
+);
+
+// Which CliResult field each flag feeds, for the ones whose value passes through
+// untouched. `--port` / `--callback-port` are handled separately because they go
+// through parsePort, and the standalone flags below carry no value at all.
+const FIELD_BY_FLAG = new Map<string, keyof CliResult>([
+  ['mode', 'mode'],
+  ['namespace', 'namespaces'],
+  ['tool', 'tools'],
+  ['log-level', 'logLevel'],
+  ['hc-resource-scheme', 'hcResourceScheme'],
+  ['transport', 'transport'],
+  ['host', 'host'],
+  ['public-url', 'publicUrl'],
+  ['cors-origin', 'corsOrigins'],
 ]);
 
-// Flags that consume the following argument. Repeatable ones append; the rest
-// last-wins, both matching the previous if/else chain.
-const VALUED_FLAGS = new Map<string, (result: CliResult, value: string) => void>([
-  [
-    '--mode',
-    (result, value) => {
-      result.mode = value;
-    },
-  ],
-  [
-    '--hc-resource-scheme',
-    (result, value) => {
-      result.hcResourceScheme = value;
-    },
-  ],
-  [
-    '--log-level',
-    (result, value) => {
-      result.logLevel = value;
-    },
-  ],
-  [
-    '--transport',
-    (result, value) => {
-      result.transport = value;
-    },
-  ],
-  [
-    '--host',
-    (result, value) => {
-      result.host = value;
-    },
-  ],
-  [
-    '--public-url',
-    (result, value) => {
-      result.publicUrl = value;
-    },
-  ],
-  [
-    '--port',
-    (result, value) => {
-      result.port = parsePort(value, '--port');
-    },
-  ],
-  [
-    '--callback-port',
-    (result, value) => {
-      result.callbackPort = parsePort(value, '--callback-port');
-    },
-  ],
-  ['--namespace', appendTo('namespaces')],
-  ['--tool', appendTo('tools')],
-  ['--cors-origin', appendTo('corsOrigins')],
+// Standalone flags set a fixed value, which is why they cannot go through
+// FIELD_BY_FLAG: `--no-topology` being present means `topology: false`.
+const STANDALONE_EFFECTS = new Map<string, Partial<CliResult>>([
+  ['read-only', { readOnly: true }],
+  ['no-topology', { topology: false }],
+  ['no-promoted-articles', { promotedArticles: false }],
+  ['dev', { dev: true }],
 ]);
 
 const parseCliArgs = (args: string[]): CliResult => {
-  const result: CliResult = {};
+  // `strict` (the default) is what makes a malformed invocation fail at startup.
+  // Node's messages already name the offending flag and never echo the value
+  // after an `=`, so they are surfaced as-is rather than re-wrapped.
+  const { values, positionals } = parseArgs({
+    args,
+    options: CLI_OPTIONS,
+    allowPositionals: true,
+  });
 
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
-    if (arg === undefined) continue;
+  // A second positional is always a mistake, and dropping it silently is the
+  // exact failure this module refuses to commit elsewhere: `--namespace tickets
+  // help_center mycompany` would take `help_center` as the subdomain and discard
+  // `mycompany`, reaching the wrong Zendesk tenant with a narrowed tool surface
+  // and no diagnostic at all. Counted, never echoed (same policy as parsePort).
+  if (positionals.length > 1) {
+    throw new Error(
+      `Expected one positional argument (the subdomain), got ${positionals.length}. ` +
+        'A repeatable flag has to be repeated (--namespace tickets --namespace ' +
+        'help_center); it does not take a space-separated list.',
+    );
+  }
 
-    const standalone = STANDALONE_FLAGS.get(arg);
-    if (standalone) {
-      standalone(result);
+  // Built up locally and returned once: `parseCliArgs` stays a pure function of
+  // its argv, and the accumulator never escapes. A `reduce` spreading `acc` per
+  // flag would read as more immutable but is what `noAccumulatingSpread`
+  // (enabled in biome.json) rejects, for its O(n^2) copying.
+  const result: CliResult = { subdomain: positionals[0] };
+
+  // parseArgs only reports flags that were actually passed, so iterating its
+  // output visits exactly the operator's invocation.
+  for (const [flag, value] of Object.entries(values)) {
+    // The one shape parseArgs accepts: an empty value, from `--mode ""` or
+    // `--mode=`. That is exactly what a shell hands over for an unset variable,
+    // and it used to be dropped and then consumed as the positional subdomain,
+    // so startup failed with a misleading `ZENDESK_SUBDOMAIN is required`.
+    if (Array.isArray(value) ? value.includes('') : value === '') {
+      throw new Error(`Empty value for --${flag}. Provide a value, or omit the flag.`);
+    }
+
+    const effect = STANDALONE_EFFECTS.get(flag);
+    if (effect) {
+      Object.assign(result, effect);
       continue;
     }
 
-    // Truthiness, not `!== undefined`: a valued flag with an empty or missing
-    // value is ignored rather than recorded, as it was before.
-    const valued = VALUED_FLAGS.get(arg);
-    const next = args[i + 1];
-    if (valued && next) {
-      valued(result, next);
-      i++;
-      continue;
-    }
+    const field = FIELD_BY_FLAG.get(flag);
+    if (field) Object.assign(result, { [field]: value });
+  }
 
-    // Only the first non-flag argument is taken; `subdomain` being unset is
-    // exactly the "no positional seen yet" state.
-    if (!arg.startsWith('-') && result.subdomain === undefined) {
-      result.subdomain = arg;
-    }
+  // Ports last, so an empty value is rejected above before parsePort sees it.
+  if (values.port !== undefined) result.port = parsePort(values.port, '--port');
+  if (values['callback-port'] !== undefined) {
+    result.callbackPort = parsePort(values['callback-port'], '--callback-port');
   }
 
   return result;
@@ -306,16 +318,18 @@ const resolveTransportSettings = (cli: CliResult): TransportSettings => {
   // CORS allowlist extension: CLI flags first, then comma-separated env var.
   // The defaults (major web MCP clients + localhost-any-port) are baked into
   // the HTTP transport — this list ADDS to them, never replaces them.
+  // Read directly, not through requireNonEmptyEnv: as a list variable, an empty
+  // CORS_ORIGIN means "no extra origins" rather than a misconfiguration.
   const corsFromEnv = (process.env['CORS_ORIGIN'] ?? '')
     .split(',')
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
 
   return {
-    transport: cli.transport ?? process.env['TRANSPORT'] ?? 'stdio',
-    host: cli.host ?? process.env['HOST'] ?? '0.0.0.0',
-    port: cli.port ?? parsePortEnv(process.env['PORT'], 'PORT') ?? 3000,
-    publicUrl: cli.publicUrl ?? process.env['PUBLIC_URL'],
+    transport: cli.transport ?? requireNonEmptyEnv('TRANSPORT') ?? 'stdio',
+    host: cli.host ?? requireNonEmptyEnv('HOST') ?? '0.0.0.0',
+    port: cli.port ?? parsePortEnv(requireNonEmptyEnv('PORT'), 'PORT') ?? 3000,
+    publicUrl: cli.publicUrl ?? requireNonEmptyEnv('PUBLIC_URL'),
     corsOrigins: [...(cli.corsOrigins ?? []), ...corsFromEnv],
   };
 };
@@ -323,24 +337,26 @@ const resolveTransportSettings = (cli: CliResult): TransportSettings => {
 export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
   const cli = parseCliArgs(argv);
 
-  const subdomain = cli.subdomain ?? process.env['ZENDESK_SUBDOMAIN'] ?? '';
-  const oauthClientId =
-    process.env['ZENDESK_OAUTH_CLIENT_ID'] ?? (subdomain ? `${subdomain}_zendesk` : '');
+  const subdomain = cli.subdomain ?? requireNonEmptyEnv('ZENDESK_SUBDOMAIN') ?? '';
+  // No empty-subdomain special case: a missing subdomain already fails the
+  // schema on its own, and derived-but-unused `_zendesk` here keeps that report
+  // down to the one issue the operator can act on.
+  const oauthClientId = requireNonEmptyEnv('ZENDESK_OAUTH_CLIENT_ID') ?? `${subdomain}_zendesk`;
 
   const mode = cli.tools?.length ? 'all' : (cli.mode ?? 'namespace');
 
   const callbackPort =
     cli.callbackPort ??
-    parsePortEnv(process.env['ZENDESK_OAUTH_CALLBACK_PORT'], 'ZENDESK_OAUTH_CALLBACK_PORT');
+    parsePortEnv(requireNonEmptyEnv('ZENDESK_OAUTH_CALLBACK_PORT'), 'ZENDESK_OAUTH_CALLBACK_PORT');
 
-  // `|| undefined`: an empty env means unset (same convention as parsePortEnv),
-  // letting the schema default (`zendesk-hc`) apply; format is schema-validated.
-  const hcResourceScheme = cli.hcResourceScheme ?? (process.env['HC_RESOURCE_SCHEME'] || undefined);
+  // Unset leaves this undefined so the schema default (`zendesk-hc`) applies;
+  // empty is rejected by requireNonEmptyEnv. Format is schema-validated.
+  const hcResourceScheme = cli.hcResourceScheme ?? requireNonEmptyEnv('HC_RESOURCE_SCHEME');
 
   return ConfigSchema.parse({
     subdomain,
     oauthClientId,
-    logLevel: cli.logLevel ?? process.env['LOG_LEVEL'] ?? 'info',
+    logLevel: cli.logLevel ?? requireNonEmptyEnv('LOG_LEVEL') ?? 'info',
     mode,
     readOnly: cli.readOnly ?? false,
     namespaces: cli.namespaces,

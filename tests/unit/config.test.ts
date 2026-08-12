@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { loadConfig } from '../../src/config';
+import { loadConfig, VALUE_FLAG_NAMES } from '../../src/config';
 
 describe('loadConfig', () => {
   beforeEach(() => {
@@ -102,8 +102,12 @@ describe('loadConfig', () => {
     expect(config.subdomain).toBe('envcompany');
   });
 
-  it('throws on missing subdomain', () => {
-    expect(() => loadConfig([])).toThrow();
+  it('throws on missing subdomain, reporting only that', () => {
+    // oauthClientId is derived from the subdomain, so an empty subdomain used to
+    // fail twice — once for itself and once for a `''` client id the operator
+    // never set. Only the actionable issue is reported now.
+    expect(() => loadConfig([])).toThrow(/ZENDESK_SUBDOMAIN is required/);
+    expect(() => loadConfig([])).not.toThrow(/oauthClientId/);
   });
 
   it('parses --log-level flag', () => {
@@ -285,10 +289,14 @@ describe('loadConfig', () => {
       }
     });
 
-    it('treats an empty HC_RESOURCE_SCHEME env as unset (same as PORT-style envs)', () => {
+    // Deliberate spec change (issue #174): this used to assert that an empty
+    // HC_RESOURCE_SCHEME meant "unset", matching the PORT-style envs. That
+    // convention hid a broken deployment — `--hc-resource-scheme "$SCHEME"` with
+    // SCHEME unset booted on the default scheme while runbooks expected the
+    // branded one. Empty now fails at startup, naming the variable.
+    it('rejects an empty HC_RESOURCE_SCHEME env', () => {
       process.env['HC_RESOURCE_SCHEME'] = '';
-      const config = loadConfig(['mycompany']);
-      expect(config.hcResourceScheme).toBe('zendesk-hc');
+      expect(() => loadConfig(['mycompany'])).toThrow(/Empty HC_RESOURCE_SCHEME\./);
     });
 
     it('rejects an invalid HC_RESOURCE_SCHEME env value', () => {
@@ -334,6 +342,242 @@ describe('loadConfig', () => {
     it('rejects ZENDESK_OAUTH_CALLBACK_PORT env values that are not strictly numeric', () => {
       process.env['ZENDESK_OAUTH_CALLBACK_PORT'] = '52000abc';
       expect(() => loadConfig(['mycompany'])).toThrow(/Invalid ZENDESK_OAUTH_CALLBACK_PORT value/);
+    });
+  });
+
+  // A value-taking flag whose value is missing or empty used to be dropped
+  // silently, so the server booted with defaults and nothing in the logs pointed
+  // at the cause (issue #174). Every shape below must now fail at startup.
+  describe('strict CLI parsing', () => {
+    // Driven by the exported flag list, not a hand-picked sample: a new flag is
+    // covered the moment it is added to CLI_OPTIONS, so the guarantee cannot
+    // drift per-flag the way the old one-branch-per-flag chain did.
+    const valueFlags = [...VALUE_FLAG_NAMES];
+
+    it('covers every value-taking flag declared in CLI_OPTIONS', () => {
+      // Guards the parametrised cases below against silently shrinking to zero.
+      expect(valueFlags).toHaveLength(11);
+    });
+
+    it.each(valueFlags)('rejects %s as the last argument (value forgotten)', (flag) => {
+      expect(() => loadConfig(['mycompany', flag])).toThrow();
+    });
+
+    it.each(valueFlags)('rejects %s followed by an empty value', (flag) => {
+      expect(() => loadConfig(['mycompany', flag, ''])).toThrow(
+        new RegExp(`Empty value for \\${flag}\\.`),
+      );
+    });
+
+    it.each(valueFlags)('rejects %s in the --flag= form with nothing after it', (flag) => {
+      expect(() => loadConfig(['mycompany', `${flag}=`])).toThrow(
+        new RegExp(`Empty value for \\${flag}\\.`),
+      );
+    });
+
+    it('rejects a value-taking flag that would swallow the next flag', () => {
+      // Used to yield host === '--read-only' with readOnly silently false: on
+      // stdio `host` is ignored entirely, so a server meant to be read-only
+      // exposed its write tools with no diagnostic at all.
+      expect(() => loadConfig(['mycompany', '--host', '--read-only'])).toThrow();
+    });
+
+    it('rejects an unknown flag instead of silently ignoring it', () => {
+      expect(() => loadConfig(['mycompany', '--hc-ressource-scheme', 'wiki'])).toThrow();
+    });
+
+    it('does not let a typo-d flag turn its value into the subdomain', () => {
+      // `--hc-ressource-scheme wiki mycompany` used to boot against subdomain
+      // `wiki`, dropping `mycompany` — the wrong Zendesk tenant, silently.
+      expect(() => loadConfig(['--hc-ressource-scheme', 'wiki', 'mycompany'])).toThrow();
+    });
+
+    it('does not echo the value of an unknown --flag=value argument', () => {
+      // Same no-echo policy as parsePort: an Error.message here bubbles up to
+      // the `console.error('Fatal error:', error)` in src/index.ts.
+      expect(() => loadConfig(['mycompany', '--oauth-token=s3cr3t'])).toThrow(
+        expect.objectContaining({ message: expect.not.stringContaining('s3cr3t') }),
+      );
+    });
+
+    it('reports the empty flag rather than a misleading missing-subdomain error', () => {
+      // The empty value used to fall through to the positional-subdomain branch,
+      // consuming it so `mycompany` was dropped and startup failed with
+      // `ZENDESK_SUBDOMAIN is required` — naming the wrong knob entirely.
+      expect(() => loadConfig(['--hc-resource-scheme', '', 'mycompany'])).toThrow(
+        /Empty value for --hc-resource-scheme\./,
+      );
+      expect(() => loadConfig(['--hc-resource-scheme', '', 'mycompany'])).not.toThrow(
+        /ZENDESK_SUBDOMAIN is required/,
+      );
+    });
+
+    it('rejects a value handed to a standalone flag', () => {
+      expect(() => loadConfig(['mycompany', '--read-only=false'])).toThrow();
+    });
+
+    it('rejects a second positional instead of silently dropping it', () => {
+      expect(() => loadConfig(['mycompany', 'othercompany'])).toThrow(
+        /Expected one positional argument \(the subdomain\), got 2\./,
+      );
+    });
+
+    it('counts the positionals it actually got', () => {
+      // Pins the count to the real number rather than a fixed string, so the
+      // operator can tell two stray arguments from one.
+      expect(() => loadConfig(['mycompany', 'second', 'third'])).toThrow(/got 3\./);
+    });
+
+    it('rejects a space-separated list handed to a repeatable flag', () => {
+      // The natural wrong guess for a `multiple: true` flag. Used to boot against
+      // subdomain `help_center` with only the `tickets` namespace registered and
+      // `mycompany` dropped: the wrong tenant AND a narrowed tool surface, with
+      // no diagnostic — the same class of silent misconfiguration as issue #174.
+      expect(() => loadConfig(['--namespace', 'tickets', 'help_center', 'mycompany'])).toThrow(
+        /Expected one positional argument \(the subdomain\), got 2\./,
+      );
+      expect(() => loadConfig(['mycompany', '--tool', 'get_ticket', 'list_tickets'])).toThrow(
+        /Expected one positional argument/,
+      );
+    });
+
+    it('points at the repeated-flag form rather than just refusing', () => {
+      expect(() => loadConfig(['mycompany', 'extra'])).toThrow(
+        /--namespace tickets --namespace help_center/,
+      );
+    });
+
+    it('does not echo the extra positional values', () => {
+      // Same no-echo policy as parsePort: a stray argument can be a tenant name.
+      expect(() => loadConfig(['mycompany', 's3cr3t-tenant'])).toThrow(
+        expect.objectContaining({ message: expect.not.stringContaining('s3cr3t-tenant') }),
+      );
+    });
+
+    it('still accepts every flag with a proper value', () => {
+      const config = loadConfig([
+        'mycompany',
+        '--mode',
+        'all',
+        '--read-only',
+        '--namespace',
+        'tickets',
+        '--hc-resource-scheme',
+        'wiki',
+        '--log-level',
+        'debug',
+        '--transport',
+        'http',
+        '--host',
+        '127.0.0.1',
+        '--port',
+        '8080',
+        '--public-url',
+        'https://mcp.example.com',
+        '--cors-origin',
+        'https://app.example.com',
+        '--callback-port',
+        '51000',
+        '--dev',
+      ]);
+      expect(config.subdomain).toBe('mycompany');
+      expect(config.readOnly).toBe(true);
+      expect(config.hcResourceScheme).toBe('wiki');
+      expect(config.port).toBe(8080);
+      expect(config.callbackPort).toBe(51000);
+      expect(config.corsOrigins).toEqual(['https://app.example.com']);
+      expect(config.dev).toBe(true);
+    });
+
+    it('accepts the --flag=value form', () => {
+      const config = loadConfig(['mycompany', '--mode=all', '--hc-resource-scheme=wiki']);
+      expect(config.mode).toBe('all');
+      expect(config.hcResourceScheme).toBe('wiki');
+    });
+
+    it('takes a bare argument that collides with an Object.prototype key as the subdomain', () => {
+      // The old parser indexed argv against Maps precisely to avoid inherited
+      // keys being resolved; parseArgs collects positionals into an array, so
+      // they are never lookup keys at all.
+      const config = loadConfig(['toString']);
+      expect(config.subdomain).toBe('toString');
+    });
+  });
+
+  // An empty environment variable is an operator error, not "unset": `FOO=` in a
+  // compose file, or `FOO="$BAR"` with BAR unset, both arrive as ''. Applying the
+  // default there hides a broken deployment (issue #174).
+  describe('empty environment variables', () => {
+    beforeEach(() => {
+      delete process.env['PUBLIC_URL'];
+      delete process.env['CORS_ORIGIN'];
+    });
+
+    it.each([
+      'ZENDESK_OAUTH_CLIENT_ID',
+      'LOG_LEVEL',
+      'TRANSPORT',
+      'HOST',
+      'PORT',
+      'PUBLIC_URL',
+      'ZENDESK_OAUTH_CALLBACK_PORT',
+      'HC_RESOURCE_SCHEME',
+    ])('rejects an empty %s', (name) => {
+      process.env[name] = '';
+      expect(() => loadConfig(['mycompany'])).toThrow(new RegExp(`Empty ${name}\\.`));
+    });
+
+    it('rejects an empty ZENDESK_SUBDOMAIN', () => {
+      // No positional here: the subdomain is the one knob a CLI argument would
+      // override, and an overridden variable is never consulted (see below).
+      process.env['ZENDESK_SUBDOMAIN'] = '';
+      expect(() => loadConfig([])).toThrow(/Empty ZENDESK_SUBDOMAIN\./);
+    });
+
+    it('ignores an empty variable that a CLI flag overrides', () => {
+      // Deliberate: validation applies to the value that is actually consulted.
+      // CLI > env is the documented precedence, so an empty variable the flag
+      // shadows is dead config, not a misconfiguration worth refusing to boot
+      // over — `--port 8080` alongside a stray `PORT=` in a compose file is a
+      // normal deployment, not a broken one.
+      process.env['PORT'] = '';
+      process.env['HC_RESOURCE_SCHEME'] = '';
+      const config = loadConfig([
+        'mycompany',
+        '--port',
+        '8080',
+        '--hc-resource-scheme',
+        'wiki',
+        '--transport',
+        'http',
+      ]);
+      expect(config.port).toBe(8080);
+      expect(config.hcResourceScheme).toBe('wiki');
+    });
+
+    it('ignores an empty ZENDESK_SUBDOMAIN that the positional argument overrides', () => {
+      // The positional subdomain is not a flag, but it shadows the variable the
+      // same way, so the same rule applies: the variable is never consulted and
+      // its emptiness is dead config rather than a reason to refuse to boot.
+      process.env['ZENDESK_SUBDOMAIN'] = '';
+      expect(loadConfig(['mycompany']).subdomain).toBe('mycompany');
+    });
+
+    it('keeps CORS_ORIGIN tolerant of an empty value', () => {
+      // A list variable: `CORS_ORIGIN=` means "no extra origins", which is a
+      // normal way to write it in a compose file. The built-in allowlist (major
+      // web MCP clients + localhost) applies regardless.
+      process.env['CORS_ORIGIN'] = '';
+      const config = loadConfig(['mycompany']);
+      expect(config.corsOrigins).toEqual([]);
+    });
+
+    it('still applies defaults when the variables are unset rather than empty', () => {
+      const config = loadConfig(['mycompany']);
+      expect(config.hcResourceScheme).toBe('zendesk-hc');
+      expect(config.port).toBe(3000);
+      expect(config.callbackPort).toBeUndefined();
+      expect(config.logLevel).toBe('info');
     });
   });
 });
