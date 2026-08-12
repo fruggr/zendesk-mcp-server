@@ -11,6 +11,7 @@ import {
   MOCK_TRANSLATION,
   manyContentTagsHandler,
   promotedArticlesHandler,
+  withTranslationsSideload,
 } from '../../msw-handlers';
 import { mswServer } from '../../setup';
 
@@ -509,25 +510,46 @@ describe('help center tools', () => {
     // listing is widened.
     const seedTree = (sectionIds: number[], categoryIds: number[]) => {
       mswServer.use(
-        http.get(`${HC_BASE}/sections`, () =>
+        http.get(`${HC_BASE}/sections`, ({ request }) =>
           HttpResponse.json({
-            sections: sectionIds.map((id) => ({ ...MOCK_SECTION, id, name: `Section ${id}` })),
+            sections: withTranslationsSideload(
+              request,
+              'sections',
+              sectionIds.map((id) => ({ ...MOCK_SECTION, id, name: `Section ${id}` })),
+            ),
             meta: { has_more: false, after_cursor: '' },
             count: sectionIds.length,
           }),
         ),
-        http.get(`${HC_BASE}/categories`, () =>
+        http.get(`${HC_BASE}/categories`, ({ request }) =>
           HttpResponse.json({
-            categories: categoryIds.map((id) => ({
-              ...MOCK_CATEGORY,
-              id,
-              name: `Category ${id}`,
-            })),
+            categories: withTranslationsSideload(
+              request,
+              'categories',
+              categoryIds.map((id) => ({ ...MOCK_CATEGORY, id, name: `Category ${id}` })),
+            ),
             meta: { has_more: false, after_cursor: '' },
             count: categoryIds.length,
           }),
         ),
       );
+    };
+
+    // Every per-node translations call the audit makes, so a test can assert the
+    // fan-out is gone rather than merely that the report still reads right.
+    const countPerNodeCalls = (): { calls: string[] } => {
+      const calls: string[] = [];
+      mswServer.use(
+        http.get(`${HC_BASE}/sections/:id/translations`, ({ params }) => {
+          calls.push(`sections/${params['id']}`);
+          return HttpResponse.json({ translations: [] });
+        }),
+        http.get(`${HC_BASE}/categories/:id/translations`, ({ params }) => {
+          calls.push(`categories/${params['id']}`);
+          return HttpResponse.json({ translations: [] });
+        }),
+      );
+      return { calls };
     };
 
     it('tells a missing translation apart from an unpublished draft', async () => {
@@ -567,15 +589,21 @@ describe('help center tools', () => {
       seedTree([600], [800, 801]);
       mswServer.use(
         http.get(`${HC_BASE}/categories/:id`, ({ request, params }) => {
-          paths.push(new URL(request.url).pathname);
+          const url = new URL(request.url);
+          paths.push(`${url.pathname}?include=${url.searchParams.get('include') ?? ''}`);
           return HttpResponse.json({
-            category: { ...MOCK_CATEGORY, id: Number(params['id']), name: 'Legal' },
+            category: withTranslationsSideload(request, 'categories', [
+              { ...MOCK_CATEGORY, id: Number(params['id']), name: 'Legal' },
+            ])[0],
           });
         }),
         http.get(`${HC_BASE}/categories/:cid/sections`, ({ request }) => {
-          paths.push(new URL(request.url).pathname);
+          const url = new URL(request.url);
+          paths.push(`${url.pathname}?include=${url.searchParams.get('include') ?? ''}`);
           return HttpResponse.json({
-            sections: [{ ...MOCK_SECTION, id: 601, name: 'Section 601' }],
+            sections: withTranslationsSideload(request, 'sections', [
+              { ...MOCK_SECTION, id: 601, name: 'Section 601' },
+            ]),
             meta: { has_more: false, after_cursor: '' },
             count: 1,
           });
@@ -586,15 +614,40 @@ describe('help center tools', () => {
         category_id: 801,
       });
       const text = result.content[0]?.text ?? '';
-      // The scoped category is read on its own, not filtered out of a capped
-      // listing that could omit it entirely.
-      expect(paths).toContain('/api/v2/help_center/categories/801');
-      expect(paths.some((p) => p.endsWith('/categories/801/sections'))).toBe(true);
+      // The scoped category is read on its own, not filtered out of a listing that
+      // could omit it entirely — and both scoped paths carry the sideload too.
+      expect(paths).toContain('/api/v2/help_center/categories/801?include=translations');
+      expect(paths).toContain('/api/v2/help_center/categories/801/sections?include=translations');
       expect(text).toContain('## Categories (1 scanned)');
       expect(text).toContain('**Legal** (801) — no translation');
       expect(text).toContain('**Section 601** (601) — no translation');
       expect(text).not.toContain('(800)');
       expect(text).not.toContain('(600)');
+    });
+
+    it('does not sell an all-clear while part of the tree went unclassified', async () => {
+      // Category 800 has a published `fr` translation, so the classified half is
+      // clean — but the sections came back without the sideload. "No gaps" as the
+      // bottom line would read as an audited, translated tree.
+      seedTree([], [800]);
+      mswServer.use(
+        http.get(`${HC_BASE}/sections`, () =>
+          HttpResponse.json({
+            sections: [
+              { ...MOCK_SECTION, id: 600, name: 'Section 600' },
+              { ...MOCK_SECTION, id: 601, name: 'Section 601' },
+            ],
+            meta: { has_more: false, after_cursor: '' },
+            count: 2,
+          }),
+        ),
+      );
+      const result = await findTool('find_translation_gaps').handler({ locale: 'fr' });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('## Categories (1 scanned)');
+      expect(text).toContain('## Sections (0 scanned)');
+      expect(text).toContain('2 other node(s) could not be classified');
+      expect(text).toContain('2 of 3 node(s) came back without the `translations` sideload');
     });
 
     it('does not claim an empty level is fully translated', async () => {
@@ -622,58 +675,89 @@ describe('help center tools', () => {
       expect(result.content[0]?.text).not.toContain('is not an active locale');
     });
 
-    it('caps the scan and names what it left out', async () => {
+    it('audits a whole tree without a single per-node request', async () => {
+      // The old scan read `draft` one node at a time and gave up past 60 nodes.
+      // The sideload carries it on the listing itself, so size stops mattering.
+      const { calls } = countPerNodeCalls();
       seedTree(
         Array.from({ length: 61 }, (_, i) => 1000 + i),
-        [800],
+        [800, 801],
       );
       const result = await findTool('find_translation_gaps').handler({ locale: 'fr' });
       const text = result.content[0]?.text ?? '';
-      // 1 category consumes one slot of the 60-node budget, leaving 59 sections.
-      expect(text).toContain('## Sections (59 scanned)');
-      expect(text).toContain('the scan stopped at its 60-node cap');
-      expect(text).toContain('covering 1/1 categories and 59/61 sections');
-      expect(text).toContain('ZENDESK_TRANSLATION_GAP_SCAN_MAX_NODES');
+      expect(calls).toEqual([]);
+      expect(text).toContain('## Sections (61 scanned)');
+      expect(text).toContain('## Categories (2 scanned)');
+      expect(text).not.toContain('left unchecked');
+      expect(text).not.toContain('ZENDESK_TRANSLATION_GAP_SCAN_MAX_NODES');
     });
 
-    it('does not pass off a level the cap never reached as an empty one', async () => {
-      // 60 categories spend the whole budget, so the sections below it are not
-      // scanned at all. Saying "none to scan at this level" there would read as
-      // "this Help Center has no sections", the opposite of the truth.
-      seedTree(
-        [600, 601],
-        Array.from({ length: 60 }, (_, i) => 900 + i),
-      );
-      const result = await findTool('find_translation_gaps').handler({ locale: 'fr' });
-      const text = result.content[0]?.text ?? '';
-      expect(text).toContain('## Sections (0 scanned)');
-      expect(text).not.toContain('_(none to scan at this level)_');
-      expect(text).toContain('the 60-node cap was spent before this level');
-      expect(text).toContain('2 left unchecked');
-      expect(text).toContain('covering 60/60 categories and 0/2 sections');
-    });
-
-    it('probes the tree in bounded waves rather than one burst', async () => {
-      let inFlight = 0;
-      let peak = 0;
-      seedTree(
-        Array.from({ length: 20 }, (_, i) => 1000 + i),
-        [],
-      );
+    it('asks both listings for the translations sideload', async () => {
+      const queries: Record<string, string> = {};
       mswServer.use(
-        http.get(`${HC_BASE}/sections/:id/translations`, async () => {
-          inFlight += 1;
-          peak = Math.max(peak, inFlight);
-          await new Promise((resolve) => setTimeout(resolve, 1));
-          inFlight -= 1;
-          return HttpResponse.json({ translations: [] });
+        http.get(`${HC_BASE}/sections`, ({ request }) => {
+          queries['sections'] = new URL(request.url).searchParams.get('include') ?? '';
+          return HttpResponse.json({
+            sections: withTranslationsSideload(request, 'sections', [MOCK_SECTION]),
+            meta: { has_more: false, after_cursor: '' },
+            count: 1,
+          });
+        }),
+        http.get(`${HC_BASE}/categories`, ({ request }) => {
+          queries['categories'] = new URL(request.url).searchParams.get('include') ?? '';
+          return HttpResponse.json({
+            categories: withTranslationsSideload(request, 'categories', [MOCK_CATEGORY]),
+            meta: { has_more: false, after_cursor: '' },
+            count: 1,
+          });
         }),
       );
+      await findTool('find_translation_gaps').handler({ locale: 'fr' });
+      expect(queries).toEqual({ sections: 'translations', categories: 'translations' });
+    });
+
+    it('reads the draft flag off the sideload, not off a per-node call', async () => {
+      // Section 600's `fr` translation is a draft in the fixtures. Serving the
+      // per-node endpoint an empty list proves the verdict came from the listing:
+      // had the tool called it, 600 would read "no translation" instead.
+      const { calls } = countPerNodeCalls();
+      seedTree([600], [800]);
       const result = await findTool('find_translation_gaps').handler({ locale: 'fr' });
-      // Zendesk caps concurrent requests per account, and one 429 would sink the
-      // whole audit, so the fan-out stays small however many nodes are scanned.
-      expect(peak).toBeLessThanOrEqual(5);
-      expect(result.content[0]?.text).toContain('## Sections (20 scanned)');
+      expect(calls).toEqual([]);
+      expect(result.content[0]?.text).toContain(
+        '**Section 600** (600) — draft translation (not published)',
+      );
+    });
+
+    it('refuses to call a node untranslated when the listing carried no sideload', async () => {
+      // An `include` Zendesk doesn't honour is dropped silently, so the key would
+      // simply be absent. Reading that as "no translation" would report the whole
+      // Help Center as a gap; the audit must own up to what it could not classify.
+      mswServer.use(
+        http.get(`${HC_BASE}/sections`, () =>
+          HttpResponse.json({
+            sections: [
+              { ...MOCK_SECTION, id: 600, name: 'Section 600' },
+              { ...MOCK_SECTION, id: 601, name: 'Section 601' },
+            ],
+            meta: { has_more: false, after_cursor: '' },
+            count: 2,
+          }),
+        ),
+        http.get(`${HC_BASE}/categories`, () =>
+          HttpResponse.json({
+            categories: [{ ...MOCK_CATEGORY, id: 800 }],
+            meta: { has_more: false, after_cursor: '' },
+            count: 1,
+          }),
+        ),
+      );
+      const result = await findTool('find_translation_gaps').handler({ locale: 'fr' });
+      const text = result.content[0]?.text ?? '';
+      expect(text).not.toContain('no translation');
+      expect(text).toContain('## Sections (0 scanned)');
+      expect(text).toContain('came back without the `translations` sideload');
+      expect(text).toContain('3 of 3');
     });
 
     it('flags a tree too large to enumerate from a single listing page', async () => {
@@ -690,37 +774,42 @@ describe('help center tools', () => {
       expect(result.content[0]?.text).toContain('only the first page of each was considered');
     });
 
-    it('asks Zendesk for the audited locale only', async () => {
-      const queries: string[] = [];
-      seedTree([600], [800]);
-      mswServer.use(
-        http.get(`${HC_BASE}/sections/:id/translations`, ({ request }) => {
-          queries.push(new URL(request.url).search);
-          return HttpResponse.json({ translations: [] });
-        }),
-      );
-      await findTool('find_translation_gaps').handler({ locale: 'fr' });
-      expect(queries).toEqual(['?locales=fr']);
+    it('matches the sideloaded locale whatever casing the caller passed', async () => {
+      // Locales come back lower-cased from Zendesk, so a verbatim "FR" would match
+      // nothing and report every node as untranslated while the active-locale check
+      // (case-insensitive) stayed mute. Section 602 has a published `fr` one.
+      seedTree([602], [800]);
+      const result = await findTool('find_translation_gaps').handler({ locale: 'FR' });
+      const text = result.content[0]?.text ?? '';
+      expect(text).not.toContain('(602)');
+      expect(text).toContain('No gaps');
     });
 
-    it("asks for the locale in Zendesk's own casing, whatever the caller passed", async () => {
-      // Locales are stored lower-cased upstream. Should the `locales` filter be
-      // case-sensitive — undocumented either way — a verbatim "FR" would come back
-      // empty and report every node as untranslated, while the active-locale check
-      // (case-insensitive) stayed mute. Normalizing removes the question.
-      const queries: string[] = [];
-      seedTree([600], [800]);
+    it('ignores the locales of nodes it was not asked about', async () => {
+      // The sideload carries every locale, including ones `/locales` does not list
+      // as active (a live tenant returned `en-150`). Only the audited one decides.
+      seedTree([], [800]);
       mswServer.use(
-        http.get(`${HC_BASE}/sections/:id/translations`, ({ request }) => {
-          queries.push(new URL(request.url).search);
-          return HttpResponse.json({
-            translations: [{ ...MOCK_SECTION_TRANSLATION, locale: 'fr', draft: false }],
-          });
-        }),
+        http.get(`${HC_BASE}/sections`, () =>
+          HttpResponse.json({
+            sections: [
+              {
+                ...MOCK_SECTION,
+                id: 600,
+                name: 'Section 600',
+                translations: [
+                  { ...MOCK_SECTION_TRANSLATION, locale: 'en-150', draft: true },
+                  { ...MOCK_SECTION_TRANSLATION, locale: 'fr', draft: false },
+                ],
+              },
+            ],
+            meta: { has_more: false, after_cursor: '' },
+            count: 1,
+          }),
+        ),
       );
-      const result = await findTool('find_translation_gaps').handler({ locale: 'FR' });
-      expect(queries).toEqual(['?locales=fr']);
-      expect(result.content[0]?.text).not.toContain('(600) — no translation');
+      const result = await findTool('find_translation_gaps').handler({ locale: 'fr' });
+      expect(result.content[0]?.text).not.toContain('(600)');
     });
   });
 

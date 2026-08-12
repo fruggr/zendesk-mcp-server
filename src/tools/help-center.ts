@@ -17,7 +17,6 @@ import {
   LARGE_ARTICLE_SECTION_COUNT,
   MAX_PAGE_SIZE,
   REORDER_CONFIRM_THRESHOLD,
-  TRANSLATION_GAP_SCAN_MAX_NODES,
 } from '../constants';
 import { fetchPromotedArticles, LIST_PROMOTED_ARTICLES_TOOL } from '../guidance/article-resources';
 import type {
@@ -212,8 +211,16 @@ const nodeTranslationWriteText = (
 // A gap is no translation at all, or a draft one — different fixes, and
 // `list_sections?locale=…` shows neither. Measured with an admin token (#225): a
 // missing translation is absent there, a DRAFT one is still listed under its
-// draft name. So absence is ambiguous and presence is not "published", hence the
-// per-node probe rather than a listing diff.
+// draft name. So absence is ambiguous and presence is not "published", and the
+// draft flag itself is what decides.
+//
+// That flag rides on the listing: `include=translations` sideloads every locale
+// of every node, `draft` included, agreeing field for field with
+// `GET /{kind}/{id}/translations` on a live tenant, drafts included (#226). Two
+// listings answer for the whole tree, where the per-node read cost one request
+// each and had to stop at a cap.
+const TRANSLATIONS_SIDELOAD = 'translations';
+
 type GapReason = 'missing' | 'draft';
 
 interface TranslationGap {
@@ -242,11 +249,25 @@ interface GapReport {
   activeLocales: string[];
   categoryGaps: TranslationGap[];
   sectionGaps: TranslationGap[];
+  /** Nodes whose translations the listing actually carried, so a verdict is possible. */
   scanned: { categories: number; sections: number };
   found: { categories: number; sections: number };
   /** True when the category or section listing itself spilled past one page. */
   listingIncomplete: boolean;
 }
+
+/**
+ * Split a listing into the nodes that can be classified and the rest. A node
+ * whose `translations` key is absent was answered without the sideload, and
+ * reading that as "no translation" would report an entire Help Center as one big
+ * gap — so it counts as unclassified and the report says how many.
+ */
+const withSideloadedTranslations = <T extends { translations?: ZendeskTranslation[] }>(
+  nodes: T[],
+): (T & { translations: ZendeskTranslation[] })[] =>
+  nodes.filter((node): node is T & { translations: ZendeskTranslation[] } =>
+    Array.isArray(node.translations),
+  );
 
 const renderGapLines = (
   heading: string,
@@ -262,34 +283,16 @@ const renderGapLines = (
     ];
   }
   // Three distinct states, and conflating any two reads as a false all-clear:
-  // nothing at this level, nothing left after the cap, nothing missing.
+  // nothing at this level, nothing the listing could answer for, nothing missing.
   if (scanned === 0) {
     return [
       header,
       found === 0
         ? '_(none to scan at this level)_'
-        : `_(none scanned — the ${TRANSLATION_GAP_SCAN_MAX_NODES}-node cap was spent before this level; ${found} left unchecked, see the note below)_`,
+        : `_(none classified — the listing answered without the sideload for all ${found}, see the note below)_`,
     ];
   }
   return [header, '_(none — every one scanned has a published translation)_'];
-};
-
-// Nodes probed at a time. Zendesk caps concurrent requests per account and one
-// 429 would sink the whole audit, so the burst stays bounded.
-const GAP_SCAN_WAVE_SIZE = 5;
-
-const probeInWaves = async <T>(
-  nodes: T[],
-  probe: (node: T) => Promise<TranslationGap | null>,
-): Promise<TranslationGap[]> => {
-  const gaps: TranslationGap[] = [];
-  for (let i = 0; i < nodes.length; i += GAP_SCAN_WAVE_SIZE) {
-    const wave = await Promise.all(nodes.slice(i, i + GAP_SCAN_WAVE_SIZE).map(probe));
-    for (const gap of wave) {
-      if (gap !== null) gaps.push(gap);
-    }
-  }
-  return gaps;
 };
 
 // Scoping fetches the one category rather than filtering the one-page listing,
@@ -301,10 +304,15 @@ const fetchGapCategories = async (
   categoryId: number | undefined,
 ): Promise<{ categories: ZendeskCategory[]; hasMore: boolean }> => {
   if (categoryId !== undefined) {
+    // Measured on a live tenant, this show endpoint included (#226): the sideload
+    // is embedded in the node here too, not hung off the top level as sideloads
+    // usually are. Reading `category.translations` is therefore the whole story on
+    // the scoped path, not just on the listings.
     const { category } = await helpCenterGet<{ category: ZendeskCategory }>(
       subdomain,
       token,
       `/categories/${categoryId}`,
+      { include: TRANSLATIONS_SIDELOAD },
     );
     return { categories: [category], hasMore: false };
   }
@@ -312,16 +320,34 @@ const fetchGapCategories = async (
     subdomain,
     token,
     '/categories',
-    buildCursorParams(MAX_PAGE_SIZE, undefined),
+    { ...buildCursorParams(MAX_PAGE_SIZE, undefined), include: TRANSLATIONS_SIDELOAD },
   );
   const categories = response.categories ?? [];
   return { categories, hasMore: extractPaginationMeta(response, categories.length).has_more };
 };
 
+// The bottom line, in the states that must not be conflated: gaps found, nothing
+// classifiable (which is not an all-clear), an all-clear over part of the tree
+// (also not one), and a genuine all-clear.
+const renderGapVerdict = (report: GapReport, gapCount: number, unclassified: number): string => {
+  const { locale, scanned } = report;
+  if (gapCount > 0) {
+    return `${gapCount} node(s) need a published "${locale}" translation. Fix a category with set_category_translation and a section with set_section_translation, passing draft: false to publish.`;
+  }
+  if (scanned.categories + scanned.sections === 0 && unclassified > 0) {
+    return `Nothing could be classified, so this audit says nothing about "${locale}" either way. See the note below.`;
+  }
+  const allClear = `No gaps: all ${scanned.categories} category/ies and ${scanned.sections} section(s) scanned have a published "${locale}" translation.`;
+  return unclassified > 0
+    ? `${allClear} This is not a clean bill of health for the whole tree: ${unclassified} other node(s) could not be classified — see the note below.`
+    : allClear;
+};
+
 const renderGapReport = (report: GapReport): string => {
   const { locale, categoryGaps, sectionGaps, scanned, found } = report;
   const gapCount = categoryGaps.length + sectionGaps.length;
-  const capped = scanned.categories < found.categories || scanned.sections < found.sections;
+  const totalFound = found.categories + found.sections;
+  const unclassified = totalFound - (scanned.categories + scanned.sections);
   return truncateIfNeeded(
     [
       `# Translation gaps — "${locale}"`,
@@ -338,13 +364,11 @@ const renderGapReport = (report: GapReport): string => {
       '',
       ...renderGapLines('Sections', sectionGaps, scanned.sections, found.sections),
       '',
-      gapCount === 0
-        ? `No gaps: all ${scanned.categories} category/ies and ${scanned.sections} section(s) scanned have a published "${locale}" translation.`
-        : `${gapCount} node(s) need a published "${locale}" translation. Fix a category with set_category_translation and a section with set_section_translation, passing draft: false to publish.`,
-      ...(capped
+      renderGapVerdict(report, gapCount, unclassified),
+      ...(unclassified > 0
         ? [
             '',
-            `_Note: the scan stopped at its ${TRANSLATION_GAP_SCAN_MAX_NODES}-node cap, covering ${scanned.categories}/${found.categories} categories and ${scanned.sections}/${found.sections} sections. The rest were not checked — narrow the scan with category_id, or raise ZENDESK_TRANSLATION_GAP_SCAN_MAX_NODES._`,
+            `_Note: ${unclassified} of ${totalFound} node(s) came back without the \`translations\` sideload, so their state is unknown and none of them is reported above (covered: ${scanned.categories}/${found.categories} categories, ${scanned.sections}/${found.sections} sections). Read one of them with list_category_translations / list_section_translations, which query the node directly._`,
           ]
         : []),
       ...(report.listingIncomplete
@@ -1181,7 +1205,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: true,
       title: 'Find Help Center Translation Gaps',
       description:
-        'Audit the Help Center tree for a target locale and report every category and section that has no translation, or one that is still an unpublished draft. Use it before or after translating articles: an article published in a second locale is unreachable while its parent section only exists in the source locale. Listing sections in that locale cannot answer this — a node with no translation is simply absent, without saying why, and a node whose translation is an unpublished draft may still be listed under its draft name — so this audit reads the draft flag on each node instead of trusting that listing. Costs one extra request per node scanned, capped (the report says so when the cap bites) — pass category_id to narrow it. Fix what it reports with set_section_translation / set_category_translation.',
+        'Audit the Help Center tree for a target locale and report every category and section that has no translation, or one that is still an unpublished draft. Use it before or after translating articles: an article published in a second locale is unreachable while its parent section only exists in the source locale. Listing sections in that locale cannot answer this — a node with no translation is simply absent, without saying why, and a node whose translation is an unpublished draft may still be listed under its draft name — so this audit reads the draft flag on each node instead of trusting that listing. Costs two listings and covers up to 100 categories and 100 sections; past that only the first page of each level is audited, and the report says so — pass category_id to narrow it. Fix what it reports with set_section_translation / set_category_translation.',
       inputSchema: z.object({
         locale: z
           .string()
@@ -1193,7 +1217,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           .int()
           .optional()
           .describe(
-            'Restrict the audit to this category and the sections it contains (id from list_categories). Omit to sweep the whole tree, which costs one request per category and per section.',
+            'Restrict the audit to this category and the sections it contains (id from list_categories). Omit to sweep the whole tree, which costs two listings and covers up to 100 categories and 100 sections.',
           ),
       }),
       annotations: {
@@ -1212,35 +1236,20 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
             subdomain,
             token,
             sectionListPath(category_id, undefined),
-            buildCursorParams(MAX_PAGE_SIZE, undefined),
+            { ...buildCursorParams(MAX_PAGE_SIZE, undefined), include: TRANSLATIONS_SIDELOAD },
           ),
         ]);
 
         const allCategories = categoryScope.categories;
         const allSections = sectionsRes.sections ?? [];
+        const categories = withSideloadedTranslations(allCategories);
+        const sections = withSideloadedTranslations(allSections);
 
-        // Categories first, sections with whatever budget is left: a caller
-        // auditing a bilingual tree cares most about the top of it, and the note
-        // in the report names exactly what went unscanned.
-        const categories = allCategories.slice(0, TRANSLATION_GAP_SCAN_MAX_NODES);
-        const sections = allSections.slice(
-          0,
-          Math.max(0, TRANSLATION_GAP_SCAN_MAX_NODES - categories.length),
+        const categoryGaps = categories.flatMap(
+          (category) => classifyGap(category, category.translations, locale) ?? [],
         );
-
-        const categoryGaps = await probeInWaves(categories, async (category) =>
-          classifyGap(
-            category,
-            await listNodeTranslations(subdomain, token, 'categories', category.id, locale),
-            locale,
-          ),
-        );
-        const sectionGaps = await probeInWaves(sections, async (section) =>
-          classifyGap(
-            section,
-            await listNodeTranslations(subdomain, token, 'sections', section.id, locale),
-            locale,
-          ),
+        const sectionGaps = sections.flatMap(
+          (section) => classifyGap(section, section.translations, locale) ?? [],
         );
 
         return {

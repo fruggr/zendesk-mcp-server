@@ -6,8 +6,8 @@ clear:
 
 1. **New tool.** Does its definition meet the quality bar the [Glama
    score](https://glama.ai/mcp/servers/fruggr/zendesk-mcp-server) grades us on?
-2. **Tool change.** Does the JSON Schema we expose to agents stay a superset of
-   what it was (no regression)?
+2. **Tool change.** Does the JSON Schema we expose to agents still carry
+   everything an agent could depend on (no regression)?
 
 The Glama score is the badge at the top of `README.md`; it is a public,
 agent-facing signal of how usable our tools are, so we treat its criteria as a
@@ -93,11 +93,12 @@ exactly which dimension regressed.
 Agents consume our Zod schemas as **JSON Schema draft-07**. We author schemas
 with `zod/v4` (see `src/tools/*`); the MCP SDK serializes them to draft-07
 internally via zod v4's mini/`toJSONSchema` path, so you don't import `v4-mini`
-yourself. A change is *multi-agent-safe* only when the exposed schema stays a
-**superset** of the previous one:
+yourself. A change is *multi-agent-safe* only when the exposed schema keeps
+everything an agent could depend on:
 
-- **Never remove or shorten** an existing param `description` or the tool
-  description: a stricter agent may key off exact text. Enriching is fine.
+- **Never drop what a description said** — unless it became false, where fixing
+  it outranks preserving it. Fewer words for the same facts is a win: this is
+  prompt text, re-read on every `tools/list`, not a contract.
 - **Never drop** a `required` field or loosen a type in a way that changes the
   emitted schema shape.
 - **Adding constraints is an enrichment, not a regression.** Tightening
@@ -106,6 +107,8 @@ yourself. A change is *multi-agent-safe* only when the exposed schema stays a
   identical (verified on PR #110). That is exactly the kind of change we want.
 
 **How to verify:** dump the tool's JSON Schema before and after the change and
-diff it. The diff must be additive only (new keys and constraints), with existing
-`description` strings unchanged. If a field disappears or a description string
-differs, it is a regression. Stop and rethink.
+diff it. Keys and constraints must be additive only; a field that disappears or
+a type that loosens is a regression. Stop and rethink. For a `description` that
+differs, ask what an agent knew before and no longer knows — nothing missing is
+fine, however much shorter. One that may only ever grow fails
+`Conciseness & Structure` above.

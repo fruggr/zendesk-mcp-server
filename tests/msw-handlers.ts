@@ -300,6 +300,24 @@ const CATEGORY_TRANSLATIONS: Record<string, Record<string, unknown>[]> = {
   '801': [{ ...MOCK_CATEGORY_TRANSLATION, id: 7202, source_id: 801, title: 'Legal' }],
 };
 
+/**
+ * Apply the `translations` sideload the way a live tenant does (measured in #226):
+ * every locale of the node, `draft` included, embedded **in the node itself** rather
+ * than in a top-level array keyed by `source_id`. An `include` Zendesk doesn't know
+ * is ignored silently — no error, no key — so the key stays absent unless asked for,
+ * which is what lets a test exercise a listing that answers without the sideload.
+ */
+export const withTranslationsSideload = <T extends { id: number }>(
+  request: Request,
+  kind: 'sections' | 'categories',
+  nodes: T[],
+): (T | (T & { translations: Record<string, unknown>[] }))[] => {
+  const include = new URL(request.url).searchParams.get('include') ?? '';
+  if (!include.split(',').includes('translations')) return nodes;
+  const table = kind === 'sections' ? SECTION_TRANSLATIONS : CATEGORY_TRANSLATIONS;
+  return nodes.map((node) => ({ ...node, translations: table[String(node.id)] ?? [] }));
+};
+
 const readTranslationPayload = async (request: Request): Promise<Record<string, unknown>> => {
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   return (body['translation'] as Record<string, unknown> | undefined) ?? {};
@@ -906,9 +924,9 @@ export const handlers = [
   ),
 
   // Help Center - Categories & Sections
-  http.get(`${HC_BASE}/categories`, () =>
+  http.get(`${HC_BASE}/categories`, ({ request }) =>
     HttpResponse.json({
-      categories: [MOCK_CATEGORY],
+      categories: withTranslationsSideload(request, 'categories', [MOCK_CATEGORY]),
       meta: { has_more: false, after_cursor: '' },
       count: 1,
     }),
@@ -920,12 +938,16 @@ export const handlers = [
       count: 1,
     }),
   ),
-  http.get(`${HC_BASE}/categories/:id`, ({ params }) =>
-    HttpResponse.json({ category: { ...MOCK_CATEGORY, id: Number(params['id']) } }),
-  ),
-  http.get(`${HC_BASE}/sections`, () =>
+  http.get(`${HC_BASE}/categories/:id`, ({ params, request }) =>
     HttpResponse.json({
-      sections: [MOCK_SECTION],
+      category: withTranslationsSideload(request, 'categories', [
+        { ...MOCK_CATEGORY, id: Number(params['id']) },
+      ])[0],
+    }),
+  ),
+  http.get(`${HC_BASE}/sections`, ({ request }) =>
+    HttpResponse.json({
+      sections: withTranslationsSideload(request, 'sections', [MOCK_SECTION]),
       meta: { has_more: false, after_cursor: '' },
       count: 1,
     }),
@@ -937,9 +959,9 @@ export const handlers = [
       count: 1,
     }),
   ),
-  http.get(`${HC_BASE}/categories/:cid/sections`, () =>
+  http.get(`${HC_BASE}/categories/:cid/sections`, ({ request }) =>
     HttpResponse.json({
-      sections: [MOCK_SECTION],
+      sections: withTranslationsSideload(request, 'sections', [MOCK_SECTION]),
       meta: { has_more: false, after_cursor: '' },
       count: 1,
     }),

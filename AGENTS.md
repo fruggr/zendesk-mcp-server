@@ -144,10 +144,11 @@ tool** must meet the Glama Tool Definition Quality bar (clear purpose, usage
 guidelines, stated side effects, per-parameter `.describe()`) and keep the tool
 set coherent (naming, disambiguation, no needless duplication) — the server
 score is `60% mean + 40% min`, so one weak tool drags the whole surface down.
-Every **tool change** must keep the exposed JSON Schema (draft-07) a *superset*
-of the previous one: enrich freely, but never drop a field, loosen a type, or
-shorten an existing description. Criteria, the checklist and how to diff the
-schema: `docs/mcp-metadata.md`.
+Every **tool change** must keep what agents depend on in the exposed JSON Schema
+(draft-07): never drop a field or loosen a type, and never drop what a
+description said — though saying it in fewer words is a win, and fixing a false
+one is a duty. Criteria, the checklist and how to diff the schema:
+`docs/mcp-metadata.md`.
 
 ## Documentation maintenance
 
