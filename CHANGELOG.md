@@ -1,3 +1,9 @@
+## [2.17.2](https://github.com/fruggr/zendesk-mcp-server/compare/v2.17.1...v2.17.2) (2026-08-12)
+
+### Performance Improvements
+
+* **help-center:** classify translation gaps from the listing sideload ([#226](https://github.com/fruggr/zendesk-mcp-server/issues/226)) ([f5b9ce2](https://github.com/fruggr/zendesk-mcp-server/commit/f5b9ce2ce838a35e8629f37c45d0b2b4d5b5589b))
+
 ## [2.17.1](https://github.com/fruggr/zendesk-mcp-server/compare/v2.17.0...v2.17.1) (2026-08-12)
 
 ### Bug Fixes
