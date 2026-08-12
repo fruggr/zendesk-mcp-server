@@ -1,3 +1,17 @@
+## [2.17.1](https://github.com/fruggr/zendesk-mcp-server/compare/v2.17.0...v2.17.1) (2026-08-12)
+
+### Bug Fixes
+
+* **config:** fail loudly on flags and env vars with a missing or empty value ([#218](https://github.com/fruggr/zendesk-mcp-server/issues/218)) ([2813f55](https://github.com/fruggr/zendesk-mcp-server/commit/2813f558ac558f223f34a77961d6d3b7ea0f94ac))
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Chores
+
+* **deps:** cut transitive remediation from 14 to 9 days ([#230](https://github.com/fruggr/zendesk-mcp-server/issues/230)) ([828c5de](https://github.com/fruggr/zendesk-mcp-server/commit/828c5ded2fd3376acc732cab4aa1d34c71fdfea5))
+</details>
+
 ## [2.17.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.16.1...v2.17.0) (2026-08-11)
 
 ### Features
