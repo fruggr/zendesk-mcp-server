@@ -246,6 +246,65 @@ export const MOCK_SECTION = {
   updated_at: '2026-01-02T00:00:00Z',
 };
 
+// Translations of a section / a category. Same endpoint family as the article
+// ones, but `title` carries the localized *name* and `body` the localized
+// *description*.
+export const MOCK_SECTION_TRANSLATION = {
+  id: 7100,
+  locale: 'en-us',
+  title: 'FAQ',
+  body: 'Frequently asked questions',
+  draft: false,
+  created_at: '2026-01-01T00:00:00Z',
+  updated_at: '2026-01-02T00:00:00Z',
+  source_id: 600,
+  source_type: 'Section',
+};
+
+export const MOCK_CATEGORY_TRANSLATION = {
+  ...MOCK_SECTION_TRANSLATION,
+  id: 7200,
+  title: 'General',
+  body: 'General category',
+  source_id: 800,
+  source_type: 'Category',
+};
+
+// Keyed by node id so one listing can exercise all three states the gap scan
+// distinguishes: a published target translation, a draft one, and none at all.
+// 600 / 800 are the ids the section and category list fixtures return.
+const SECTION_TRANSLATIONS: Record<string, Record<string, unknown>[]> = {
+  '600': [
+    MOCK_SECTION_TRANSLATION,
+    { ...MOCK_SECTION_TRANSLATION, id: 7101, locale: 'fr', title: 'FAQ (fr)', draft: true },
+  ],
+  '601': [{ ...MOCK_SECTION_TRANSLATION, id: 7102, source_id: 601, title: 'Billing' }],
+  '602': [
+    { ...MOCK_SECTION_TRANSLATION, id: 7103, source_id: 602, title: 'Pricing' },
+    {
+      ...MOCK_SECTION_TRANSLATION,
+      id: 7104,
+      source_id: 602,
+      locale: 'fr',
+      title: 'Tarifs',
+      draft: false,
+    },
+  ],
+};
+
+const CATEGORY_TRANSLATIONS: Record<string, Record<string, unknown>[]> = {
+  '800': [
+    MOCK_CATEGORY_TRANSLATION,
+    { ...MOCK_CATEGORY_TRANSLATION, id: 7201, locale: 'fr', title: 'Général', draft: false },
+  ],
+  '801': [{ ...MOCK_CATEGORY_TRANSLATION, id: 7202, source_id: 801, title: 'Legal' }],
+};
+
+const readTranslationPayload = async (request: Request): Promise<Record<string, unknown>> => {
+  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+  return (body['translation'] as Record<string, unknown> | undefined) ?? {};
+};
+
 export const MOCK_PERMISSION_GROUP = {
   id: 12001,
   name: 'Editors',
@@ -861,6 +920,9 @@ export const handlers = [
       count: 1,
     }),
   ),
+  http.get(`${HC_BASE}/categories/:id`, ({ params }) =>
+    HttpResponse.json({ category: { ...MOCK_CATEGORY, id: Number(params['id']) } }),
+  ),
   http.get(`${HC_BASE}/sections`, () =>
     HttpResponse.json({
       sections: [MOCK_SECTION],
@@ -882,4 +944,58 @@ export const handlers = [
       count: 1,
     }),
   ),
+
+  // Help Center - Section & Category translations. The write handlers echo the
+  // submitted `translation` object back over the fixture, so a test can assert
+  // which fields the tool actually sent (and, by omission, which it left alone).
+  http.get(`${HC_BASE}/sections/:id/translations`, ({ params }) =>
+    HttpResponse.json({ translations: SECTION_TRANSLATIONS[String(params['id'])] ?? [] }),
+  ),
+  http.post(`${HC_BASE}/sections/:id/translations`, async ({ request, params }) => {
+    const submitted = await readTranslationPayload(request);
+    return HttpResponse.json({
+      translation: {
+        ...MOCK_SECTION_TRANSLATION,
+        id: 7150,
+        source_id: Number(params['id']),
+        ...submitted,
+      },
+    });
+  }),
+  http.put(`${HC_BASE}/sections/:id/translations/:locale`, async ({ request, params }) => {
+    const submitted = await readTranslationPayload(request);
+    return HttpResponse.json({
+      translation: {
+        ...MOCK_SECTION_TRANSLATION,
+        source_id: Number(params['id']),
+        locale: params['locale'] as string,
+        ...submitted,
+      },
+    });
+  }),
+  http.get(`${HC_BASE}/categories/:id/translations`, ({ params }) =>
+    HttpResponse.json({ translations: CATEGORY_TRANSLATIONS[String(params['id'])] ?? [] }),
+  ),
+  http.post(`${HC_BASE}/categories/:id/translations`, async ({ request, params }) => {
+    const submitted = await readTranslationPayload(request);
+    return HttpResponse.json({
+      translation: {
+        ...MOCK_CATEGORY_TRANSLATION,
+        id: 7250,
+        source_id: Number(params['id']),
+        ...submitted,
+      },
+    });
+  }),
+  http.put(`${HC_BASE}/categories/:id/translations/:locale`, async ({ request, params }) => {
+    const submitted = await readTranslationPayload(request);
+    return HttpResponse.json({
+      translation: {
+        ...MOCK_CATEGORY_TRANSLATION,
+        source_id: Number(params['id']),
+        locale: params['locale'] as string,
+        ...submitted,
+      },
+    });
+  }),
 ];

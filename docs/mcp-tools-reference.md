@@ -48,6 +48,9 @@ out every `write` tool before the proxies are built.
 | `list_articles` | List articles with sorting and translation info | read |
 | `list_promoted_articles` | List the promoted ("featured") articles (scans + filters client-side, page-capped) | read |
 | `list_article_translations` | List available translations for an article | read |
+| `list_section_translations` | List a section's translations with their draft state, telling an untranslated section apart from an unpublished one | read |
+| `list_category_translations` | List a category's translations with their draft state, telling an untranslated category apart from an unpublished one | read |
+| `find_translation_gaps` | Audit a locale across every category **and** every section, reporting each one that has no translation or only an unpublished draft; scope it to one category with `category_id` (one request per node scanned, capped) | read |
 | `list_article_attachments` | List attachments on an article | read |
 | `list_permission_groups` | List Guide permission groups (needed to create articles; requires Guide-admin / Help Center manager rights) | read |
 | `list_content_tags` | List Guide content tags (end-user visible), cursor-paginated with name-prefix filter and sort | read |
@@ -60,6 +63,8 @@ out every `write` tool before the proxies are built.
 | `archive_article` | Archive (soft-delete) an article; recoverable only via the Guide admin UI | write |
 | `create_article_translation` | Create a translation for an article | write |
 | `update_article_translation` | Update an article's translation (full body) | write |
+| `set_section_translation` | Create or publish a section's translation in one locale (creates when absent, updates otherwise; only the fields passed are written) | write |
+| `set_category_translation` | Create or publish a category's translation in one locale (creates when absent, updates otherwise; only the fields passed are written) | write |
 | `update_article_section` | Replace a single section of an article | write |
 | `create_content_tag` | Create a new Guide content tag | write |
 | `create_article_attachment` | Upload a file to a Help Center article (returns the created attachment) | write |

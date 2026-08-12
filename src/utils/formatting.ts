@@ -402,6 +402,21 @@ export const formatTranslationSummary = (translation: ZendeskTranslation): strin
 export const formatTranslation = (translation: ZendeskTranslation): string =>
   [formatTranslationSummary(translation), '', translation.body].join('\n');
 
+// Translations of a section or a category, which reuse the article translation
+// object with different meanings: `title` is the localized *name* and `body` the
+// localized *description*. Rendered with the vocabulary list_sections /
+// list_categories already use, so the caller never has to map the two. The
+// description is reported as present/absent rather than inlined — it is metadata
+// here, not content, and Zendesk leaves it empty when unset.
+export const formatNodeTranslationSummary = (translation: ZendeskTranslation): string =>
+  [
+    `## Translation: ${translation.locale} (${translation.id})`,
+    `- **Name**: ${translation.title}`,
+    `- **Description**: ${translation.body ? 'set' : 'empty'}`,
+    `- **Draft**: ${translation.draft}`,
+    `- **Updated**: ${translation.updated_at}`,
+  ].join('\n');
+
 export const formatCategory = (category: ZendeskCategory): string =>
   `- **${category.name}** (${category.id}) — ${category.description || 'No description'}`;
 

@@ -717,7 +717,7 @@ they can touch and restores it afterwards, including on Ctrl-C.
 The mapping was derived mechanically rather than read off a comparison table:
 
 ```sh
-# 1. Both toolchains at their latest release (bypasses the 7-day cooldown)
+# 1. Both toolchains at their latest release (bypasses the release-age cooldown)
 pnpm add -D --config.minimumReleaseAge=0 \
   @biomejs/biome@latest oxlint@latest oxfmt@latest oxlint-tsgolint@latest
 
@@ -760,4 +760,4 @@ git show <commit-before-removal>:.oxfmtrc.json > .oxfmtrc.json
 ```
 
 The `--config.minimumReleaseAge=0` bypass is for one-off evaluation only; the
-7-day cooldown in `pnpm-workspace.yaml` stays in force for real dependencies.
+cooldown in `pnpm-workspace.yaml` stays in force for real dependencies.

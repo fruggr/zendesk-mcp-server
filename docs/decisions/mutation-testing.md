@@ -116,9 +116,8 @@ explicitly in `plugins` instead.
 
 > **This is wired.** `.github/workflows/mutation.yml` implements it, backed by
 > `stryker.config.mjs`, `scripts/mutation-scope.mjs` and the `pnpm test:mutation`
-> script. The gate runs on every pull request but **does not block a merge until
-> branch protection marks the `Changed lines` check required** — flip that once
-> one real PR has been through it.
+> script. The gate runs on every pull request and **does block a merge**: the
+> ruleset on `main` lists `Changed lines` as a required status check.
 
 The Vitest runner only supports `threads: true` and sets the pool itself,
 overriding this repo's default (`forks`). The suite passes under both — 10.2 s
