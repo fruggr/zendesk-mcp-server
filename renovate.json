@@ -12,9 +12,10 @@
   "minimumReleaseAge": "5 days",
   "internalChecksFilter": "strict",
   "lockFileMaintenance": {
+    "description": "Twice a week, because this run is the only remediation path for transitive dependencies and a weekly one left the worst case at 12 days: a fix published just after a Friday run waited for the next Friday. Tuesday and Friday brings the worst case to 9 days and the average to 7, which is most of the gain on offer. A third slot would only buy one more day, and a daily run bottoms out at 6 (the 5-day pnpm gate plus up to a day of waiting) for seven times the CI. Cron rather than the plain-English form, which Renovate has deprecated (@breejs/later) and may remove in a future major: '* 0-7 * * 2,5' means any hour from midnight to 07:59 on Tuesday and Friday, in the timezone below. Renovate treats schedule as a filter on when a branch may be created, not as a trigger, so the window is kept 8 hours wide, well above the 3 to 4 hours Renovate asks for to avoid consistently missing a run.",
     "enabled": true,
     "automerge": true,
-    "schedule": ["before 8am on friday"],
+    "schedule": ["* 0-7 * * 2,5"],
     "timezone": "Europe/Paris"
   },
   "vulnerabilityAlerts": {
