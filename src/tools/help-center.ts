@@ -304,6 +304,10 @@ const fetchGapCategories = async (
   categoryId: number | undefined,
 ): Promise<{ categories: ZendeskCategory[]; hasMore: boolean }> => {
   if (categoryId !== undefined) {
+    // Measured on a live tenant, this show endpoint included (#226): the sideload
+    // is embedded in the node here too, not hung off the top level as sideloads
+    // usually are. Reading `category.translations` is therefore the whole story on
+    // the scoped path, not just on the listings.
     const { category } = await helpCenterGet<{ category: ZendeskCategory }>(
       subdomain,
       token,
@@ -322,17 +326,21 @@ const fetchGapCategories = async (
   return { categories, hasMore: extractPaginationMeta(response, categories.length).has_more };
 };
 
-// The bottom line, in the three states that must not be conflated: gaps found,
-// nothing classifiable (which is not an all-clear), and a genuine all-clear.
-const renderGapVerdict = (report: GapReport, gapCount: number): string => {
-  const { locale, scanned, found } = report;
+// The bottom line, in the states that must not be conflated: gaps found, nothing
+// classifiable (which is not an all-clear), an all-clear over part of the tree
+// (also not one), and a genuine all-clear.
+const renderGapVerdict = (report: GapReport, gapCount: number, unclassified: number): string => {
+  const { locale, scanned } = report;
   if (gapCount > 0) {
     return `${gapCount} node(s) need a published "${locale}" translation. Fix a category with set_category_translation and a section with set_section_translation, passing draft: false to publish.`;
   }
-  if (scanned.categories + scanned.sections === 0 && found.categories + found.sections > 0) {
+  if (scanned.categories + scanned.sections === 0 && unclassified > 0) {
     return `Nothing could be classified, so this audit says nothing about "${locale}" either way. See the note below.`;
   }
-  return `No gaps: all ${scanned.categories} category/ies and ${scanned.sections} section(s) scanned have a published "${locale}" translation.`;
+  const allClear = `No gaps: all ${scanned.categories} category/ies and ${scanned.sections} section(s) scanned have a published "${locale}" translation.`;
+  return unclassified > 0
+    ? `${allClear} This is not a clean bill of health for the whole tree: ${unclassified} other node(s) could not be classified — see the note below.`
+    : allClear;
 };
 
 const renderGapReport = (report: GapReport): string => {
@@ -356,7 +364,7 @@ const renderGapReport = (report: GapReport): string => {
       '',
       ...renderGapLines('Sections', sectionGaps, scanned.sections, found.sections),
       '',
-      renderGapVerdict(report, gapCount),
+      renderGapVerdict(report, gapCount, unclassified),
       ...(unclassified > 0
         ? [
             '',

@@ -625,6 +625,31 @@ describe('help center tools', () => {
       expect(text).not.toContain('(600)');
     });
 
+    it('does not sell an all-clear while part of the tree went unclassified', async () => {
+      // Category 800 has a published `fr` translation, so the classified half is
+      // clean — but the sections came back without the sideload. "No gaps" as the
+      // bottom line would read as an audited, translated tree.
+      seedTree([], [800]);
+      mswServer.use(
+        http.get(`${HC_BASE}/sections`, () =>
+          HttpResponse.json({
+            sections: [
+              { ...MOCK_SECTION, id: 600, name: 'Section 600' },
+              { ...MOCK_SECTION, id: 601, name: 'Section 601' },
+            ],
+            meta: { has_more: false, after_cursor: '' },
+            count: 2,
+          }),
+        ),
+      );
+      const result = await findTool('find_translation_gaps').handler({ locale: 'fr' });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('## Categories (1 scanned)');
+      expect(text).toContain('## Sections (0 scanned)');
+      expect(text).toContain('2 other node(s) could not be classified');
+      expect(text).toContain('2 of 3 node(s) came back without the `translations` sideload');
+    });
+
     it('does not claim an empty level is fully translated', async () => {
       seedTree([], [800]);
       const result = await findTool('find_translation_gaps').handler({ locale: 'fr' });
