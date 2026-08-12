@@ -1205,7 +1205,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: true,
       title: 'Find Help Center Translation Gaps',
       description:
-        'Audit the Help Center tree for a target locale and report every category and section that has no translation, or one that is still an unpublished draft. Use it before or after translating articles: an article published in a second locale is unreachable while its parent section only exists in the source locale. Listing sections in that locale cannot answer this — a node with no translation is simply absent, without saying why, and a node whose translation is an unpublished draft may still be listed under its draft name — so this audit reads the draft flag on each node instead of trusting that listing. It gets that flag from the listings themselves, which sideload every locale of every node along with its draft state, so a whole tree costs one category listing plus one section listing however many nodes it holds — pass category_id to audit a single branch anyway. Should a listing come back without those translations, the report says how many nodes it could not classify rather than passing them off as untranslated. Fix what it reports with set_section_translation / set_category_translation.',
+        'Audit the Help Center tree for a target locale and report every category and section that has no translation, or one that is still an unpublished draft. Use it before or after translating articles: an article published in a second locale is unreachable while its parent section only exists in the source locale. Listing sections in that locale cannot answer this — a node with no translation is simply absent, without saying why, and a node whose translation is an unpublished draft may still be listed under its draft name — so this audit reads the draft flag on each node instead of trusting that listing. It gets that flag from the listings themselves, which sideload every locale of every node along with its draft state, so one category listing plus one section listing audit up to 100 categories and 100 sections, however many translations each of them carries. A Help Center larger than that is covered for the first page of each level only, and the report says so — pass category_id to audit a single branch instead. Should a listing come back without those translations, the report says how many nodes it could not classify rather than passing them off as untranslated. Fix what it reports with set_section_translation / set_category_translation.',
       inputSchema: z.object({
         locale: z
           .string()
@@ -1217,7 +1217,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           .int()
           .optional()
           .describe(
-            'Restrict the audit to this category and the sections it contains (id from list_categories). Omit to sweep the whole tree, which costs one category listing plus one section listing however many categories and sections it holds.',
+            'Restrict the audit to this category and the sections it contains (id from list_categories). Omit to sweep the whole tree, which costs one category listing plus one section listing and covers up to 100 categories and 100 sections; past that only the first page of each level is audited, which the report flags.',
           ),
       }),
       annotations: {

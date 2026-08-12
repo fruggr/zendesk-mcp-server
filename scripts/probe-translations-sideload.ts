@@ -47,7 +47,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { loadToken, resolveTokenPath } from '../src/auth/token-persistence';
-import { helpCenterGet } from '../src/client/zendesk-api';
+import { helpCenterGet, zendeskGet } from '../src/client/zendesk-api';
 
 const [cliLocale, cliSample] = process.argv.slice(2);
 if (cliSample !== undefined && !/^\d+$/.test(cliSample)) {
@@ -64,8 +64,10 @@ const resolveSubdomain = (): string => {
   const fromEnv = process.env['ZENDESK_SUBDOMAIN'];
   if (fromEnv) return fromEnv;
   try {
-    const mcp = JSON.parse(readFileSync(new URL('../.mcp.json', import.meta.url), 'utf8'));
-    const sub = mcp?.mcpServers?.['zendesk-local']?.env?.ZENDESK_SUBDOMAIN;
+    const mcp: unknown = JSON.parse(readFileSync(new URL('../.mcp.json', import.meta.url), 'utf8'));
+    const servers = (mcp as { mcpServers?: Record<string, { env?: Record<string, unknown> }> })
+      .mcpServers;
+    const sub = servers?.['zendesk-local']?.env?.['ZENDESK_SUBDOMAIN'];
     if (typeof sub === 'string' && sub) return sub;
   } catch {
     // fall through to the error below
@@ -131,8 +133,15 @@ const diffTranslations = (
 ): { equal: boolean; details: Json } => {
   const localesOf = (list: Json[]): string[] =>
     list.map((t) => String(t['locale']).toLowerCase()).sort(byLocale);
+  // Sorted, because these are compared through JSON.stringify: neither endpoint
+  // documents an order, and two identical maps built in a different order would
+  // stringify differently and report a mismatch that isn't one.
   const draftsOf = (list: Json[]): Json =>
-    Object.fromEntries(list.map((t) => [String(t['locale']).toLowerCase(), t['draft']]));
+    Object.fromEntries(
+      list
+        .map((t): [string, unknown] => [String(t['locale']).toLowerCase(), t['draft']])
+        .sort(([a], [b]) => byLocale(a, b)),
+    );
 
   const sideLocales = localesOf(sideloaded);
   const nodeLocales = localesOf(perNode);
@@ -281,13 +290,33 @@ const probeLevel = async (
     })),
   );
 
-  // (4) Pagination with the sideload — unchanged meta, nothing truncated?
+  // (4) Pagination with the sideload — unchanged meta, nothing truncated? Printing
+  // the cursors only would answer "is there a next page", not the question the
+  // issue asks, which is whether the sideload survives on it. So follow one page
+  // when there is one, and say plainly when there wasn't one to follow.
+  const meta = (response['meta'] as Json | undefined) ?? {};
+  const cursor = meta['has_more'] === true ? String(meta['after_cursor'] ?? '') : '';
+  const nextPage = cursor
+    ? await helpCenterGet<Json>(subdomain, token, `/${kind}`, {
+        include: 'translations',
+        'page[size]': '100',
+        'page[after]': cursor,
+      })
+    : undefined;
+  const nextNodes = nextPage ? ((nextPage[kind] as Json[] | undefined) ?? []) : [];
   dump('(4) PAGINATION with the sideload', {
     returned: nodes.length,
     count: response['count'],
     next_page: response['next_page'],
     meta: response['meta'],
     links: response['links'],
+    second_page: nextPage
+      ? {
+          returned: nextNodes.length,
+          nodes_with_translations_key: nextNodes.filter((n) => 'translations' in n).length,
+          every_translation_has_draft: nextNodes.flatMap(translationsOf).every((t) => 'draft' in t),
+        }
+      : '(single page on this tenant — the sideload under pagination is UNVERIFIED here)',
   });
 
   // THE cross-check: sideload vs. per-node endpoint, field by field. Nodes whose
@@ -348,7 +377,9 @@ const main = async (): Promise<void> => {
   // (0) Token identity — draft translations are only visible to an agent/admin, so
   // an end-user token would make every draft look absent. Print the role.
   try {
-    const me = await helpCenterGet<Json>(subdomain, token, '/users/me');
+    // Identity lives under /api/v2, not /api/v2/help_center — helpCenterGet would
+    // 404 here and swallow the role in the catch below.
+    const me = await zendeskGet<Json>(subdomain, token, '/users/me');
     const user = (me['user'] as Json | undefined) ?? me;
     dump('GET /users/me — token identity (drafts need agent/admin)', {
       id: user['id'],
@@ -416,7 +447,11 @@ const main = async (): Promise<void> => {
       sideloaded_translations_total: all.length,
       locales_in_sideload: [...new Set(all.map((t) => String(t['locale']).toLowerCase()))].sort(),
       every_translation_has_draft: all.length > 0 && all.every((t) => 'draft' in t),
-      first_translation: all[0] ?? '(none)',
+      // Digested, not verbatim: this output is meant to be pasted into a public
+      // issue, and the header promises localized content stays a preview. The
+      // field names carry what this dump is actually for.
+      first_translation: all[0] ? digest(all[0]) : '(none)',
+      first_translation_field_names: all[0] ? Object.keys(all[0]).sort() : '(none)',
     });
   } catch (e) {
     console.log(`(locale-prefixed listing failed: ${e instanceof Error ? e.message : e})`);
