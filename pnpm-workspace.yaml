@@ -6,24 +6,19 @@ allowBuilds:
   lefthook: false
   msw: true
 
-minimumReleaseAge: 10080
+# 5 days. This is the gate that governs transitive dependencies: Renovate does
+# not manage them, so a vulnerable indirect package is only ever bumped by the
+# weekly lockFileMaintenance run, and pnpm refuses any version younger than this
+# when that run resolves the tree. Supply-chain compromises are typically caught
+# and yanked within 24-48h, so 7 days bought little over 5 while adding two days
+# to every remediation.
+minimumReleaseAge: 7200
 
 overrides:
   ip-address: ^10.2.0
   conventional-changelog-writer: ^9.2.0
-
-# TEMPORARY — delete on or after 2026-08-09, then re-run `pnpm install`.
-# pnpm re-checks minimumReleaseAge against the lockfile on every command, not
-# just install, so the just-published yuku 0.8.3 (first release with an upstream
-# android-arm64 binding) would fail CI for everyone until its 7-day gate clears.
-# yuku only; every other package keeps the full gate.
-# Pinned to 0.8.3 so a later yuku still faces the gate. The binding globs carry
-# no version (pnpm rejects pattern@version), but each binding is an exact-version
-# dependency of a pinned parent, so no other version can reach the tree.
-minimumReleaseAgeExclude:
-  - yuku-ast@0.8.3
-  - yuku-codegen@0.8.3
-  - yuku-parser@0.8.3
-  - '@yuku-toolchain/types@0.8.3'
-  - '@yuku-codegen/*'
-  - '@yuku-parser/*'
+  # typed-rest-client depends on the exact version `qs@6.15.1`, which no longer
+  # receives fixes, so neither lockFileMaintenance nor Renovate can move it and
+  # the advisory stays open indefinitely. express already resolves 6.15.3 in this
+  # tree, so the override also deduplicates qs to a single version.
+  qs: ^6.15.3

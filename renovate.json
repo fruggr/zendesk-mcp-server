@@ -9,16 +9,17 @@
   "rangeStrategy": "replace",
   "platformAutomerge": true,
   "osvVulnerabilityAlerts": true,
-  "minimumReleaseAge": "7 days",
+  "minimumReleaseAge": "5 days",
   "internalChecksFilter": "strict",
   "lockFileMaintenance": {
+    "description": "Twice a week, because this run is the only remediation path for transitive dependencies and a weekly one left the worst case at 12 days: a fix published just after a Friday run waited for the next Friday. Tuesday and Friday brings the worst case to 9 days and the average to 7, which is most of the gain on offer. A third slot would only buy one more day, and a daily run bottoms out at 6 (the 5-day pnpm gate plus up to a day of waiting) for seven times the CI. Cron rather than the plain-English form, which Renovate has deprecated (@breejs/later) and may remove in a future major: '* 0-7 * * 2,5' means any hour from midnight to 07:59 on Tuesday and Friday, in the timezone below. Renovate treats schedule as a filter on when a branch may be created, not as a trigger, so the window is kept 8 hours wide, well above the 3 to 4 hours Renovate asks for to avoid consistently missing a run.",
     "enabled": true,
     "automerge": true,
-    "schedule": ["before 8am on friday"],
+    "schedule": ["* 0-7 * * 2,5"],
     "timezone": "Europe/Paris"
   },
   "vulnerabilityAlerts": {
-    "description": "Security fixes surface immediately (a PR is opened as soon as the alert is detected) but are held by the same inherited 7-day minimumReleaseAge as every other update. internalChecksFilter 'flexible' keeps that PR visible with a pending renovate/stability-days check instead of suppressing it, so a freshly published fix is not auto-merged until it has aged past the supply-chain delay. A critical, actively-exploited CVE landing inside that window is merged manually.",
+    "description": "Renovate opens these PRs only for dependencies declared in package.json. It does not manage transitive dependencies, so an advisory on an indirect package never carries this prefix or label: it is remediated by the weekly lockFileMaintenance run, or by a pnpm override when a parent pins an exact version. Security fixes on direct dependencies surface immediately (a PR is opened as soon as the alert is detected) but are held by the same inherited 5-day minimumReleaseAge as every other update. internalChecksFilter 'flexible' keeps that PR visible with a pending renovate/stability-days check instead of suppressing it, so a freshly published fix is not auto-merged until it has aged past the supply-chain delay. A critical, actively-exploited CVE landing inside that window is merged manually.",
     "enabled": true,
     "commitMessagePrefix": "fix(security):",
     "labels": ["security"],
@@ -36,7 +37,7 @@
   },
   "packageRules": [
     {
-      "description": "lockFileMaintenance updates are synthetic lockfile refreshes with no releaseTimestamp, so the inherited 7-day minimumReleaseAge can never be evaluated and Renovate raises a dashboard warning (and, from Renovate 42 on, would stop running lockfile maintenance entirely). Opt them out of the age gate, mirroring Renovate's own security:minimumReleaseAgeNpm preset. The supply-chain delay for the packages bumped here is still enforced natively by pnpm via minimumReleaseAge in pnpm-workspace.yaml.",
+      "description": "lockFileMaintenance updates are synthetic lockfile refreshes with no releaseTimestamp, so the inherited 5-day minimumReleaseAge can never be evaluated and Renovate raises a dashboard warning (and, from Renovate 42 on, would stop running lockfile maintenance entirely). Opt them out of the age gate, mirroring Renovate's own security:minimumReleaseAgeNpm preset. The supply-chain delay for the packages bumped here is still enforced natively by pnpm via minimumReleaseAge in pnpm-workspace.yaml.",
       "matchUpdateTypes": ["lockFileMaintenance"],
       "minimumReleaseAge": null
     },
