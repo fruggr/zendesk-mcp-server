@@ -9,7 +9,7 @@
   "rangeStrategy": "replace",
   "platformAutomerge": true,
   "osvVulnerabilityAlerts": true,
-  "minimumReleaseAge": "7 days",
+  "minimumReleaseAge": "5 days",
   "internalChecksFilter": "strict",
   "lockFileMaintenance": {
     "enabled": true,
@@ -18,7 +18,7 @@
     "timezone": "Europe/Paris"
   },
   "vulnerabilityAlerts": {
-    "description": "Security fixes surface immediately (a PR is opened as soon as the alert is detected) but are held by the same inherited 7-day minimumReleaseAge as every other update. internalChecksFilter 'flexible' keeps that PR visible with a pending renovate/stability-days check instead of suppressing it, so a freshly published fix is not auto-merged until it has aged past the supply-chain delay. A critical, actively-exploited CVE landing inside that window is merged manually.",
+    "description": "Renovate opens these PRs only for dependencies declared in package.json. It does not manage transitive dependencies, so an advisory on an indirect package never carries this prefix or label: it is remediated by the weekly lockFileMaintenance run, or by a pnpm override when a parent pins an exact version. Security fixes on direct dependencies surface immediately (a PR is opened as soon as the alert is detected) but are held by the same inherited 5-day minimumReleaseAge as every other update. internalChecksFilter 'flexible' keeps that PR visible with a pending renovate/stability-days check instead of suppressing it, so a freshly published fix is not auto-merged until it has aged past the supply-chain delay. A critical, actively-exploited CVE landing inside that window is merged manually.",
     "enabled": true,
     "commitMessagePrefix": "fix(security):",
     "labels": ["security"],
@@ -36,7 +36,7 @@
   },
   "packageRules": [
     {
-      "description": "lockFileMaintenance updates are synthetic lockfile refreshes with no releaseTimestamp, so the inherited 7-day minimumReleaseAge can never be evaluated and Renovate raises a dashboard warning (and, from Renovate 42 on, would stop running lockfile maintenance entirely). Opt them out of the age gate, mirroring Renovate's own security:minimumReleaseAgeNpm preset. The supply-chain delay for the packages bumped here is still enforced natively by pnpm via minimumReleaseAge in pnpm-workspace.yaml.",
+      "description": "lockFileMaintenance updates are synthetic lockfile refreshes with no releaseTimestamp, so the inherited 5-day minimumReleaseAge can never be evaluated and Renovate raises a dashboard warning (and, from Renovate 42 on, would stop running lockfile maintenance entirely). Opt them out of the age gate, mirroring Renovate's own security:minimumReleaseAgeNpm preset. The supply-chain delay for the packages bumped here is still enforced natively by pnpm via minimumReleaseAge in pnpm-workspace.yaml.",
       "matchUpdateTypes": ["lockFileMaintenance"],
       "minimumReleaseAge": null
     },
