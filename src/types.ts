@@ -368,6 +368,8 @@ export interface ZendeskCategory {
   position: number;
   created_at: string;
   updated_at: string;
+  /** @see {@link ZendeskSection.translations} */
+  translations?: ZendeskTranslation[];
 }
 
 export interface ZendeskSection {
@@ -379,6 +381,14 @@ export interface ZendeskSection {
   position: number;
   created_at: string;
   updated_at: string;
+  /**
+   * The `include=translations` sideload: every locale of this node, each with its
+   * `draft` flag, embedded in the node rather than in a top-level array keyed by
+   * `source_id` (measured on a live tenant, #226). Optional because an `include`
+   * Zendesk does not honour is dropped silently, so a caller must tell an empty
+   * array (no translation at all) from an absent one (nothing was sideloaded).
+   */
+  translations?: ZendeskTranslation[];
 }
 
 // GET /api/v2/help_center/locales — the Help Center's active languages and the

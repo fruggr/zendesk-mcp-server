@@ -50,7 +50,7 @@ out every `write` tool before the proxies are built.
 | `list_article_translations` | List available translations for an article | read |
 | `list_section_translations` | List a section's translations with their draft state, telling an untranslated section apart from an unpublished one | read |
 | `list_category_translations` | List a category's translations with their draft state, telling an untranslated category apart from an unpublished one | read |
-| `find_translation_gaps` | Audit a locale across every category **and** every section, reporting each one that has no translation or only an unpublished draft; scope it to one category with `category_id` (one request per node scanned, capped) | read |
+| `find_translation_gaps` | Audit a locale across every category **and** every section, reporting each one that has no translation or only an unpublished draft; scope it to one category with `category_id` (two listings, whatever the tree size) | read |
 | `list_article_attachments` | List attachments on an article | read |
 | `list_permission_groups` | List Guide permission groups (needed to create articles; requires Guide-admin / Help Center manager rights) | read |
 | `list_content_tags` | List Guide content tags (end-user visible), cursor-paginated with name-prefix filter and sort | read |
