@@ -84,6 +84,18 @@ If you still re-authenticate every time, check that the file is writable
 ([`ZENDESK_TOKEN_FILE`](configuration.md#zendesk_token_file) to relocate it) and
 look for `token_persist_failed` in the logs.
 
+## My HTTP session disappears after a pause, even though the stream stayed up
+
+Expected, and not an error: stream liveness and session lifetime are separate
+clocks. The SDK's heartbeat keeps the SSE connection up, but the server evicts a
+session after **30 minutes with no inbound `/mcp` request** — heartbeat frames go
+server-to-client and don't reset that timer.
+
+The tell: a request carrying a now-unknown `mcp-session-id` gets `No active
+session; initialize via POST first.` A well-behaved client re-initializes and the
+next tool call goes through. See
+[Long-lived SSE streams behind a proxy](http-deployment.md#long-lived-sse-streams-behind-a-proxy).
+
 ## `Permission denied` on `list_permission_groups`, `list_user_segments`, or the topology resource
 
 Enumerating Guide permission groups and Help Center user segments requires

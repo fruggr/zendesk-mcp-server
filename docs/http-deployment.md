@@ -144,6 +144,14 @@ zendesk-mcp-server acme --transport http --port 3000 \
 
 The defaults are always applied: your additions extend them, they don't replace them.
 
+## Long-lived SSE streams behind a proxy
+
+Streamable HTTP keeps some responses open as an SSE stream, and the SDK maintains them itself: a comment frame roughly every 15 seconds (its default, not ours), well under the 60-second idle timeout nginx, Caddy and ALB ship with. No `proxy_read_timeout` tuning needed.
+
+Every SSE response also carries `X-Accel-Buffering: no` and `Cache-Control: no-cache, no-transform`, so the classic "SSE arrives in bursts behind nginx" fix is obsolete — don't re-apply it.
+
+The heartbeat does **not** keep the *session* alive: the idle sweeper evicts it after 30 minutes with no inbound `/mcp` request, however healthy the stream looks. See [My HTTP session disappears after a pause](troubleshooting.md#my-http-session-disappears-after-a-pause-even-though-the-stream-stayed-up).
+
 ## Operator responsibilities
 
 This server provides the MCP transport and the OAuth discovery metadata. The operator is still responsible for:
