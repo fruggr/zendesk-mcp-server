@@ -91,9 +91,11 @@ clocks. The SDK's heartbeat keeps the SSE connection up, but the server evicts a
 session after **30 minutes with no inbound `/mcp` request** — heartbeat frames go
 server-to-client and don't reset that timer.
 
-The tell: a request carrying a now-unknown `mcp-session-id` gets `No active
-session; initialize via POST first.` A well-behaved client re-initializes and the
-next tool call goes through. See
+The tell depends on the verb. A GET or DELETE carrying a now-unknown
+`mcp-session-id` gets `No active session; initialize via POST first.`; a POST
+tool call gets `Bad Request: Server not initialized` from the SDK, because it
+lands on a fresh transport that has seen no `initialize`. Either way a
+well-behaved client re-initializes and the next tool call goes through. See
 [Long-lived SSE streams behind a proxy](http-deployment.md#long-lived-sse-streams-behind-a-proxy).
 
 ## `Permission denied` on `list_permission_groups`, `list_user_segments`, or the topology resource

@@ -146,7 +146,7 @@ The defaults are always applied: your additions extend them, they don't replace 
 
 ## Long-lived SSE streams behind a proxy
 
-Streamable HTTP keeps some responses open as an SSE stream, and the SDK maintains them itself: a comment frame roughly every 15 seconds (its default, not ours), well under the 60-second idle timeout nginx, Caddy and ALB ship with. No `proxy_read_timeout` tuning needed.
+Streamable HTTP keeps some responses open as an SSE stream, and the SDK maintains them itself: a comment frame roughly every 15 seconds (its default, not ours), well under the 60 seconds nginx (`proxy_read_timeout`) and AWS ALB (idle timeout) default to. Caddy sets no stream timeout at all. No proxy-side tuning needed either way.
 
 Every SSE response also carries `X-Accel-Buffering: no` and `Cache-Control: no-cache, no-transform`, so the classic "SSE arrives in bursts behind nginx" fix is obsolete — don't re-apply it.
 
