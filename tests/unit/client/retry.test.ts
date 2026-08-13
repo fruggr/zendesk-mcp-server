@@ -112,6 +112,12 @@ describe('classifyNetworkError', () => {
     expect(classifyNetworkError(chainOfDepth(6, 'ENOTFOUND'))).toBe('unknown');
   });
 
+  // `typeof null === 'object'`, so a null cause has to be stopped on explicitly
+  // or the walk crashes while building an error message.
+  it('stops at a null cause', () => {
+    expect(classifyNetworkError(new TypeError('fetch failed', { cause: null }))).toBe('unknown');
+  });
+
   it('does not hang on a cyclic cause chain', () => {
     const err = new Error('loop') as Error & { cause?: unknown };
     err.cause = err;

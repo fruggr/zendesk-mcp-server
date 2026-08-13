@@ -36,7 +36,9 @@ const DELAY_SECONDS = /^\d+$/;
 const HTTP_DATE_START = /^[A-Za-z]/;
 const NON_ASCII = /[^ -~]/g;
 
-const PRE_SEND_CODES = new Set([
+// Typed as unknown so a missing code can be looked up as-is: no code is simply
+// not in the set.
+const PRE_SEND_CODES: ReadonlySet<unknown> = new Set([
   'ENOTFOUND',
   'EAI_AGAIN',
   'ECONNREFUSED',
@@ -73,10 +75,8 @@ const errorCode = (err: unknown): string | undefined => {
   return undefined;
 };
 
-export const classifyNetworkError = (err: unknown): NetworkPhase => {
-  const code = errorCode(err);
-  return code !== undefined && PRE_SEND_CODES.has(code) ? 'pre-send' : 'unknown';
-};
+export const classifyNetworkError = (err: unknown): NetworkPhase =>
+  PRE_SEND_CODES.has(errorCode(err)) ? 'pre-send' : 'unknown';
 
 /**
  * A failure with no HTTP response at all: DNS, refused connection, reset socket.
