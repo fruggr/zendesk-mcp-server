@@ -62,7 +62,7 @@ export const describeTarget = (url: string): string => {
   return `${parsed.origin}${parsed.pathname}`;
 };
 
-/** First `code` in the cause chain; depth-bounded so a cyclic chain cannot hang. */
+/** First `code` in the cause chain, inspecting 5 levels so a cycle cannot hang. */
 const errorCode = (err: unknown): string | undefined => {
   let current: unknown = err;
   for (let depth = 0; depth < 5 && current !== null && typeof current === 'object'; depth += 1) {
@@ -73,8 +73,10 @@ const errorCode = (err: unknown): string | undefined => {
   return undefined;
 };
 
-export const classifyNetworkError = (err: unknown): NetworkPhase =>
-  PRE_SEND_CODES.has(errorCode(err) ?? '') ? 'pre-send' : 'unknown';
+export const classifyNetworkError = (err: unknown): NetworkPhase => {
+  const code = errorCode(err);
+  return code !== undefined && PRE_SEND_CODES.has(code) ? 'pre-send' : 'unknown';
+};
 
 /**
  * A failure with no HTTP response at all: DNS, refused connection, reset socket.

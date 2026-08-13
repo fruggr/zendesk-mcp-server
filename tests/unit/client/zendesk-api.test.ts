@@ -207,6 +207,25 @@ describe('network error context', () => {
     expect(message).toMatch(/^[ -~]*$/);
   });
 
+  it('still carries the Bearer token on a tenant-host download', async () => {
+    mswServer.use(
+      http.get('https://testsubdomain.zendesk.com/attachments/2.png', ({ request }) =>
+        HttpResponse.text(request.headers.get('Authorization') ?? 'none', {
+          headers: { 'content-type': 'image/png' },
+        }),
+      ),
+    );
+
+    const { data, contentType } = await fetchZendeskBinary(
+      SUB,
+      TOKEN,
+      'https://testsubdomain.zendesk.com/attachments/2.png',
+    );
+
+    expect(data.toString()).toBe(`Bearer ${TOKEN}`);
+    expect(contentType).toBe('image/png');
+  });
+
   it('wraps a binary download failure', async () => {
     mswServer.use(
       http.get('https://testsubdomain.zendesk.com/attachments/1.png', () => HttpResponse.error()),

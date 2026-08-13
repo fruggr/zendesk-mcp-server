@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   classifyNetworkError,
   computeBackoffMs,
+  defaultRetryDeps,
   describeTarget,
   fetchWithRetry,
   isZendeskNetworkError,
@@ -93,6 +94,24 @@ describe('classifyNetworkError', () => {
     ).toBe('pre-send');
   });
 
+  // The chain walk is depth-bounded rather than cycle-detecting, so pin the
+  // bound: a code sitting deeper than 5 levels is not worth unwinding to.
+  const chainOfDepth = (depth: number, code: string): Error => {
+    let err: Error = Object.assign(new Error('inner'), { code });
+    for (let level = 1; level < depth; level += 1) {
+      err = new Error('wrapper', { cause: err });
+    }
+    return err;
+  };
+
+  it('finds a code 5 levels down', () => {
+    expect(classifyNetworkError(chainOfDepth(5, 'ENOTFOUND'))).toBe('pre-send');
+  });
+
+  it('stops looking past 5 levels', () => {
+    expect(classifyNetworkError(chainOfDepth(6, 'ENOTFOUND'))).toBe('unknown');
+  });
+
   it('does not hang on a cyclic cause chain', () => {
     const err = new Error('loop') as Error & { cause?: unknown };
     err.cause = err;
@@ -104,9 +123,36 @@ describe('classifyNetworkError', () => {
   });
 });
 
+describe('isZendeskNetworkError', () => {
+  it('accepts the error the client throws', async () => {
+    const { attempt } = attempts(netError('ENOTFOUND'));
+    const error = await fetchWithRetry(attempt, 'POST', TARGET, recordingDeps().deps).catch(
+      (e: unknown) => e,
+    );
+    expect(isZendeskNetworkError(error)).toBe(true);
+  });
+
+  it.each([
+    ['a plain error', new Error('boom')],
+    ['a non-error', 'boom'],
+    ['a look-alike that is not an Error', { name: 'ZendeskNetworkError', target: TARGET }],
+    ['an error carrying only a target', Object.assign(new Error('boom'), { target: TARGET })],
+    [
+      'an error carrying only the name',
+      Object.assign(new Error('boom'), { name: 'ZendeskNetworkError' }),
+    ],
+  ])('rejects %s', (_label, candidate) => {
+    expect(isZendeskNetworkError(candidate)).toBe(false);
+  });
+});
+
 describe('parseRetryAfter', () => {
   it('reads delay-seconds', () => {
     expect(parseRetryAfter('2')).toBe(2000);
+  });
+
+  it('reads multi-digit delay-seconds', () => {
+    expect(parseRetryAfter('12')).toBe(12000);
   });
 
   it('tolerates surrounding whitespace', () => {
@@ -123,8 +169,28 @@ describe('parseRetryAfter', () => {
     expect(parseRetryAfter('Thu, 01 Jan 2026 00:00:03 GMT', now)).toBe(0);
   });
 
-  it.each([null, '', '   ', 'soon', '-1'])('returns undefined for %j', (header) => {
-    expect(parseRetryAfter(header)).toBeUndefined();
+  // '-1' and '1.5' are the reason for the day-name guard: Date.parse reads both
+  // as dates. An ISO timestamp is not a legal HTTP-date either, so it is refused
+  // too and the caller falls back to backoff.
+  it.each([null, '', '   ', 'soon', '-1', '1.5', '2s', '2026-01-01T00:00:03Z'])(
+    'returns undefined for %j',
+    (header) => {
+      expect(parseRetryAfter(header)).toBeUndefined();
+    },
+  );
+});
+
+describe('defaultRetryDeps', () => {
+  it('waits for real', async () => {
+    const started = Date.now();
+    await defaultRetryDeps.sleep(30);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(25);
+  });
+
+  it('draws jitter from the unit interval', () => {
+    const drawn = defaultRetryDeps.random();
+    expect(drawn).toBeGreaterThanOrEqual(0);
+    expect(drawn).toBeLessThan(1);
   });
 });
 
