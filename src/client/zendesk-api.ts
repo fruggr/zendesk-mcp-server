@@ -1,4 +1,5 @@
 import { getBaseUrl, getHelpCenterBaseUrl } from '../constants.js';
+import { describeTarget, fetchWithRetry, type HttpMethod } from './retry';
 
 export class ZendeskApiError extends Error {
   constructor(
@@ -29,7 +30,7 @@ export class ZendeskApiError extends Error {
 }
 
 export interface ZendeskRequestOptions {
-  method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  method?: HttpMethod;
   body?: unknown;
   params?: Record<string, string>;
 }
@@ -47,6 +48,16 @@ const buildUrl = (base: string, path: string, params?: Record<string, string>): 
   return url.toString();
 };
 
+// Every request in this module goes through here: transient failures are retried
+// per the method's policy (`retry.ts`) and a failure with no response at all is
+// wrapped with the method and path instead of surfacing a bare `fetch failed`.
+const performFetch = (
+  method: HttpMethod,
+  url: string,
+  init: Omit<RequestInit, 'method'>,
+): Promise<Response> =>
+  fetchWithRetry(() => fetch(url, { ...init, method }), method, describeTarget(url));
+
 const executeRequest = async <T>(
   url: string,
   token: string,
@@ -63,12 +74,12 @@ const executeRequest = async <T>(
     headers['Content-Type'] = 'application/json';
   }
 
-  const init: RequestInit = { method, headers };
+  const init: Omit<RequestInit, 'method'> = { headers };
   if (body) {
     init.body = JSON.stringify(body);
   }
 
-  const response = await fetch(url, init);
+  const response = await performFetch(method, url, init);
 
   if (!response.ok) {
     const responseBody = await response.text();
@@ -157,7 +168,7 @@ export const fetchZendeskBinary = async (
   if (new URL(contentUrl).hostname === expectedHost) {
     headers['Authorization'] = buildAuthHeader(token);
   }
-  const response = await fetch(contentUrl, { headers });
+  const response = await performFetch('GET', contentUrl, { headers });
   if (!response.ok) {
     const body = await response.text();
     throw new ZendeskApiError(response.status, response.statusText, body);
@@ -169,8 +180,9 @@ export const fetchZendeskBinary = async (
 
 // Zendesk Uploads API: POST /uploads?filename=... with the raw file bytes as the
 // body and Content-Type set to the file's MIME type. `executeRequest` always
-// JSON-encodes, so this goes direct to fetch (like helpCenterUpload). Pass
-// `uploadToken` to aggregate another file under an existing upload token.
+// JSON-encodes, so this builds its own request (like helpCenterUpload) while
+// still sharing `performFetch`. Pass `uploadToken` to aggregate another file
+// under an existing upload token.
 export const zendeskUpload = async <T>(
   subdomain: string,
   token: string,
@@ -182,8 +194,7 @@ export const zendeskUpload = async <T>(
   const params: Record<string, string> = { filename };
   if (uploadToken) params['token'] = uploadToken;
   const url = buildUrl(getBaseUrl(subdomain), '/uploads', params);
-  const response = await fetch(url, {
-    method: 'POST',
+  const response = await performFetch('POST', url, {
     headers: { Authorization: buildAuthHeader(token), 'Content-Type': contentType },
     body: data,
   });
@@ -203,8 +214,7 @@ export const helpCenterUpload = async <T>(
   formData: FormData,
 ): Promise<T> => {
   const url = buildUrl(getHelpCenterBaseUrl(subdomain), path);
-  const response = await fetch(url, {
-    method: 'POST',
+  const response = await performFetch('POST', url, {
     headers: { Authorization: buildAuthHeader(token) },
     body: formData,
   });

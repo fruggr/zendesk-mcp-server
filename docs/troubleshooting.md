@@ -97,6 +97,27 @@ those rights, read an existing article with `get_article` and reuse the IDs it
 reports; omitting `user_segment_id` on create/update keeps the default visibility
 (everyone).
 
+## A tool call fails with `Network error on GET https://…`
+
+The request never got an HTTP response — DNS, a refused or reset connection, a
+proxy dropping the link. The message names the method and the path so you know
+what failed; the query string is dropped and no token appears in it.
+
+Transient failures are already retried up to 3 times with backoff before you see
+this, so a message here means every attempt failed. What gets retried depends on
+the method, because a replay must never duplicate a write:
+
+| | Network failure | `5xx` | `429` |
+| --- | --- | --- | --- |
+| `GET` | retried | retried | retried |
+| `DELETE` | retried only if the connection never opened | retried | retried |
+| `POST`, `PUT` | retried only if the connection never opened | **not retried** | retried |
+
+So a create or a comment is never sent twice: a `429` means Zendesk refused the
+request, but a `5xx` may have applied it, and it is surfaced rather than replayed.
+A `429` carrying a `Retry-After` above 5 s is surfaced too instead of parking the
+call — wait and ask again.
+
 Where each client writes the server's stderr:
 
 | Client | Log location |

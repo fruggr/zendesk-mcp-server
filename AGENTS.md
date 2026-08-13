@@ -45,6 +45,11 @@ Zod schema. Each proxy dispatches only within its own scoped handler map, so a
 `--read-only` / `--tool` are applied by `filterTools` *before* the mode switch;
 `--tool` also forces `mode: all` (`config.ts`).
 
+Every request goes through `performFetch` in `client/zendesk-api.ts`, so retry and
+network-error wrapping are decided once, in `client/retry.ts`: a new client method must
+pick its row in that policy table, where a write is never replayed once it may have
+reached Zendesk.
+
 **Auth** — per-user OAuth 2.1 PKCE only, no static API-token mode. stdio: lazy
 browser PKCE via `token-store.ts`. HTTP: per-session bearer captured from
 `Authorization:`. Dropping API-token auth is deliberate (static shared

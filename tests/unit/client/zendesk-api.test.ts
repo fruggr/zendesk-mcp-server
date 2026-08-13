@@ -1,13 +1,17 @@
 import { HttpResponse, http } from 'msw';
 import { describe, expect, it } from 'vitest';
+import { isZendeskNetworkError, type ZendeskNetworkError } from '../../../src/client/retry';
 import {
+  fetchZendeskBinary,
   helpCenterGet,
   helpCenterPost,
   helpCenterPut,
+  helpCenterUpload,
   ZendeskApiError,
   zendeskGet,
   zendeskPost,
   zendeskPut,
+  zendeskUpload,
 } from '../../../src/client/zendesk-api';
 import { mswServer } from '../../setup';
 
@@ -102,6 +106,147 @@ describe('helpCenterPut', () => {
       article: { title: 'Updated' },
     });
     expect(result.article.id).toBe(5000);
+  });
+});
+
+// The policy itself is unit-tested in retry.test.ts; these check that every
+// fetch call site in the client is actually wired to it.
+describe('transient failure handling', () => {
+  const counting = (
+    method: 'get' | 'post' | 'put',
+    path: string,
+    respond: (hits: number) => Response,
+  ) => {
+    const calls = { count: 0 };
+    mswServer.use(
+      http[method](`https://testsubdomain.zendesk.com/api/v2${path}`, () => {
+        calls.count += 1;
+        return respond(calls.count);
+      }),
+    );
+    return calls;
+  };
+
+  it('retries a GET through a 500 and returns the eventual success', async () => {
+    const calls = counting('get', '/flaky', (hits) =>
+      hits === 1 ? HttpResponse.json({}, { status: 500 }) : HttpResponse.json({ ok: true }),
+    );
+
+    await expect(zendeskGet<{ ok: boolean }>(SUB, TOKEN, '/flaky')).resolves.toStrictEqual({
+      ok: true,
+    });
+    expect(calls.count).toBe(2);
+  });
+
+  it('retries a GET through a network failure', async () => {
+    const calls = counting('get', '/flaky', (hits) =>
+      hits === 1 ? HttpResponse.error() : HttpResponse.json({ ok: true }),
+    );
+
+    await expect(zendeskGet<{ ok: boolean }>(SUB, TOKEN, '/flaky')).resolves.toStrictEqual({
+      ok: true,
+    });
+    expect(calls.count).toBe(2);
+  });
+
+  it('never replays a POST that failed with a 500, so a create cannot double', async () => {
+    const calls = counting('post', '/tickets', () => HttpResponse.json({}, { status: 500 }));
+
+    await expect(zendeskPost(SUB, TOKEN, '/tickets', { ticket: {} })).rejects.toThrow(
+      /Zendesk API error 500/,
+    );
+    expect(calls.count).toBe(1);
+  });
+
+  it('never replays a PUT that failed with a 500, so a comment cannot double', async () => {
+    const calls = counting('put', '/tickets/1', () => HttpResponse.json({}, { status: 500 }));
+
+    await expect(
+      zendeskPut(SUB, TOKEN, '/tickets/1', { ticket: { comment: { body: 'hi' } } }),
+    ).rejects.toBeInstanceOf(ZendeskApiError);
+    expect(calls.count).toBe(1);
+  });
+
+  it('never replays a POST that failed before any response', async () => {
+    const calls = counting('post', '/tickets', () => HttpResponse.error());
+
+    await expect(zendeskPost(SUB, TOKEN, '/tickets', { ticket: {} })).rejects.toSatisfy(
+      isZendeskNetworkError,
+    );
+    expect(calls.count).toBe(1);
+  });
+
+  it('surfaces a 404 unretried, with its message intact', async () => {
+    const calls = counting('get', '/tickets/404', () => HttpResponse.json({}, { status: 404 }));
+
+    await expect(zendeskGet(SUB, TOKEN, '/tickets/404')).rejects.toThrow(/not found/);
+    expect(calls.count).toBe(1);
+  });
+});
+
+describe('network error context', () => {
+  it('names the failing request without leaking the token or the query', async () => {
+    mswServer.use(
+      http.get('https://testsubdomain.zendesk.com/api/v2/flaky', () => HttpResponse.error()),
+    );
+
+    const error = await zendeskGet(SUB, TOKEN, '/flaky', {
+      'page[size]': '10',
+      secret: 'super-secret-value',
+    }).catch((e: unknown) => e);
+
+    expect(isZendeskNetworkError(error)).toBe(true);
+    const message = (error as ZendeskNetworkError).message;
+    expect(message).toContain('Network error on GET');
+    expect(message).toContain('https://testsubdomain.zendesk.com/api/v2/flaky');
+    expect(message).toContain('after 3 attempts');
+    expect(message).not.toContain(TOKEN);
+    expect(message).not.toContain('super-secret-value');
+    expect(message).not.toContain('page[size]');
+    // ASCII only: non-ASCII bytes break node:http headers on the auth paths.
+    expect(message).toMatch(/^[ -~]*$/);
+  });
+
+  it('wraps a binary download failure', async () => {
+    mswServer.use(
+      http.get('https://testsubdomain.zendesk.com/attachments/1.png', () => HttpResponse.error()),
+    );
+
+    const error = await fetchZendeskBinary(
+      SUB,
+      TOKEN,
+      'https://testsubdomain.zendesk.com/attachments/1.png',
+    ).catch((e: unknown) => e);
+
+    expect(isZendeskNetworkError(error)).toBe(true);
+    expect((error as ZendeskNetworkError).method).toBe('GET');
+  });
+
+  it.each([
+    [
+      'zendeskUpload',
+      () => zendeskUpload(SUB, TOKEN, 'a.png', Buffer.from('x'), 'image/png', 'agg-token'),
+      'https://testsubdomain.zendesk.com/api/v2/uploads',
+    ],
+    [
+      'helpCenterUpload',
+      () => helpCenterUpload(SUB, TOKEN, '/articles/5000/attachments', new FormData()),
+      'https://testsubdomain.zendesk.com/api/v2/help_center/articles/5000/attachments',
+    ],
+  ])('wraps a %s failure without retrying the upload', async (_label, call, target) => {
+    const calls = { count: 0 };
+    mswServer.use(
+      http.post(target, () => {
+        calls.count += 1;
+        return HttpResponse.error();
+      }),
+    );
+
+    const error = await call().catch((e: unknown) => e);
+
+    expect(isZendeskNetworkError(error)).toBe(true);
+    expect((error as ZendeskNetworkError).target).toBe(target);
+    expect(calls.count).toBe(1);
   });
 });
 
