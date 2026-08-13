@@ -19,13 +19,13 @@ interface RetryPolicy {
 
 // The client sits below the tool layer, so the method is all it has to judge
 // idempotency by — and `PUT /tickets/{id}` with a `comment` *appends* one, so PUT
-// counts as a create too. A 429 is always retried: Zendesk refused the request,
-// so it provably did not apply. A 5xx on a write may have applied before failing.
-// DELETE is pre-send only: replaying a lost response turns a completed delete
-// into a misleading 404.
+// counts as a create too. Everything that is not a GET therefore only replays
+// what provably did not apply: a 429 (Zendesk refused the request) or a
+// connection that never opened. A 5xx may have applied — replaying a DELETE
+// there would turn a completed delete into a misleading 404.
 const POLICIES: Record<HttpMethod, RetryPolicy> = {
   GET: { network: 'any', serverErrors: true },
-  DELETE: { network: 'pre-send', serverErrors: true },
+  DELETE: { network: 'pre-send', serverErrors: false },
   POST: { network: 'pre-send', serverErrors: false },
   PUT: { network: 'pre-send', serverErrors: false },
 };
@@ -35,6 +35,7 @@ const DELAY_SECONDS = /^\d+$/;
 // to read '-1' as a year, so require it.
 const HTTP_DATE_START = /^[A-Za-z]/;
 const NON_ASCII = /[^ -~]/g;
+const TOKEN_SEGMENT = /\/token\/[^/]+/;
 
 // Typed as unknown so a missing code can be looked up as-is: no code is simply
 // not in the set.
@@ -58,10 +59,14 @@ export const defaultRetryDeps: RetryDeps = {
 /** Non-ASCII bytes break `node:http` headers, so client error text stays ASCII. */
 const toAscii = (text: string): string => text.replace(NON_ASCII, '?');
 
-/** Identifies the request without leaking the query string (uploads put a token there). */
+/**
+ * Identifies the request without leaking a credential: uploads carry an upload
+ * token in the query string, and an attachment `content_url` carries a download
+ * token as a path segment (`/attachments/token/<token>/`).
+ */
 export const describeTarget = (url: string): string => {
-  const parsed = new URL(url);
-  return `${parsed.origin}${parsed.pathname}`;
+  const { origin, pathname } = new URL(url);
+  return `${origin}${pathname.replace(TOKEN_SEGMENT, '/token/[redacted]')}`;
 };
 
 /** First `code` in the cause chain, inspecting 5 levels so a cycle cannot hang. */
@@ -184,8 +189,9 @@ export const fetchWithRetry = async (
     const delayMs = retryDelayFor(response, policy, tries, deps.random);
     if (delayMs === undefined) return response;
 
-    // This body is discarded; drain it so the socket is released.
-    await response.text();
+    // This body is discarded; drain it so the socket is released. A truncated
+    // body throws here, which must not escape the retry we are about to make.
+    await response.text().catch(() => undefined);
     await deps.sleep(delayMs);
   }
 };

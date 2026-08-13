@@ -62,6 +62,18 @@ describe('describeTarget', () => {
     ).toBe('https://acme.zendesk.com/api/v2/uploads');
   });
 
+  it('redacts the download token an attachment URL carries in its path', () => {
+    expect(
+      describeTarget('https://acme.zendesk.com/attachments/token/AbCdEf123/?name=shot.png'),
+    ).toBe('https://acme.zendesk.com/attachments/token/[redacted]/');
+  });
+
+  it('leaves a token-free attachment path alone', () => {
+    expect(describeTarget('https://acme.zendesk.com/attachments/42/shot.png')).toBe(
+      'https://acme.zendesk.com/attachments/42/shot.png',
+    );
+  });
+
   it('drops the fragment', () => {
     expect(describeTarget('https://acme.zendesk.com/api/v2/tickets#frag')).toBe(
       'https://acme.zendesk.com/api/v2/tickets',
@@ -333,18 +345,38 @@ describe('fetchWithRetry — network failures', () => {
 });
 
 describe('fetchWithRetry — server errors', () => {
-  it.each(['GET', 'DELETE'] as const)('retries a 500 on %s', async (method) => {
+  it('retries a 500 on GET', async () => {
     const { attempt, calls } = attempts(status(500), status(200));
     const { sleeps, deps } = recordingDeps();
 
-    const response = await fetchWithRetry(attempt, method, TARGET, deps);
+    const response = await fetchWithRetry(attempt, 'GET', TARGET, deps);
 
     expect(response.status).toBe(200);
     expect(calls.count).toBe(2);
     expect(sleeps).toStrictEqual([125]);
   });
 
-  it.each(['POST', 'PUT'] as const)(
+  // A body that dies mid-read must not abort the retry: it is being discarded.
+  it('retries even when the discarded body cannot be drained', async () => {
+    const truncated = () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.error(new Error('terminated'));
+          },
+        }),
+        { status: 500 },
+      );
+    const { attempt, calls } = attempts(truncated, status(200));
+    const { deps } = recordingDeps();
+
+    const response = await fetchWithRetry(attempt, 'GET', TARGET, deps);
+
+    expect(response.status).toBe(200);
+    expect(calls.count).toBe(2);
+  });
+
+  it.each(['POST', 'PUT', 'DELETE'] as const)(
     'never retries a 500 on %s, which may already have applied',
     async (method) => {
       const { attempt, calls } = attempts(status(500), status(200));
