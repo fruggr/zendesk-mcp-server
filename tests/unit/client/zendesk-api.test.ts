@@ -200,6 +200,45 @@ describe('transient failure handling', () => {
   });
 });
 
+describe('per-attempt deadline', () => {
+  // Undici's own defaults are 300 s, so the signal reaching fetch is what keeps a
+  // stalled socket from outliving the retry budget.
+  it('attaches a live abort signal to the request', async () => {
+    const seen: (AbortSignal | null)[] = [];
+    mswServer.use(
+      http.get('https://testsubdomain.zendesk.com/api/v2/users/me', ({ request }) => {
+        seen.push(request.signal);
+        return HttpResponse.json({ user: { id: 9999 } });
+      }),
+    );
+
+    await zendeskGet(SUB, TOKEN, '/users/me');
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toBeInstanceOf(AbortSignal);
+    expect(seen[0]?.aborted).toBe(false);
+  });
+
+  it('gives each attempt its own deadline', async () => {
+    const signals: (AbortSignal | null)[] = [];
+    let hits = 0;
+    mswServer.use(
+      http.get('https://testsubdomain.zendesk.com/api/v2/flaky', ({ request }) => {
+        hits += 1;
+        signals.push(request.signal);
+        return hits === 1
+          ? HttpResponse.json({}, { status: 500 })
+          : HttpResponse.json({ ok: true });
+      }),
+    );
+
+    await zendeskGet(SUB, TOKEN, '/flaky');
+
+    expect(signals).toHaveLength(2);
+    expect(signals[0]).not.toBe(signals[1]);
+  });
+});
+
 describe('network error context', () => {
   it('names the failing request without leaking the token or the query', async () => {
     mswServer.use(

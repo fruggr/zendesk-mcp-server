@@ -123,6 +123,12 @@ during maintenance), that delay is used instead of the backoff — unless it exc
 5 s, in which case the response is surfaced rather than parking the call for that
 long. Wait and ask again.
 
+Each attempt also has its own deadline — 30 s, or 120 s for attachment downloads
+and uploads — because Node's `fetch` otherwise waits up to 300 s on a stalled
+socket. Hitting it reads `TimeoutError: The operation was aborted due to timeout`.
+A read is retried after a timeout; a write is not, since the request may have
+reached Zendesk before the deadline passed.
+
 Where each client writes the server's stderr:
 
 | Client | Log location |

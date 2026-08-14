@@ -1,5 +1,12 @@
 import { getBaseUrl, getHelpCenterBaseUrl } from '../constants.js';
-import { describeTarget, fetchWithRetry, type HttpMethod } from './retry';
+import {
+  deadlineSignal,
+  describeTarget,
+  fetchWithRetry,
+  type HttpMethod,
+  REQUEST_TIMEOUT_MS,
+  TRANSFER_TIMEOUT_MS,
+} from './retry';
 
 export class ZendeskApiError extends Error {
   constructor(
@@ -48,15 +55,22 @@ const buildUrl = (base: string, path: string, params?: Record<string, string>): 
   return url.toString();
 };
 
-// Every request in this module goes through here: transient failures are retried
-// per the method's policy (`retry.ts`) and a failure with no response at all is
-// wrapped with the method and path instead of surfacing a bare `fetch failed`.
+// Every request in this module goes through here: each attempt gets its own
+// deadline, transient failures are retried per the method's policy (`retry.ts`),
+// and a failure with no response at all is wrapped with the method and path
+// instead of surfacing a bare `fetch failed`. The signal is built inside the
+// thunk so every attempt starts its deadline fresh.
 const performFetch = (
   method: HttpMethod,
   url: string,
-  init: Omit<RequestInit, 'method'>,
+  init: Omit<RequestInit, 'method' | 'signal'>,
+  timeoutMs: number = REQUEST_TIMEOUT_MS,
 ): Promise<Response> =>
-  fetchWithRetry(() => fetch(url, { ...init, method }), method, describeTarget(url));
+  fetchWithRetry(
+    () => fetch(url, { ...init, method, signal: deadlineSignal(timeoutMs) }),
+    method,
+    describeTarget(url),
+  );
 
 const executeRequest = async <T>(
   url: string,
@@ -168,7 +182,7 @@ export const fetchZendeskBinary = async (
   if (new URL(contentUrl).hostname === expectedHost) {
     headers['Authorization'] = buildAuthHeader(token);
   }
-  const response = await performFetch('GET', contentUrl, { headers });
+  const response = await performFetch('GET', contentUrl, { headers }, TRANSFER_TIMEOUT_MS);
   if (!response.ok) {
     const body = await response.text();
     throw new ZendeskApiError(response.status, response.statusText, body);
@@ -194,10 +208,15 @@ export const zendeskUpload = async <T>(
   const params: Record<string, string> = { filename };
   if (uploadToken) params['token'] = uploadToken;
   const url = buildUrl(getBaseUrl(subdomain), '/uploads', params);
-  const response = await performFetch('POST', url, {
-    headers: { Authorization: buildAuthHeader(token), 'Content-Type': contentType },
-    body: data,
-  });
+  const response = await performFetch(
+    'POST',
+    url,
+    {
+      headers: { Authorization: buildAuthHeader(token), 'Content-Type': contentType },
+      body: data,
+    },
+    TRANSFER_TIMEOUT_MS,
+  );
 
   if (!response.ok) {
     const responseBody = await response.text();
@@ -214,10 +233,12 @@ export const helpCenterUpload = async <T>(
   formData: FormData,
 ): Promise<T> => {
   const url = buildUrl(getHelpCenterBaseUrl(subdomain), path);
-  const response = await performFetch('POST', url, {
-    headers: { Authorization: buildAuthHeader(token) },
-    body: formData,
-  });
+  const response = await performFetch(
+    'POST',
+    url,
+    { headers: { Authorization: buildAuthHeader(token) }, body: formData },
+    TRANSFER_TIMEOUT_MS,
+  );
 
   if (!response.ok) {
     const responseBody = await response.text();

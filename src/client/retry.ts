@@ -6,6 +6,20 @@ export type NetworkPhase = 'pre-send' | 'unknown';
 const MAX_ATTEMPTS = 3;
 const BASE_DELAY_MS = 250;
 const MAX_DELAY_MS = 4_000;
+
+// Undici gives `fetch` no overall deadline — its headersTimeout/bodyTimeout
+// default to 300 s — so a stalled socket would hold a tool call open long past
+// the retry budget, which cannot fire while an attempt is pending. Transfers get
+// a longer one: a large attachment on a slow link legitimately takes a while.
+export const REQUEST_TIMEOUT_MS = 30_000;
+export const TRANSFER_TIMEOUT_MS = 120_000;
+
+/**
+ * A deadline for one attempt. The abort surfaces as a `TimeoutError` whose `code`
+ * is numeric, not a syscall string, so it classifies as `unknown`: a GET is
+ * retried, a write is not — the request may have arrived before the deadline.
+ */
+export const deadlineSignal = (timeoutMs: number): AbortSignal => AbortSignal.timeout(timeoutMs);
 // Beyond this, honoring Retry-After would park the tool call; surface the 429
 // and let the caller come back later instead.
 const MAX_RETRY_AFTER_MS = 5_000;
@@ -94,17 +108,25 @@ export type ZendeskNetworkError = Error & {
   readonly attempts: number;
 };
 
+// `fetch failed` / a bare Error name says nothing worth printing; a DOMException
+// name like TimeoutError is the only label that failure carries.
+const UNINFORMATIVE_NAMES: ReadonlySet<string> = new Set(['Error', 'TypeError']);
+
+const failureDetail = (cause: unknown): string => {
+  if (!(cause instanceof Error)) return String(cause);
+  const code = errorCode(cause);
+  if (code !== undefined) return `${code}: ${cause.message}`;
+  return UNINFORMATIVE_NAMES.has(cause.name) ? cause.message : `${cause.name}: ${cause.message}`;
+};
+
 const networkErrorMessage = (
   method: HttpMethod,
   target: string,
   attempts: number,
   cause: unknown,
 ): string => {
-  const reason = cause instanceof Error ? cause.message : String(cause);
-  const code = errorCode(cause);
-  const detail = code === undefined ? reason : `${code}: ${reason}`;
   const tries = attempts === 1 ? '1 attempt' : `${attempts} attempts`;
-  return toAscii(`Network error on ${method} ${target} after ${tries}: ${detail}`);
+  return toAscii(`Network error on ${method} ${target} after ${tries}: ${failureDetail(cause)}`);
 };
 
 export const createZendeskNetworkError = (

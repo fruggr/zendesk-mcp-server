@@ -2,11 +2,14 @@ import { describe, expect, it } from 'vitest';
 import {
   classifyNetworkError,
   computeBackoffMs,
+  deadlineSignal,
   defaultRetryDeps,
   describeTarget,
   fetchWithRetry,
   isZendeskNetworkError,
   parseRetryAfter,
+  REQUEST_TIMEOUT_MS,
+  TRANSFER_TIMEOUT_MS,
   type ZendeskNetworkError,
 } from '../../../src/client/retry';
 
@@ -161,6 +164,59 @@ describe('isZendeskNetworkError', () => {
     ],
   ])('rejects %s', (_label, candidate) => {
     expect(isZendeskNetworkError(candidate)).toBe(false);
+  });
+});
+
+describe('deadlineSignal', () => {
+  it('aborts with a TimeoutError once the deadline passes', async () => {
+    const signal = deadlineSignal(10);
+    expect(signal.aborted).toBe(false);
+
+    await new Promise((resolve) => setTimeout(resolve, 40));
+
+    expect(signal.aborted).toBe(true);
+    expect((signal.reason as Error).name).toBe('TimeoutError');
+  });
+
+  it('gives a longer deadline to transfers than to JSON calls', () => {
+    expect(REQUEST_TIMEOUT_MS).toBe(30_000);
+    expect(TRANSFER_TIMEOUT_MS).toBeGreaterThan(REQUEST_TIMEOUT_MS);
+  });
+});
+
+// A deadline abort arrives as a DOMException: no string `code`, only a name, and
+// a *numeric* `code` that must not be mistaken for a syscall code.
+describe('deadline aborts', () => {
+  const timeoutError = (): Error =>
+    Object.assign(new Error('The operation was aborted due to timeout'), {
+      name: 'TimeoutError',
+      code: 23,
+    });
+
+  it('classifies as unknown, so a write is never replayed', () => {
+    expect(classifyNetworkError(timeoutError())).toBe('unknown');
+  });
+
+  it('names the timeout in the error message', async () => {
+    const { attempt, calls } = attempts(timeoutError());
+    const { deps } = recordingDeps();
+
+    const error = await fetchWithRetry(attempt, 'POST', TARGET, deps).catch((e: unknown) => e);
+
+    expect(calls.count).toBe(1);
+    expect((error as ZendeskNetworkError).message).toBe(
+      `Network error on POST ${TARGET} after 1 attempt: TimeoutError: The operation was aborted due to timeout`,
+    );
+  });
+
+  it('is retried on a GET', async () => {
+    const { attempt, calls } = attempts(timeoutError(), timeoutError(), status(200));
+    const { deps } = recordingDeps();
+
+    const response = await fetchWithRetry(attempt, 'GET', TARGET, deps);
+
+    expect(response.status).toBe(200);
+    expect(calls.count).toBe(3);
   });
 });
 
