@@ -116,8 +116,12 @@ because a replay must never duplicate a write:
 So a create, a comment or a delete is never sent twice: a `429` means Zendesk
 refused the request, but a `5xx` may have applied it, so it is surfaced rather
 than replayed — including on a delete, where a replay would report a misleading
-`404` for work that succeeded. A `429` carrying a `Retry-After` above 5 s is
-surfaced too instead of parking the call — wait and ask again.
+`404` for work that succeeded.
+
+When a response carries `Retry-After` (Zendesk sends it on a `429`, and on a `503`
+during maintenance), that delay is used instead of the backoff — unless it exceeds
+5 s, in which case the response is surfaced rather than parking the call for that
+long. Wait and ask again.
 
 Where each client writes the server's stderr:
 

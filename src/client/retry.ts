@@ -142,20 +142,24 @@ export const parseRetryAfter = (header: string | null, now = Date.now()): number
   return Math.max(0, date - now);
 };
 
-/** How long to wait before replaying this response, or undefined to accept it. */
+/**
+ * How long to wait before replaying this response, or undefined to accept it.
+ * `Retry-After` wins over backoff wherever it appears — Zendesk sends it on a 503
+ * during maintenance as well as on a 429 — and a value past the cap means the
+ * response is surfaced rather than parking the call for that long.
+ */
 const retryDelayFor = (
   response: Response,
   policy: RetryPolicy,
   attempt: number,
   random: () => number,
 ): number | undefined => {
-  if (response.status === 429) {
-    const retryAfter = parseRetryAfter(response.headers.get('retry-after'));
-    if (retryAfter === undefined) return computeBackoffMs(attempt, random);
-    return retryAfter > MAX_RETRY_AFTER_MS ? undefined : retryAfter;
-  }
-  if (response.status >= 500 && policy.serverErrors) return computeBackoffMs(attempt, random);
-  return undefined;
+  const replayable = response.status === 429 || (response.status >= 500 && policy.serverErrors);
+  if (!replayable) return undefined;
+
+  const retryAfter = parseRetryAfter(response.headers.get('retry-after'));
+  if (retryAfter === undefined) return computeBackoffMs(attempt, random);
+  return retryAfter > MAX_RETRY_AFTER_MS ? undefined : retryAfter;
 };
 
 /**

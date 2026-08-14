@@ -430,6 +430,39 @@ describe('fetchWithRetry — 429', () => {
     },
   );
 
+  // Zendesk sends Retry-After on a 503 during maintenance, not only on a 429.
+  it('honors Retry-After on a retriable 5xx', async () => {
+    const { attempt } = attempts(status(503, { 'Retry-After': '3' }), status(200));
+    const { sleeps, deps } = recordingDeps();
+
+    const response = await fetchWithRetry(attempt, 'GET', TARGET, deps);
+
+    expect(response.status).toBe(200);
+    expect(sleeps).toStrictEqual([3000]);
+  });
+
+  it('surfaces a 5xx whose Retry-After is past the cap', async () => {
+    const { attempt, calls } = attempts(status(503, { 'Retry-After': '6' }), status(200));
+    const { sleeps, deps } = recordingDeps();
+
+    const response = await fetchWithRetry(attempt, 'GET', TARGET, deps);
+
+    expect(response.status).toBe(503);
+    expect(calls.count).toBe(1);
+    expect(sleeps).toStrictEqual([]);
+  });
+
+  it('ignores Retry-After on a 5xx the policy will not replay', async () => {
+    const { attempt, calls } = attempts(status(503, { 'Retry-After': '1' }), status(200));
+    const { sleeps, deps } = recordingDeps();
+
+    const response = await fetchWithRetry(attempt, 'POST', TARGET, deps);
+
+    expect(response.status).toBe(503);
+    expect(calls.count).toBe(1);
+    expect(sleeps).toStrictEqual([]);
+  });
+
   it('falls back to backoff when Retry-After is absent', async () => {
     const { attempt } = attempts(status(429), status(200));
     const { sleeps, deps } = recordingDeps();

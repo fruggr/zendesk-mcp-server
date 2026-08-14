@@ -176,6 +176,22 @@ describe('transient failure handling', () => {
     expect(calls.count).toBe(1);
   });
 
+  // The mirror image of the tests above: a 429 is the one case where the client
+  // deliberately re-sends a mutation, because Zendesk refused it. `Retry-After: 0`
+  // exercises that header without putting a real wait in the suite.
+  it('replays a throttled POST exactly once', async () => {
+    const calls = counting('post', '/tickets', (hits) =>
+      hits === 1
+        ? HttpResponse.json({}, { status: 429, headers: { 'Retry-After': '0' } })
+        : HttpResponse.json({ ticket: { id: 42 } }),
+    );
+
+    await expect(
+      zendeskPost<{ ticket: { id: number } }>(SUB, TOKEN, '/tickets', { ticket: {} }),
+    ).resolves.toStrictEqual({ ticket: { id: 42 } });
+    expect(calls.count).toBe(2);
+  });
+
   it('surfaces a 404 unretried, with its message intact', async () => {
     const calls = counting('get', '/tickets/404', () => HttpResponse.json({}, { status: 404 }));
 
