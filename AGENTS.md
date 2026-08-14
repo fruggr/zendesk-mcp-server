@@ -49,7 +49,8 @@ Every Zendesk API request goes through `performFetch` in `client/zendesk-api.ts`
 (the OAuth token exchange in `auth/browser-oauth.ts` deliberately does not), so retry and
 network-error wrapping are decided once, in `client/retry.ts`: a new client method must
 pick its row in that policy table, where a write is never replayed once it may have
-reached Zendesk.
+reached Zendesk. Why the loop is ours rather than a library's — and what would change
+that: `docs/decisions/client-retry.md`.
 
 **Auth** — per-user OAuth 2.1 PKCE only, no static API-token mode. stdio: lazy
 browser PKCE via `token-store.ts`. HTTP: per-session bearer captured from
