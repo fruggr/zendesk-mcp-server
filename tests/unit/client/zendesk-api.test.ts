@@ -200,6 +200,72 @@ describe('transient failure handling', () => {
   });
 });
 
+// Both uploads build their own request instead of going through executeRequest,
+// so what they put on the wire is only pinned here.
+describe('uploads', () => {
+  it('sends the raw bytes with auth, content type and the aggregating token', async () => {
+    mswServer.use(
+      http.post('https://testsubdomain.zendesk.com/api/v2/uploads', async ({ request }) => {
+        const url = new URL(request.url);
+        return HttpResponse.json({
+          upload: {
+            auth: request.headers.get('Authorization'),
+            contentType: request.headers.get('Content-Type'),
+            body: await request.text(),
+            filename: url.searchParams.get('filename'),
+            token: url.searchParams.get('token'),
+          },
+        });
+      }),
+    );
+
+    const result = await zendeskUpload<{ upload: Record<string, string | null> }>(
+      SUB,
+      TOKEN,
+      'shot.png',
+      Buffer.from('PNGDATA'),
+      'image/png',
+      'agg-token',
+    );
+
+    expect(result.upload).toStrictEqual({
+      auth: `Bearer ${TOKEN}`,
+      contentType: 'image/png',
+      body: 'PNGDATA',
+      filename: 'shot.png',
+      token: 'agg-token',
+    });
+  });
+
+  it('sends the form data with auth for a Help Center attachment', async () => {
+    mswServer.use(
+      http.post(
+        'https://testsubdomain.zendesk.com/api/v2/help_center/articles/5000/attachments',
+        async ({ request }) => {
+          const form = await request.formData();
+          return HttpResponse.json({
+            article_attachment: {
+              auth: request.headers.get('Authorization'),
+              file: form.get('file'),
+            },
+          });
+        },
+      ),
+    );
+    const formData = new FormData();
+    formData.set('file', 'contents');
+
+    const result = await helpCenterUpload<{
+      article_attachment: Record<string, string | null>;
+    }>(SUB, TOKEN, '/articles/5000/attachments', formData);
+
+    expect(result.article_attachment).toStrictEqual({
+      auth: `Bearer ${TOKEN}`,
+      file: 'contents',
+    });
+  });
+});
+
 describe('per-attempt deadline', () => {
   // Undici's own defaults are 300 s, so the signal reaching fetch is what keeps a
   // stalled socket from outliving the retry budget.
