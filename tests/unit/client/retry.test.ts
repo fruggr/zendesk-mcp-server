@@ -417,6 +417,24 @@ describe('fetchWithRetry — network failures', () => {
       expect(message).toContain('/attachments/token/[redacted]/');
     });
 
+    // The match must not depend on something preceding the URL: a message can
+    // open with it.
+    it('redacts a URL sitting at the very start of the message', async () => {
+      const message = await messageFor(
+        'https://user:secret@acme.zendesk.com/api/v2/tickets?token=t failed to connect',
+      );
+      expect(message).not.toContain('secret');
+      expect(message).not.toContain('token=t');
+      expect(message).toContain('https://acme.zendesk.com/api/v2/tickets failed to connect');
+    });
+
+    it('drops a URL-like substring it cannot parse', async () => {
+      const message = await messageFor('Failed to parse URL from http://[::1');
+      expect(message).toBe(
+        `Network error on POST ${TARGET} after 1 attempt: Failed to parse URL from [url]`,
+      );
+    });
+
     it('drops a URL it cannot make an origin of', async () => {
       const message = await messageFor('bad target gopher://user:secret@host/p?token=t');
       expect(message).not.toContain('secret');
