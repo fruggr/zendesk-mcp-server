@@ -347,6 +347,23 @@ describe('network error context', () => {
     expect(contentType).toBe('image/png');
   });
 
+  // An attachment content_url comes from Zendesk's response, so it is external
+  // input. Node refuses a URL carrying credentials by quoting all of it, which is
+  // how a download token could reach the client through the cause message.
+  it('keeps a credential-bearing content_url out of the error', async () => {
+    const error = await fetchZendeskBinary(
+      SUB,
+      TOKEN,
+      'https://user:secret@testsubdomain.zendesk.com/attachments/token/AbCdEf123/?name=shot.png',
+    ).catch((e: unknown) => e);
+
+    expect(isZendeskNetworkError(error)).toBe(true);
+    const message = (error as ZendeskNetworkError).message;
+    expect(message).not.toContain('secret');
+    expect(message).not.toContain('AbCdEf123');
+    expect(message).not.toContain('name=shot.png');
+  });
+
   it('wraps a binary download failure', async () => {
     mswServer.use(
       http.get('https://testsubdomain.zendesk.com/attachments/1.png', () => HttpResponse.error()),

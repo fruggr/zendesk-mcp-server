@@ -50,6 +50,7 @@ const DELAY_SECONDS = /^\d+$/;
 const HTTP_DATE_START = /^[A-Za-z]/;
 const NON_ASCII = /[^ -~]/g;
 const TOKEN_SEGMENT = /\/token\/[^/]+/;
+const URL_IN_TEXT = /[a-z][a-z0-9+.-]*:\/\/\S+/gi;
 
 // Typed as unknown so a missing code can be looked up as-is: no code is simply
 // not in the set.
@@ -112,11 +113,28 @@ export type ZendeskNetworkError = Error & {
 // name like TimeoutError is the only label that failure carries.
 const UNINFORMATIVE_NAMES: ReadonlySet<string> = new Set(['Error', 'TypeError']);
 
+/**
+ * A cause message can quote the URL it failed on — Node's `fetch` refuses a URL
+ * carrying credentials by printing the whole thing, query string included — which
+ * would smuggle back exactly what `describeTarget` drops. Same treatment for both,
+ * so one function owns what a URL may look like in our output.
+ */
+const redactUrls = (text: string): string =>
+  text.replace(URL_IN_TEXT, (found) => {
+    try {
+      // A non-special scheme has no origin to keep; drop it whole.
+      return new URL(found).origin === 'null' ? '[url]' : describeTarget(found);
+    } catch {
+      return '[url]';
+    }
+  });
+
 const failureDetail = (cause: unknown): string => {
-  if (!(cause instanceof Error)) return String(cause);
+  if (!(cause instanceof Error)) return redactUrls(String(cause));
+  const message = redactUrls(cause.message);
   const code = errorCode(cause);
-  if (code !== undefined) return `${code}: ${cause.message}`;
-  return UNINFORMATIVE_NAMES.has(cause.name) ? cause.message : `${cause.name}: ${cause.message}`;
+  if (code !== undefined) return `${code}: ${message}`;
+  return UNINFORMATIVE_NAMES.has(cause.name) ? message : `${cause.name}: ${message}`;
 };
 
 const networkErrorMessage = (

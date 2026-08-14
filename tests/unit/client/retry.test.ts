@@ -388,6 +388,58 @@ describe('fetchWithRetry — network failures', () => {
     );
   });
 
+  // Node's fetch refuses a URL with credentials by printing the whole URL, so the
+  // cause message is a second path a token can travel by.
+  describe('URLs quoted by the cause message', () => {
+    const messageFor = async (causeMessage: string): Promise<string> => {
+      const { attempt } = attempts(new TypeError(causeMessage));
+      const error = await fetchWithRetry(attempt, 'POST', TARGET, recordingDeps().deps).catch(
+        (e: unknown) => e,
+      );
+      return (error as ZendeskNetworkError).message;
+    };
+
+    it('strips credentials and the query string', async () => {
+      const message = await messageFor(
+        'Request cannot be constructed from a URL that includes credentials: https://user:secret@acme.zendesk.com/api/v2/uploads?token=upload-secret',
+      );
+      expect(message).not.toContain('secret');
+      expect(message).not.toContain('user:');
+      expect(message).not.toContain('token=');
+      expect(message).toContain('https://acme.zendesk.com/api/v2/uploads');
+    });
+
+    it("redacts an attachment URL's download token", async () => {
+      const message = await messageFor(
+        'socket hang up on https://acme.zendesk.com/attachments/token/AbCdEf123/',
+      );
+      expect(message).not.toContain('AbCdEf123');
+      expect(message).toContain('/attachments/token/[redacted]/');
+    });
+
+    it('drops a URL it cannot make an origin of', async () => {
+      const message = await messageFor('bad target gopher://user:secret@host/p?token=t');
+      expect(message).not.toContain('secret');
+      expect(message).toContain('[url]');
+    });
+
+    it('leaves a message without a URL untouched', async () => {
+      expect(await messageFor('socket hang up')).toBe(
+        `Network error on POST ${TARGET} after 1 attempt: socket hang up`,
+      );
+    });
+
+    it('redacts a non-error rejection too', async () => {
+      const attempt = () => Promise.reject('died at https://user:secret@acme.zendesk.com/p?a=b');
+      const error = await fetchWithRetry(attempt, 'POST', TARGET, recordingDeps().deps).catch(
+        (e: unknown) => e,
+      );
+      const message = (error as ZendeskNetworkError).message;
+      expect(message).not.toContain('secret');
+      expect(message).toContain('https://acme.zendesk.com/p');
+    });
+  });
+
   it('reports a code-less failure without an empty prefix', async () => {
     const { attempt } = attempts(netError());
     const { deps } = recordingDeps();
