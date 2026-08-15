@@ -1,16 +1,36 @@
 import { getBaseUrl, getHelpCenterBaseUrl } from '../constants.js';
+import {
+  deadlineSignal,
+  describeTarget,
+  fetchWithRetry,
+  type HttpMethod,
+  MAY_HAVE_APPLIED_NOTE,
+  REFUSED_NOTE,
+  REQUEST_TIMEOUT_MS,
+  TRANSFER_TIMEOUT_MS,
+  writeNote,
+} from './retry';
 
 export class ZendeskApiError extends Error {
   constructor(
     public readonly status: number,
     public readonly statusText: string,
     public readonly body: string,
+    // Decides whether a failed write is told it may have taken effect; the
+    // per-status wording is otherwise unchanged. Exposed like ZendeskNetworkError's
+    // so a caller can branch on it rather than parse the message.
+    public readonly method: HttpMethod,
   ) {
-    super(ZendeskApiError.buildMessage(status, statusText, body));
+    super(ZendeskApiError.buildMessage(status, statusText, body, method));
     this.name = 'ZendeskApiError';
   }
 
-  private static buildMessage(status: number, statusText: string, body: string): string {
+  private static buildMessage(
+    status: number,
+    statusText: string,
+    body: string,
+    method: HttpMethod,
+  ): string {
     switch (status) {
       case 401:
         return 'Authentication failed. Your Zendesk token may be expired or invalid. Re-authenticate to get a new token.';
@@ -21,15 +41,20 @@ export class ZendeskApiError extends Error {
       case 422:
         return `Validation error: ${body}`;
       case 429:
-        return 'Rate limit exceeded. Please wait before making more requests.';
-      default:
-        return `Zendesk API error ${status}: ${statusText}. ${body}`;
+        // A 429 was refused outright, so a write is safe to send again later.
+        return `Rate limit exceeded. Please wait before making more requests.${writeNote(method, REFUSED_NOTE)}`;
+      default: {
+        const message = `Zendesk API error ${status}: ${statusText}. ${body}`;
+        // A 5xx is the dangerous one: the write is not replayed here precisely
+        // because it may have applied, so say so rather than let the caller retry.
+        return status >= 500 ? `${message}${writeNote(method, MAY_HAVE_APPLIED_NOTE)}` : message;
+      }
     }
   }
 }
 
 export interface ZendeskRequestOptions {
-  method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  method?: HttpMethod;
   body?: unknown;
   params?: Record<string, string>;
 }
@@ -47,6 +72,23 @@ const buildUrl = (base: string, path: string, params?: Record<string, string>): 
   return url.toString();
 };
 
+// Every request in this module goes through here: each attempt gets its own
+// deadline, transient failures are retried per the method's policy (`retry.ts`),
+// and a failure with no response at all is wrapped with the method and path
+// instead of surfacing a bare `fetch failed`. The signal is built inside the
+// thunk so every attempt starts its deadline fresh.
+const performFetch = (
+  method: HttpMethod,
+  url: string,
+  init: Omit<RequestInit, 'method' | 'signal'>,
+  timeoutMs: number = REQUEST_TIMEOUT_MS,
+): Promise<Response> =>
+  fetchWithRetry(
+    () => fetch(url, { ...init, method, signal: deadlineSignal(timeoutMs) }),
+    method,
+    describeTarget(url),
+  );
+
 const executeRequest = async <T>(
   url: string,
   token: string,
@@ -63,16 +105,16 @@ const executeRequest = async <T>(
     headers['Content-Type'] = 'application/json';
   }
 
-  const init: RequestInit = { method, headers };
+  const init: Omit<RequestInit, 'method'> = { headers };
   if (body) {
     init.body = JSON.stringify(body);
   }
 
-  const response = await fetch(url, init);
+  const response = await performFetch(method, url, init);
 
   if (!response.ok) {
     const responseBody = await response.text();
-    throw new ZendeskApiError(response.status, response.statusText, responseBody);
+    throw new ZendeskApiError(response.status, response.statusText, responseBody, method);
   }
 
   if (response.status === 204) {
@@ -157,10 +199,10 @@ export const fetchZendeskBinary = async (
   if (new URL(contentUrl).hostname === expectedHost) {
     headers['Authorization'] = buildAuthHeader(token);
   }
-  const response = await fetch(contentUrl, { headers });
+  const response = await performFetch('GET', contentUrl, { headers }, TRANSFER_TIMEOUT_MS);
   if (!response.ok) {
     const body = await response.text();
-    throw new ZendeskApiError(response.status, response.statusText, body);
+    throw new ZendeskApiError(response.status, response.statusText, body, 'GET');
   }
   const contentType = response.headers.get('content-type') ?? 'application/octet-stream';
   const arrayBuffer = await response.arrayBuffer();
@@ -169,8 +211,9 @@ export const fetchZendeskBinary = async (
 
 // Zendesk Uploads API: POST /uploads?filename=... with the raw file bytes as the
 // body and Content-Type set to the file's MIME type. `executeRequest` always
-// JSON-encodes, so this goes direct to fetch (like helpCenterUpload). Pass
-// `uploadToken` to aggregate another file under an existing upload token.
+// JSON-encodes, so this builds its own request (like helpCenterUpload) while
+// still sharing `performFetch`. Pass `uploadToken` to aggregate another file
+// under an existing upload token.
 export const zendeskUpload = async <T>(
   subdomain: string,
   token: string,
@@ -182,15 +225,19 @@ export const zendeskUpload = async <T>(
   const params: Record<string, string> = { filename };
   if (uploadToken) params['token'] = uploadToken;
   const url = buildUrl(getBaseUrl(subdomain), '/uploads', params);
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { Authorization: buildAuthHeader(token), 'Content-Type': contentType },
-    body: data,
-  });
+  const response = await performFetch(
+    'POST',
+    url,
+    {
+      headers: { Authorization: buildAuthHeader(token), 'Content-Type': contentType },
+      body: data,
+    },
+    TRANSFER_TIMEOUT_MS,
+  );
 
   if (!response.ok) {
     const responseBody = await response.text();
-    throw new ZendeskApiError(response.status, response.statusText, responseBody);
+    throw new ZendeskApiError(response.status, response.statusText, responseBody, 'POST');
   }
 
   return response.json() as Promise<T>;
@@ -203,15 +250,16 @@ export const helpCenterUpload = async <T>(
   formData: FormData,
 ): Promise<T> => {
   const url = buildUrl(getHelpCenterBaseUrl(subdomain), path);
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { Authorization: buildAuthHeader(token) },
-    body: formData,
-  });
+  const response = await performFetch(
+    'POST',
+    url,
+    { headers: { Authorization: buildAuthHeader(token) }, body: formData },
+    TRANSFER_TIMEOUT_MS,
+  );
 
   if (!response.ok) {
     const responseBody = await response.text();
-    throw new ZendeskApiError(response.status, response.statusText, responseBody);
+    throw new ZendeskApiError(response.status, response.statusText, responseBody, 'POST');
   }
 
   return response.json() as Promise<T>;

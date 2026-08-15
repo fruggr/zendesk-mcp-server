@@ -82,3 +82,37 @@ It links a real MCP `Client` to the server over an in-memory transport
 `tools/call`, `resources/list` and `resources/read` cross the wire and dispatch
 through the genuine handlers. Use it for quick manual checks, or as a basis for
 scripted or CI assertions.
+
+## C. `scripts/validate-retry.mjs`: failure paths, without a flaky network
+
+The retry, timeout and write-safety behaviour of the client only shows itself
+when Zendesk misbehaves, which a healthy tenant never does on request. This
+runner supplies the misbehaviour:
+
+```bash
+pnpm build
+node scripts/validate-retry.mjs             # 11 scenarios, ~80 s
+node scripts/validate-retry.mjs --skip-slow # drops the two that wait out a deadline
+```
+
+Each scenario boots the real server with `scripts/fault-inject.mjs` preloaded —
+MSW patching the same global `fetch` the Zendesk client uses — then drives a real
+MCP tool call over stdio. It judges the outcome on what the caller received **and
+on how many requests Zendesk actually saw**: that count is what proves a write was
+not replayed, where a message could be misread. The run exits non-zero if any
+scenario fails, so a green result is a fact rather than an impression.
+
+To exercise a mode by hand, set `FAULT` (`none`, `flaky-then-ok`, `500`, `404`,
+`429`, `429-brief`, `network`, `stall`, `slow-transfer`) and preload the same file:
+
+```bash
+FAULT=500 SUB=validation node --import ./scripts/fault-inject.mjs \
+  dist/index.js validation --mode all
+```
+
+Two things it cannot do. `HttpResponse.error()` raises a failure with **no syscall
+code**, so it cannot tell a pre-send `ENOTFOUND` from an in-flight `ECONNRESET` —
+the "never reached Zendesk, retrying is safe" branch is covered by unit tests
+only, and a real fault-injecting proxy would be needed to go further. And nothing
+here reaches production: `msw` is a devDependency, and no file under `src/`
+imports it.

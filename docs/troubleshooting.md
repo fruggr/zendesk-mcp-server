@@ -111,6 +111,49 @@ those rights, read an existing article with `get_article` and reuse the IDs it
 reports; omitting `user_segment_id` on create/update keeps the default visibility
 (everyone).
 
+## A tool call fails with `Network error on GET https://…`
+
+The request never got an HTTP response — DNS, a refused or reset connection, a
+proxy dropping the link. The message names the method and the path so you know
+what failed, with credentials stripped: no bearer token, no query string, and an
+attachment URL's download token redacted from the path.
+
+The request is tried up to 3 times (so up to two retries) with backoff before you
+see this, meaning every attempt failed. What gets retried depends on the method,
+because a replay must never duplicate a write:
+
+| | Network failure | `5xx` | `429` |
+| --- | --- | --- | --- |
+| `GET` | retried | retried | retried |
+| `POST`, `PUT`, `DELETE` | retried only if the connection never opened | **not retried** | retried |
+
+So a create, a comment or a delete is never sent twice: a `429` means Zendesk
+refused the request, but a `5xx` may have applied it, so it is surfaced rather
+than replayed — including on a delete, where a replay would report a misleading
+`404` for work that succeeded.
+
+A failed **write** says which of the two it was, so that retrying it by hand (or
+having an assistant retry it) does not create the duplicate the client just
+avoided:
+
+| The message ends with | What it means |
+| --- | --- |
+| *The write may already have been applied…* | check the ticket or article before retrying |
+| *…nothing was applied. Retrying is safe.* | the request was refused or never left; send it again |
+
+A read never carries either note: replaying a `GET` cannot duplicate anything.
+
+When a response carries `Retry-After` (Zendesk sends it on a `429`, and on a `503`
+during maintenance), that delay is used instead of the backoff — unless it exceeds
+5 s, in which case the response is surfaced rather than parking the call for that
+long. Wait and ask again.
+
+Each attempt also has its own deadline — 30 s, or 120 s for attachment downloads
+and uploads — because Node's `fetch` otherwise waits up to 300 s on a stalled
+socket. Hitting it reads `TimeoutError: The operation was aborted due to timeout`.
+A read is retried after a timeout; a write is not, since the request may have
+reached Zendesk before the deadline passed.
+
 Where each client writes the server's stderr:
 
 | Client | Log location |
