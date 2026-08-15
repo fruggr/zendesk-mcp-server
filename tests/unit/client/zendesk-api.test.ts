@@ -341,6 +341,7 @@ describe('what a failed write tells the caller', () => {
     expect((error as ZendeskApiError).message).toContain(
       'The write may already have been applied.',
     );
+    expect((error as ZendeskApiError).method).toBe('POST');
   });
 
   // Asserted whole, not just "does not contain the note": nothing at all may be
