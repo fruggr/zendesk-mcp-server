@@ -114,6 +114,23 @@ export type ZendeskNetworkError = Error & {
 const UNINFORMATIVE_NAMES: ReadonlySet<string> = new Set(['Error', 'TypeError']);
 
 /**
+ * The client refuses to replay a write that may have landed — but the caller is
+ * an LLM whose reflex on a failed tool call is to try again, which would undo
+ * that. So a failed write says whether it may have taken effect. ASCII only,
+ * same rule as the rest of the message.
+ */
+export const MAY_HAVE_APPLIED_NOTE =
+  'The write may already have been applied. Check the current state before retrying, or you may duplicate it.';
+export const NEVER_SENT_NOTE =
+  'The request never reached Zendesk, so nothing was applied. Retrying is safe.';
+export const REFUSED_NOTE =
+  'Zendesk refused the request, so nothing was applied. Retrying is safe.';
+
+/** Only a write can be duplicated by a replay, so only a write carries a note. */
+export const writeNote = (method: HttpMethod, note: string): string =>
+  method === 'GET' ? '' : ` ${note}`;
+
+/**
  * A cause message can quote the URL it failed on — Node's `fetch` refuses a URL
  * carrying credentials by printing the whole thing, query string included — which
  * would smuggle back exactly what `describeTarget` drops. Same treatment for both,
@@ -144,7 +161,11 @@ const networkErrorMessage = (
   cause: unknown,
 ): string => {
   const tries = attempts === 1 ? '1 attempt' : `${attempts} attempts`;
-  return toAscii(`Network error on ${method} ${target} after ${tries}: ${failureDetail(cause)}`);
+  const base = `Network error on ${method} ${target} after ${tries}: ${failureDetail(cause)}`;
+  // The phase of the *last* failure is what decides: the loop stops at the first
+  // one the policy will not replay.
+  const note = classifyNetworkError(cause) === 'pre-send' ? NEVER_SENT_NOTE : MAY_HAVE_APPLIED_NOTE;
+  return toAscii(method === 'GET' ? base : `${base}.${writeNote(method, note)}`);
 };
 
 export const createZendeskNetworkError = (

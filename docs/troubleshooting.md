@@ -132,6 +132,17 @@ refused the request, but a `5xx` may have applied it, so it is surfaced rather
 than replayed — including on a delete, where a replay would report a misleading
 `404` for work that succeeded.
 
+A failed **write** says which of the two it was, so that retrying it by hand (or
+having an assistant retry it) does not create the duplicate the client just
+avoided:
+
+| The message ends with | What it means |
+| --- | --- |
+| *The write may already have been applied…* | check the ticket or article before retrying |
+| *…nothing was applied. Retrying is safe.* | the request was refused or never left; send it again |
+
+A read never carries either note: replaying a `GET` cannot duplicate anything.
+
 When a response carries `Retry-After` (Zendesk sends it on a `429`, and on a `503`
 during maintenance), that delay is used instead of the backoff — unless it exceeds
 5 s, in which case the response is surfaced rather than parking the call for that

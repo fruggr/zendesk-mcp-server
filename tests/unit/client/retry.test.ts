@@ -7,6 +7,8 @@ import {
   describeTarget,
   fetchWithRetry,
   isZendeskNetworkError,
+  MAY_HAVE_APPLIED_NOTE,
+  NEVER_SENT_NOTE,
   parseRetryAfter,
   REQUEST_TIMEOUT_MS,
   TRANSFER_TIMEOUT_MS,
@@ -205,7 +207,7 @@ describe('deadline aborts', () => {
 
     expect(calls.count).toBe(1);
     expect((error as ZendeskNetworkError).message).toBe(
-      `Network error on POST ${TARGET} after 1 attempt: TimeoutError: The operation was aborted due to timeout`,
+      `Network error on POST ${TARGET} after 1 attempt: TimeoutError: The operation was aborted due to timeout. ${MAY_HAVE_APPLIED_NOTE}`,
     );
   });
 
@@ -373,7 +375,7 @@ describe('fetchWithRetry — network failures', () => {
     const error = await fetchWithRetry(attempt, 'POST', TARGET, deps).catch((e: unknown) => e);
 
     expect((error as ZendeskNetworkError).message).toBe(
-      `Network error on POST ${TARGET} after 1 attempt: socket gone`,
+      `Network error on POST ${TARGET} after 1 attempt: socket gone. ${MAY_HAVE_APPLIED_NOTE}`,
     );
   });
 
@@ -384,7 +386,7 @@ describe('fetchWithRetry — network failures', () => {
     const error = await fetchWithRetry(attempt, 'POST', TARGET, deps).catch((e: unknown) => e);
 
     expect((error as ZendeskNetworkError).message).toBe(
-      `Network error on POST ${TARGET} after 1 attempt: ?chec r?seau`,
+      `Network error on POST ${TARGET} after 1 attempt: ?chec r?seau. ${MAY_HAVE_APPLIED_NOTE}`,
     );
   });
 
@@ -431,7 +433,7 @@ describe('fetchWithRetry — network failures', () => {
     it('drops a URL-like substring it cannot parse', async () => {
       const message = await messageFor('Failed to parse URL from http://[::1');
       expect(message).toBe(
-        `Network error on POST ${TARGET} after 1 attempt: Failed to parse URL from [url]`,
+        `Network error on POST ${TARGET} after 1 attempt: Failed to parse URL from [url]. ${MAY_HAVE_APPLIED_NOTE}`,
       );
     });
 
@@ -443,7 +445,7 @@ describe('fetchWithRetry — network failures', () => {
 
     it('leaves a message without a URL untouched', async () => {
       expect(await messageFor('socket hang up')).toBe(
-        `Network error on POST ${TARGET} after 1 attempt: socket hang up`,
+        `Network error on POST ${TARGET} after 1 attempt: socket hang up. ${MAY_HAVE_APPLIED_NOTE}`,
       );
     });
 
@@ -466,6 +468,44 @@ describe('fetchWithRetry — network failures', () => {
 
     expect((error as ZendeskNetworkError).message).toBe(
       `Network error on GET ${TARGET} after 3 attempts: fetch failed`,
+    );
+  });
+});
+
+// The client refuses to replay a write that may have landed. An LLM's reflex on a
+// failed tool call is to try again, which would undo that — so the message has to
+// say whether the write may have taken effect.
+describe('what a failed write tells the caller', () => {
+  const messageFor = async (method: 'GET' | 'POST' | 'PUT' | 'DELETE', cause: Error) => {
+    const { attempt } = attempts(cause);
+    const error = await fetchWithRetry(attempt, method, TARGET, recordingDeps().deps).catch(
+      (e: unknown) => e,
+    );
+    return (error as ZendeskNetworkError).message;
+  };
+
+  it.each(['POST', 'PUT', 'DELETE'] as const)(
+    'warns that a %s may already have applied when the request may have been sent',
+    async (method) => {
+      expect(await messageFor(method, netError('ECONNRESET'))).toContain(MAY_HAVE_APPLIED_NOTE);
+    },
+  );
+
+  it.each(['POST', 'PUT', 'DELETE'] as const)(
+    'tells a %s it is safe to retry when the connection never opened',
+    async (method) => {
+      const message = await messageFor(method, netError('ENOTFOUND'));
+      expect(message).toContain(NEVER_SENT_NOTE);
+      expect(message).not.toContain(MAY_HAVE_APPLIED_NOTE);
+    },
+  );
+
+  it('says nothing of the sort on a GET, which cannot duplicate anything', async () => {
+    const message = await messageFor('GET', netError('ECONNRESET'));
+    expect(message).not.toContain(MAY_HAVE_APPLIED_NOTE);
+    expect(message).not.toContain(NEVER_SENT_NOTE);
+    expect(message).toBe(
+      `Network error on GET ${TARGET} after 3 attempts: ECONNRESET: fetch failed`,
     );
   });
 });

@@ -4,8 +4,11 @@ import {
   describeTarget,
   fetchWithRetry,
   type HttpMethod,
+  MAY_HAVE_APPLIED_NOTE,
+  REFUSED_NOTE,
   REQUEST_TIMEOUT_MS,
   TRANSFER_TIMEOUT_MS,
+  writeNote,
 } from './retry';
 
 export class ZendeskApiError extends Error {
@@ -13,12 +16,20 @@ export class ZendeskApiError extends Error {
     public readonly status: number,
     public readonly statusText: string,
     public readonly body: string,
+    // Only used to tell a failed write whether it may have taken effect; the
+    // per-status wording is otherwise unchanged.
+    method: HttpMethod = 'GET',
   ) {
-    super(ZendeskApiError.buildMessage(status, statusText, body));
+    super(ZendeskApiError.buildMessage(status, statusText, body, method));
     this.name = 'ZendeskApiError';
   }
 
-  private static buildMessage(status: number, statusText: string, body: string): string {
+  private static buildMessage(
+    status: number,
+    statusText: string,
+    body: string,
+    method: HttpMethod,
+  ): string {
     switch (status) {
       case 401:
         return 'Authentication failed. Your Zendesk token may be expired or invalid. Re-authenticate to get a new token.';
@@ -29,9 +40,14 @@ export class ZendeskApiError extends Error {
       case 422:
         return `Validation error: ${body}`;
       case 429:
-        return 'Rate limit exceeded. Please wait before making more requests.';
-      default:
-        return `Zendesk API error ${status}: ${statusText}. ${body}`;
+        // A 429 was refused outright, so a write is safe to send again later.
+        return `Rate limit exceeded. Please wait before making more requests.${writeNote(method, REFUSED_NOTE)}`;
+      default: {
+        const message = `Zendesk API error ${status}: ${statusText}. ${body}`;
+        // A 5xx is the dangerous one: the write is not replayed here precisely
+        // because it may have applied, so say so rather than let the caller retry.
+        return status >= 500 ? `${message}${writeNote(method, MAY_HAVE_APPLIED_NOTE)}` : message;
+      }
     }
   }
 }
@@ -97,7 +113,7 @@ const executeRequest = async <T>(
 
   if (!response.ok) {
     const responseBody = await response.text();
-    throw new ZendeskApiError(response.status, response.statusText, responseBody);
+    throw new ZendeskApiError(response.status, response.statusText, responseBody, method);
   }
 
   if (response.status === 204) {
@@ -185,7 +201,7 @@ export const fetchZendeskBinary = async (
   const response = await performFetch('GET', contentUrl, { headers }, TRANSFER_TIMEOUT_MS);
   if (!response.ok) {
     const body = await response.text();
-    throw new ZendeskApiError(response.status, response.statusText, body);
+    throw new ZendeskApiError(response.status, response.statusText, body, 'GET');
   }
   const contentType = response.headers.get('content-type') ?? 'application/octet-stream';
   const arrayBuffer = await response.arrayBuffer();
@@ -220,7 +236,7 @@ export const zendeskUpload = async <T>(
 
   if (!response.ok) {
     const responseBody = await response.text();
-    throw new ZendeskApiError(response.status, response.statusText, responseBody);
+    throw new ZendeskApiError(response.status, response.statusText, responseBody, 'POST');
   }
 
   return response.json() as Promise<T>;
@@ -242,7 +258,7 @@ export const helpCenterUpload = async <T>(
 
   if (!response.ok) {
     const responseBody = await response.text();
-    throw new ZendeskApiError(response.status, response.statusText, responseBody);
+    throw new ZendeskApiError(response.status, response.statusText, responseBody, 'POST');
   }
 
   return response.json() as Promise<T>;

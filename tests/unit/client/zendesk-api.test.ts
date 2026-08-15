@@ -1,6 +1,11 @@
 import { HttpResponse, http } from 'msw';
 import { describe, expect, it } from 'vitest';
-import { isZendeskNetworkError, type ZendeskNetworkError } from '../../../src/client/retry';
+import {
+  isZendeskNetworkError,
+  MAY_HAVE_APPLIED_NOTE,
+  REFUSED_NOTE,
+  type ZendeskNetworkError,
+} from '../../../src/client/retry';
 import {
   fetchZendeskBinary,
   helpCenterGet,
@@ -263,6 +268,63 @@ describe('uploads', () => {
       auth: `Bearer ${TOKEN}`,
       file: 'contents',
     });
+  });
+});
+
+// Same reasoning as the network errors: a 5xx write is not replayed here because
+// it may have applied, so the message has to say that rather than let the caller
+// retry into a duplicate.
+describe('what a failed write tells the caller', () => {
+  const failing = (method: 'get' | 'post' | 'put', path: string, code: number, headers = {}) =>
+    mswServer.use(
+      http[method](`https://testsubdomain.zendesk.com/api/v2${path}`, () =>
+        HttpResponse.json({}, { status: code, headers }),
+      ),
+    );
+
+  it('warns that a 500 on a write may already have applied', async () => {
+    failing('put', '/tickets/1', 500);
+
+    const error = await zendeskPut(SUB, TOKEN, '/tickets/1', {
+      ticket: { comment: { body: 'hi' } },
+    }).catch((e: unknown) => e);
+
+    expect((error as ZendeskApiError).message).toContain(MAY_HAVE_APPLIED_NOTE);
+  });
+
+  it('says a throttled write was refused, so retrying is safe', async () => {
+    failing('post', '/tickets', 429, { 'Retry-After': '600' });
+
+    const error = await zendeskPost(SUB, TOKEN, '/tickets', { ticket: {} }).catch(
+      (e: unknown) => e,
+    );
+
+    const message = (error as ZendeskApiError).message;
+    expect(message).toContain('Rate limit exceeded');
+    expect(message).toContain(REFUSED_NOTE);
+  });
+
+  it.each([
+    ['500', 500],
+    ['429', 429],
+  ])('adds no such note to a read that got a %s', async (_label, code) => {
+    failing('get', '/flaky', code, { 'Retry-After': '600' });
+
+    const error = await zendeskGet(SUB, TOKEN, '/flaky').catch((e: unknown) => e);
+
+    const message = (error as ZendeskApiError).message;
+    expect(message).not.toContain(MAY_HAVE_APPLIED_NOTE);
+    expect(message).not.toContain(REFUSED_NOTE);
+  });
+
+  it('leaves a 404 and a 422 unchanged', async () => {
+    failing('put', '/tickets/1', 422);
+
+    const error = await zendeskPut(SUB, TOKEN, '/tickets/1', { ticket: {} }).catch(
+      (e: unknown) => e,
+    );
+
+    expect((error as ZendeskApiError).message).toBe('Validation error: {}');
   });
 });
 
