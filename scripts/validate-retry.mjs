@@ -9,7 +9,7 @@
 // cannot.
 //
 // Exits non-zero if any scenario fails, so a green run is a fact rather than an
-// impression. `--skip-slow` drops the 30 s deadline scenario.
+// impression. `--skip-slow` drops the two scenarios that wait out a real deadline.
 
 import { spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
@@ -97,6 +97,15 @@ const SCENARIOS = [
   {
     id: 'S9',
     slow: true,
+    what: 'a transfer slower than the 30 s JSON deadline still completes on the binary path',
+    fault: 'slow-transfer',
+    tool: 'get_ticket_attachments',
+    args: { ticket_id: 1 },
+    expect: { requests: 2, isError: false, contains: ['shot.png'], minMs: 34_000 },
+  },
+  {
+    id: 'S10',
+    slow: true,
     what: 'a stalled socket is cut by the per-attempt deadline, not left hanging',
     fault: 'stall',
     tool: 'add_private_note',
@@ -104,6 +113,15 @@ const SCENARIOS = [
     expect: { requests: 1, isError: true, contains: ['TimeoutError'], minMs: 29_000 },
   },
 ];
+
+SCENARIOS.push({
+  id: 'S11',
+  what: 'a 404 is terminal: one request, and the wording is untouched',
+  fault: '404',
+  tool: 'get_current_user',
+  args: {},
+  expect: { requests: 1, isError: true, contains: ['Resource not found'] },
+});
 
 const seedTokenFile = () => {
   const file = join(mkdtempSync(join(tmpdir(), 'zendesk-validation-')), 'token.json');
@@ -242,7 +260,7 @@ for (const scenario of chosen) {
 
 console.log(
   failed === 0
-    ? `All ${chosen.length} scenarios passed.${skipSlow ? ' (deadline scenario skipped)' : ''}`
+    ? `All ${chosen.length} scenarios passed.${skipSlow ? ` (${SCENARIOS.length - chosen.length} slow scenarios skipped)` : ''}`
     : `${failed} of ${chosen.length} scenarios failed.`,
 );
 process.exit(failed === 0 ? 0 : 1);

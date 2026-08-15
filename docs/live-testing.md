@@ -91,8 +91,8 @@ runner supplies the misbehaviour:
 
 ```bash
 pnpm build
-node scripts/validate-retry.mjs             # 8 scenarios, ~40 s
-node scripts/validate-retry.mjs --skip-slow # drops the 30 s deadline scenario
+node scripts/validate-retry.mjs             # 11 scenarios, ~80 s
+node scripts/validate-retry.mjs --skip-slow # drops the two that wait out a deadline
 ```
 
 Each scenario boots the real server with `scripts/fault-inject.mjs` preloaded —
@@ -102,8 +102,8 @@ on how many requests Zendesk actually saw**: that count is what proves a write w
 not replayed, where a message could be misread. The run exits non-zero if any
 scenario fails, so a green result is a fact rather than an impression.
 
-To exercise a mode by hand, set `FAULT` (`none`, `flaky-then-ok`, `500`, `429`,
-`network`, `stall`) and preload the same file:
+To exercise a mode by hand, set `FAULT` (`none`, `flaky-then-ok`, `500`, `404`,
+`429`, `429-brief`, `network`, `stall`, `slow-transfer`) and preload the same file:
 
 ```bash
 FAULT=500 SUB=validation node --import ./scripts/fault-inject.mjs \
