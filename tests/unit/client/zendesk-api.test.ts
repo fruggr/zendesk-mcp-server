@@ -304,17 +304,40 @@ describe('what a failed write tells the caller', () => {
     expect(message).toContain(REFUSED_NOTE);
   });
 
-  it.each([
-    ['500', 500],
-    ['429', 429],
-  ])('adds no such note to a read that got a %s', async (_label, code) => {
-    failing('get', '/flaky', code, { 'Retry-After': '600' });
+  // Asserted whole, not just "does not contain the note": nothing at all may be
+  // appended to a read's message.
+  it('leaves a read that got a 500 exactly as it was', async () => {
+    failing('get', '/flaky', 500);
 
     const error = await zendeskGet(SUB, TOKEN, '/flaky').catch((e: unknown) => e);
 
-    const message = (error as ZendeskApiError).message;
-    expect(message).not.toContain(MAY_HAVE_APPLIED_NOTE);
-    expect(message).not.toContain(REFUSED_NOTE);
+    expect((error as ZendeskApiError).message).toMatch(/^Zendesk API error 500: .*\. \{\}$/);
+  });
+
+  it('leaves a throttled read exactly as it was', async () => {
+    failing('get', '/flaky', 429, { 'Retry-After': '600' });
+
+    const error = await zendeskGet(SUB, TOKEN, '/flaky').catch((e: unknown) => e);
+
+    expect((error as ZendeskApiError).message).toBe(
+      'Rate limit exceeded. Please wait before making more requests.',
+    );
+  });
+
+  it('leaves a failed attachment download unannotated, since it is a read', async () => {
+    mswServer.use(
+      http.get('https://testsubdomain.zendesk.com/attachments/9.png', () =>
+        HttpResponse.json({}, { status: 500 }),
+      ),
+    );
+
+    const error = await fetchZendeskBinary(
+      SUB,
+      TOKEN,
+      'https://testsubdomain.zendesk.com/attachments/9.png',
+    ).catch((e: unknown) => e);
+
+    expect((error as ZendeskApiError).message).toMatch(/^Zendesk API error 500: .*\. \{\}$/);
   });
 
   it('leaves a 404 and a 422 unchanged', async () => {
