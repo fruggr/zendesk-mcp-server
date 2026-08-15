@@ -150,12 +150,15 @@ const runScenario = (scenario, tokenPath) =>
 
     let requests = 0;
     let stdout = '';
+    let stderr = '';
     let settled = false;
     let watchdog;
     const started = Date.now();
 
     child.stderr.on('data', (chunk) => {
-      requests += (chunk.toString().match(/\[fault] hit #/g) ?? []).length;
+      const text = chunk.toString();
+      stderr += text;
+      requests += (text.match(/\[fault] hit #/g) ?? []).length;
     });
 
     const finish = (outcome) => {
@@ -184,6 +187,21 @@ const runScenario = (scenario, tokenPath) =>
           JSON.stringify(payload);
         finish({ isError: Boolean(payload?.isError ?? message.error), text });
       }
+    });
+
+    // A child that dies before answering would otherwise sit out the watchdog.
+    // `close` rather than `exit`, so a response already in the pipe still wins.
+    child.on('error', (error) =>
+      finish({ isError: true, text: `<spawn failed: ${error.message}>` }),
+    );
+    child.stdin.on('error', () => {});
+    child.on('close', (code, signal) => {
+      const lines = stderr.split('\n').filter((line) => line.trim());
+      const why = lines.find((line) => /Error/.test(line)) ?? lines.at(-1) ?? '';
+      finish({
+        isError: true,
+        text: `<server exited (code=${code}, signal=${signal}) before responding> ${why.trim()}`,
+      });
     });
 
     const send = (msg) => child.stdin.write(`${JSON.stringify(msg)}\n`);
