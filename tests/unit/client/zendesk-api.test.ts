@@ -289,7 +289,9 @@ describe('what a failed write tells the caller', () => {
       ticket: { comment: { body: 'hi' } },
     }).catch((e: unknown) => e);
 
-    expect((error as ZendeskApiError).message).toContain(MAY_HAVE_APPLIED_NOTE);
+    const message = (error as ZendeskApiError).message;
+    expect(message).toContain(MAY_HAVE_APPLIED_NOTE);
+    expect(message).toContain('The write may already have been applied.');
   });
 
   it('says a throttled write was refused, so retrying is safe', async () => {
@@ -302,6 +304,43 @@ describe('what a failed write tells the caller', () => {
     const message = (error as ZendeskApiError).message;
     expect(message).toContain('Rate limit exceeded');
     expect(message).toContain(REFUSED_NOTE);
+    expect(message).toContain('Zendesk refused the request, so nothing was applied.');
+  });
+
+  // 400 falls to the same branch as 5xx but must not be annotated: it did not
+  // apply, and retrying it unchanged will not help either.
+  it('leaves a 400 on a write unannotated', async () => {
+    failing('put', '/tickets/1', 400);
+
+    const error = await zendeskPut(SUB, TOKEN, '/tickets/1', { ticket: {} }).catch(
+      (e: unknown) => e,
+    );
+
+    expect((error as ZendeskApiError).message).toMatch(/^Zendesk API error 400: .*\. \{\}$/);
+  });
+
+  it.each([
+    ['zendeskUpload', () => zendeskUpload(SUB, TOKEN, 'a.png', Buffer.from('x'), 'image/png')],
+    [
+      'helpCenterUpload',
+      () => helpCenterUpload(SUB, TOKEN, '/articles/5000/attachments', new FormData()),
+    ],
+  ])('warns that a failed %s may already have applied', async (_label, call) => {
+    mswServer.use(
+      http.post('https://testsubdomain.zendesk.com/api/v2/uploads', () =>
+        HttpResponse.json({}, { status: 500 }),
+      ),
+      http.post(
+        'https://testsubdomain.zendesk.com/api/v2/help_center/articles/5000/attachments',
+        () => HttpResponse.json({}, { status: 500 }),
+      ),
+    );
+
+    const error = await call().catch((e: unknown) => e);
+
+    expect((error as ZendeskApiError).message).toContain(
+      'The write may already have been applied.',
+    );
   });
 
   // Asserted whole, not just "does not contain the note": nothing at all may be

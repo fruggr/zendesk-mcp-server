@@ -487,7 +487,9 @@ describe('what a failed write tells the caller', () => {
   it.each(['POST', 'PUT', 'DELETE'] as const)(
     'warns that a %s may already have applied when the request may have been sent',
     async (method) => {
-      expect(await messageFor(method, netError('ECONNRESET'))).toContain(MAY_HAVE_APPLIED_NOTE);
+      const message = await messageFor(method, netError('ECONNRESET'));
+      expect(message).toContain(MAY_HAVE_APPLIED_NOTE);
+      expect(message).toContain('The write may already have been applied.');
     },
   );
 
@@ -496,6 +498,7 @@ describe('what a failed write tells the caller', () => {
     async (method) => {
       const message = await messageFor(method, netError('ENOTFOUND'));
       expect(message).toContain(NEVER_SENT_NOTE);
+      expect(message).toContain('The request never reached Zendesk, so nothing was applied.');
       expect(message).not.toContain(MAY_HAVE_APPLIED_NOTE);
     },
   );

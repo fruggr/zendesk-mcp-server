@@ -18,7 +18,7 @@ export class ZendeskApiError extends Error {
     public readonly body: string,
     // Only used to tell a failed write whether it may have taken effect; the
     // per-status wording is otherwise unchanged.
-    method: HttpMethod = 'GET',
+    method: HttpMethod,
   ) {
     super(ZendeskApiError.buildMessage(status, statusText, body, method));
     this.name = 'ZendeskApiError';
