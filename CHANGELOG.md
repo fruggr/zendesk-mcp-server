@@ -1,3 +1,24 @@
+## [2.18.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.17.2...v2.18.0) (2026-08-15)
+
+### Features
+
+* **client:** retry transient failures and name network errors ([#236](https://github.com/fruggr/zendesk-mcp-server/issues/236)) ([e9a9331](https://github.com/fruggr/zendesk-mcp-server/commit/e9a9331af1c44d007ede2bd8d2dda2e679525b69))
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Documentation
+
+* **http:** document SSE keep-alive, anti-buffering and session eviction ([#234](https://github.com/fruggr/zendesk-mcp-server/issues/234)) ([21aaa80](https://github.com/fruggr/zendesk-mcp-server/commit/21aaa804b835846d24c10008833b83d12fb0b1da))
+
+### Chores
+
+* **deps:** lock file maintenance ([#237](https://github.com/fruggr/zendesk-mcp-server/issues/237)) ([d2977e0](https://github.com/fruggr/zendesk-mcp-server/commit/d2977e06262b2e1946a81e305e9d8c72ba01a253))
+* **deps:** update pnpm to v11.21.0 ([#238](https://github.com/fruggr/zendesk-mcp-server/issues/238)) ([1e317c3](https://github.com/fruggr/zendesk-mcp-server/commit/1e317c375d91ba3473a7787fa3b98daf1c60f669))
+* **deps:** update semantic-release monorepo (major) ([#235](https://github.com/fruggr/zendesk-mcp-server/issues/235)) ([bdae569](https://github.com/fruggr/zendesk-mcp-server/commit/bdae5699c0a3f573d967fb2f416cc395a4455683))
+* **scripts:** drop the one-shot ground-truth probes now that they have run ([#232](https://github.com/fruggr/zendesk-mcp-server/issues/232)) ([be8cc98](https://github.com/fruggr/zendesk-mcp-server/commit/be8cc982d7a5f7414a1135ab63b58ea03b9503b1))
+</details>
+
 ## [2.17.2](https://github.com/fruggr/zendesk-mcp-server/compare/v2.17.1...v2.17.2) (2026-08-12)
 
 ### Performance Improvements
