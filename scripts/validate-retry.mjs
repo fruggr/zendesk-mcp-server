@@ -59,14 +59,22 @@ const SCENARIOS = [
   },
   {
     id: 'S5',
-    what: 'a throttled write is refused outright, so retrying is safe',
+    what: 'a throttled write IS replayed, exactly once — Zendesk refused it, so it never applied',
+    fault: '429-brief',
+    tool: 'add_private_note',
+    args: { ticket_id: 1, body: 'validation note' },
+    expect: { requests: 2, isError: false },
+  },
+  {
+    id: 'S6',
+    what: 'a Retry-After beyond the cap is surfaced instead of parking the call',
     fault: '429',
     tool: 'add_private_note',
     args: { ticket_id: 1, body: 'validation note' },
     expect: { requests: 1, isError: true, contains: ['Rate limit exceeded', NOTE_REFUSED] },
   },
   {
-    id: 'S6',
+    id: 'S7',
     what: 'a write that failed with no response is not replayed either',
     fault: 'network',
     tool: 'add_private_note',
@@ -79,7 +87,7 @@ const SCENARIOS = [
     },
   },
   {
-    id: 'S7',
+    id: 'S8',
     what: 'a read retries a failure with no response, then names it',
     fault: 'network',
     tool: 'get_current_user',
@@ -87,7 +95,7 @@ const SCENARIOS = [
     expect: { requests: 3, isError: true, contains: ['Network error on GET', 'after 3 attempts'] },
   },
   {
-    id: 'S8',
+    id: 'S9',
     slow: true,
     what: 'a stalled socket is cut by the per-attempt deadline, not left hanging',
     fault: 'stall',
@@ -125,6 +133,7 @@ const runScenario = (scenario, tokenPath) =>
     let requests = 0;
     let stdout = '';
     let settled = false;
+    let watchdog;
     const started = Date.now();
 
     child.stderr.on('data', (chunk) => {
@@ -134,6 +143,7 @@ const runScenario = (scenario, tokenPath) =>
     const finish = (outcome) => {
       if (settled) return;
       settled = true;
+      clearTimeout(watchdog);
       child.kill();
       resolve({ ...outcome, requests, elapsedMs: Date.now() - started });
     };
@@ -177,7 +187,10 @@ const runScenario = (scenario, tokenPath) =>
       params: { name: scenario.tool, arguments: scenario.args },
     });
 
-    setTimeout(() => finish({ isError: true, text: '<no response within 60 s>' }), 60_000);
+    watchdog = setTimeout(
+      () => finish({ isError: true, text: '<no response within 60 s>' }),
+      60_000,
+    );
   });
 
 const judge = (scenario, outcome) => {

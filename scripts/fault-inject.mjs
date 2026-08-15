@@ -38,7 +38,13 @@ const respond = async () => {
     case '500':
       return HttpResponse.json({ error: 'injected' }, { status: 500 });
     case '429':
+      // Beyond the client's Retry-After cap: it must surface, not park the call.
       return HttpResponse.json({}, { status: 429, headers: { 'Retry-After': '600' } });
+    case '429-brief':
+      // Within the cap: Zendesk refused the request, so a write may be re-sent.
+      return hits === 1
+        ? HttpResponse.json({}, { status: 429, headers: { 'Retry-After': '0' } })
+        : HttpResponse.json({ user: USER, ticket: { id: 1, subject: 'ok', status: 'open' } });
     case 'network':
       return HttpResponse.error();
     case 'flaky-then-ok':
