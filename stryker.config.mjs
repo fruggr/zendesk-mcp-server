@@ -64,9 +64,10 @@ export default {
   // script can read them from the config instead of hardcoding a default.
   //
   // `dashboard` is conditional because it is the only reporter with a
-  // precondition: without `STRYKER_DASHBOARD_API_KEY` the client still PUTs,
-  // takes a 401 and logs `Could not upload report.` — a red herring on every
-  // local run and every fork PR. Gating on the variable, rather than on a
+  // precondition: nothing checks for `STRYKER_DASHBOARD_API_KEY` before the
+  // request, so on CI — where `project` and `version` resolve — a keyless run
+  // PUTs anyway, takes a 401 and logs `Could not upload report.`, a red herring
+  // on every fork PR. Gating on the variable, rather than on a
   // `--reporters` override at the one call site that publishes, is what makes
   // "only the baseline publishes" a property of the config instead of something
   // the workflow has to keep remembering: the secret is exposed to the baseline
