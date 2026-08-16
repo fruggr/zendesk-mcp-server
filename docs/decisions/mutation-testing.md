@@ -147,7 +147,8 @@ The point the projection served holds regardless, with more room than it claimed
 with the baseline restored a normal PR costs well under a minute, which is what
 makes a PR-time gate viable rather than a nightly one. A gate that only reports
 after merge reports too late. Re-measure if `src/tools/**` ever enters the scope —
-that is the change that would make 65 min real.
+that is the change that would make 65 min real, and it would overrun the
+baseline job's `timeout-minutes`, which is sized for the scope above.
 
 > **Note on Vitest and incremental mode.** Stryker's per-test change detection
 > is fine-grained for Jest and CucumberJS only. For Vitest it works per *file*:

@@ -65,8 +65,10 @@ jobs:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     # Only a changed cache prefix costs a full cold run: 6-10 min measured on
-    # `main`, against 45 s to 2 min warm. The budget stays loose deliberately —
-    # it detects a hang, and the mutate scope is expected to grow. ADR section 4.
+    # `main`, against 45 s to 2 min warm. The budget is loose because it detects
+    # a hang, not because it anticipates growth — it is sized for *this* scope,
+    # and the ADR projects ~65 min if `src/tools/**` ever enters `mutate`, so
+    # re-measure and raise this before widening it. ADR section 4.
     timeout-minutes: 45
     concurrency:
       group: mutation-baseline
