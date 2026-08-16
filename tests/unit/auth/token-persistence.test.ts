@@ -7,6 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const files = new Map<string, string>();
 const chmodCalls: Array<{ path: string; mode: number }> = [];
 let failWrite = false;
+// Set to make the *directory* chmod fail, which the writer treats as best-effort.
+let failDirChmod = false;
 
 vi.mock('node:fs', () => ({
   readFileSync: (p: string) => {
@@ -29,6 +31,9 @@ vi.mock('node:fs', () => ({
   },
   mkdirSync: () => undefined,
   chmodSync: (p: string, mode: number) => {
+    if (failDirChmod && !p.endsWith('.tmp')) {
+      throw Object.assign(new Error('EPERM'), { code: 'EPERM' });
+    }
     chmodCalls.push({ path: p, mode });
   },
 }));
@@ -47,6 +52,7 @@ describe('token-persistence', () => {
     files.clear();
     chmodCalls.length = 0;
     failWrite = false;
+    failDirChmod = false;
     delete process.env['ZENDESK_TOKEN_FILE'];
     delete process.env['XDG_CONFIG_HOME'];
     delete process.env['APPDATA'];
@@ -100,6 +106,31 @@ describe('token-persistence', () => {
     expect(loadToken(path)).toEqual({ accessToken: 'a', refreshToken: 'r', expiresAt: 123 });
     // Written to a temp file (chmod 0600) then renamed onto the final path.
     expect(chmodCalls.some((c) => c.path.endsWith('.tmp') && c.mode === 0o600)).toBe(true);
+  });
+
+  it('tightens the enclosing config dir to 0700 on non-Windows', async () => {
+    setPlatform('linux');
+    const { saveToken } = await importFresh();
+
+    saveToken('/cfg/acme.json', { accessToken: 'a' });
+
+    // The token file itself is 0600 (asserted above); the dir holding every
+    // subdomain's token is narrowed to owner-only in the same write.
+    expect(chmodCalls).toContainEqual({ path: '/cfg', mode: 0o700 });
+  });
+
+  it('still writes the token when tightening the config dir is refused', async () => {
+    setPlatform('linux');
+    failDirChmod = true;
+    const { saveToken, loadToken } = await importFresh();
+
+    // Best-effort: a dir we cannot chmod (shared/managed config root) must not
+    // cost the user their token.
+    expect(() => saveToken('/cfg/acme.json', { accessToken: 'a' })).not.toThrow();
+    expect(loadToken('/cfg/acme.json')?.accessToken).toBe('a');
+    // The 0600 on the file still happened — only the dir chmod was refused.
+    expect(chmodCalls.some((c) => c.path.endsWith('.tmp') && c.mode === 0o600)).toBe(true);
+    expect(chmodCalls.some((c) => c.mode === 0o700)).toBe(false);
   });
 
   it('keeps subdomains isolated in separate files (no shared read-modify-write)', async () => {

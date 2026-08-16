@@ -497,35 +497,57 @@ keeps the mutant when the call's *entire subtree* produced no other mutant, whic
 is what keeps it rare — measuring it in isolation, with every other mutator
 excluded, inflates it from 37 mutants to 91.
 
-Measured on this scope, 9.6.1 → 10.0.0:
+Measured on this scope. The middle column is the bump on its own; the right one is
+after the assertion work below, which shipped in the same PR:
 
-| | 9.6.1 | 10.0.0 |
-| --- | ---: | ---: |
-| Mutants | 1417 | 1454 |
-| Score (total) | 82.64 % | **82.39 %** |
-| Score (covered) | 84.24 % | **84.19 %** |
+| | 9.6.1 | 10.0.0 | + assertions |
+| --- | ---: | ---: | ---: |
+| Mutants | 1417 | 1454 | 1452 |
+| Score (total) | 82.64 % | 82.39 % | **83.61 %** |
+| Score (covered) | 84.24 % | 84.19 % | **85.01 %** |
 
-Of the 37 new mutants, 27 are detected (26 killed, 1 timeout) and **10 escape —
-every one of them in `src/auth`**. Nine are in `browser-oauth.ts`, which is the
-only file whose score falls (53.14 % → 52.36 %); every other file holds or gains.
+So the mutator costs a quarter of a point until its findings are acted on, and
+pays back four times that once they are. The `auth` namespace moves 58.42 % →
+62.87 %, with `browser-oauth.ts` and `token-persistence.ts` both 53 % → 59.26 %.
+
+Of the 37 new mutants, 27 were detected (26 killed, 1 timeout) and **10 escaped —
+every one of them in `src/auth`**. Nine were in `browser-oauth.ts`, the only file
+whose score fell before the assertions landed (53.14 % → 52.36 %); every other
+file held or gained.
 
 The mutator was **kept enabled**, against the [section 5](#5-scope-and-why-label-heavy-files-stay-out-of-it)
-booby-trap test, because its survivors are not labels — they are teardown and
-error paths nobody asserts:
+booby-trap test, because not one of its survivors was a label. Every single one
+was an unasserted teardown or error path — which is the case for the mutator, so
+the ten are worth listing individually:
 
-| Escaped | What removing the call proves nothing about |
-| --- | --- |
-| `browser-oauth.ts:180-181` | `clearTimeout` + `callbackServer.close()` on the success path — no test asserts the server actually stops |
-| `browser-oauth.ts:232` | `res.end('Not found')` — the non-`/callback` 404 path is untested |
-| `browser-oauth.ts:260-262` | the post-listen `error` handler's whole teardown (clear, close, reject) is untested |
-| `browser-oauth.ts:246`, `:314` | `logger.error` calls — genuine label noise, the one class section 5 warns about |
-| `browser-oauth.ts:317` | `authTimeout.unref()` — no observable effect inside a test process |
-| `token-persistence.ts:74` | the best-effort `chmodSync(dir, 0o700)` — the directory mode is never asserted |
+| Escaped | The call, and what nothing asserted about it | Outcome |
+| --- | --- | --- |
+| `browser-oauth.ts:180-181` | `clearTimeout` + `callbackServer.close()` on every terminal callback path — nothing checked the port is released or the 5-minute timer cancelled | test added |
+| `browser-oauth.ts:232` | `res.writeHead(404)` — the non-`/callback` request path was never exercised at all | test added |
+| `browser-oauth.ts:260-262` | the post-`listen` `error` handler's whole teardown (clear, close, reject token) — unreachable from outside, so untested | test added |
+| `browser-oauth.ts:314` | `callbackServer.close()` in the timeout handler — the existing timeout test asserted the log and the rejection, not the port | assertion added |
+| `token-persistence.ts:74` | `chmodSync(dir, 0o700)` — the file's 0600 was asserted, the directory's mode never | test added |
+| `browser-oauth.ts:246` | `clearTimeout(authTimeout)` in `onStartError` | **line deleted** |
+| `browser-oauth.ts:317` | `authTimeout.unref()` | `Stryker disable next-line` |
 
-Seven of the ten are worth closing and two (`logger.error`) are not; `unref()` is
-an equivalent mutant in a test process. Until that work lands, editing those
-lines in `browser-oauth.ts` fails the gate on pre-existing debt — the same
-booby-trap section 5 describes, at nine lines rather than a whole file.
+Two of those deserve their own note, because neither was a missing test:
+
+- **`:246` was dead code, and the mutant is how we found out.** `authTimeout` is
+  only assigned inside the `listen` callback, which `off`s `onStartError` before
+  it gets there — so whenever `onStartError` runs, `authTimeout` is still
+  `undefined` and `clearTimeout(undefined)` does nothing. No test could have
+  killed that mutant, because there was no behaviour to observe. The line is gone.
+- **`:317` is a genuinely equivalent mutant in-process.** Dropping `unref()` only
+  changes whether a pending timer holds the event loop open, and a test process
+  is kept alive by the runner regardless. It is load-bearing in production — a
+  finished CLI run would otherwise linger for up to five minutes — so the call
+  stays, with a `// Stryker disable next-line CallExpression` recording why.
+
+Reaching the post-`listen` error handler needed the callback server instance,
+which the flow never hands out. `tests/unit/auth/browser-oauth.test.ts` now wraps
+`node:http`'s `createServer` to record it — that also replaced the "is the port
+closed?" probe, since `server.listening` is observable where a refused connection
+over loopback is indistinguishable from a slow one.
 
 ## Appendix — reproducing
 
