@@ -1,5 +1,4 @@
 import type { Server } from 'node:http';
-import { createServer } from 'node:http';
 import { HttpResponse, http } from 'msw';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { oauthTokenHandler } from '../../msw-handlers';
@@ -15,8 +14,15 @@ vi.mock('open', () => ({
 // need the instance itself: `listening` is the only honest way to check the server
 // was actually stopped (a closed port is indistinguishable from a slow one over
 // loopback), and emitting `error` on it is the only way to reach the post-`listen`
-// error handler, which nothing external can provoke. Delegates to the real
-// module so MSW's interception and the port-in-use test are untouched.
+// error handler, which nothing external can provoke. Everything else is delegated
+// to the real module, so MSW's interception is untouched.
+//
+// Reading this array inside the factory is safe despite `vi.mock` being hoisted
+// above the declaration: the reference lives in the returned closure and is only
+// evaluated when the flow calls `createServer`, long after this module finished
+// initialising. Pushing the array's *use* into the closure is what makes that
+// true — dereferencing it in the factory body would be a temporal-dead-zone
+// crash at load.
 const callbackServers: Server[] = [];
 
 vi.mock('node:http', async () => {
@@ -31,6 +37,12 @@ vi.mock('node:http', async () => {
     },
   };
 });
+
+// The port-in-use test needs a blocker server that is NOT the flow's, so it takes
+// `createServer` from the unmocked module — a plain import here would resolve to
+// the recording wrapper above and leave the blocker in `callbackServers`, where
+// `lastCallbackServer()` could pick it up.
+const { createServer } = await vi.importActual<typeof import('node:http')>('node:http');
 
 /** The server backing the flow that started most recently. */
 const lastCallbackServer = (): Server => {
