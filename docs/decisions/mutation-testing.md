@@ -133,11 +133,22 @@ A cold run is expensive; incremental runs are not. Measured on `src/utils`
 | `--incremental`, one source file changed | 12 | **30 s** |
 | `--incremental`, one *test* file changed | 102 | **47 s** |
 
-Extrapolated to all of `src/`, a cold run is ~7 400 mutants ≈ 65 min — well past
-the existing CI job's `timeout-minutes: 10`. With the incremental baseline
-restored, a normal PR costs well under a minute, which is what makes a PR-time
-gate viable rather than a nightly one. A gate that only reports after merge is a
-gate that reports too late.
+That extrapolated badly, and the number it produced is worth keeping as a
+warning. Projecting to all of `src/` gave ~7 400 mutants ≈ 65 min, and
+`mutation.yml` was sized against it. Two things made it wrong: the scope that
+shipped ([§5](#5-scope-and-why-label-heavy-files-stay-out-of-it)) leaves out
+`src/tools/**` and `src/utils/formatting.ts`, so it is **1 417 mutants**, five
+times fewer; and CI runs about twice the mutants per second of the 4-core figures
+above. Measured across the baselines on `main`, a **cold** run is **6–10 min**
+(6 min 22 s on `ca28fad`, 9 min 49 s on the dependency bump before it) and a warm
+one is 45 s to 2 min.
+
+The point the projection served holds regardless, with more room than it claimed:
+with the baseline restored a normal PR costs well under a minute, which is what
+makes a PR-time gate viable rather than a nightly one. A gate that only reports
+after merge reports too late. Re-measure if `src/tools/**` ever enters the scope —
+that is the change that would make 65 min real, and it would overrun the
+baseline job's `timeout-minutes`, which is sized for the scope above.
 
 > **Note on Vitest and incremental mode.** Stryker's per-test change detection
 > is fine-grained for Jest and CucumberJS only. For Vitest it works per *file*:
@@ -214,7 +225,7 @@ is the inter-LLM harness driven by hand through `/functional-testing`, and
 `vitest.config.ts` loads only `tests/**/*.test.ts`, so nothing in it can change a
 verdict. It also *must* stay exempt: the harness writes a report per scenario
 run, and hashing those would discard the baseline on every recorded run — a cold
-hour bought for nothing.
+baseline bought for nothing.
 
 Note what is *absent* from the hash: `src/**` and `tests/**/*.test.ts`. That is
 the point of it. Those are exactly what incremental mode does diff correctly, so
