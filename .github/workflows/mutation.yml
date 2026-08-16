@@ -78,14 +78,7 @@ jobs:
         id: cache
 
       # Reports, never `break`s. No `--`: pnpm 11 forwards the separator itself.
-      #
-      # The key is scoped to this step, and this step only exists on
-      # `push`/`workflow_dispatch` — so the diff gate cannot publish even by
-      # accident, and a fork PR (which gets no secrets at all) cannot 401. It is
-      # also the switch that turns the `dashboard` reporter on: an unset secret
-      # expands to an empty string, which leaves the reporter off and this run
-      # exactly as it was before. Only the baseline writes, same rule the
-      # incremental cache already follows.
+      # Step-scoped secret, so only the baseline can publish — same rule as the cache.
       - name: Run the full scope
         env:
           STRYKER_DASHBOARD_API_KEY: ${{ secrets.STRYKER_DASHBOARD_API_KEY }}

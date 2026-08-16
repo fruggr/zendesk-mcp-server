@@ -63,17 +63,9 @@ export default {
   // that has to restate the whole list. Both report paths are declared so the
   // script can read them from the config instead of hardcoding a default.
   //
-  // `dashboard` is conditional because it is the only reporter with a
-  // precondition: nothing checks for `STRYKER_DASHBOARD_API_KEY` before the
-  // request, so on CI — where `project` and `version` resolve — a keyless run
-  // PUTs anyway, takes a 401 and logs `Could not upload report.`, a red herring
-  // on every fork PR. Gating on the variable, rather than on a
-  // `--reporters` override at the one call site that publishes, is what makes
-  // "only the baseline publishes" a property of the config instead of something
-  // the workflow has to keep remembering: the secret is exposed to the baseline
-  // step alone, so a PR run has no key and therefore no reporter. Why the
-  // keyless case is noise and not a failure: `docs/decisions/mutation-testing.md`
-  // (section 7).
+  // `dashboard` is gated on the key because nothing else guards the upload: a
+  // keyless CI run PUTs anyway and 401s. Only the baseline step gets the secret,
+  // so only it publishes. Section 7 of the ADR.
   reporters: [
     'html',
     'json',
@@ -84,13 +76,9 @@ export default {
   htmlReporter: { fileName: 'reports/mutation/index.html' },
   jsonReporter: { fileName: 'reports/mutation/mutation.json' },
 
-  // `full` is also Stryker's default — declared anyway, because it is a decision
-  // (source snippets leave the repo for a third party) and not a default worth
-  // inheriting silently. `project` and `version` are left unset on purpose: the
-  // GitHub Actions provider derives them from `GITHUB_REPOSITORY` and
-  // `GITHUB_REF`, so the baseline publishes under the branch it ran on with
-  // nothing to keep in sync here. Reasoning: `docs/decisions/mutation-testing.md`
-  // (section 7).
+  // `full` is also the default, but spelled out: it sends source snippets to a
+  // third party, which is a decision. `project`/`version` stay unset — the
+  // Actions provider derives them. Section 7 of the ADR.
   dashboard: { reportType: 'full' },
 
   // Score table yes, per-mutant dump no. Under `--incremental` the report is

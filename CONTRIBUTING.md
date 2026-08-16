@@ -1,7 +1,13 @@
 # Contributing
 
+[![Mutation score](https://img.shields.io/endpoint?style=flat&url=https%3A%2F%2Fbadge-api.stryker-mutator.io%2Fgithub.com%2Ffruggr%2Fzendesk-mcp-server%2Fmain)](https://dashboard.stryker-mutator.io/reports/github.com/fruggr/zendesk-mcp-server/main)
+
 Thanks for considering a contribution to `@fruggr/zendesk-mcp-server`. See the
 [README](README.md) for what the project does and how to run it.
+
+The badge is `main`'s mutation score; it links to the browsable report, where
+the survivors are listed per file. That report is the fastest way to find a test
+worth writing — see [the mutation gate](#submission-quality-bar) before you push.
 
 ## Review philosophy
 
