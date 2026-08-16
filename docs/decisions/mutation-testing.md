@@ -474,6 +474,37 @@ backend has a dedicated organisations route (`GET /organizations/:name/repositor
 permission rather than admin, and the reference deployment publishes
 `github.com/stryker-mutator/stryker-js`, itself an organisation repository.
 
+#### When step 2 offers only your personal account
+
+Expect this on the first attempt: the account picker lists `dlecan` and no
+organisation at all. It is not a missing feature. The picker is fed by
+`GET /user/organizations` → `GithubAgent.getMyOrganizations()` →
+`GET https://api.github.com/user/orgs`, and GitHub documents that endpoint as
+listing *"only organizations that your authorization allows you to operate on in
+some way"*. A missing organisation means the OAuth authorisation does not cover
+it — nothing about permissions on the repository itself.
+
+To fix it, at <https://github.com/settings/applications> → **Authorized OAuth
+Apps** → the Stryker Dashboard entry → **Organization access**, the `fruggr` row
+shows one of:
+
+| What the row shows | What it means | What to do |
+| --- | --- | --- |
+| **Grant** button | OAuth App restrictions are on, and you are an owner | click it |
+| **Request** button | restrictions are on, you are not an owner | request; an owner grants at *fruggr → Settings → Third-party Access → OAuth app policy → Review → Grant access* |
+| green check | already granted | the stored token predates the grant — see below |
+
+Then **sign out of the dashboard and back in**. This is the step that gets
+skipped: the backend stores the access token in its `users` table at login, so a
+grant made afterwards does not reach the token already on file. If that still
+fails, revoke the app from the same settings page and re-authorise from scratch —
+the consent screen offers the organisation directly.
+
+If an owner declines outright there is no workaround worth having. The API key is
+minted per project and requires the project to be enabled, and the only fallback —
+pinning `dashboard.project` to a personal fork — puts the trend and the badge
+under someone's personal account. Park the work instead.
+
 Two organisation-specific gotchas, both one-off:
 
 - the dashboard is a **classic OAuth App** (scopes `user:email read:org`). If the
