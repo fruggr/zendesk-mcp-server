@@ -78,7 +78,11 @@ jobs:
         id: cache
 
       # Reports, never `break`s. No `--`: pnpm 11 forwards the separator itself.
-      - run: pnpm test:mutation --incremental
+      # Step-scoped secret, so only the baseline can publish — same rule as the cache.
+      - name: Run the full scope
+        env:
+          STRYKER_DASHBOARD_API_KEY: ${{ secrets.STRYKER_DASHBOARD_API_KEY }}
+        run: pnpm test:mutation --incremental
 
       - name: Score summary
         if: always()

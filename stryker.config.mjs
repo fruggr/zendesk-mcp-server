@@ -62,9 +62,24 @@ export default {
   // judge a diff, so it belongs here rather than as a `--reporters` override
   // that has to restate the whole list. Both report paths are declared so the
   // script can read them from the config instead of hardcoding a default.
-  reporters: ['html', 'json', 'clear-text', 'progress'],
+  //
+  // `dashboard` is gated on the key because nothing else guards the upload: a
+  // keyless CI run PUTs anyway and 401s. Only the baseline step gets the secret,
+  // so only it publishes. Section 7 of the ADR.
+  reporters: [
+    'html',
+    'json',
+    'clear-text',
+    'progress',
+    ...(process.env.STRYKER_DASHBOARD_API_KEY ? ['dashboard'] : []),
+  ],
   htmlReporter: { fileName: 'reports/mutation/index.html' },
   jsonReporter: { fileName: 'reports/mutation/mutation.json' },
+
+  // `full` is also the default, but spelled out: it sends source snippets to a
+  // third party, which is a decision. `project`/`version` stay unset — the
+  // Actions provider derives them. Section 7 of the ADR.
+  dashboard: { reportType: 'full' },
 
   // Score table yes, per-mutant dump no. Under `--incremental` the report is
   // project-wide, so `reportMutants` prints every survivor in the whole scope

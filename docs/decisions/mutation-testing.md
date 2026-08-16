@@ -376,6 +376,102 @@ real slack against its threshold; `pnpm test:coverage` names the weakest files
 on any given day. Past that, the surviving mutants are where the new
 information is.
 
+## 7. Publishing the score, so the trend outlives the run
+
+The HTML report expires as a CI artifact (30 days baseline, 7 for a PR) and the
+incremental cache is *current state*, overwritten on every push to `main`. So
+"where was `src/auth` a month ago" had no answer. The
+[Stryker dashboard](https://stryker-mutator.io/docs/General/dashboard/) keeps a
+trend line per branch and hosts the full report; its reporter ships inside
+`@stryker-mutator/core`, so this adds no dependency.
+
+### `reportType: 'full'` — decided, not inherited
+
+`full` uploads the report with its **source snippets** to a third party;
+`mutationScore` sends only the number. `full` wins because it makes the survivor
+table browsable per file online, which is most of what a hand-maintained
+per-area table is for. The disclosure question has a short answer here: the
+source is already public on GitHub and npm. In a private repo the choice would
+go the other way — so if a private or credential-bearing file ever enters the
+`mutate` scope, revisit this.
+
+It is also Stryker's default, written out anyway because a default is not a
+decision. `project` and `version` stay unset: `GithubActionsCIProvider` derives
+them from `GITHUB_REPOSITORY` and `GITHUB_REF` (`refs/heads/main` → `main`,
+`refs/pull/7/merge` → `PR-7`).
+
+**`module` is not used.** A trend line per scoped area needs a separate run per
+area, multiplying the cold baseline. The per-*file* breakdown comes free with a
+`full` upload, which is the part actually wanted.
+
+### Why the reporter is gated on the key
+
+Nothing guards the upload: `DashboardReporterClient` PUTs whether or not
+`STRYKER_DASHBOARD_API_KEY` is set, and the only precondition — that `project`
+and `version` resolve — always holds on Actions.
+
+The resulting 401 does **not** fail the run; `DashboardReporter.update()` catches
+it and logs `Could not upload report.` (measured on 9.6.1 with a dead `baseUrl`,
+exit code 0 — an earlier reading assumed the throw escaped, so re-check on a
+major bump). The gate earns its place for two quieter reasons: a red `ERROR` on
+every fork PR is a false alarm in the one job people read for real alarms, and a
+PR run that *did* have a key would publish its diff-scoped report — a truncated
+entry corrupting the trend.
+
+So the config enables the reporter exactly when the key exists, and the workflow
+hands the secret to the `Full scope` step alone. A PR run, fork or not, has no
+key, therefore no reporter, therefore no request — the same rule the incremental
+cache follows (*only the baseline writes*), and structural rather than
+remembered. Local runs never publish either: without a key there is no reporter,
+and with one `determineCIProvider()` finds no `GITHUB_ACTION` and stops before
+the PUT.
+
+### One-time setup
+
+The API key cannot be minted from CI. A human enables the project once at
+<https://dashboard.stryker-mutator.io>, picks the `fruggr` organisation and
+`zendesk-mcp-server`, then copies the key into the **repository secret**
+`STRYKER_DASHBOARD_API_KEY` (the Secrets tab, not Variables — `${{ secrets.X }}`
+does not read the other one). The next push to `main` publishes.
+
+The baseline log tells you which of three states you are in: no
+`DashboardReporter` line at all means no key reached the run; `PUT report to …`
+followed by `Could not upload report.` means the key is wrong; `PUT report to …`
+alone means it worked.
+
+#### If the account picker offers only your personal account
+
+Expect this on the first attempt — and it is not a missing feature.
+Organisation repositories are supported: the backend has a dedicated route
+(`GET /organizations/:name/repositories` → `GET /orgs/{login}/repos?type=member`),
+enabling a project needs only **push** permission, and the reference deployment
+publishes `github.com/stryker-mutator/stryker-js`, itself an organisation repo.
+
+The picker is `GET /user/orgs`, which GitHub documents as listing *"only
+organizations that your authorization allows you to operate on in some way"*. A
+missing organisation is an OAuth grant that was never given, not a permission on
+the repository. The dashboard is a **classic OAuth App** (`user:email read:org`,
+so public repositories only), which means an organisation with OAuth App access
+restrictions hides itself until an owner approves it.
+
+Fix it at <https://github.com/settings/applications> → **Authorized OAuth Apps**
+→ Stryker Dashboard → **Organization access**:
+
+| The `fruggr` row shows | What to do |
+| --- | --- |
+| **Grant** | you are an owner — click it |
+| **Request** | request it; an owner grants at *fruggr → Settings → Third-party Access → OAuth app policy → Review → Grant access* |
+| green check | already granted — the stored token predates it, so sign out and back in |
+
+Signing out and back in matters in every case: the backend stores the access
+token at login, so a later grant never reaches the token already on file. If it
+still fails, revoke the app and re-authorise — the consent screen offers the
+organisation directly.
+
+If an owner declines there is no workaround worth having: the key is minted per
+project, and the only fallback (pinning `dashboard.project` to a personal fork)
+puts the trend and the badge under someone's personal account.
+
 ## Appendix — reproducing
 
 ```sh
