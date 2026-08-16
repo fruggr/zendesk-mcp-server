@@ -426,7 +426,7 @@ That error does **not** fail the run. `DashboardReporter.update()` catches it an
 logs `Could not upload report.`. Measured on 9.6.1, forcing the failure with a
 dead `dashboard.baseUrl` under a faked Actions environment:
 
-```
+```text
 INFO  DashboardReporterClient PUT report to http://127.0.0.1:9/api/reports/github.com/fruggr/zendesk-mcp-server/main (~81654 bytes)
 ERROR DashboardReporter       Could not upload report. Error: connect ECONNREFUSED 127.0.0.1:9
 INFO  MutationTestExecutor    Done in 17 seconds.
