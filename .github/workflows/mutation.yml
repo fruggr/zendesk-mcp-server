@@ -64,8 +64,10 @@ jobs:
     name: Full scope
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    # Only a changed cache prefix costs the full cold run (~1h on 4 cores).
-    timeout-minutes: 120
+    # Only a changed cache prefix costs a full cold run: 6-10 min measured on
+    # `main`, against 45 s to 2 min warm. The budget stays loose deliberately —
+    # it detects a hang, and the mutate scope is expected to grow. ADR section 4.
+    timeout-minutes: 45
     concurrency:
       group: mutation-baseline
       cancel-in-progress: true
