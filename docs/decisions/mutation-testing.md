@@ -376,6 +376,113 @@ real slack against its threshold; `pnpm test:coverage` names the weakest files
 on any given day. Past that, the surviving mutants are where the new
 information is.
 
+## 7. Publishing the score, so the trend outlives the run
+
+Everything above produces numbers that are thrown away. The HTML report ships as
+a CI artifact (30 days for the baseline, 7 for a PR) and then expires; the cached
+`stryker-incremental.json` is *current state*, overwritten on every push to
+`main`, not a history. So "where was `src/auth` a month ago" had no answer.
+
+The [Stryker dashboard](https://stryker-mutator.io/docs/General/dashboard/)
+answers it: free for open source, keeps a trend line per branch, hosts the full
+report per version, and serves a score badge. The reporter is **first-party** —
+`dashboard` is built into `@stryker-mutator/core`, so this adds no dependency.
+
+### `reportType: 'full'` — decided, not inherited
+
+`full` uploads the whole report, **source snippets included**, to a third party.
+`mutationScore` sends `{ mutationScore: 42 }` and nothing else.
+
+`full` wins here for one reason: it is what makes the survivor table *browsable*
+online, per file, without downloading an artifact — which is most of what a
+hand-maintained per-area table is for. The disclosure question is real but has a
+short answer in this repo: the source is public on npm and on GitHub already, so
+the upload discloses nothing that a `git clone` does not. In a private repo the
+choice would go the other way.
+
+`full` also happens to be Stryker's default. It is written out in
+`stryker.config.mjs` anyway, because a default is not a decision and the next
+reader should not have to look up which one they got.
+
+`project` and `version` are deliberately **not** set. `GithubActionsCIProvider`
+derives them from `GITHUB_REPOSITORY` and `GITHUB_REF` (`refs/heads/main` →
+`main`, `refs/pull/7/merge` → `PR-7`), so the baseline publishes under the branch
+it ran on and there is nothing to keep in sync.
+
+**`module` is not used.** It looks like the cheap way to get a trend line per
+scoped area, and it is not: a separate module means a separate run, multiplying
+the cold baseline by the number of areas. The per-*file* breakdown comes free
+with a `full` upload, which is the part actually wanted. Revisit only if per-area
+trends prove to be a distinct need.
+
+### Why the reporter is gated on the key, when a missing key is harmless
+
+`DashboardReporterClient` sends the PUT whether or not `STRYKER_DASHBOARD_API_KEY`
+is set — the only guard before it checks that `project` and `version` resolve,
+which on Actions they always do. A keyless PUT comes back 401 and the client
+throws a `StrykerError`.
+
+That error does **not** fail the run. `DashboardReporter.update()` catches it and
+logs `Could not upload report.`. Measured on 9.6.1, forcing the failure with a
+dead `dashboard.baseUrl` under a faked Actions environment:
+
+```
+INFO  DashboardReporterClient PUT report to http://127.0.0.1:9/api/reports/github.com/fruggr/zendesk-mcp-server/main (~81654 bytes)
+ERROR DashboardReporter       Could not upload report. Error: connect ECONNREFUSED 127.0.0.1:9
+INFO  MutationTestExecutor    Done in 17 seconds.
+                                                                    exit code 0
+```
+
+Worth re-checking on a major bump — an earlier reading of this code assumed the
+throw escaped and failed the job. It does not. So the honest reason for the gate
+is not "CI would break":
+
+- a red `ERROR Could not upload report.` on every local run and every fork PR is
+  a false alarm in the one job whose output people read for real alarms;
+- PR runs are diff-scoped. A PR that *did* have a key would publish a report
+  covering the changed lines only — a truncated entry corrupting the trend, which
+  is worse than not publishing.
+
+So the config enables the reporter exactly when the key exists, and the workflow
+hands the secret to the `Full scope` step alone. The two together mean a PR run —
+fork or not — has no key, therefore no reporter, therefore no request. That reuses
+the rule the incremental cache already follows (*only the baseline writes*) and
+gets it structurally rather than by remembering to pass `--reporters` at the call
+site, which would restate the whole reporter list in YAML.
+
+A **local** run is safe twice over, which is worth knowing before anyone worries
+about a stray key in a shell: with no key the reporter is not in the list at all
+(`pnpm test:mutation --mutate src/utils/validation.ts` logs `JsonReporter` and
+`HtmlReporter` and nothing else), and even *with* a key it stops before the PUT,
+because `determineCIProvider()` finds no `GITHUB_ACTION` and logs `The report was
+not send to the dashboard. The dashboard.project and/or dashboard.version values
+were missing`.
+
+### One-time setup, and the organisation question
+
+The API key cannot be minted from CI; a human enables the project once:
+
+1. sign in at <https://dashboard.stryker-mutator.io> with GitHub;
+2. pick the `fruggr` organisation, find `zendesk-mcp-server`, enable it;
+3. copy the key into the repository secret `STRYKER_DASHBOARD_API_KEY`;
+4. the next push to `main` publishes.
+
+**Organisation-owned repositories are supported** — this needed checking, because
+the dashboard UI leads with personal repositories and the docs never say. The
+backend has a dedicated organisations route (`GET /organizations/:name/repositories`
+→ `GET /orgs/{login}/repos?type=member`), enabling a project requires only **push**
+permission rather than admin, and the reference deployment publishes
+`github.com/stryker-mutator/stryker-js`, itself an organisation repository.
+
+Two organisation-specific gotchas, both one-off:
+
+- the dashboard is a **classic OAuth App** (scopes `user:email read:org`). If the
+  organisation has OAuth App access restrictions enabled, an owner must approve it
+  first — until then the organisation simply does not appear in the list, which
+  reads exactly like "orgs are not supported";
+- there is no `repo` scope, so only **public** repositories are listed. Fine here;
+  a blocker for a private one.
+
 ## Appendix — reproducing
 
 ```sh

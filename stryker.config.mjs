@@ -62,9 +62,35 @@ export default {
   // judge a diff, so it belongs here rather than as a `--reporters` override
   // that has to restate the whole list. Both report paths are declared so the
   // script can read them from the config instead of hardcoding a default.
-  reporters: ['html', 'json', 'clear-text', 'progress'],
+  //
+  // `dashboard` is conditional because it is the only reporter with a
+  // precondition: without `STRYKER_DASHBOARD_API_KEY` the client still PUTs,
+  // takes a 401 and logs `Could not upload report.` — a red herring on every
+  // local run and every fork PR. Gating on the variable, rather than on a
+  // `--reporters` override at the one call site that publishes, is what makes
+  // "only the baseline publishes" a property of the config instead of something
+  // the workflow has to keep remembering: the secret is exposed to the baseline
+  // step alone, so a PR run has no key and therefore no reporter. Why the
+  // keyless case is noise and not a failure: `docs/decisions/mutation-testing.md`
+  // (section 7).
+  reporters: [
+    'html',
+    'json',
+    'clear-text',
+    'progress',
+    ...(process.env.STRYKER_DASHBOARD_API_KEY ? ['dashboard'] : []),
+  ],
   htmlReporter: { fileName: 'reports/mutation/index.html' },
   jsonReporter: { fileName: 'reports/mutation/mutation.json' },
+
+  // `full` is also Stryker's default — declared anyway, because it is a decision
+  // (source snippets leave the repo for a third party) and not a default worth
+  // inheriting silently. `project` and `version` are left unset on purpose: the
+  // GitHub Actions provider derives them from `GITHUB_REPOSITORY` and
+  // `GITHUB_REF`, so the baseline publishes under the branch it ran on with
+  // nothing to keep in sync here. Reasoning: `docs/decisions/mutation-testing.md`
+  // (section 7).
+  dashboard: { reportType: 'full' },
 
   // Score table yes, per-mutant dump no. Under `--incremental` the report is
   // project-wide, so `reportMutants` prints every survivor in the whole scope
