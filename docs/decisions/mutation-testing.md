@@ -147,8 +147,10 @@ one is 45 s to 2 min. Those two timings, and the 1 417 mutants they covered,
 predate the Stryker 10 bump; [§8](#8-the-1000-bump-and-the-one-mutator-it-adds)
 has the +35 and what it cost.
 
-The point the projection served holds regardless, with more room than it claimed:
-with the baseline restored a normal PR costs well under a minute, which is what
+Those are the `baseline` job, which mutates the **whole** scope. The `Changed
+lines` gate a PR actually waits on mutates only the lines the diff touched, so it
+sits well under a minute (30 s on this document's own PR) — a different
+measurement from the 45 s to 2 min above, not a contradiction of it. That is what
 makes a PR-time gate viable rather than a nightly one. A gate that only reports
 after merge reports too late. Re-measure if `src/tools/**` ever enters the scope —
 that is the change that would make 65 min real, and it would overrun the
