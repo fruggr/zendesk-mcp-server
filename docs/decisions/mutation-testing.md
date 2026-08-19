@@ -139,11 +139,13 @@ That extrapolated badly, and the number it produced is worth keeping as a
 warning. Projecting to all of `src/` gave ~7 400 mutants ≈ 65 min, and
 `mutation.yml` was sized against it. Two things made it wrong: the scope that
 shipped ([§5](#5-scope-and-why-label-heavy-files-stay-out-of-it)) leaves out
-`src/tools/**` and `src/utils/formatting.ts`, so it is **1 417 mutants**, five
+`src/tools/**` and `src/utils/formatting.ts`, so it is **1 452 mutants**, five
 times fewer; and CI runs about twice the mutants per second of the 4-core figures
 above. Measured across the baselines on `main`, a **cold** run is **6–10 min**
 (6 min 22 s on `ca28fad`, 9 min 49 s on the dependency bump before it) and a warm
-one is 45 s to 2 min.
+one is 45 s to 2 min. Those two timings, and the 1 417 mutants they covered,
+predate the Stryker 10 bump; [§8](#8-the-1000-bump-and-the-one-mutator-it-adds)
+has the +35 and what it cost.
 
 The point the projection served holds regardless, with more room than it claimed:
 with the baseline restored a normal PR costs well under a minute, which is what
