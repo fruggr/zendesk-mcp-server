@@ -70,8 +70,8 @@ decision is ever revisited; the fit criteria above are the durable part.
 
 ## 3. The TypeScript 7 workaround
 
-**Stryker 9.6.1 does not run on TypeScript 7 out of the box.** It fails before
-the first mutant:
+**Stryker does not run on TypeScript 7 out of the box.** It fails before the
+first mutant:
 
 ```text
 ERROR Stryker TypeError: ts.parseConfigFileTextToJson is not a function
@@ -83,7 +83,9 @@ The cause is a soft dependency: `@stryker-mutator/core` does a bare
 calls `ts.parseConfigFileTextToJson`, which TS 7's experimental JS API does not
 expose. Upstream tracking issue:
 [stryker-js#6110](https://github.com/stryker-mutator/stryker-js/issues/6110)
-(open, 0/4 tasks, no assignee as of this writing).
+(open, 1/4 tasks, no assignee; re-checked on the 10.0.0 bump — `core` still ships
+`src/sandbox/ts-config-preprocessor.ts` and still calls the missing function, so
+the sentinel below stays).
 
 Three routes were considered:
 
@@ -137,14 +139,18 @@ That extrapolated badly, and the number it produced is worth keeping as a
 warning. Projecting to all of `src/` gave ~7 400 mutants ≈ 65 min, and
 `mutation.yml` was sized against it. Two things made it wrong: the scope that
 shipped ([§5](#5-scope-and-why-label-heavy-files-stay-out-of-it)) leaves out
-`src/tools/**` and `src/utils/formatting.ts`, so it is **1 417 mutants**, five
+`src/tools/**` and `src/utils/formatting.ts`, so it is **1 452 mutants**, five
 times fewer; and CI runs about twice the mutants per second of the 4-core figures
 above. Measured across the baselines on `main`, a **cold** run is **6–10 min**
 (6 min 22 s on `ca28fad`, 9 min 49 s on the dependency bump before it) and a warm
-one is 45 s to 2 min.
+one is 45 s to 2 min. Those two timings, and the 1 417 mutants they covered,
+predate the Stryker 10 bump; [§8](#8-the-1000-bump-and-the-one-mutator-it-adds)
+has the +35 and what it cost.
 
-The point the projection served holds regardless, with more room than it claimed:
-with the baseline restored a normal PR costs well under a minute, which is what
+Those are the `baseline` job, which mutates the **whole** scope. The `Changed
+lines` gate a PR actually waits on mutates only the lines the diff touched, so it
+sits well under a minute (30 s on this document's own PR) — a different
+measurement from the 45 s to 2 min above, not a contradiction of it. That is what
 makes a PR-time gate viable rather than a nightly one. A gate that only reports
 after merge reports too late. Re-measure if `src/tools/**` ever enters the scope —
 that is the change that would make 65 min real, and it would overrun the
@@ -307,7 +313,7 @@ the seventies.
 The fair question about `scripts/mutation-scope.mjs` is why any code is needed
 here at all. Checked, not assumed:
 
-- **StrykerJS has no git-aware scoping.** Nothing in its 9.6.1 schema is
+- **StrykerJS has no git-aware scoping.** Nothing in its 10.0.0 schema is
   `since`, `range`, `diff` or `changedFiles` (verified against
   `node_modules/@stryker-mutator/core/schema/stryker-schema.json`). `--since` and
   `--with-baseline` are **Stryker.NET**, a different product with a different
@@ -321,7 +327,7 @@ here at all. Checked, not assumed:
   gate needs.
 - **The one third-party option is unmaintained, and file-level.**
   `stryker-diff-runner` last published 2.3.11 in November 2022 — Stryker 6 era,
-  against 9.6.1 today. It scopes by *file*, and #2843's own author describes the
+  against 10.0.0 today. It scopes by *file*, and #2843's own author describes the
   consequence: mutants are generated for the whole file, so the break threshold
   has to be turned off. That is the failure this gate exists to avoid; adopting it
   would mean writing the line-range half anyway, on top of an abandoned
@@ -424,7 +430,8 @@ and `version` resolve — always holds on Actions.
 The resulting 401 does **not** fail the run; `DashboardReporter.update()` catches
 it and logs `Could not upload report.` (measured on 9.6.1 with a dead `baseUrl`,
 exit code 0 — an earlier reading assumed the throw escaped, so re-check on a
-major bump). The gate earns its place for two quieter reasons: a red `ERROR` on
+major bump; re-read on 10.0.0, `update()` still wraps the whole call in a
+`try`/`catch` that only logs). The gate earns its place for two quieter reasons: a red `ERROR` on
 every fork PR is a false alarm in the one job people read for real alarms, and a
 PR run that *did* have a key would publish its diff-scoped report — a truncated
 entry corrupting the trend.
@@ -482,6 +489,80 @@ organisation directly.
 If an owner declines there is no workaround worth having: the key is minted per
 project, and the only fallback (pinning `dashboard.project` to a personal fork)
 puts the trend and the badge under someone's personal account.
+
+## 8. The 10.0.0 bump, and the one mutator it adds
+
+Recorded here because the interesting half of a major bump is what it does to
+the *numbers*, and that is measurable exactly once — before the baseline moves.
+
+Only one of the four upstream headlines touches this repo:
+
+| Upstream change | Effect here |
+| --- | --- |
+| Requires Node.js 22+ | None. `.nvmrc` is 24 and every job that installs dev dependencies reads it. `smoke-node20` never installs them — it runs the packed tarball — so the published `engines: >=20` is untouched. |
+| `empty-expression-mutator` | +37 mutants. The subject of the rest of this section. |
+| Babel 8 | None measurable: mutant counts per mutator are byte-identical to 9.6.1 outside the new one (17 mutators compared). |
+| Partial incremental report on unexpected exit | Latent. The baseline job still saves only `if: success()` — a partial baseline is exactly the stale-verdict problem [section 4](#the-baseline-can-go-stale-and-stryker-will-not-tell-you) exists to prevent, so the feature stays unused until there is a reason. |
+
+The new mutator is registered as **`CallExpression`** (not, as its package name
+suggests, `EmptyExpression` — that is the name to pass to `excludedMutations`).
+It empties a call: `foo()` → `void 0` in expression position, and a whole
+`foo();` or `throw new Foo();` statement → `;`. It carries a `filter` that only
+keeps the mutant when the call's *entire subtree* produced no other mutant, which
+is what keeps it rare — measuring it in isolation, with every other mutator
+excluded, inflates it from 37 mutants to 91.
+
+Measured on this scope. The middle column is the bump on its own; the right one is
+after the assertion work below, which shipped in the same PR:
+
+| | 9.6.1 | 10.0.0 | + assertions |
+| --- | ---: | ---: | ---: |
+| Mutants | 1417 | 1454 | 1452 |
+| Score (total) | 82.64 % | 82.39 % | **83.61 %** |
+| Score (covered) | 84.24 % | 84.19 % | **85.01 %** |
+
+So the mutator costs a quarter of a point until its findings are acted on, and
+pays back four times that once they are. The `auth` namespace moves 58.42 % →
+62.87 %, with `browser-oauth.ts` and `token-persistence.ts` both 53 % → 59.26 %.
+
+Of the 37 new mutants, 27 were detected (26 killed, 1 timeout) and **10 escaped —
+every one of them in `src/auth`**. Nine were in `browser-oauth.ts`, the only file
+whose score fell before the assertions landed (53.14 % → 52.36 %); every other
+file held or gained.
+
+The mutator was **kept enabled**, against the [section 5](#5-scope-and-why-label-heavy-files-stay-out-of-it)
+booby-trap test, because not one of its survivors was a label. Every single one
+was an unasserted teardown or error path — which is the case for the mutator, so
+the ten are worth listing individually:
+
+| Escaped | The call, and what nothing asserted about it | Outcome |
+| --- | --- | --- |
+| `browser-oauth.ts:180-181` | `clearTimeout` + `callbackServer.close()` on every terminal callback path — nothing checked the port is released or the 5-minute timer cancelled | test added |
+| `browser-oauth.ts:232` | `res.writeHead(404)` — the non-`/callback` request path was never exercised at all | test added |
+| `browser-oauth.ts:260-262` | the post-`listen` `error` handler's whole teardown (clear, close, reject token) — unreachable from outside, so untested | test added |
+| `browser-oauth.ts:314` | `callbackServer.close()` in the timeout handler — the existing timeout test asserted the log and the rejection, not the port | assertion added |
+| `token-persistence.ts:74` | `chmodSync(dir, 0o700)` — the file's 0600 was asserted, the directory's mode never | test added |
+| `browser-oauth.ts:246` | `clearTimeout(authTimeout)` in `onStartError` | **line deleted** |
+| `browser-oauth.ts:317` | `authTimeout.unref()` | `Stryker disable next-line` |
+
+Two of those deserve their own note, because neither was a missing test:
+
+- **`:246` was dead code, and the mutant is how we found out.** `authTimeout` is
+  only assigned inside the `listen` callback, which `off`s `onStartError` before
+  it gets there — so whenever `onStartError` runs, `authTimeout` is still
+  `undefined` and `clearTimeout(undefined)` does nothing. No test could have
+  killed that mutant, because there was no behaviour to observe. The line is gone.
+- **`:317` is a genuinely equivalent mutant in-process.** Dropping `unref()` only
+  changes whether a pending timer holds the event loop open, and a test process
+  is kept alive by the runner regardless. It is load-bearing in production — a
+  finished CLI run would otherwise linger for up to five minutes — so the call
+  stays, with a `// Stryker disable next-line CallExpression` recording why.
+
+Reaching the post-`listen` error handler needed the callback server instance,
+which the flow never hands out. `tests/unit/auth/browser-oauth.test.ts` now wraps
+`node:http`'s `createServer` to record it — that also replaced the "is the port
+closed?" probe, since `server.listening` is observable where a refused connection
+over loopback is indistinguishable from a slow one.
 
 ## Appendix — reproducing
 

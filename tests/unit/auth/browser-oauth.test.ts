@@ -1,4 +1,4 @@
-import { createServer } from 'node:http';
+import type { Server } from 'node:http';
 import { HttpResponse, http } from 'msw';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { oauthTokenHandler } from '../../msw-handlers';
@@ -9,6 +9,53 @@ const openMock = vi.fn<(url: string) => Promise<unknown>>();
 vi.mock('open', () => ({
   default: (url: string) => openMock(url),
 }));
+
+// Every callback server the flow creates, in order. The teardown assertions below
+// need the instance itself: `listening` is the only honest way to check the server
+// was actually stopped (a closed port is indistinguishable from a slow one over
+// loopback), and emitting `error` on it is the only way to reach the post-`listen`
+// error handler, which nothing external can provoke. Everything else is delegated
+// to the real module, so MSW's interception is untouched.
+//
+// Reading this array inside the factory is safe despite `vi.mock` being hoisted
+// above the declaration: the reference lives in the returned closure and is only
+// evaluated when the flow calls `createServer`, long after this module finished
+// initialising. Pushing the array's *use* into the closure is what makes that
+// true — dereferencing it in the factory body would be a temporal-dead-zone
+// crash at load.
+const callbackServers: Server[] = [];
+
+vi.mock('node:http', async () => {
+  const actual = await vi.importActual<typeof import('node:http')>('node:http');
+  return {
+    ...actual,
+    default: actual,
+    createServer: (...args: Parameters<typeof actual.createServer>) => {
+      const server = actual.createServer(...args);
+      callbackServers.push(server);
+      return server;
+    },
+  };
+});
+
+// The port-in-use test needs a blocker server that is NOT the flow's, so it takes
+// `createServer` from the unmocked module — a plain import here would resolve to
+// the recording wrapper above and leave the blocker in `callbackServers`, where
+// `lastCallbackServer()` could pick it up.
+const { createServer } = await vi.importActual<typeof import('node:http')>('node:http');
+
+/** The server backing the flow that started most recently. */
+const lastCallbackServer = (): Server => {
+  const server = callbackServers.at(-1);
+  if (!server) throw new Error('no callback server was created');
+  return server;
+};
+
+/** Wait for `server.listening` to go false, so `close()` is observed, not raced. */
+const awaitClosed = async (server: Server): Promise<void> => {
+  if (!server.listening) return;
+  await new Promise<void>((resolve) => server.once('close', () => resolve()));
+};
 
 // Imported after vi.mock so the mocked `open` is bound.
 const { authenticateViaBrowser, refreshAccessToken, startBrowserAuth } = await import(
@@ -29,6 +76,7 @@ const CLIENT_ID = 'test_client';
 describe('authenticateViaBrowser', () => {
   beforeEach(() => {
     openMock.mockReset();
+    callbackServers.length = 0;
   });
 
   it('opens the browser once on the Zendesk authorize URL and completes the PKCE flow', async () => {
@@ -217,6 +265,100 @@ describe('authenticateViaBrowser', () => {
 describe('startBrowserAuth', () => {
   beforeEach(() => {
     openMock.mockReset();
+    callbackServers.length = 0;
+  });
+
+  it('stops the callback server and cancels the timeout once the flow completes', async () => {
+    mswServer.use(oauthTokenHandler);
+    const logger = makeLogger();
+    // Only the two timer functions are faked: the flow below needs real loopback
+    // I/O and real `setImmediate` to reach the callback.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      openMock.mockImplementation(async (url: string) => {
+        const redirectUri = new URL(url).searchParams.get('redirect_uri');
+        setImmediate(() => {
+          fetch(`${redirectUri}?code=the-auth-code`).catch(() => {});
+        });
+        return {};
+      });
+
+      const started = await startBrowserAuth(
+        { subdomain: SUB, oauthClientId: CLIENT_ID, callbackPort: 0 },
+        logger,
+      );
+      await started.tokenPromise;
+
+      // The port is released as soon as the callback is answered — a server left
+      // listening would block the next auth attempt with EADDRINUSE.
+      const server = lastCallbackServer();
+      await awaitClosed(server);
+      expect(server.listening).toBe(false);
+
+      // And the 5-minute timer is gone, so a completed auth cannot emit a
+      // spurious `oauth_timeout` minutes later.
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+      expect(logger.error).not.toHaveBeenCalledWith('oauth_timeout', expect.anything());
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('answers 404 on any path but /callback, leaving the flow waiting', async () => {
+    mswServer.use(oauthTokenHandler);
+    openMock.mockResolvedValue({});
+
+    const started = await startBrowserAuth({
+      subdomain: SUB,
+      oauthClientId: CLIENT_ID,
+      callbackPort: 0,
+    });
+    const redirectUri = new URL(started.authorizeUrl).searchParams.get('redirect_uri') ?? '';
+    const origin = new URL(redirectUri).origin;
+
+    // Browsers ask for /favicon.ico unprompted; that must not be mistaken for a
+    // callback, and must not settle or tear down anything.
+    const res = await fetch(`${origin}/favicon.ico`);
+    expect(res.status).toBe(404);
+    expect(await res.text()).toBe('Not found');
+
+    const server = lastCallbackServer();
+    expect(server.listening).toBe(true);
+
+    // The real callback still works afterwards, which is the point of not tearing down.
+    await fetch(`${redirectUri}?code=the-auth-code`);
+    await expect(started.tokenPromise).resolves.toMatchObject({ access_token: 'token-abc' });
+    await awaitClosed(server);
+  });
+
+  it('rejects the token promise and stops the server when the callback server errors after listening', async () => {
+    const logger = makeLogger();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      openMock.mockResolvedValue({});
+
+      const started = await startBrowserAuth(
+        { subdomain: SUB, oauthClientId: CLIENT_ID, callbackPort: 0 },
+        logger,
+      );
+      const server = lastCallbackServer();
+
+      // A socket-level failure once we are already listening: `started` has
+      // resolved, so the error has to settle the *token* promise instead — else
+      // the token store waits on a promise that never settles.
+      const boom = Object.assign(new Error('socket exploded'), { code: 'ECONNRESET' });
+      const rejection = expect(started.tokenPromise).rejects.toBe(boom);
+      server.emit('error', boom);
+      await rejection;
+
+      await awaitClosed(server);
+      expect(server.listening).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+      expect(logger.error).not.toHaveBeenCalledWith('oauth_timeout', expect.anything());
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('rejects with an actionable message (and logs it) when the callback port is in use', async () => {
@@ -268,6 +410,11 @@ describe('startBrowserAuth', () => {
       await rejection;
 
       expect(logger.error).toHaveBeenCalledWith('oauth_timeout', expect.anything());
+      // The timeout also releases the port, so a retry is not blocked by the
+      // abandoned attempt.
+      const server = lastCallbackServer();
+      await awaitClosed(server);
+      expect(server.listening).toBe(false);
     } finally {
       vi.useRealTimers();
     }

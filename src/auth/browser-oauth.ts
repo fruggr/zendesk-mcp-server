@@ -242,8 +242,10 @@ export const startBrowserAuth = (
     // Listen failure (e.g. port already in use) before we ever get a URL: the
     // whole start fails so the caller can surface/retry. EADDRINUSE is rewrapped
     // into an actionable message (user *and* LLM can act on it).
+    // No `clearTimeout` here on purpose: `authTimeout` is only assigned inside the
+    // `listen` callback, which also `off`s this handler first — so whenever this
+    // runs the timeout is still `undefined` and clearing it was a no-op.
     const onStartError = (err: Error) => {
-      clearTimeout(authTimeout);
       const code = (err as NodeJS.ErrnoException).code;
       logger.error('oauth_callback_listen_failed', { port: requestedPort, errorCode: code });
       rejectStarted(code === 'EADDRINUSE' ? callbackPortInUseError(requestedPort, err) : err);
@@ -314,6 +316,10 @@ export const startBrowserAuth = (
         callbackServer.close();
         rejectToken(new Error('OAuth authentication timed out (5 min). Please try again.'));
       }, AUTH_TIMEOUT_MS);
+      // Stryker disable next-line CallExpression: dropping `unref()` only changes
+      // whether a pending 5-minute timer holds the event loop open, which a test
+      // process (kept alive by the runner) cannot observe. Load-bearing in
+      // production: without it a finished CLI run would linger until the timeout.
       authTimeout.unref();
 
       resolveStarted({ authorizeUrl: authUrl, tokenPromise });
