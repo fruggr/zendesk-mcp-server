@@ -111,6 +111,23 @@ those rights, read an existing article with `get_article` and reuse the IDs it
 reports; omitting `user_segment_id` on create/update keeps the default visibility
 (everyone).
 
+## The server exits straight away in stdio mode
+
+It logs `stdio_transport_ready`, then `shutdown_started reason=stdin_eof`, and
+stops. Stdin reached end-of-file, which the server reads as "the client is gone"
+— behind `npx` that is the only notice it ever gets, because the `npm exec` and
+`sh -c` links in the chain do not relay signals.
+
+An MCP client keeps stdin open for the life of the session, so this normally
+means the server was started without one:
+
+- `zendesk-mcp-server < /dev/null`, or any launcher that closes stdin. Give it a
+  pipe or a terminal instead.
+- A wrapper script that reads stdin itself before handing over.
+
+Running it bare in a terminal is fine — stdin stays open until you press
+`Ctrl-D`. In HTTP mode stdin is ignored entirely, so this cannot happen there.
+
 ## A tool call fails with `Network error on GET https://…`
 
 The request never got an HTTP response — DNS, a refused or reset connection, a

@@ -175,6 +175,10 @@ export const registerReloadTool = (
  * `reload_tools` tool that hot-reloads edited tool code on demand. stdio only —
  * HTTP builds a per-session server per request, so there is no long-lived
  * server to hot-swap.
+ *
+ * Returns the running server so the caller can close it on shutdown: dev mode
+ * runs over the same stdio transport as normal mode and must exit the same way
+ * when the client disconnects.
  */
 /* v8 ignore start -- runtime bootstrap: binds the reload tool to a real stdio
    transport; the reload machinery it wires up is covered by dev-reload.test.ts */
@@ -183,10 +187,11 @@ export const startDevServer = async (
   getToken: () => string | Promise<string>,
   logger: Logger = silentLogger,
   onUnauthorized?: () => void,
-): Promise<void> => {
+): Promise<McpServer> => {
   const { server, reload } = createReloadableServer(config, getToken, logger, onUnauthorized);
   registerReloadTool(server, reload, logger);
   await startStdioTransport(server, logger);
   logger.info('dev_mode_enabled');
+  return server;
 };
 /* v8 ignore stop */

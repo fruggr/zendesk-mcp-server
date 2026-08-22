@@ -89,6 +89,11 @@ jobs:
       - name: Verify tarball runs on Node 20
         run: |
           set -euo pipefail
-          OUT=$(env LOG_LEVEL=info timeout 5 zendesk-mcp-server smoke-test 2>&1 || true)
+          # `sleep` holds stdin open for the whole run. A step's stdin is
+          # /dev/null, which reaches EOF immediately, and EOF now shuts the
+          # stdio server down — without this the job would silently stop
+          # testing that the tarball *runs* and start testing that it exits.
+          # The EOF path itself is asserted in scripts/smoke-test.mjs.
+          OUT=$(sleep 6 | env LOG_LEVEL=info timeout 5 zendesk-mcp-server smoke-test 2>&1 || true)
           echo "$OUT"
           echo "$OUT" | grep -q "stdio_transport_ready"

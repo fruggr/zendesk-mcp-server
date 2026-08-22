@@ -160,6 +160,18 @@ This server provides the MCP transport and the OAuth discovery metadata. The ope
 - Network exposure and firewalling. The server binds `0.0.0.0` by default, so choose carefully.
 - Process supervision (systemd, Docker, fly.io, your hosting provider's runner). None is shipped here.
 
+## Stopping the server
+
+`SIGINT` and `SIGTERM` drain the live sessions, close the listening socket and
+exit `0`. A shutdown that cannot finish within a few seconds is forced rather
+than left hanging, so the server always exits well inside the 10s that systemd
+and Docker allow before their own `SIGKILL`.
+
+Stdin is deliberately *not* watched in HTTP mode: a supervised process is usually
+handed `/dev/null`, which is at EOF immediately, and watching it would stop the
+server at boot. Why the stdio transport does the opposite:
+[Process lifecycle](decisions/lifecycle-shutdown.md).
+
 See also [Configuration](configuration.md) for the full CLI and environment-variable reference.
 
 ---
