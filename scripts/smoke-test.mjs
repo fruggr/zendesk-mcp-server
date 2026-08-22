@@ -5,6 +5,8 @@ const KILL_GRACE_MS = 1000;
 // Budget for the EOF check: the server's own shutdown grace is 3s, and the
 // watchdog forces the exit at that point, so 5s leaves room without hanging CI.
 const EXIT_TIMEOUT_MS = 5000;
+// How long the HTTP server must keep running after its stdin reaches EOF.
+const SURVIVE_MS = 1000;
 
 // Markers are structured logger events. Force LOG_LEVEL=info so an inherited
 // LOG_LEVEL=warn/error can't suppress the marker and false-fail the smoke test.
@@ -69,12 +71,20 @@ const runCheck = (args, marker) =>
     });
   });
 
+// Proof that the *designed* path ran. A clean exit alone is not evidence: before
+// #246 the process also exited on EOF, just circumstantially, because nothing
+// happened to be holding the event loop open. Requiring this marker is what
+// distinguishes "shut down deliberately" from "fell over by luck" — the whole
+// point of the issue.
+const SHUTDOWN_MARKER = 'shutdown_started reason=stdin_eof';
+
 /**
  * The assertion for #246: behind `npx` the client's exit is invisible except as
  * EOF on stdin, so once the server is ready we close stdin and nothing else.
- * **No signal is sent** — an exit here can only have come from the EOF handler.
- * A process still alive at the deadline is SIGKILLed and fails the check, as is
- * one that exits non-zero or dies on a signal.
+ * **No signal is sent.** The server must then log that it is shutting down
+ * because of EOF, and exit 0 of its own accord. A process still alive at the
+ * deadline is SIGKILLed and fails the check, as is one that exits non-zero,
+ * dies on a signal, or exits without having taken the shutdown path.
  */
 const runStdinEofCheck = (args, marker) =>
   new Promise((resolve, reject) => {
@@ -131,16 +141,94 @@ const runStdinEofCheck = (args, marker) =>
       }
       if (signal) return fail(`exited on ${signal} rather than by itself`);
       if (code !== 0) return fail(`exited with code ${code}, expected 0`);
+      if (!output.includes(SHUTDOWN_MARKER)) {
+        return fail(`exited without "${SHUTDOWN_MARKER}" — no deliberate shutdown ran`);
+      }
 
-      console.log('[smoke] ok (exited cleanly on stdin EOF)');
+      console.log('[smoke] ok (shut down deliberately on stdin EOF)');
       resolve();
     });
   });
 
+/**
+ * The inverse contract: closing stdin must not stop an HTTP server, however it
+ * is supervised.
+ *
+ * Two independent things currently guarantee that — `watchStdin: false` in
+ * `src/index.ts`, and the fact that nothing reads stdin in HTTP mode, so the
+ * stream stays paused and never reports EOF. This check cannot tell them apart
+ * and will keep passing if only one survives. It is here to pin the observable
+ * behaviour, not to police the flag; `installShutdown`'s unit suite is what
+ * asserts that no stdin listener is registered.
+ */
+const runStdinIgnoredCheck = (args, marker) =>
+  new Promise((resolve, reject) => {
+    const proc = spawnServer(args);
+
+    let output = '';
+    let ready = false;
+    let settled = false;
+    let readyTimer;
+    let aliveTimer;
+
+    const onData = (chunk) => {
+      output += chunk.toString();
+      if (!ready && output.includes(marker)) {
+        ready = true;
+        clearTimeout(readyTimer);
+        proc.stdin.end();
+        // Survive the EOF, then stop the server the way a supervisor would.
+        aliveTimer = setTimeout(() => {
+          settled = true;
+          proc.kill('SIGTERM');
+        }, SURVIVE_MS);
+      }
+    };
+
+    proc.stdout.on('data', onData);
+    proc.stderr.on('data', onData);
+
+    readyTimer = setTimeout(() => {
+      if (!ready) proc.kill('SIGKILL');
+    }, TIMEOUT_MS);
+
+    proc.on('error', (err) => {
+      clearTimeout(readyTimer);
+      clearTimeout(aliveTimer);
+      console.error(`[smoke] spawn error: ${err.message}`);
+      reject(err);
+    });
+
+    proc.on('close', () => {
+      clearTimeout(readyTimer);
+      clearTimeout(aliveTimer);
+
+      if (!ready) {
+        console.error(`[smoke] fail: marker "${marker}" not seen in ${TIMEOUT_MS}ms`);
+        console.error('--- captured output ---');
+        console.error(output || '(empty)');
+        return reject(new Error(`marker not found: ${marker}`));
+      }
+      if (!settled) {
+        const message = `HTTP server exited within ${SURVIVE_MS}ms of stdin EOF; it must ignore stdin`;
+        console.error(`[smoke] fail: ${message}`);
+        console.error('--- captured output ---');
+        console.error(output || '(empty)');
+        return reject(new Error(message));
+      }
+
+      console.log('[smoke] ok (survived stdin EOF in http mode)');
+      resolve();
+    });
+  });
+
+const HTTP_ARGS = ['smoke-test', '--transport', 'http', '--port', '0'];
+
 try {
   await runCheck(['smoke-test'], 'stdio_transport_ready');
-  await runCheck(['smoke-test', '--transport', 'http', '--port', '0'], 'http_transport_ready');
+  await runCheck(HTTP_ARGS, 'http_transport_ready');
   await runStdinEofCheck(['smoke-test'], 'stdio_transport_ready');
+  await runStdinIgnoredCheck(HTTP_ARGS, 'http_transport_ready');
   process.exit(0);
 } catch {
   process.exit(1);

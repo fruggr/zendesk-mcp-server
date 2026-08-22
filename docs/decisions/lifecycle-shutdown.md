@@ -55,32 +55,48 @@ bug being fixed.
 
 The watchdog is what keeps that from happening: it is armed *before* cleanup
 runs, so a cleanup that never settles is still bounded. It is `unref()`'d, so
-having a grace period does not mean waiting one out. `SHUTDOWN_GRACE_MS` is 3s —
-under the 10s that systemd and Docker allow between their own `SIGTERM` and
-`SIGKILL`, because being killed by the supervisor is the unclean exit this is
-meant to avoid.
+having a grace period does not mean waiting one out. `SHUTDOWN_GRACE_MS` is 3s,
+inside the tightest common supervisor grace — `docker stop` allows 10s and
+Kubernetes 30s before their own `SIGKILL` (systemd is far laxer, 90s by default)
+— because being killed by the supervisor is the unclean exit this is meant to
+avoid.
 
-### `/dev/null` stdin reaches EOF immediately
+### EOF only exists in flowing mode
 
-A daemonised HTTP server is routinely handed `/dev/null` on stdin, which is at
-EOF from the first read. A stdin listener registered in HTTP mode would shut the
-server down at boot — in production, and in CI, where a GitHub Actions step's
-stdin is likewise `/dev/null`.
+`'end'` fires when a readable stream is *read* to exhaustion. Attaching an
+`'end'` listener does not by itself resume a paused stream, and Node leaves stdin
+paused until something attaches `'data'`. Measured:
 
-So the trigger set is per transport, and `watchStdin` is a required option rather
-than a default: stdio watches stdin, HTTP does not. The unit suite asserts the
-*absence* of the listener in HTTP mode, which is the assertion that would catch a
-regression here before it reaches an operator.
+| stdin | `'data'` listener | `'end'` |
+| --- | --- | --- |
+| `/dev/null` | yes | fires immediately |
+| `/dev/null` | no | never fires |
+| closed pipe | no | never fires |
 
-Two consequences worth naming:
+Two consequences, and they pull in opposite directions.
 
-- In stdio mode, `zendesk-mcp-server < /dev/null` now exits immediately. This is
-  intended — there is no client on the other end — and is documented as a
-  symptom in `troubleshooting.md`.
-- `scripts/smoke-test.mjs` had to stop spawning with `stdio: ['ignore', …]`, and
-  the Node 20 tarball job in `ci.yml` had to hold stdin open, or both would have
-  quietly stopped testing that the server *runs* and started testing that it
-  exits.
+**In stdio mode the SDK attaches `'data'`, so EOF is genuinely live** — including
+at startup. `zendesk-mcp-server < /dev/null` now exits immediately, which is
+intended (there is no client on the other end) and is documented as a symptom in
+`troubleshooting.md`. It is also why `scripts/smoke-test.mjs` had to stop
+spawning with `stdio: ['ignore', …]` and the Node 20 tarball job in `ci.yml` had
+to hold stdin open: otherwise both would have quietly stopped testing that the
+server *runs* and started testing that it exits.
+
+**In HTTP mode nothing reads stdin**, so the stream stays paused and would never
+report EOF even on `/dev/null`. `watchStdin: false` there is therefore not
+averting a live failure — it is refusing to depend on that.  Nothing states that
+stdin must stay unread in the HTTP process; the day a library, a debugger or a
+future feature attaches a `'data'` listener, a server carrying an EOF handler
+would start exiting as soon as its supervisor handed it `/dev/null`. Making
+`watchStdin` a required option rather than a default keeps the choice at each
+call site instead of resting on that invariant.
+
+The unit suite asserts the *absence* of the stdin listener in HTTP mode, because
+that is the only place the distinction is observable. The smoke check that closes
+stdin against a running HTTP server pins the user-visible contract, but cannot
+tell the flag apart from the paused stream and would keep passing if only one of
+the two survived.
 
 ## Why the runtime is injected
 

@@ -4,9 +4,9 @@ import type { Logger } from './logger';
  * How long a shutdown may take before the watchdog forces the exit.
  *
  * Generous enough for `server.close()` and an HTTP session drain, short enough
- * that a supervisor's own SIGTERM→SIGKILL grace (10s under systemd and Docker)
- * never expires first — a process killed by the supervisor is exactly the
- * unclean exit this module removes.
+ * to stay inside the tightest common supervisor grace — `docker stop` allows 10s
+ * and Kubernetes 30s before their own SIGKILL (systemd is far laxer at 90s). A
+ * process killed by its supervisor is exactly the unclean exit this removes.
  */
 export const SHUTDOWN_GRACE_MS = 3000;
 
@@ -35,9 +35,15 @@ export interface ShutdownOptions {
    * Watch stdin for EOF. **stdio transport only.**
    *
    * Behind `npx`, the `npm exec` / `sh -c` chain does not relay signals, so EOF
-   * on stdin is the only sign the client is gone. But a daemonised HTTP server
-   * is routinely handed `/dev/null` on stdin, which reaches EOF immediately —
-   * watching it there would shut the server down at boot.
+   * on stdin is the only sign the client is gone.
+   *
+   * HTTP passes `false`. Not because the listener would misfire today — `end`
+   * only fires once something reads stdin, and in HTTP mode nothing does, so a
+   * paused stream never reaches EOF even on `/dev/null` — but because relying
+   * on that would be a trap: the day anything in the process starts reading
+   * stdin, a server with this on would begin exiting the moment its supervisor
+   * handed it `/dev/null`. Required rather than defaulted so the choice is
+   * made at each call site.
    */
   watchStdin: boolean;
   graceMs?: number;

@@ -68,9 +68,9 @@ const main = async (): Promise<void> => {
   // request's bearer captured in its tools' closure — no shared state.
   const http = await startHttpTransport(config, logger);
 
-  // Signals only. A daemonised HTTP server is routinely handed `/dev/null` on
-  // stdin, which reaches EOF immediately — watching it here would shut the
-  // server down at boot.
+  // Signals only: an HTTP server has no client on stdin to lose. Nothing reads
+  // stdin here, so it stays paused and never reports EOF anyway — but saying so
+  // explicitly keeps that from becoming load-bearing.
   installShutdown({ watchStdin: false, logger, cleanup: http.close });
 };
 
