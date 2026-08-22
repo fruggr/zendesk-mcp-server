@@ -71,7 +71,7 @@ export const createRuntime = (proc: ProcessLike): ShutdownRuntime => ({
   },
   setTimer: (fn, ms) => {
     const timer = setTimeout(fn, ms);
-    return { unref: () => void timer.unref?.(), clear: () => clearTimeout(timer) };
+    return { unref: () => void timer.unref(), clear: () => clearTimeout(timer) };
   },
 });
 

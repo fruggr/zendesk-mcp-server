@@ -356,7 +356,9 @@ describe('installShutdown', () => {
       expect(info).toHaveBeenCalledWith('shutdown_complete', { reason: 'stdin_eof' });
     });
 
-    it('reports the signal name as the reason', async () => {
+    // Both signals, because each carries its own reason literal: covering only
+    // one leaves the other free to report an empty reason.
+    it.each(['SIGINT', 'SIGTERM'] as const)('reports %s as the reason', async (signal) => {
       const rt = fakeRuntime();
       const info = vi.fn();
       installShutdown({
@@ -366,10 +368,11 @@ describe('installShutdown', () => {
         runtime: rt.runtime,
       });
 
-      rt.fire('SIGINT');
+      rt.fire(signal);
       await flush();
 
-      expect(info).toHaveBeenCalledWith('shutdown_started', { reason: 'SIGINT' });
+      expect(info).toHaveBeenCalledWith('shutdown_started', { reason: signal });
+      expect(info).toHaveBeenCalledWith('shutdown_complete', { reason: signal });
     });
 
     it('warns when the watchdog has to force the exit', () => {
@@ -452,16 +455,35 @@ describe('installShutdown', () => {
       }
     });
 
-    it('unrefs the watchdog so it cannot hold the loop open', () => {
-      vi.useFakeTimers();
+    // Asserting `unref()` reaches the real handle, not merely that it does not
+    // throw: a no-op `unref` would leave the watchdog holding the event loop
+    // open for the whole grace period on every clean shutdown.
+    it('unrefs the underlying timer handle', () => {
+      const realSetTimeout = globalThis.setTimeout;
+      let handleUnref: ReturnType<typeof vi.fn> | undefined;
+
+      const spy = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((
+        fn: () => void,
+        ms: number,
+      ) => {
+        const handle = realSetTimeout(fn, ms);
+        // Bind the original *before* overwriting, or the spy calls itself.
+        const original = handle.unref.bind(handle);
+        handleUnref = vi.fn(() => original());
+        handle.unref = handleUnref as unknown as typeof handle.unref;
+        return handle;
+      }) as unknown as typeof globalThis.setTimeout);
+
       try {
-        const timer = createRuntime(fakeProcess().proc).setTimer(() => {}, 250);
-        const handle = vi.getTimerCount() > 0;
-        expect(handle).toBe(true);
-        // `unref` must reach the real timer handle, not be swallowed.
-        expect(() => timer.unref()).not.toThrow();
+        const timer = createRuntime(fakeProcess().proc).setTimer(() => {}, 60_000);
+        expect(handleUnref).not.toHaveBeenCalled();
+
+        timer.unref();
+        expect(handleUnref).toHaveBeenCalledTimes(1);
+
+        timer.clear();
       } finally {
-        vi.useRealTimers();
+        spy.mockRestore();
       }
     });
   });
