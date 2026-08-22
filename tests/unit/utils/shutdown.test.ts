@@ -476,12 +476,18 @@ describe('installShutdown', () => {
 
       try {
         const timer = createRuntime(fakeProcess().proc).setTimer(() => {}, 60_000);
-        expect(handleUnref).not.toHaveBeenCalled();
+        // Cleared in `finally`: this is a real 60s timer, and it is still ref'd
+        // until `unref()` below runs. A failure on the first assertion would
+        // otherwise leave it armed and holding the worker open for a minute —
+        // turning a failing test into a stalled one.
+        try {
+          expect(handleUnref).not.toHaveBeenCalled();
 
-        timer.unref();
-        expect(handleUnref).toHaveBeenCalledTimes(1);
-
-        timer.clear();
+          timer.unref();
+          expect(handleUnref).toHaveBeenCalledTimes(1);
+        } finally {
+          timer.clear();
+        }
       } finally {
         spy.mockRestore();
       }
