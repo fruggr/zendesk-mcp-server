@@ -55,7 +55,18 @@ bug being fixed.
 
 The watchdog is what keeps that from happening: it is armed *before* cleanup
 runs, so a cleanup that never settles is still bounded. It is `unref()`'d, so
-having a grace period does not mean waiting one out. `SHUTDOWN_GRACE_MS` is 3s,
+having a grace period does not mean waiting one out.
+
+`unref()` does not defeat it, though that is easy to assume. An unref'd timer
+still fires while the loop is running; it only declines to keep the loop alive by
+itself. The two cases therefore both terminate:
+
+- something still holds the loop (an in-flight request, a socket) — the loop is
+  running, so the watchdog fires and forces the exit;
+- nothing holds it — the loop empties and Node exits on its own, before the
+  watchdog was ever needed.
+
+`SHUTDOWN_GRACE_MS` is 3s,
 inside the tightest common supervisor grace — `docker stop` allows 10s and
 Kubernetes 30s before their own `SIGKILL` (systemd is far laxer, 90s by default)
 — because being killed by the supervisor is the unclean exit this is meant to

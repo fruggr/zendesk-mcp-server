@@ -77,6 +77,13 @@ const runCheck = (args, marker) =>
 // distinguishes "shut down deliberately" from "fell over by luck" — the whole
 // point of the issue.
 const SHUTDOWN_MARKER = 'shutdown_started reason=stdin_eof';
+// The clean *end* of that same path. `shutdown_started` alone is not enough:
+// a cleanup that hangs is cut short by the server's own watchdog, which logs
+// `shutdown_forced`, exits 0 too, and does so at the 3s grace — inside this
+// check's deadline. Requiring the completion marker, and refusing the forced
+// one, is what keeps "shut down cleanly" distinct from "was cut short".
+const SHUTDOWN_DONE_MARKER = 'shutdown_complete reason=stdin_eof';
+const SHUTDOWN_FORCED_MARKER = 'shutdown_forced';
 
 /**
  * The assertion for #246: behind `npx` the client's exit is invisible except as
@@ -144,6 +151,12 @@ const runStdinEofCheck = (args, marker) =>
       if (!output.includes(SHUTDOWN_MARKER)) {
         return fail(`exited without "${SHUTDOWN_MARKER}" — no deliberate shutdown ran`);
       }
+      if (output.includes(SHUTDOWN_FORCED_MARKER)) {
+        return fail(`logged "${SHUTDOWN_FORCED_MARKER}" — the watchdog cut the cleanup short`);
+      }
+      if (!output.includes(SHUTDOWN_DONE_MARKER)) {
+        return fail(`exited without "${SHUTDOWN_DONE_MARKER}" — the shutdown never finished`);
+      }
 
       console.log('[smoke] ok (shut down deliberately on stdin EOF)');
       resolve();
@@ -168,8 +181,17 @@ const runStdinIgnoredCheck = (args, marker) =>
     let output = '';
     let ready = false;
     let settled = false;
+    let hadToKill = false;
     let readyTimer;
     let aliveTimer;
+    let killTimer;
+
+    const fail = (message) => {
+      console.error(`[smoke] fail: ${message}`);
+      console.error('--- captured output ---');
+      console.error(output || '(empty)');
+      reject(new Error(message));
+    };
 
     const onData = (chunk) => {
       output += chunk.toString();
@@ -181,6 +203,13 @@ const runStdinIgnoredCheck = (args, marker) =>
         aliveTimer = setTimeout(() => {
           settled = true;
           proc.kill('SIGTERM');
+          // A server that does not honour SIGTERM must *fail* this check, not
+          // hang it: without the escalation the promise would never settle and
+          // CI would sit until its job timeout with no diagnosis.
+          killTimer = setTimeout(() => {
+            hadToKill = true;
+            proc.kill('SIGKILL');
+          }, EXIT_TIMEOUT_MS);
         }, SURVIVE_MS);
       }
     };
@@ -195,6 +224,7 @@ const runStdinIgnoredCheck = (args, marker) =>
     proc.on('error', (err) => {
       clearTimeout(readyTimer);
       clearTimeout(aliveTimer);
+      clearTimeout(killTimer);
       console.error(`[smoke] spawn error: ${err.message}`);
       reject(err);
     });
@@ -202,19 +232,14 @@ const runStdinIgnoredCheck = (args, marker) =>
     proc.on('close', () => {
       clearTimeout(readyTimer);
       clearTimeout(aliveTimer);
+      clearTimeout(killTimer);
 
-      if (!ready) {
-        console.error(`[smoke] fail: marker "${marker}" not seen in ${TIMEOUT_MS}ms`);
-        console.error('--- captured output ---');
-        console.error(output || '(empty)');
-        return reject(new Error(`marker not found: ${marker}`));
-      }
+      if (!ready) return fail(`marker "${marker}" not seen in ${TIMEOUT_MS}ms`);
       if (!settled) {
-        const message = `HTTP server exited within ${SURVIVE_MS}ms of stdin EOF; it must ignore stdin`;
-        console.error(`[smoke] fail: ${message}`);
-        console.error('--- captured output ---');
-        console.error(output || '(empty)');
-        return reject(new Error(message));
+        return fail(`HTTP server exited within ${SURVIVE_MS}ms of stdin EOF; it must ignore stdin`);
+      }
+      if (hadToKill) {
+        return fail(`still running ${EXIT_TIMEOUT_MS}ms after SIGTERM (had to SIGKILL)`);
       }
 
       console.log('[smoke] ok (survived stdin EOF in http mode)');
