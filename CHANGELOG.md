@@ -1,3 +1,27 @@
+## [2.19.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.18.0...v2.19.0) (2026-08-22)
+
+### Features
+
+* exit when the client disconnects instead of leaking a process ([#249](https://github.com/fruggr/zendesk-mcp-server/issues/249)) ([581c958](https://github.com/fruggr/zendesk-mcp-server/commit/581c958f39d39ecedbe8270b873971e57342def3))
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Chores
+
+* **deps:** lock file maintenance ([#244](https://github.com/fruggr/zendesk-mcp-server/issues/244)) ([9ff84e4](https://github.com/fruggr/zendesk-mcp-server/commit/9ff84e4dfb618d2cd6d110f19649f0aeda2f8924))
+* **deps:** lock file maintenance ([#248](https://github.com/fruggr/zendesk-mcp-server/issues/248)) ([fe65574](https://github.com/fruggr/zendesk-mcp-server/commit/fe655743055444d664615cffb920ccbaa1ab11d7))
+* **deps:** update dependency @biomejs/biome to v2.5.8 ([#239](https://github.com/fruggr/zendesk-mcp-server/issues/239)) ([bddd84c](https://github.com/fruggr/zendesk-mcp-server/commit/bddd84c7c15c6a8957ddfff0161c2df5f5475ae8))
+* **deps:** update dependency open to v11.0.1 ([#245](https://github.com/fruggr/zendesk-mcp-server/issues/245)) ([e7724f0](https://github.com/fruggr/zendesk-mcp-server/commit/e7724f0f204c894103cee242e1fd9219d86200a5))
+* **deps:** update pnpm to v11.22.0 ([#247](https://github.com/fruggr/zendesk-mcp-server/issues/247)) ([840564f](https://github.com/fruggr/zendesk-mcp-server/commit/840564f261abc738db008e29a8a6d993c935a068))
+* **deps:** update stryker-js monorepo to v10, and act on what it finds ([#243](https://github.com/fruggr/zendesk-mcp-server/issues/243)) ([abd01bc](https://github.com/fruggr/zendesk-mcp-server/commit/abd01bc730650b9c2d4cc69f49dad39754f7121c)), references [#209](https://github.com/fruggr/zendesk-mcp-server/issues/209)
+
+### Continuous Integration
+
+* correct the cold-run cost, measured instead of extrapolated ([#242](https://github.com/fruggr/zendesk-mcp-server/issues/242)) ([4f86d35](https://github.com/fruggr/zendesk-mcp-server/commit/4f86d3529e838994c7d404e996204a9d1f194d21))
+* publish the mutation score to the Stryker dashboard ([#241](https://github.com/fruggr/zendesk-mcp-server/issues/241)) ([ca28fad](https://github.com/fruggr/zendesk-mcp-server/commit/ca28fad04d4288c32d177469f8489fa3692d73fc)), closes [#214](https://github.com/fruggr/zendesk-mcp-server/issues/214)
+</details>
+
 ## [2.18.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.17.2...v2.18.0) (2026-08-15)
 
 ### Features
