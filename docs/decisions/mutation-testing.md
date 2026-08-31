@@ -138,14 +138,20 @@ A cold run is expensive; incremental runs are not. Measured on `src/utils`
 That extrapolated badly, and the number it produced is worth keeping as a
 warning. Projecting to all of `src/` gave ~7 400 mutants ≈ 65 min, and
 `mutation.yml` was sized against it. Two things made it wrong: the scope that
-shipped ([§5](#5-scope-and-why-label-heavy-files-stay-out-of-it)) leaves out
-`src/tools/**` and `src/utils/formatting.ts`, so it is **1 452 mutants**, five
-times fewer; and CI runs about twice the mutants per second of the 4-core figures
-above. Measured across the baselines on `main`, a **cold** run is **6–10 min**
-(6 min 22 s on `ca28fad`, 9 min 49 s on the dependency bump before it) and a warm
-one is 45 s to 2 min. Those two timings, and the 1 417 mutants they covered,
-predate the Stryker 10 bump; [§8](#8-the-1000-bump-and-the-one-mutator-it-adds)
-has the +35 and what it cost.
+shipped ([§5](#5-scope-and-how-string-mutants-are-treated)) leaves out
+`src/tools/**`, so it is **2 043 mutants**, more than three times fewer; and CI
+runs about twice the mutants per second of the 4-core figures above.
+
+Two cold-run figures, and they are not interchangeable. **Locally on 4 cores**,
+the whole scope is **13 min 7 s** (measured on #203's branch, 2 043 mutants).
+**In CI**, the `baseline` job read **6–10 min** — 6 min 22 s on `ca28fad`,
+9 min 49 s on the dependency bump before it — but over **1 417** mutants, and
+before both the Stryker 10 bump ([§8](#8-the-1000-bump-and-the-one-mutator-it-adds)
+has the +35 and what it cost) and `src/utils/formatting.ts` re-entering the scope
+with #203. Scaled by mutant count that band becomes roughly 9–14 min, which the
+baseline job's `timeout-minutes: 45` still clears with room; the figure to trust
+is the first `main` baseline after #203 merges, not this extrapolation. A **warm**
+run is 45 s to 2 min.
 
 Those are the `baseline` job, which mutates the **whole** scope. The `Changed
 lines` gate a PR actually waits on mutates only the lines the diff touched, so it
@@ -264,7 +270,7 @@ the whole file.
 Line granularity narrows that problem but does not remove it — a line that
 already carries a survivor still fails the PR that touches it. That residual is
 what keeps label-heavy files out of scope until their assertion work is done
-([§5](#5-scope-and-why-label-heavy-files-stay-out-of-it)).
+([§5](#5-scope-and-how-string-mutants-are-treated)).
 
 The gate asks for **no survivors in the changed lines**, not a percentage: on a
 handful of mutants a percentage is arbitrary (1 of 3 fails at 67 %, 1 of 10
@@ -345,12 +351,10 @@ none of those things.
 Reconsider if #2843 ships: native line-range scoping would replace the first
 half, and `thresholds.break` over a scoped run could replace the second.
 
-## 5. Scope, and why label-heavy files stay out of it
+## 5. Scope, and how string mutants are treated
 
 `mutate` covers `src/auth`, `src/client`, `src/routing`, `src/utils` and
 `src/config.ts` — the logic code, where a surviving mutant is a real test gap.
-
-Two exclusions, both for the same reason and both temporary.
 
 **A label-heavy file does not merely score badly — it booby-traps the gate.**
 Because the gate fails a PR on a survivor in a line that PR changed, a file whose
@@ -362,22 +366,93 @@ scope is a decision to do its assertion work *first*:
 
 | Excluded | Why | Owner |
 | --- | --- | --- |
-| `src/tools/**` | `.describe()` calls, each emptied by `StringLiteral` into a survivor that says nothing about test quality | needs `excludedMutations` or per-file directives |
-| `src/utils/formatting.ts` | 171 escaped mutants, 58 % of them label strings; 42 distinct lines carry one | [#203](https://github.com/fruggr/zendesk-mcp-server/issues/203) |
+| `src/tools/**` | `.describe()` calls, each emptied by `StringLiteral` into a survivor that says nothing about test quality | [#212](https://github.com/fruggr/zendesk-mcp-server/issues/212) |
 
-Excluded from *mutation* only: both still run under `pnpm test` and still count
-towards the coverage thresholds. `formatting.ts` also keeps the boundary tests
-added alongside this decision — the exclusion defers the score, not the testing.
+Excluded from *mutation* only: it still runs under `pnpm test` and still counts
+towards the coverage thresholds.
 
-**The `!` ordering is load-bearing.** Stryker resolves `mutate` as a sequence of
-set/unset operations rather than two independent lists (`project-reader`,
-`resolveFileDescriptions`), so a negation only excludes what an *earlier* pattern
-included. `scopeMatcher` in `scripts/mutation-scope.mjs` mirrors that exactly, and
-has to: the gate hands its ranges to `--mutate`, which **replaces** the configured
-scope rather than intersecting with it. A `patterns.some(...)` that ignored
-negations would have let the gate mutate an excluded file anyway — the exclusion
-defeated in the one place it has to hold. Pinned in
-`tests/unit/mutation-scope.test.ts`.
+`src/utils/formatting.ts` was excluded here until #203, which brought it in at
+**zero escaped mutants**. That is the bar, and it is not a round-number
+aesthetic: re-arming the gate on a file with any residue leaves a mine on each
+line that carries one, which is the trap the exclusion existed to avoid. Getting
+there is also what corrected the reasoning below.
+
+### The `StringLiteral` question, decided on measurement
+
+The tempting rule — "`StringLiteral` survivors are label noise, exempt them" — is
+wrong, and #203 measured how wrong. On `581c958` that file had 173 escaped
+mutants, 102 of them `StringLiteral`. Splitting those 102 by what the string
+actually *is*:
+
+| Form | Count | What it is |
+| --- | ---: | --- |
+| `'…'` → `''` | 73 | a label or separator emptied — including every trailing `.join('\n')` |
+| `''` → a non-empty marker | 29 | the **suppressed-line branch of a ternary** |
+
+The second group is not prose at all. It is the assertion "this line must be
+*absent* from the output", and no `not.toContain` can make it: Stryker replaces
+the `''` with a marker, the line appears, and the negative assertion still
+passes. The same blind spot covers two more forms that are not `StringLiteral` —
+a dropped `.filter(Boolean)` (the output gains a blank line) and an emptied
+separator inside a joined list.
+
+So the axis is not the mutator, and it is not the file. **It is what the string
+does**, and there are four roles:
+
+1. **Behavioural** — anything the code branches on, or that travels to a wire,
+   protocol or API: dispatch keys, `case` labels, sentinels, algorithm and
+   encoding identifiers, HTTP header names and values, OAuth parameters and
+   scopes, error codes, env-var names, escaping replacements, data-mapping keys.
+   A survivor here is a missing test, and Stryker classing it as `StringLiteral`
+   is an accident of the mutator's implementation. **Assert, never disable.**
+2. **Structural** — the `''` arm that suppresses an output line, and its
+   non-string cousins (`filter(Boolean)`, list separators). **Assert**, with an
+   input where the line *is* suppressed.
+3. **Output prose read by an agent or a user.** Also assert: an exact-output
+   assertion costs a `vitest -u` on a pre-filled `toMatchInlineSnapshot`, so the
+   maintenance argument for exempting cosmetic prose does not survive contact
+   with the tooling. Measured on one formatter — two snapshots took its region
+   from 6 killed / 15 escaped to 21 killed / 0 escaped, with no directive; the
+   block-scoped disable scored 36.36 % and left the seven logic mutants needing
+   *the same two inputs* anyway.
+4. **Internal diagnostics** — log event names, debug payload keys. Disable with a
+   reason, unless a test asserts the event name as an observability contract, in
+   which case it is role 1.
+
+### Mechanism, and what it cannot do
+
+`mutator.excludedMutations` stays unused: it is global-only, so it would exempt
+files nobody has looked at yet, including files added later.
+
+A directive is `// Stryker disable next-line <Mutator>[,<Mutator>]: <reason>`, or
+a `disable`/`restore` pair around a region. **Never at file scope** — every file
+worth arguing about mixes roles, and a file-scoped `StringLiteral` disable in
+`formatting.ts` would have silently exempted its dispatch keys and sentinels
+along with its labels.
+
+Every disable names the role it claims, so a reviewer can challenge the
+classification; an unexplained disable is indistinguishable from hiding a gap.
+
+**And it cannot target one mutant among several of the same mutator on a line.**
+Both waivers left in `formatting.ts` hit this: the equivalent mutant is the
+whole-condition `ConditionalExpression`, and its siblings on the same line are
+killed. Splitting a guard into two statements isolates a clause and is worth
+doing; hoisting a condition into a named `const` is not, because Stryker emits
+the whole-conjunction mutant wherever the expression sits. What is left is a
+waiver that also covers killed siblings — acceptable only when the comment says
+so, and when the assertions behind those siblings stay in place. Only the gate
+accounting is waived, never the test.
+
+**The `!` ordering is load-bearing**, even with no negation left in `mutate`
+today. Stryker resolves it as a sequence of set/unset operations rather than two
+independent lists (`project-reader`, `resolveFileDescriptions`), so a negation
+only excludes what an *earlier* pattern included. `scopeMatcher` in
+`scripts/mutation-scope.mjs` mirrors that exactly, and has to: the gate hands its
+ranges to `--mutate`, which **replaces** the configured scope rather than
+intersecting with it. A `patterns.some(...)` that ignored negations would have
+let the gate mutate an excluded file anyway — the exclusion defeated in the one
+place it has to hold. Pinned in `tests/unit/mutation-scope.test.ts`, and the next
+exclusion will depend on it.
 
 ## 6. What this replaces, and what it does not
 
@@ -530,8 +605,8 @@ every one of them in `src/auth`**. Nine were in `browser-oauth.ts`, the only fil
 whose score fell before the assertions landed (53.14 % → 52.36 %); every other
 file held or gained.
 
-The mutator was **kept enabled**, against the [section 5](#5-scope-and-why-label-heavy-files-stay-out-of-it)
-booby-trap test, because not one of its survivors was a label. Every single one
+The mutator was **kept enabled**, against the [section 5](#5-scope-and-how-string-mutants-are-treated)
+booby-trap test, because not one of its survivors was role-3 prose. Every single one
 was an unasserted teardown or error path — which is the case for the mutator, so
 the ten are worth listing individually:
 

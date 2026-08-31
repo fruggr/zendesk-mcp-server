@@ -149,6 +149,15 @@ The same checklist appears on the
     test just to make it pass without understanding the root cause.
   - The Zendesk API is mocked with MSW handlers in `tests/msw-handlers.ts`.
     Never call the real API in tests.
+- **Exact-output assertions use `toMatchInlineSnapshot`, committed filled.** An
+  empty `toMatchInlineSnapshot()` is auto-filled on the next run and passes, so it
+  asserts nothing — and under mutation testing it kills nothing, silently. Write
+  it empty, run `pnpm exec vitest run <file> -u` once, read what it wrote, commit
+  that.
+- **A `-u` on a formatter is a product-surface change, not a chore.** Those
+  strings are what an MCP agent reads back, so re-baselining a snapshot changes
+  the server's output. Re-read the diff the update produced and say in the PR why
+  the new wording is right, exactly as for any other behaviour change.
 - Functional style: pure functions, immutable data, no classes (except
   `ZendeskApiError`). See `AGENTS.md` for the full architecture and
   conventions.

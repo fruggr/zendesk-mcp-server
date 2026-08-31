@@ -36,25 +36,30 @@ export default {
 
   // Scope: logic code, where a surviving mutant is a genuine test gap.
   //
-  // Two exclusions, same reason, both temporary. A file whose survivors are
-  // mostly label strings does not merely score badly — it *booby-traps the PR
-  // gate*, because editing any line carrying one fails CI for debt the author
-  // did not create. Bringing a file in is therefore a decision to do its
-  // assertion work first, tracked per file:
-  //   - `src/tools/**`: its `.describe()` calls would each yield a StringLiteral
-  //     survivor, drowning the signal.
-  //   - `src/utils/formatting.ts`: 171 escaped mutants, 58 % of them label
-  //     strings. #203 owns both the remaining work and the decision on how to
-  //     treat those strings; delete the negation below when it lands.
+  // One exclusion left, and it is temporary. A file whose survivors are mostly
+  // label strings does not merely score badly — it *booby-traps the PR gate*,
+  // because editing any line carrying one fails CI for debt the author did not
+  // create. Bringing a file in is therefore a decision to do its assertion work
+  // first, and `src/tools/**` has not had it: its `.describe()` calls would each
+  // yield a StringLiteral survivor. #212 owns the measurement that establishes
+  // how much of that directory is really label prose and how much is logic.
   // Excluded from *mutation* only — its tests still run and still count for
-  // coverage. `!` ordering matters: Stryker applies these as set/unset in
-  // sequence (`project-reader`), and `scopeMatcher` in the gate mirrors that.
+  // coverage.
+  //
+  // `src/utils/formatting.ts` came back in with #203, at zero escaped mutants.
+  // That is the bar re-arming the gate needs: any residue would leave a mine on
+  // its line for whoever edits it next, which is the trap the exclusion existed
+  // to avoid in the first place.
+  //
+  // `!` ordering stays load-bearing even though no negation is left in the list:
+  // Stryker applies these as set/unset in sequence (`project-reader`) and
+  // `scopeMatcher` in the gate mirrors it, pinned in
+  // `tests/unit/mutation-scope.test.ts`. The next exclusion will depend on it.
   mutate: [
     'src/auth/**/*.ts',
     'src/client/**/*.ts',
     'src/routing/**/*.ts',
     'src/utils/**/*.ts',
-    '!src/utils/formatting.ts',
     'src/config.ts',
   ],
 
