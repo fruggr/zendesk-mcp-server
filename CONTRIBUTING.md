@@ -152,8 +152,9 @@ The same checklist appears on the
 - **Exact-output assertions use `toMatchInlineSnapshot`, committed filled.** An
   empty `toMatchInlineSnapshot()` is auto-filled on the next run and passes, so it
   asserts nothing — and under mutation testing it kills nothing, silently. Write
-  it empty, run `pnpm exec vitest run <file> -u` once, read what it wrote, commit
-  that.
+  it empty, run `pnpm test <file>` once, read what it wrote, commit that. A plain
+  run is what fills an empty inline snapshot; reach for `-u` only to overwrite a
+  filled one, since it re-baselines *every* stale snapshot in the file at once.
 - **A `-u` on a formatter is a product-surface change, not a chore.** Those
   strings are what an MCP agent reads back, so re-baselining a snapshot changes
   the server's output. Re-read the diff the update produced and say in the PR why

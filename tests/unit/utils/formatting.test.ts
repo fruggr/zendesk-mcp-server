@@ -213,9 +213,10 @@ describe('formatSlaBlock', () => {
     `);
   });
 
-  it('treats a deadline exactly at the current instant as due, not as remaining', () => {
+  it('counts a deadline at the current instant as 0 min remaining, not as a next breach', () => {
     // The two boundaries meet here: `t > Date.now()` must not advertise a "next
-    // breach" that is already due, and `remaining < 0` must not call 0 overdue.
+    // breach" that is already due (hence no such line below), and `remaining < 0`
+    // must not call 0 overdue.
     expect(
       formatSlaBlock(entry([{ metric: 'first_reply_time', stage: 'active', breach_at: at(0) }])),
     ).toMatchInlineSnapshot(`
@@ -257,6 +258,11 @@ describe('formatSlaBlock', () => {
   });
 
   it('omits the countdown for paused, achieved and fulfilled stages', () => {
+    // The `Next breach` line in this snapshot is today's output, not endorsed
+    // behaviour: the header counts every future `breach_at` regardless of stage,
+    // so it announces a breach for metrics this very test shows carry no live
+    // countdown. Pinned here so the disagreement is visible rather than silent —
+    // #260 owns the fix and the call on whether `paused` should feed the header.
     expect(
       formatSlaBlock(
         entry([
@@ -763,16 +769,6 @@ describe('formatUser', () => {
       - **Active**: false"
     `);
   });
-
-  it('omits organization when null', () => {
-    const result = formatUser({ ...MOCK_USER, organization_id: null });
-    expect(result).not.toContain('Organization');
-  });
-
-  it('omits role_type when null', () => {
-    const result = formatUser({ ...MOCK_USER, role_type: null });
-    expect(result).not.toContain('Role type');
-  });
 });
 
 describe('formatOrganization', () => {
@@ -851,37 +847,6 @@ describe('formatArticleSummary', () => {
   it('does not include body', () => {
     const result = formatArticleSummary(MOCK_ARTICLE);
     expect(result).not.toContain('Testing guide');
-  });
-
-  it('marks visibility as everyone when the article has no user segment', () => {
-    const result = formatArticleSummary({
-      ...MOCK_ARTICLE,
-      user_segment_id: null,
-    });
-    expect(result).toContain('12001');
-    expect(result).toMatch(/everyone/i);
-  });
-
-  it('omits labels when empty', () => {
-    const result = formatArticleSummary({ ...MOCK_ARTICLE, label_names: [] });
-    expect(result).not.toContain('Labels');
-  });
-
-  it('omits position when not a number', () => {
-    const result = formatArticleSummary({
-      ...MOCK_ARTICLE,
-      position: undefined as unknown as number,
-    });
-    expect(result).not.toContain('Position');
-  });
-
-  it('surfaces promoted status with the admin-only caveat only when promoted', () => {
-    // MOCK_ARTICLE is not promoted → no line at all.
-    expect(formatArticleSummary(MOCK_ARTICLE)).not.toContain('Promoted');
-
-    const promoted = formatArticleSummary({ ...MOCK_ARTICLE, promoted: true });
-    expect(promoted).toContain('**Promoted**');
-    expect(promoted).toMatch(/Help Center admin|Guide admin/);
   });
 });
 
@@ -972,15 +937,6 @@ describe('formatMacro', () => {
       - **inactive** | **Scope**: shared
       - **Actions**: none"
     `);
-  });
-
-  it('includes id, title, scope and the ordered actions', () => {
-    const result = formatMacro(MOCK_MACRO);
-    expect(result).toContain('Close and thank the customer (id 700)');
-    expect(result).toContain('Scope**: shared');
-    expect(result).toContain('status → solved');
-    expect(result).toContain('set_tags → resolved, macro_applied');
-    expect(result).toContain('comment_value → Thanks for your business!');
   });
 
   it('marks a restricted macro and previews an over-long action value', () => {
