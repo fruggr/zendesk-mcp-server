@@ -126,7 +126,10 @@ describe('formatSlaPolicy', () => {
             ...MOCK_SLA_POLICY.filter.all,
             { field: 'assignee_id', operator: 'is', value: null },
           ],
-          any: [{ field: 'priority', operator: 'is', value: 'urgent' }],
+          any: [
+            { field: 'priority', operator: 'is', value: 'urgent' },
+            { field: 'group_id', operator: 'is', value: null },
+          ],
         },
         policy_metrics: MOCK_SLA_POLICY.policy_metrics.map((m, i) =>
           i === 1 ? { ...m, business_hours: true } : m,
@@ -136,7 +139,7 @@ describe('formatSlaPolicy', () => {
       "## SLA policy: SLA contractuels fruggr - Bugs/Incidents (123)
       - **Description**: Contractual SLA for bugs and incidents
       - **Position**: 1
-      - **Conditions**: all: type is incident; all: custom_status_id includes ["1","2"]; all: assignee_id is; any: priority is urgent
+      - **Conditions**: all: type is incident; all: custom_status_id includes ["1","2"]; all: assignee_id is; any: priority is urgent; any: group_id is
       - **Targets**:
         - high / first_reply_time: 420 min
         - high / total_resolution_time: 4200 min (business)"
