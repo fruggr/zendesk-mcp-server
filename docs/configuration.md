@@ -219,6 +219,11 @@ Per-image size cap for inline (multimodal) ticket attachments. Images larger tha
 
 Maximum number of images embedded as native image content in a single tool call. Remaining images are returned as text references.
 
+### `ZENDESK_MAX_RESPONSE_BYTES`
+**Required:** no · **Default:** `10420224` (10 MB, less a 64 KB envelope reserve)
+
+Total size budget for the content of one tool response. The two caps above bound each image and how many are embedded, never the sum: two 3.8 MB screenshots pass both and still build a message beyond what the stdio transport accepts, which **closes the transport** rather than failing the call (SDK 1.30 caps its read buffer at 10 MB). Attachment listings therefore track the serialized weight of what they emit: an image that no longer fits degrades to a text reference stating the budget, and once even references stop fitting the listing stops with a block naming how many were omitted. Lower it if your client enforces a smaller message ceiling; raising it above your client's own limit only moves the failure to the client.
+
 ### `ZENDESK_MAX_COMMENT_PAGES`
 **Required:** no · **Default:** `10`
 
