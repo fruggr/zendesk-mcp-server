@@ -1,5 +1,7 @@
 import { HttpResponse, http } from 'msw';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import * as z from 'zod/v4';
+import { MAX_BASE64_INPUT_CHARS } from '../../../src/constants';
 import type { ToolContext } from '../../../src/tools/definitions';
 import { createTicketTools } from '../../../src/tools/tickets';
 import {
@@ -820,6 +822,80 @@ describe('ticket tools', () => {
       const tool = findTool('update_ticket');
       const result = await tool.handler({ ticket_id: 1, status: 'solved' });
       expect(result.content[0]?.text).toContain('updated');
+    });
+  });
+
+  // #205 inbound side: nothing bounded the size of a base64 attachment input, and
+  // `attachments` takes a list, so several files add up inside one message. A
+  // schema cap cannot stop the overflow (the read buffer bursts before parsing),
+  // but it is published as `maxLength` for an agent to read, and it turns a
+  // moderate overshoot into a plain validation error rather than a lost session.
+  describe('attachment input caps', () => {
+    const b64 = (chars: number) => 'a'.repeat(chars);
+
+    const parse = (name: string, params: unknown) => {
+      const tool = findTool(name);
+      return tool.inputSchema.safeParse(params);
+    };
+
+    it('rejects a single attachment past the base64 ceiling, naming limit and size', () => {
+      const result = parse('add_private_note', {
+        ticket_id: 1,
+        body: 'note',
+        attachments: [
+          {
+            file_name: 'huge.bin',
+            file_base64: b64(MAX_BASE64_INPUT_CHARS + 4),
+            content_type: 'application/octet-stream',
+          },
+        ],
+      });
+      expect(result.success).toBe(false);
+      if (result.success) return;
+      const message = result.error.issues.map((i) => i.message).join(' ');
+      expect(message).toContain(String(MAX_BASE64_INPUT_CHARS));
+      expect(message).toContain(String(MAX_BASE64_INPUT_CHARS + 4));
+    });
+
+    it('rejects attachments that only overflow once summed', () => {
+      const half = Math.ceil((MAX_BASE64_INPUT_CHARS + 8) / 2 / 4) * 4;
+      const result = parse('add_public_comment', {
+        ticket_id: 1,
+        body: 'reply',
+        attachments: [
+          { file_name: 'a.bin', file_base64: b64(half), content_type: 'application/octet-stream' },
+          { file_name: 'b.bin', file_base64: b64(half), content_type: 'application/octet-stream' },
+        ],
+      });
+      expect(result.success).toBe(false);
+      if (result.success) return;
+      const message = result.error.issues.map((i) => i.message).join(' ');
+      // Each file passes on its own; only the total is over.
+      expect(half).toBeLessThanOrEqual(MAX_BASE64_INPUT_CHARS);
+      expect(message).toContain(String(half * 2));
+      expect(message).toContain(String(MAX_BASE64_INPUT_CHARS));
+    });
+
+    it('still accepts an ordinary attachment', () => {
+      const result = parse('add_private_note', {
+        ticket_id: 1,
+        body: 'note',
+        attachments: [{ file_name: 'a.txt', file_base64: 'aGVsbG8=', content_type: 'text/plain' }],
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('publishes the ceiling as maxLength so an agent sees it before calling', () => {
+      const schema = z.toJSONSchema(findTool('add_private_note').inputSchema, {
+        io: 'input',
+      }) as {
+        properties: {
+          attachments: { items: { properties: { file_base64: { maxLength?: number } } } };
+        };
+      };
+      expect(schema.properties.attachments.items.properties.file_base64.maxLength).toBe(
+        MAX_BASE64_INPUT_CHARS,
+      );
     });
   });
 

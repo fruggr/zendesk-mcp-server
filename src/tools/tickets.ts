@@ -10,6 +10,7 @@ import {
 import {
   DEFAULT_PAGE_SIZE,
   MAX_ATTACHMENT_BYTES,
+  MAX_BASE64_INPUT_CHARS,
   MAX_COMMENT_PAGES,
   MAX_EMBEDDED_IMAGE_COUNT,
   MAX_PAGE_SIZE,
@@ -67,6 +68,12 @@ import type { ToolContext, ToolDefinition, ToolImageContent, ToolTextContent } f
 // The per-image cap in MB, for the skip message. Derived once: both operands
 // are module constants.
 const MAX_ATTACHMENT_MB = Number.parseFloat((MAX_ATTACHMENT_BYTES / (1024 * 1024)).toFixed(2));
+
+// The inbound base64 ceiling expressed as file megabytes, for the descriptions.
+// Base64 carries 3 bytes per 4 characters.
+const MAX_BASE64_INPUT_MB = Number.parseFloat(
+  (((MAX_BASE64_INPUT_CHARS / 4) * 3) / (1024 * 1024)).toFixed(2),
+);
 
 // The response budget in MB, for the skip and truncation messages.
 const MAX_RESPONSE_MB = Number.parseFloat((MAX_RESPONSE_BYTES / (1024 * 1024)).toFixed(2));
@@ -618,7 +625,17 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
 
   const attachmentSchema = z.object({
     file_name: z.string().min(1).describe('File name, e.g. "app.log" or "screenshot.png".'),
-    file_base64: z.string().min(1).base64().describe('File content encoded as base64.'),
+    file_base64: z
+      .string()
+      .min(1)
+      .base64()
+      .max(MAX_BASE64_INPUT_CHARS, {
+        error: (issue) =>
+          `Attachment too large: ${(issue.input as string).length} base64 characters, limit ${MAX_BASE64_INPUT_CHARS}. Downscale the file, split the upload, or link to it instead of uploading.`,
+      })
+      .describe(
+        `File content encoded as base64. At most ${MAX_BASE64_INPUT_CHARS} characters (about ${MAX_BASE64_INPUT_MB} MB of file), and the attachments of one call must stay under that total; the HTTP transport additionally caps request bodies at 4 MB.`,
+      ),
     content_type: z
       .string()
       .min(1)
@@ -626,6 +643,22 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       .describe('MIME type, e.g. "text/plain", "image/png", "application/pdf".'),
   });
   type AttachmentInput = z.infer<typeof attachmentSchema>;
+
+  // The per-file cap above bounds one attachment; this bounds a call, because
+  // `attachments` is a list and every file rides in the same message (#205).
+  const attachmentsParam = (description: string) =>
+    z
+      .array(attachmentSchema)
+      .superRefine((files, refinement) => {
+        const total = files.reduce((sum, file) => sum + file.file_base64.length, 0);
+        if (total > MAX_BASE64_INPUT_CHARS)
+          refinement.addIssue({
+            code: 'custom',
+            message: `Attachments too large: ${total} base64 characters in total, limit ${MAX_BASE64_INPUT_CHARS}. Send fewer files per call.`,
+          });
+      })
+      .optional()
+      .describe(description);
 
   // Upload each file via the Zendesk Uploads API, aggregating them under a single
   // upload token (the token from the first upload is passed to the next), and
@@ -1075,10 +1108,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           .describe(
             'Note text (internal, agent-only). Plain text or HTML; not shown to the requester.',
           ),
-        attachments: z
-          .array(attachmentSchema)
-          .optional()
-          .describe('Files to attach to this note (base64-encoded content).'),
+        attachments: attachmentsParam('Files to attach to this note (base64-encoded content).'),
       }),
       annotations: {
         readOnlyHint: false,
@@ -1125,10 +1155,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           .describe(
             'Comment text sent to the requester. Plain text or HTML; visible in the ticket.',
           ),
-        attachments: z
-          .array(attachmentSchema)
-          .optional()
-          .describe('Files to attach to this comment (base64-encoded content).'),
+        attachments: attachmentsParam('Files to attach to this comment (base64-encoded content).'),
       }),
       annotations: {
         readOnlyHint: false,

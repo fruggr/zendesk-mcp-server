@@ -1,5 +1,6 @@
 import { HttpResponse, http } from 'msw';
 import { describe, expect, it } from 'vitest';
+import { MAX_BASE64_INPUT_CHARS } from '../../../src/constants';
 import type { ToolContext } from '../../../src/tools/definitions';
 import { createHelpCenterTools } from '../../../src/tools/help-center';
 import {
@@ -1309,6 +1310,25 @@ describe('help center tools', () => {
   });
 
   describe('create_article_attachment', () => {
+    // #205: an unbounded base64 field lets one call build a JSON-RPC message past
+    // the stdio ReadBuffer ceiling, which closes the transport instead of failing
+    // the call.
+    it('rejects a file past the base64 ceiling, naming limit and size', () => {
+      const tool = findTool('create_article_attachment');
+      const oversized = 'a'.repeat(MAX_BASE64_INPUT_CHARS + 4);
+      const result = tool.inputSchema.safeParse({
+        article_id: 5000,
+        file_name: 'huge.bin',
+        file_base64: oversized,
+        content_type: 'application/octet-stream',
+      });
+      expect(result.success).toBe(false);
+      if (result.success) return;
+      const message = result.error.issues.map((i) => i.message).join(' ');
+      expect(message).toContain(String(MAX_BASE64_INPUT_CHARS));
+      expect(message).toContain(String(oversized.length));
+    });
+
     it('creates an attachment', async () => {
       const tool = findTool('create_article_attachment');
       const result = await tool.handler({
