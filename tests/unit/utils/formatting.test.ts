@@ -664,6 +664,49 @@ describe('formatAudit — Change events', () => {
     `);
   });
 
+  it('renders an emptied entity field as (none), whatever the name maps carry', () => {
+    // `withName` resolves through `Number(value)`, and `Number('')` is 0. The
+    // production caller never puts 0 in these maps, but `AuditNames` is a plain
+    // `Map<number, string>` and cannot say so — the empty-value guard in
+    // `renderAuditValue` is what keeps a cleared field from picking up whatever
+    // name happens to sit at that key.
+    expect(
+      formatAudit(
+        change([
+          { id: 1, type: 'Change', field_name: 'assignee_id', value: '', previous_value: '100' },
+        ]),
+        { users: new Map([...names.users, [0, 'Not A Real User']]), groups: names.groups },
+      ),
+    ).toMatchInlineSnapshot(`
+      "### 2026-02-02T00:00:00Z — Agent Smith (100) via api
+      - **assignee**: Agent Smith (100) → (none)"
+    `);
+  });
+
+  it('never reads an array as an SLA metric', () => {
+    // The metric branch destructures `minutes` and reports it as a duration, so an
+    // array that carries such a property must not reach it — `!Array.isArray` is
+    // the guard, and an array is the one value that can hold both shapes.
+    const arrayWithMinutes = Object.assign(['1', '2'], { minutes: 5 });
+    expect(
+      formatAudit(
+        change([
+          {
+            id: 1,
+            type: 'Change',
+            field_name: 'custom_field_1',
+            value: arrayWithMinutes,
+            previous_value: null,
+          },
+        ]),
+        names,
+      ),
+    ).toMatchInlineSnapshot(`
+      "### 2026-02-02T00:00:00Z — Agent Smith (100) via api
+      - **custom_field_1**: (none) → 1, 2"
+    `);
+  });
+
   it('attributes a voice comment like a regular one', () => {
     expect(
       formatAudit(

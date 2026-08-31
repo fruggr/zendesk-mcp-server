@@ -269,36 +269,19 @@ const withName = (id: unknown, names: Map<number, string>): string => {
 // to "Name (id)", SLA-metric objects reduced to their minutes, everything else via
 // formatFieldValue. Returns '' for an empty/absent side.
 const renderAuditValue = (field: string, value: unknown, names: AuditNames): string => {
-  if (value === null || value === undefined) return '';
-  // Split out of the guard above so this waiver covers the empty-string clause
-  // alone, leaving the null/undefined guard fully scored. The clause is a redundant
-  // early-out, not a sentinel the output depends on: every path further down
-  // already yields '' for '' — formatFieldValue via String(''), and withName via
-  // Number('') === 0, whose lookup cannot hit (the maps are built by
-  // `addPositiveId` in `tools/tickets.ts`, which admits positive integers only, so
-  // key 0 is absent by construction). No input can observe its removal, so skipping
-  // the early-out (ConditionalExpression => false, BlockStatement) and never
-  // matching it (StringLiteral) are equivalent. The waiver also takes one killed
-  // sibling with it, "always return ''", which the audit suite still fails on; the
-  // returned '' on the line below stays scored.
-  // Stryker disable next-line ConditionalExpression,StringLiteral,BlockStatement: equivalent, see above
-  if (value === '') {
-    return '';
-  }
+  // The empty-value guard is the contract, not an optimisation: without it an
+  // entity field would resolve `''` through `withName`, where `Number('')` is 0 —
+  // rendering a name whenever the caller's map happens to carry that key. The
+  // production caller filters 0 out (`addPositiveId` in `tools/tickets.ts`), but
+  // `AuditNames` does not, so the guard has to hold here. Asserted in
+  // "renders an emptied entity field as (none), whatever the name maps carry".
+  if (value === null || value === undefined || value === '') return '';
   const entity = AUDIT_ENTITY_FIELDS[field];
   if (entity === 'user') return withName(value, names.users);
   if (entity === 'group') return withName(value, names.groups);
-  // Forcing this condition true is equivalent: for every value it rejects,
-  // destructuring yields `minutes === undefined` and the numeric check below routes
-  // the value to formatFieldValue exactly as the rejection would. Only an array
-  // carrying an own `minutes` property could separate the two, and these values
-  // come from JSON.parse of an API response, where that shape is unrepresentable.
-  // Hoisting the condition does not narrow the waiver — Stryker emits the
-  // whole-conjunction mutant wherever the expression sits — so it also covers this
-  // line's three killed siblings (never take the branch; treat any value as an
-  // object). All three stay asserted by the SLA-metric test; only the gate
-  // accounting is waived.
-  // Stryker disable next-line ConditionalExpression: equivalent, see above
+  // `!Array.isArray` is likewise load-bearing rather than defensive padding: an
+  // array reaching the SLA-metric branch would be destructured for `minutes` and
+  // reported as a duration. Asserted in "never reads an array as an SLA metric".
   if (typeof value === 'object' && !Array.isArray(value) && 'minutes' in value) {
     const { minutes } = value as { minutes?: unknown };
     if (typeof minutes === 'number') return `${minutes} min`;

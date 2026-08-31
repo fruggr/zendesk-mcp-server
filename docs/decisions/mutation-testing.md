@@ -434,14 +434,30 @@ Every disable names the role it claims, so a reviewer can challenge the
 classification; an unexplained disable is indistinguishable from hiding a gap.
 
 **And it cannot target one mutant among several of the same mutator on a line.**
-Both waivers left in `formatting.ts` hit this: the equivalent mutant is the
-whole-condition `ConditionalExpression`, and its siblings on the same line are
-killed. Splitting a guard into two statements isolates a clause and is worth
-doing; hoisting a condition into a named `const` is not, because Stryker emits
-the whole-conjunction mutant wherever the expression sits. What is left is a
-waiver that also covers killed siblings — acceptable only when the comment says
-so, and when the assertions behind those siblings stay in place. Only the gate
-accounting is waived, never the test.
+The equivalent mutant is typically the whole-condition `ConditionalExpression`
+while its siblings on the same line are killed, so a line-level waiver takes them
+with it. Splitting a guard into two statements isolates a clause; hoisting a
+condition into a named `const` does *not*, because Stryker emits the
+whole-conjunction mutant wherever the expression sits. Which is why the first
+question is never "how do I scope the waiver" but **"is this mutant actually
+equivalent"**.
+
+#203 got that wrong twice before getting it right, and the pattern is worth
+naming. Two mutants in `renderAuditValue` looked equivalent because every
+*reachable* input produced identical output: emptying the `value === ''` arm, and
+forcing the SLA-metric test true. Both arguments rested on the **caller** — the
+audit name maps never carry key 0, the Zendesk API never sends an array with an
+own `minutes` property — while the guards live in a function whose signature
+promises neither. `AuditNames` is a plain `Map<number, string>`; `value` is
+`unknown`. Each mutant was killable by one test asserting the guard's own
+contract, and the file now needs **no directive at all**.
+
+So: when a mutant looks equivalent, check whether the argument for that is a fact
+about the *type* or a fact about *today's caller*. If it is the caller, the
+mutant is marking an unasserted contract, and the assertion is the fix. A waiver
+that also covers killed siblings is a last resort, acceptable only when the
+comment says so and the assertions behind those siblings stay in place — only the
+gate accounting is ever waived, never the test.
 
 **The `!` ordering is load-bearing**, even with no negation left in `mutate`
 today. Stryker resolves it as a sequence of set/unset operations rather than two
