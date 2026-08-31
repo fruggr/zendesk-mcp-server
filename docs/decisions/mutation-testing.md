@@ -442,8 +442,8 @@ whole-conjunction mutant wherever the expression sits. Which is why the first
 question is never "how do I scope the waiver" but **"is this mutant actually
 equivalent"**.
 
-#203 got that wrong twice before getting it right, and the pattern is worth
-naming. Two mutants in `renderAuditValue` looked equivalent because every
+Issue #203 got that wrong twice before getting it right, and the pattern is
+worth naming. Two mutants in `renderAuditValue` looked equivalent because every
 *reachable* input produced identical output: emptying the `value === ''` arm, and
 forcing the SLA-metric test true. Both arguments rested on the **caller** — the
 audit name maps never carry key 0, the Zendesk API never sends an array with an
