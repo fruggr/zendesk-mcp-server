@@ -273,8 +273,10 @@ const renderAuditValue = (field: string, value: unknown, names: AuditNames): str
   // Split out of the guard above so this waiver covers the empty-string clause
   // alone, leaving the null/undefined guard fully scored. The clause is a redundant
   // early-out, not a sentinel the output depends on: every path further down
-  // already yields '' for '' — withName via Number('') === 0 then String(''),
-  // formatFieldValue via String(''). No input can observe its removal, so skipping
+  // already yields '' for '' — formatFieldValue via String(''), and withName via
+  // Number('') === 0, whose lookup cannot hit (the maps are built by
+  // `addPositiveId` in `tools/tickets.ts`, which admits positive integers only, so
+  // key 0 is absent by construction). No input can observe its removal, so skipping
   // the early-out (ConditionalExpression => false, BlockStatement) and never
   // matching it (StringLiteral) are equivalent. The waiver also takes one killed
   // sibling with it, "always return ''", which the audit suite still fails on; the

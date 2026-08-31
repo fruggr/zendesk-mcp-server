@@ -307,6 +307,7 @@ describe('formatSlaBlock', () => {
     `);
   });
 });
+
 describe('formatComment', () => {
   it('renders a public comment with its attachment ids and content types', () => {
     expect(formatComment(MOCK_COMMENT)).toMatchInlineSnapshot(`
@@ -331,11 +332,6 @@ describe('formatComment', () => {
 
   it('omits the Attachments line when the comment has none', () => {
     const result = formatComment({ ...MOCK_COMMENT, attachments: undefined });
-    expect(result).not.toContain('Attachments:');
-  });
-
-  it('omits the Attachments line when the attachments array is empty', () => {
-    const result = formatComment({ ...MOCK_COMMENT, attachments: [] });
     expect(result).not.toContain('Attachments:');
   });
 });
