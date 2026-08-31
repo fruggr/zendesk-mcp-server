@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CHARACTER_LIMIT } from '../../../src/constants';
+import type { ZendeskViewCount } from '../../../src/types';
 import {
   formatArticle,
   formatArticleSummary,
@@ -9,14 +10,20 @@ import {
   formatFieldValue,
   formatList,
   formatMacro,
+  formatNodeTranslationSummary,
   formatOrganization,
+  formatPermissionGroup,
   formatSection,
   formatSlaBlock,
   formatSlaPolicy,
+  formatTagDiff,
   formatTicket,
+  formatTicketField,
   formatTranslation,
   formatTranslationSummary,
   formatUser,
+  formatUserSegment,
+  formatView,
   truncateIfNeeded,
 } from '../../../src/utils/formatting';
 import {
@@ -28,11 +35,17 @@ import {
   MOCK_COMMENT,
   MOCK_MACRO,
   MOCK_ORGANIZATION,
+  MOCK_PERMISSION_GROUP,
   MOCK_SECTION,
+  MOCK_SECTION_TRANSLATION,
   MOCK_SLA_POLICY,
   MOCK_TICKET,
+  MOCK_TICKET_FIELD_CUSTOM,
+  MOCK_TICKET_FIELD_SYSTEM,
   MOCK_TRANSLATION,
   MOCK_USER,
+  MOCK_USER_SEGMENT,
+  MOCK_VIEW,
 } from '../../msw-handlers';
 
 describe('truncateIfNeeded', () => {
@@ -537,5 +550,160 @@ describe('formatList', () => {
     const result = formatList([MOCK_USER], formatUser);
     expect(result).toContain('Test User');
     expect(result).not.toContain('Results:');
+  });
+});
+
+describe('formatTicketField', () => {
+  it('renders a system field with its accepted value tags', () => {
+    expect(
+      formatTicketField({ ...MOCK_TICKET_FIELD_SYSTEM, tag: 'priority_tag' }),
+    ).toMatchInlineSnapshot(`
+      "## Priority (id 10)
+      - **Type**: priority | **active, optional**
+      - **Description**: Ticket priority
+      - **Tag**: priority_tag
+      - **Options** (name → value):
+        - Low → low
+        - High → high"
+    `);
+  });
+
+  it('prefers custom_field_options over system_field_options and marks it required', () => {
+    expect(
+      formatTicketField({
+        ...MOCK_TICKET_FIELD_CUSTOM,
+        system_field_options: [{ name: 'Ignored', value: 'ignored' }],
+      }),
+    ).toMatchInlineSnapshot(`
+      "## Severity (id 360000000001)
+      - **Type**: tagger | **active, required**
+      - **Description**: Customer-facing severity
+      - **Options** (name → value):
+        - Sev-1 → severity_1
+        - Sev-2 → severity_2"
+    `);
+  });
+
+  it('renders a bare inactive field with neither options array', () => {
+    // Exercises the `?? []` fallback: no custom_field_options, no
+    // system_field_options, and every optional line suppressed.
+    expect(
+      formatTicketField({
+        id: 42,
+        type: 'text',
+        title: 'Free text',
+        description: null,
+        active: false,
+        required: false,
+      }),
+    ).toMatchInlineSnapshot(`
+      "## Free text (id 42)
+      - **Type**: text | **inactive, optional**"
+    `);
+  });
+});
+
+describe('formatTagDiff', () => {
+  it('renders an addition and a removal in the same diff', () => {
+    // Both sides non-empty is what pins the `added.length + removed.length`
+    // sum: a difference would read as unchanged when the counts match.
+    expect(formatTagDiff(['keep', 'gone'], ['keep', 'new'])).toMatchInlineSnapshot(
+      `"- **tags**: +new, -gone"`,
+    );
+  });
+
+  it('renders additions only, and removals only', () => {
+    expect(formatTagDiff(['keep'], ['keep', 'new'])).toMatchInlineSnapshot(`"- **tags**: +new"`);
+    expect(formatTagDiff(['keep', 'gone'], ['keep'])).toMatchInlineSnapshot(`"- **tags**: -gone"`);
+  });
+
+  it('returns null when the set is unchanged', () => {
+    expect(formatTagDiff(['keep', 'other'], ['other', 'keep'])).toBeNull();
+  });
+
+  it('treats a non-array side as empty rather than seeding it', () => {
+    expect(formatTagDiff(undefined, ['new'])).toMatchInlineSnapshot(`"- **tags**: +new"`);
+    expect(formatTagDiff(['gone'], null)).toMatchInlineSnapshot(`"- **tags**: -gone"`);
+    expect(formatTagDiff(undefined, undefined)).toBeNull();
+  });
+
+  it('stringifies non-string tags', () => {
+    expect(formatTagDiff([1], [1, 2])).toMatchInlineSnapshot(`"- **tags**: +2"`);
+  });
+});
+
+describe('formatView', () => {
+  const count = (over: Partial<ZendeskViewCount>): ZendeskViewCount => ({
+    view_id: MOCK_VIEW.id,
+    value: 298,
+    pretty: '298',
+    fresh: true,
+    ...over,
+  });
+
+  it('renders a view with a fresh count and a description', () => {
+    expect(formatView(MOCK_VIEW, count({}))).toMatchInlineSnapshot(
+      `"- **Unassigned tickets** (id 25) — 298 ticket(s) — Tickets with no assignee"`,
+    );
+  });
+
+  it('marks a non-fresh count as updating', () => {
+    expect(
+      formatView(MOCK_VIEW, count({ value: null, pretty: '...', fresh: false })),
+    ).toMatchInlineSnapshot(
+      `"- **Unassigned tickets** (id 25) — ... ticket(s) (count updating) — Tickets with no assignee"`,
+    );
+  });
+
+  it('omits the count and the description when neither is available', () => {
+    expect(formatView({ ...MOCK_VIEW, description: null })).toMatchInlineSnapshot(
+      `"- **Unassigned tickets** (id 25)"`,
+    );
+  });
+});
+
+describe('formatPermissionGroup', () => {
+  it('flags a built-in group and leaves a custom one unmarked', () => {
+    expect(
+      formatPermissionGroup({ ...MOCK_PERMISSION_GROUP, built_in: true }),
+    ).toMatchInlineSnapshot(`"- **Editors** (12001) — Built-in"`);
+    expect(formatPermissionGroup(MOCK_PERMISSION_GROUP)).toMatchInlineSnapshot(
+      `"- **Editors** (12001)"`,
+    );
+  });
+});
+
+describe('formatUserSegment', () => {
+  it('flags a built-in segment and leaves a custom one unmarked', () => {
+    expect(formatUserSegment(MOCK_USER_SEGMENT)).toMatchInlineSnapshot(
+      `"- **Signed-in users** (15001) — signed_in_users — Built-in"`,
+    );
+    expect(
+      formatUserSegment({ ...MOCK_USER_SEGMENT, built_in: false, user_type: 'staff' }),
+    ).toMatchInlineSnapshot(`"- **Signed-in users** (15001) — staff"`);
+  });
+});
+
+describe('formatNodeTranslationSummary', () => {
+  it('reports a set description as present rather than inlining it', () => {
+    expect(formatNodeTranslationSummary(MOCK_SECTION_TRANSLATION)).toMatchInlineSnapshot(`
+      "## Translation: en-us (7100)
+      - **Name**: FAQ
+      - **Description**: set
+      - **Draft**: false
+      - **Updated**: 2026-01-02T00:00:00Z"
+    `);
+  });
+
+  it('reports an empty description as empty', () => {
+    expect(
+      formatNodeTranslationSummary({ ...MOCK_SECTION_TRANSLATION, body: '' }),
+    ).toMatchInlineSnapshot(`
+      "## Translation: en-us (7100)
+      - **Name**: FAQ
+      - **Description**: empty
+      - **Draft**: false
+      - **Updated**: 2026-01-02T00:00:00Z"
+    `);
   });
 });
