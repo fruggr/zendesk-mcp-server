@@ -88,28 +88,36 @@ export const STDIO_MAX_MESSAGE_BYTES = 10 * 1024 * 1024;
 
 // Room left for what wraps our content in a message: the JSON-RPC envelope, plus
 // a request id the client picks and the spec does not bound. Measured at 53 bytes
-// for a plain response, so this is oversized on purpose rather than tuned. It
-// costs 0.6% of the ceiling and buys the guards independence from an envelope we
-// do not control.
+// for a plain response, so this is oversized on purpose rather than tuned, which
+// buys the guards independence from an envelope we do not control.
 const ENVELOPE_RESERVE_BYTES = 64 * 1024;
 
-// Budget for the content of one tool response, enforced by summing the serialized
-// weight of every block as it is appended. MAX_ATTACHMENT_BYTES bounds each image
-// and MAX_EMBEDDED_IMAGE_COUNT how many, but nothing bounded the total: ten 2 MB
-// images, each individually fine, built a message far past the ceiling, and enough
-// non-image attachments did the same in text references alone (#205). Override via
+// One budget for the content of a message, applied deliberately in both
+// directions: what we may emit, and what we accept. Named so the two cannot
+// drift apart by editing one expression.
+const MESSAGE_CONTENT_BUDGET_BYTES = STDIO_MAX_MESSAGE_BYTES - ENVELOPE_RESERVE_BYTES;
+
+// Outbound: total weight of one tool response. The two caps above bound each
+// image and how many, never the sum (#205). Override via
 // ZENDESK_MAX_RESPONSE_BYTES.
 export const MAX_RESPONSE_BYTES = positiveIntEnv(
   'ZENDESK_MAX_RESPONSE_BYTES',
-  STDIO_MAX_MESSAGE_BYTES - ENVELOPE_RESERVE_BYTES,
+  MESSAGE_CONTENT_BUDGET_BYTES,
 );
 
-// Longest base64 string accepted on an attachment input, and the summed ceiling
-// for the array parameters. It cannot prevent the overflow, since the read buffer
-// bursts before anything is parsed, but it is published as `maxLength` for an
-// agent to read before calling, and it turns a moderate overshoot into a plain
-// validation error instead of a dropped session.
-export const MAX_BASE64_INPUT_CHARS = STDIO_MAX_MESSAGE_BYTES - ENVELOPE_RESERVE_BYTES;
+// Inbound: longest base64 string accepted on an attachment input, and the summed
+// ceiling for the array parameters. Published as `maxLength` for an agent to read
+// before calling; it cannot prevent the overflow itself, since the read buffer
+// bursts before anything is parsed. Not overridable, so the published schema stays
+// the same whatever the environment.
+export const MAX_BASE64_INPUT_CHARS = MESSAGE_CONTENT_BUDGET_BYTES;
+
+// The inbound ceiling as file megabytes, for the tool descriptions. Base64 carries
+// 3 bytes per 4 characters. Exported rather than derived per module so the two
+// tool files cannot advertise different figures for one ceiling.
+export const MAX_BASE64_INPUT_MB = Number.parseFloat(
+  (((MAX_BASE64_INPUT_CHARS / 4) * 3) / (1024 * 1024)).toFixed(2),
+);
 
 // Hard cap on comment pages fetched when collecting ticket attachments.
 // Overridable via ZENDESK_MAX_COMMENT_PAGES for tickets with many comments.

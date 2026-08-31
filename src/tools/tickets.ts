@@ -12,6 +12,7 @@ import {
   DEFAULT_TICKET_COMMENT_PAGE_SIZE,
   MAX_ATTACHMENT_BYTES,
   MAX_BASE64_INPUT_CHARS,
+  MAX_BASE64_INPUT_MB,
   MAX_COMMENT_PAGES,
   MAX_EMBEDDED_IMAGE_COUNT,
   MAX_PAGE_SIZE,
@@ -71,24 +72,20 @@ import type { ToolContext, ToolDefinition, ToolImageContent, ToolTextContent } f
 // are module constants.
 const MAX_ATTACHMENT_MB = Number.parseFloat((MAX_ATTACHMENT_BYTES / (1024 * 1024)).toFixed(2));
 
-// The inbound base64 ceiling expressed as file megabytes, for the descriptions.
-// Base64 carries 3 bytes per 4 characters.
-const MAX_BASE64_INPUT_MB = Number.parseFloat(
-  (((MAX_BASE64_INPUT_CHARS / 4) * 3) / (1024 * 1024)).toFixed(2),
-);
-
 // The response budget in MB, for the skip and truncation messages.
 const MAX_RESPONSE_MB = Number.parseFloat((MAX_RESPONSE_BYTES / (1024 * 1024)).toFixed(2));
 
 // Bytes a block adds to the response once serialized. A JSON array weighs the sum
 // of its elements plus one separator each, so accumulating this is exact rather
-// than approximate: no assumption about file names, URLs or MIME types.
+// than approximate: no assumption about file names, URLs or MIME types. An image
+// is measured without its payload and the base64 length added back, which yields
+// the identical number (base64 holds no character JSON escapes or that UTF-8
+// widens) while avoiding a multi-megabyte throwaway copy per image.
 const blockCost = (block: ToolTextContent | ToolImageContent): number =>
-  Buffer.byteLength(JSON.stringify(block), 'utf8') + 1;
+  block.type === 'image'
+    ? Buffer.byteLength(JSON.stringify({ ...block, data: '' }), 'utf8') + block.data.length + 1
+    : Buffer.byteLength(JSON.stringify(block), 'utf8') + 1;
 
-// What an image will weigh once embedded, known before downloading it. Base64
-// turns every 3 bytes into 4 characters, so the size Zendesk reports is enough,
-// and an image that cannot fit is never fetched.
 // What embedding this image would weigh, reference block included, known before
 // downloading it. Base64 turns every 3 bytes into 4 characters, so the size
 // Zendesk reports is enough, and an image that cannot fit is never fetched.
@@ -97,9 +94,12 @@ const embeddedCost = (attachment: ZendeskTicketAttachment, reference: string): n
   4 * Math.ceil(attachment.size / 3) +
   blockCost({ type: 'text', text: reference });
 
-// Reserved up front for the truncation notice, so the block that reports the
-// omission is never itself what overflows the budget.
-const TRUNCATION_NOTICE_RESERVE = 256;
+// The block that reports what the budget cut off. Its own weight is reserved up
+// front, so the notice is never what overflows.
+const truncationNotice = (omitted: number): ToolTextContent => ({
+  type: 'text',
+  text: `${omitted} further attachments omitted: response budget of ${MAX_RESPONSE_MB} MB reached`,
+});
 
 const formatReference = (attachment: ZendeskTicketAttachment): string =>
   `**${attachment.file_name}** (id ${attachment.id}, ${attachment.content_type}, ${attachment.size} bytes) — ${attachment.content_url}`;
@@ -220,13 +220,17 @@ const fetchAttachmentsByIds = async (
 const imageSkipReason = (
   attachment: ZendeskTicketAttachment,
   embeddedCount: number,
-  withinBudget: boolean,
+  reference: string,
+  fits: (cost: number) => boolean,
 ): string | null => {
   if (attachment.size > MAX_ATTACHMENT_BYTES)
     return `skipped: exceeds ${MAX_ATTACHMENT_MB} MB per-image limit`;
   if (embeddedCount >= MAX_EMBEDDED_IMAGE_COUNT)
     return `skipped: max ${MAX_EMBEDDED_IMAGE_COUNT} embedded images reached`;
-  if (!withinBudget) return `skipped: response budget of ${MAX_RESPONSE_MB} MB reached`;
+  // Last, and only reached when the cheaper reasons did not fire, so the cost
+  // estimate is never computed for an image already rejected.
+  if (!fits(embeddedCost(attachment, reference)))
+    return `skipped: response budget of ${MAX_RESPONSE_MB} MB reached`;
   return null;
 };
 
@@ -259,15 +263,15 @@ const collectAttachmentBlocks = async (
   // Running weight of `blocks` once serialized, so the response never grows past
   // what the transport accepts (#205).
   let responseBytes = 0;
+  // Worst case for the notice is every attachment omitted, hence the widest count.
+  const noticeReserve = blockCost(truncationNotice(attachments.length));
   const fits = (cost: number): boolean =>
-    responseBytes + cost + TRUNCATION_NOTICE_RESERVE <= MAX_RESPONSE_BYTES;
+    responseBytes + cost + noticeReserve <= MAX_RESPONSE_BYTES;
 
   for (const [index, attachment] of attachments.entries()) {
     const reference = formatReference(attachment);
     const isImage = attachment.content_type.startsWith('image/');
-    const skipReason = isImage
-      ? imageSkipReason(attachment, embeddedCount, fits(embeddedCost(attachment, reference)))
-      : null;
+    const skipReason = isImage ? imageSkipReason(attachment, embeddedCount, reference, fits) : null;
 
     const produced: Array<ToolTextContent | ToolImageContent> =
       isImage && !skipReason
@@ -278,11 +282,7 @@ const collectAttachmentBlocks = async (
     if (!fits(cost)) {
       // Even references have stopped fitting: stop walking and say how many were
       // dropped, since silence here would read as a shorter ticket.
-      const omitted = attachments.length - index;
-      blocks.push({
-        type: 'text',
-        text: `${omitted} further attachments omitted: response budget of ${MAX_RESPONSE_MB} MB reached`,
-      });
+      blocks.push(truncationNotice(attachments.length - index));
       break;
     }
 
@@ -720,11 +720,13 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
     file_base64: z
       .string()
       .min(1)
-      .base64()
+      // .max before .base64: zod runs checks in declaration order, so an oversized
+      // input is rejected in constant time instead of after a full regex pass.
       .max(MAX_BASE64_INPUT_CHARS, {
         error: (issue) =>
           `Attachment too large: ${(issue.input as string).length} base64 characters, limit ${MAX_BASE64_INPUT_CHARS}. Downscale the file, split the upload, or link to it instead of uploading.`,
       })
+      .base64()
       .describe(
         `File content encoded as base64. At most ${MAX_BASE64_INPUT_CHARS} characters (about ${MAX_BASE64_INPUT_MB} MB of file), and the attachments of one call must stay under that total; the HTTP transport additionally caps request bodies at 4 MB.`,
       ),

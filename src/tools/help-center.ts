@@ -16,6 +16,7 @@ import {
   LARGE_ARTICLE_BODY_CHARS,
   LARGE_ARTICLE_SECTION_COUNT,
   MAX_BASE64_INPUT_CHARS,
+  MAX_BASE64_INPUT_MB,
   MAX_PAGE_SIZE,
   REORDER_CONFIRM_THRESHOLD,
 } from '../constants';
@@ -79,12 +80,6 @@ import type { ToolContext, ToolDefinition } from './definitions';
 // article id. Kept as one constant (like PER_PAGE_DESC/PAGE_DESC) so the "how to
 // obtain it" guidance can't drift between copies. The two article-write tools
 // use their own variant ("...to update" / "...whose translation to update").
-// The inbound base64 ceiling expressed as file megabytes, for the description.
-// Base64 carries 3 bytes per 4 characters.
-const MAX_BASE64_INPUT_MB = Number.parseFloat(
-  (((MAX_BASE64_INPUT_CHARS / 4) * 3) / (1024 * 1024)).toFixed(2),
-);
-
 const ARTICLE_ID_DESC =
   'Article ID — the numeric id of the Help Center article. Obtain it from list_articles or search_articles.';
 
