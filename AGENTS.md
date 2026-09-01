@@ -82,6 +82,10 @@ quality bar still hold — the freedom is from Zendesk's shape, not from craft.)
 - Existing tests are sacred: a failure is a potential regression — find the root
   cause before touching the test.
 - Mock Zendesk with MSW (`tests/msw-handlers.ts`), never the real API.
+- Exact-output assertions go through `toMatchInlineSnapshot`, **committed
+  filled** — an empty one is auto-filled, passes, and kills no mutant. A `-u` on a
+  formatter changes what an agent reads back: treat it as a behaviour change and
+  justify it. Rule: `CONTRIBUTING.md` (Code standards).
 - Extend `tests/integration/` when you add/change a tool, mode, filter or
   transport; shared behaviour goes in `registerCoreScenarios`. Coverage
   thresholds in `vitest.config.ts` are a ratchet.

@@ -269,10 +269,19 @@ const withName = (id: unknown, names: Map<number, string>): string => {
 // to "Name (id)", SLA-metric objects reduced to their minutes, everything else via
 // formatFieldValue. Returns '' for an empty/absent side.
 const renderAuditValue = (field: string, value: unknown, names: AuditNames): string => {
+  // The empty-value guard is the contract, not an optimisation: without it an
+  // entity field would resolve `''` through `withName`, where `Number('')` is 0 —
+  // rendering a name whenever the caller's map happens to carry that key. The
+  // production caller filters 0 out (`addPositiveId` in `tools/tickets.ts`), but
+  // `AuditNames` does not, so the guard has to hold here. Asserted in
+  // "renders an emptied entity field as (none), whatever the name maps carry".
   if (value === null || value === undefined || value === '') return '';
   const entity = AUDIT_ENTITY_FIELDS[field];
   if (entity === 'user') return withName(value, names.users);
   if (entity === 'group') return withName(value, names.groups);
+  // `!Array.isArray` is likewise load-bearing rather than defensive padding: an
+  // array reaching the SLA-metric branch would be destructured for `minutes` and
+  // reported as a duration. Asserted in "never reads an array as an SLA metric".
   if (typeof value === 'object' && !Array.isArray(value) && 'minutes' in value) {
     const { minutes } = value as { minutes?: unknown };
     if (typeof minutes === 'number') return `${minutes} min`;
