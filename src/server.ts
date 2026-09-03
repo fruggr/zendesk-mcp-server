@@ -3,10 +3,7 @@ import * as z from 'zod/v4';
 import { ZendeskApiError } from './client/zendesk-api';
 import type { Config } from './config';
 import { ARTICLE_RESOURCES_SCAN_MAX_PAGES } from './constants';
-import {
-  createArticleResourcesProvider,
-  LIST_PROMOTED_ARTICLES_TOOL,
-} from './guidance/article-resources';
+import { createArticleResourcesProvider } from './guidance/article-resources';
 import {
   articleResourceEnabled,
   articleResourceUri,
@@ -227,19 +224,15 @@ export const registerToolset = (
     for (const handle of registered) handle.remove();
   };
 
-  // Apply filters (--read-only, --namespace, --tool)
+  // Apply filters (--read-only, --namespace, --tool, --no-promoted-articles).
+  // All of them live in filterTools so `--print-tools` renders exactly this set;
+  // a filter applied only here would make that diagnostic lie.
   const filteredTools = filterTools(tools, {
     readOnly: config.readOnly,
     namespaces: config.namespaces,
     tools: config.tools,
-  })
-    // When the promoted pre-listing is disabled (`--no-promoted-articles`), also
-    // drop the companion `list_promoted_articles` tool. That listing must then make
-    // ZERO Zendesk calls: gating only the resource `list` callback (below) would
-    // leave the tool callable, and its promoted-article scan would still hit the
-    // API. Read-by-id (`<scheme>://article/{id}`) is unaffected — it stays
-    // registered. `!== false` so an unset flag (hand-built configs) keeps default-on.
-    .filter((t) => config.promotedArticles !== false || t.name !== LIST_PROMOTED_ARTICLES_TOOL);
+    promotedArticles: config.promotedArticles,
+  });
 
   // Registration is atomic: if any registerTool/registerResource throws partway
   // (e.g. a hot-reloaded module introduced a duplicate tool name), roll back the

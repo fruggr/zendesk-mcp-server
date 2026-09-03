@@ -20,10 +20,7 @@ const renderAllMode = (tools: ToolDefinition[]): string[] => [
   ...tools.map((tool) => toolLine(tool, '  ')),
 ];
 
-// `prefix` carries the `[RO]` marker the proxy descriptions themselves use in
-// read-only mode, so the listing matches what a client that ignores annotations
-// actually reads.
-const renderNamespaceMode = (tools: ToolDefinition[], prefix: string): string[] => {
+const renderNamespaceMode = (tools: ToolDefinition[]): string[] => {
   const grouped = groupByNamespace(tools);
   const lines = [`${grouped.size} proxy tool(s) exposed:`];
   for (const [namespace, nsTools] of grouped) {
@@ -31,27 +28,26 @@ const renderNamespaceMode = (tools: ToolDefinition[], prefix: string): string[] 
     // Record<Namespace, ...>, so this lookup cannot miss -- an incomplete map is a
     // compile error. The `?.` exists only to satisfy noUncheckedIndexedAccess,
     // which makes the fallback unreachable and untestable.
-    lines.push(`  ${prefix}${NAMESPACE_LABELS[namespace]?.toolName ?? namespace}`);
+    lines.push(`  ${NAMESPACE_LABELS[namespace]?.toolName ?? namespace}`);
     lines.push(...nsTools.map((tool) => toolLine(tool, '    - ')));
   }
   return lines;
 };
 
-const renderSingleMode = (tools: ToolDefinition[], prefix: string): string[] => [
+const renderSingleMode = (tools: ToolDefinition[]): string[] => [
   `1 proxy tool exposed, wrapping ${tools.length} operation(s):`,
-  `  ${prefix}zendesk`,
+  '  zendesk',
   ...tools.map((tool) => toolLine(tool, '    - ')),
 ];
 
 const renderBody = (config: Config, tools: ToolDefinition[]): string[] => {
-  const prefix = config.readOnly ? '[RO] ' : '';
   switch (config.mode) {
     case 'all':
       return renderAllMode(tools);
     case 'namespace':
-      return renderNamespaceMode(tools, prefix);
+      return renderNamespaceMode(tools);
     case 'single':
-      return renderSingleMode(tools, prefix);
+      return renderSingleMode(tools);
     default: {
       // Closed union; the guard is for a mode fed in by a hand-edited config.
       const unhandled: never = config.mode;
@@ -74,12 +70,20 @@ const renderBody = (config: Config, tools: ToolDefinition[]): string[] => {
  * would drag in a transport. The duplication is three branches wide and is
  * pinned by tests asserting this output against the names the integration
  * harness sees over the wire.
+ *
+ * Every name printed is a name a client would actually see. Read-only mode is
+ * stated in the header rather than as a `[RO]` prefix on the names: the server
+ * puts that marker in a proxy's *description*, never in its name, and printing
+ * `[RO] zendesk_tickets` here would name a tool that does not exist.
  */
 export const renderToolSurface = (config: Config, tools: ToolDefinition[]): string => {
+  // Same call `registerToolset` makes, flag for flag: the point of this output
+  // is that it matches the running server, so it must not filter differently.
   const filtered = filterTools(tools, {
     readOnly: config.readOnly,
     namespaces: config.namespaces,
     tools: config.tools,
+    promotedArticles: config.promotedArticles,
   });
 
   const header = renderHeader(config);

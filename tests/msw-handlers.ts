@@ -115,6 +115,35 @@ export const MOCK_TICKET_FIELD_CUSTOM = {
   ],
 };
 
+// The system subject and description fields. EVERY real Zendesk form carries
+// these and marks them required in the portal, and their absence from the
+// fixtures is what hid a blocking bug: treating them as custom fields made
+// create_request demand "Subject (field id 1)" in `custom_fields`, which no
+// caller can satisfy. They belong in the form fixture for that reason.
+export const MOCK_TICKET_FIELD_SUBJECT = {
+  id: 1,
+  type: 'subject',
+  title: 'Subject',
+  description: null,
+  active: true,
+  required: true,
+  visible_in_portal: true,
+  required_in_portal: true,
+  editable_in_portal: true,
+};
+
+export const MOCK_TICKET_FIELD_DESCRIPTION = {
+  id: 2,
+  type: 'description',
+  title: 'Description',
+  description: null,
+  active: true,
+  required: true,
+  visible_in_portal: true,
+  required_in_portal: true,
+  editable_in_portal: true,
+};
+
 // A portal-visible but OPTIONAL field, so the required/optional split in the
 // form spec is exercised rather than assumed.
 export const MOCK_TICKET_FIELD_PORTAL_OPTIONAL = {
@@ -140,7 +169,7 @@ export const MOCK_TICKET_FORM_BUG = {
   end_user_visible: true,
   default: true,
   position: 1,
-  ticket_field_ids: [10, 360000000001, 360000000002],
+  ticket_field_ids: [1, 2, 10, 360000000001, 360000000002],
   end_user_conditions: [],
 };
 
@@ -154,7 +183,7 @@ export const MOCK_TICKET_FORM_FEATURE = {
   end_user_visible: true,
   default: false,
   position: 2,
-  ticket_field_ids: [360000000002],
+  ticket_field_ids: [1, 2, 360000000002],
   end_user_conditions: [
     {
       parent_field_id: 360000000001,
@@ -880,6 +909,8 @@ export const handlers = [
   http.get(`${BASE}/ticket_fields`, () =>
     HttpResponse.json({
       ticket_fields: [
+        MOCK_TICKET_FIELD_SUBJECT,
+        MOCK_TICKET_FIELD_DESCRIPTION,
         MOCK_TICKET_FIELD_SYSTEM,
         MOCK_TICKET_FIELD_CUSTOM,
         MOCK_TICKET_FIELD_PORTAL_OPTIONAL,

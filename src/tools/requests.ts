@@ -1,6 +1,11 @@
 import * as z from 'zod/v4';
 import { ZendeskApiError, zendeskGet, zendeskPost, zendeskPut } from '../client/zendesk-api';
-import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, TICKET_FIELD_SCAN_MAX_PAGES } from '../constants';
+import {
+  DEFAULT_PAGE_SIZE,
+  MAX_COMMENT_PAGES,
+  MAX_PAGE_SIZE,
+  TICKET_FIELD_SCAN_MAX_PAGES,
+} from '../constants';
 import type {
   ZendeskComment,
   ZendeskFormCondition,
@@ -111,7 +116,8 @@ const fetchVisibleTicketFields = async (
 ): Promise<ZendeskTicketField[]> => {
   const fields: ZendeskTicketField[] = [];
   let page = 1;
-  while (page <= TICKET_FIELD_SCAN_MAX_PAGES) {
+  let truncated = false;
+  while (true) {
     const response = await withForbiddenGuidance(tool, 'GET /ticket_fields', () =>
       zendeskGet<ZendeskListResponse<ZendeskTicketField>>(
         subdomain,
@@ -122,13 +128,92 @@ const fetchVisibleTicketFields = async (
     );
     fields.push(...(response.ticket_fields ?? []));
     if (!response.next_page) break;
+    if (page >= TICKET_FIELD_SCAN_MAX_PAGES) {
+      truncated = true;
+      break;
+    }
     page += 1;
+  }
+  // Hitting the cap is not a partial result to quietly live with: the form spec
+  // would omit a field, and validateSubmission would then not enforce it,
+  // producing exactly the opaque 422 that check exists to prevent. Fail loudly
+  // rather than describe a form we only half read.
+  if (truncated) {
+    throw new Error(
+      `${tool} could not read every ticket field: the account exposes more than ` +
+        `${TICKET_FIELD_SCAN_MAX_PAGES} pages of them. Describing the form from a partial ` +
+        'list would omit required fields and let a submission fail with an opaque Zendesk ' +
+        'error, so this stops here. Raise ZENDESK_TICKET_FIELD_SCAN_MAX_PAGES and retry.',
+    );
   }
   // Zendesk already filters to portal-visible fields for an end-user token but
   // not for an agent one, so filter here too: the same tool must describe the
   // same form whichever identity calls it.
   return fields.filter((field) => field.visible_in_portal !== false);
 };
+
+/**
+ * Every public comment on a request, paged.
+ *
+ * `get_request` promises the whole conversation, so it has to page: one GET
+ * stops at Zendesk's page size, and a long-running ticket would lose its
+ * oldest exchanges with nothing to say so. Bounded by the same cap the
+ * agent-side comment walk uses.
+ *
+ * The `users` sideload accumulates across pages -- it is what attributes each
+ * comment, and a later page's authors need not appear in the first page's.
+ */
+const fetchAllRequestComments = async (
+  subdomain: string,
+  token: string,
+  requestId: number,
+): Promise<{ comments: ZendeskComment[]; authors: Map<number, ZendeskRequestCommentAuthor> }> => {
+  const comments: ZendeskComment[] = [];
+  const authors = new Map<number, ZendeskRequestCommentAuthor>();
+  let page = 1;
+  while (page <= MAX_COMMENT_PAGES) {
+    const response = await withForbiddenGuidance(
+      'get_request',
+      `GET /requests/${requestId}/comments`,
+      () =>
+        zendeskGet<ZendeskListResponse<ZendeskComment> & { users?: ZendeskRequestCommentAuthor[] }>(
+          subdomain,
+          token,
+          `/requests/${requestId}/comments`,
+          buildOffsetParams(MAX_PAGE_SIZE, page),
+        ),
+    );
+    comments.push(...(response.comments ?? []));
+    for (const user of response.users ?? []) authors.set(user.id, user);
+    if (!response.next_page) break;
+    page += 1;
+  }
+  return { comments, authors };
+};
+
+// Zendesk field `type` values for the built-in fields every form carries. They
+// are NOT things a submitter sends in `custom_fields`: `subject` and
+// `description` are this tool's own `subject`/`body` parameters, and the rest
+// are agent-side (status, priority, type, group, assignee, tags) and dropped
+// outright when an end user sets them.
+//
+// This matters more than it looks. A real form's `ticket_field_ids` includes
+// the system subject and description, and both are marked required in the
+// portal -- so treating every id in that list as a custom field to collect
+// would make `create_request` demand "Subject (field id 1)" in `custom_fields`
+// and refuse every submission, which no caller could satisfy.
+const SYSTEM_FIELD_TYPES: ReadonlySet<string> = new Set([
+  'subject',
+  'description',
+  'status',
+  'tickettype',
+  'priority',
+  'group',
+  'assignee',
+  'tags',
+]);
+
+const isCustomField = (field: ZendeskTicketField): boolean => !SYSTEM_FIELD_TYPES.has(field.type);
 
 const formSummary = (form: ZendeskTicketForm): string =>
   [
@@ -170,19 +255,25 @@ const conditionSpec = (condition: ZendeskFormCondition): string => {
 const renderFormSpec = (form: ZendeskTicketForm, fields: ZendeskTicketField[]): string => {
   const byId = new Map(fields.map((field) => [field.id, field]));
   // Ordered by the form, not by the field listing: that order is what the
-  // portal shows and what a submitter should be asked in.
+  // portal shows and what a submitter should be asked in. System fields are
+  // dropped here -- subject and description are create_request's own
+  // parameters, and the rest are agent-side.
   const formFields = form.ticket_field_ids
     .map((id) => byId.get(id))
-    .filter((field): field is ZendeskTicketField => field !== undefined);
+    .filter((field): field is ZendeskTicketField => field !== undefined)
+    .filter(isCustomField);
   const required = formFields.filter((field) => field.required_in_portal);
   const conditions = form.end_user_conditions ?? [];
 
   return [
     `# ${form.display_name || form.name} (form id ${form.id})`,
     '',
+    'Always needed: a subject and a description (the `subject` and `body` parameters',
+    'of create_request). The fields below are what this form asks for on top of those.',
+    '',
     required.length > 0
       ? `**Required**: ${required.map((f) => f.title_in_portal || f.title).join(', ')}`
-      : '**Required**: subject and description only.',
+      : '**Required**: nothing beyond the subject and description.',
     conditions.length > 0
       ? [
           '',
@@ -197,7 +288,7 @@ const renderFormSpec = (form: ZendeskTicketForm, fields: ZendeskTicketField[]): 
     '',
     formFields.length > 0
       ? formFields.map(fieldSpec).join('\n\n')
-      : 'This form exposes no custom fields; send subject and description only.',
+      : 'This form exposes no custom fields; send subject and body only.',
   ]
     .filter(Boolean)
     .join('\n');
@@ -229,6 +320,11 @@ const validateSubmission = (
   const missing = form.ticket_field_ids
     .map((id) => byId.get(id))
     .filter((field): field is ZendeskTicketField => field?.required_in_portal === true)
+    // System fields are excluded: `subject` and `description` arrive as this
+    // tool's own parameters (and are already `.min(1)`), and the agent-side
+    // ones cannot be set by an end user at all. Enforcing them as
+    // `custom_fields` entries would refuse every submission.
+    .filter(isCustomField)
     .filter((field) => !providedIds.has(field.id));
 
   if (missing.length > 0) {
@@ -570,19 +666,8 @@ export const createRequestTools = (ctx: ToolContext): ToolDefinition[] => {
           // The `users` sideload comes back by default and carries an `agent`
           // flag, which is what distinguishes a reply from the user's own
           // comment without inferring anything from ids.
-          const response = await withForbiddenGuidance(
-            'get_request',
-            `GET /requests/${request_id}/comments`,
-            () =>
-              zendeskGet<{
-                comments: ZendeskComment[];
-                users?: ZendeskRequestCommentAuthor[];
-              }>(subdomain, token, `/requests/${request_id}/comments`),
-          );
-          const authors = new Map((response.users ?? []).map((user) => [user.id, user]));
-          const thread = response.comments
-            .map((c) => formatRequestComment(c, authors))
-            .join('\n\n');
+          const { comments, authors } = await fetchAllRequestComments(subdomain, token, request_id);
+          const thread = comments.map((c) => formatRequestComment(c, authors)).join('\n\n');
           text += `\n\n---\n# Conversation\n\n${thread}`;
         }
         return { content: [{ type: 'text', text: truncateIfNeeded(text) }] };

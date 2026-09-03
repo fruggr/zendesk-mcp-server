@@ -73,14 +73,36 @@ describe('renderToolSurface', () => {
     );
   });
 
-  it('prefixes a read-only proxy with [RO], as the proxy description does', () => {
+  // The server puts the [RO] marker in a proxy's DESCRIPTION, never in its
+  // name. Printing `[RO] zendesk_tickets` here named a tool no client sees, so
+  // read-only is stated in the header instead.
+  it('prints real tool names in read-only mode, not an [RO]-prefixed one', () => {
     const out = renderToolSurface(
       makeConfig({ namespaces: ['tickets'], readOnly: true }),
       twoTools,
     );
-    expect(out).toContain('  [RO] zendesk_tickets');
+    expect(out).toContain('  zendesk_tickets');
+    expect(out).not.toContain('[RO]');
+    expect(out.split('\n')[0]).toContain('Read-only: yes');
     // The write tool is filtered out before the proxy is described.
     expect(out).not.toContain('write_thing');
+  });
+
+  // The point of this output is that it matches the running server, so it has
+  // to honour every filter registerToolset honours -- including this one, which
+  // used to be applied only at registration.
+  it('drops list_promoted_articles when the pre-listing is disabled', () => {
+    const enabled = renderToolSurface(
+      makeConfig({ mode: 'all', namespaces: ['help_center'] }),
+      allTools,
+    );
+    expect(enabled).toContain('list_promoted_articles');
+
+    const disabled = renderToolSurface(
+      makeConfig({ mode: 'all', namespaces: ['help_center'], promotedArticles: false }),
+      allTools,
+    );
+    expect(disabled).not.toContain('list_promoted_articles');
   });
 
   it('renders single mode as one proxy wrapping every operation', () => {

@@ -395,6 +395,15 @@ export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
 
   const mode = cli.tools?.length ? 'all' : (cli.mode ?? 'namespace');
 
+  // `--tool` is an inventory picker in its own right: before the namespace
+  // default existed it could name ANY tool, because no namespace filter was
+  // applied. `filterTools` ANDs the two filters, so leaving the default in
+  // place would make `--tool list_requests` resolve to nothing at all -- the
+  // tool exists, but its namespace is not in the default set. So an explicit
+  // `--tool` without an explicit `--namespace` opens the namespace filter to
+  // everything and lets `--tool` do the narrowing.
+  const namespaces = cli.namespaces ?? (cli.tools?.length ? [...Namespace.options] : undefined);
+
   const callbackPort =
     cli.callbackPort ??
     parsePortEnv(requireNonEmptyEnv('ZENDESK_OAUTH_CALLBACK_PORT'), 'ZENDESK_OAUTH_CALLBACK_PORT');
@@ -409,7 +418,7 @@ export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
     logLevel: cli.logLevel ?? requireNonEmptyEnv('LOG_LEVEL') ?? 'info',
     mode,
     readOnly: cli.readOnly ?? false,
-    namespaces: cli.namespaces,
+    namespaces,
     tools: cli.tools,
     topology: cli.topology ?? true,
     promotedArticles: cli.promotedArticles ?? true,

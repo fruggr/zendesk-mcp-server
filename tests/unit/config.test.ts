@@ -128,6 +128,21 @@ describe('loadConfig', () => {
     expect(config.namespaces).toEqual(['requests', 'help_center']);
   });
 
+  // Regression: `--tool` is an inventory picker in its own right. Before the
+  // namespace default existed it could name any tool; leaving the default in
+  // place made `--tool list_requests` resolve to nothing, because filterTools
+  // ANDs the two filters and `requests` is not in the default set.
+  it('opens the namespace filter when --tool names a non-default namespace tool', () => {
+    const config = loadConfig(['mycompany', '--tool', 'list_requests']);
+    expect(config.namespaces).toEqual(['tickets', 'help_center', 'users', 'requests']);
+    expect(config.tools).toEqual(['list_requests']);
+  });
+
+  it('still lets an explicit --namespace win over that widening', () => {
+    const config = loadConfig(['mycompany', '--tool', 'list_requests', '--namespace', 'tickets']);
+    expect(config.namespaces).toEqual(['tickets']);
+  });
+
   it('does not print the tool surface unless asked', () => {
     expect(loadConfig(['mycompany']).printTools).toBe(false);
   });

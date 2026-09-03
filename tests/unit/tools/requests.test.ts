@@ -2,7 +2,7 @@ import { HttpResponse, http } from 'msw';
 import { describe, expect, it } from 'vitest';
 import type { ToolContext } from '../../../src/tools/definitions';
 import { createRequestTools } from '../../../src/tools/requests';
-import { MOCK_REQUEST, MOCK_TICKET_FORM_BUG } from '../../msw-handlers';
+import { MOCK_REQUEST, MOCK_TICKET_FIELD_CUSTOM, MOCK_TICKET_FORM_BUG } from '../../msw-handlers';
 import { mswServer } from '../../setup';
 
 const BASE = 'https://testsubdomain.zendesk.com/api/v2';
@@ -110,6 +110,60 @@ describe('get_request_form', () => {
     expect(text).not.toContain('## Conditional fields');
   });
 
+  // The bug this guards: every real form carries the system subject and
+  // description fields, both portal-required. Treating them as custom fields
+  // made create_request demand "Subject (field id 1)" in `custom_fields`,
+  // which no caller can satisfy, and made this spec tell them to send it.
+  it('does not present the system subject and description as fields to send', async () => {
+    const text = await textOf('get_request_form', { form_id: 900 });
+    expect(text).not.toContain('field id 1)');
+    expect(text).not.toContain('field id 2)');
+    expect(text).not.toContain('### Subject');
+    expect(text).not.toContain('### Description');
+  });
+
+  it('says up front that a subject and a description are always needed', async () => {
+    const text = await textOf('get_request_form', { form_id: 900 });
+    expect(text).toContain('Always needed: a subject and a description');
+  });
+
+  it('lists only the custom fields as required, not the system ones', async () => {
+    const text = await textOf('get_request_form', { form_id: 900 });
+    expect(text).toContain('**Required**: How severe is it?');
+    expect(text).not.toContain('**Required**: Subject');
+  });
+
+  it('reports a form with no custom fields as needing nothing more', async () => {
+    mswServer.use(
+      http.get(`${BASE}/ticket_forms`, () =>
+        HttpResponse.json({
+          ticket_forms: [{ ...MOCK_TICKET_FORM_BUG, ticket_field_ids: [1, 2] }],
+        }),
+      ),
+    );
+    const text = await textOf('get_request_form', { form_id: 900 });
+    expect(text).toContain('**Required**: nothing beyond the subject and description.');
+    expect(text).toContain('send subject and body only');
+  });
+
+  // Reading a form from a partial field list would omit a required field, which
+  // validateSubmission would then not enforce -- producing the opaque 422 that
+  // check exists to prevent. So it must fail loudly instead.
+  it('refuses to describe a form when the field list is truncated', async () => {
+    mswServer.use(
+      http.get(`${BASE}/ticket_fields`, () =>
+        HttpResponse.json({
+          ticket_fields: [MOCK_TICKET_FIELD_CUSTOM],
+          // Always another page: forces the page cap.
+          next_page: `${BASE}/ticket_fields?page=99`,
+        }),
+      ),
+    );
+    await expect(textOf('get_request_form', { form_id: 900 })).rejects.toThrow(
+      /could not read every ticket field/,
+    );
+  });
+
   it('refuses an unknown form id and names the ones that exist', async () => {
     await expect(textOf('get_request_form', { form_id: 4242 })).rejects.toThrow(
       /No request form with id 4242/,
@@ -213,6 +267,33 @@ describe('create_request', () => {
     await expect(
       textOf('create_request', { subject: 'S', body: 'B', form_id: 900 }),
     ).rejects.toThrow(/How severe is it\? \(field id 360000000001\)/);
+  });
+
+  // The other half of the blocking bug: with the system fields enforced, this
+  // call -- the simplest valid submission there is -- threw.
+  it('accepts a submission carrying only subject, body and the custom field', async () => {
+    const text = await textOf('create_request', {
+      subject: 'Export is broken',
+      body: 'Nothing downloads.',
+      form_id: 900,
+      custom_fields: [{ id: 360000000001, value: 'severity_2' }],
+    });
+    expect(text).toContain('submitted');
+  });
+
+  it('never demands the system subject or description in custom_fields', async () => {
+    await expect(
+      textOf('create_request', { subject: 'S', body: 'B', form_id: 900 }),
+    ).rejects.toThrow(/How severe is it\?/);
+    // The error names the custom field only -- not "Subject (field id 1)".
+    await expect(
+      textOf('create_request', { subject: 'S', body: 'B', form_id: 900 }),
+    ).rejects.not.toThrow(/field id 1\)/);
+  });
+
+  it('submits a form whose only portal-required fields are the system ones', async () => {
+    const text = await textOf('create_request', { subject: 'S', body: 'B', form_id: 901 });
+    expect(text).toContain('submitted');
   });
 
   it('treats an empty value as absent for a required field', async () => {
@@ -366,6 +447,36 @@ describe('get_request', () => {
   it('lists a comment attachment by name', async () => {
     const text = await textOf('get_request', { request_id: 5001, include_comments: true });
     expect(text).toContain('diagnostic.txt');
+  });
+
+  // The description promises "every public message", so a thread longer than one
+  // page must be walked rather than silently cut off.
+  it('pages the conversation and accumulates authors across pages', async () => {
+    let calls = 0;
+    mswServer.use(
+      http.get(`${BASE}/requests/:id/comments`, () => {
+        calls += 1;
+        if (calls === 1) {
+          return HttpResponse.json({
+            comments: [{ id: 1, body: 'First', author_id: 456, public: true, created_at: 'day1' }],
+            users: [{ id: 456, name: 'Dana Customer', agent: false }],
+            next_page: `${BASE}/requests/5001/comments?page=2`,
+          });
+        }
+        return HttpResponse.json({
+          comments: [{ id: 2, body: 'Second', author_id: 789, public: true, created_at: 'day2' }],
+          // An author who appears only on the later page.
+          users: [{ id: 789, name: 'Sam Support', agent: true }],
+          next_page: null,
+        });
+      }),
+    );
+    const text = await textOf('get_request', { request_id: 5001, include_comments: true });
+    expect(calls).toBe(2);
+    expect(text).toContain('First');
+    expect(text).toContain('Second');
+    expect(text).toContain('Comment by Dana Customer');
+    expect(text).toContain('Comment by Sam Support (support agent)');
   });
 
   it('falls back to the author id when the sideload is absent', async () => {

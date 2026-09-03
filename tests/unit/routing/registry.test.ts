@@ -52,6 +52,24 @@ describe('filterTools', () => {
   });
 });
 
+describe('filterTools promotedArticles gate', () => {
+  it('keeps list_promoted_articles when the flag is unset or true', () => {
+    const unset = filterTools(allTools, { readOnly: false });
+    const on = filterTools(allTools, { readOnly: false, promotedArticles: true });
+    expect(unset.some((t) => t.name === 'list_promoted_articles')).toBe(true);
+    expect(on.some((t) => t.name === 'list_promoted_articles')).toBe(true);
+  });
+
+  it('drops only that tool when the flag is false', () => {
+    const off = filterTools(allTools, { readOnly: false, promotedArticles: false });
+    expect(off.some((t) => t.name === 'list_promoted_articles')).toBe(false);
+    expect(off).toHaveLength(allTools.length - 1);
+    // Reading a known article by id is unaffected; only the scan-backed
+    // listing goes away.
+    expect(off.some((t) => t.name === 'get_article')).toBe(true);
+  });
+});
+
 describe('groupByNamespace', () => {
   it('groups tools by namespace', () => {
     const grouped = groupByNamespace(allTools);
