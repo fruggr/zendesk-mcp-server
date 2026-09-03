@@ -1040,6 +1040,26 @@ describe('formatList', () => {
     `);
   });
 
+  it('passes a caller-supplied advice through to the truncation notice', () => {
+    const items = Array.from({ length: 400 }, (_, i) => ({
+      ...MOCK_CATEGORY,
+      id: 800 + i,
+      name: 'x'.repeat(100),
+    }));
+    const text = formatList(items, formatCategory, undefined, 'This tool takes no parameters.');
+    expect(text.endsWith('). This tool takes no parameters. ---')).toBe(true);
+  });
+
+  it('keeps the default truncation advice when the caller supplies none', () => {
+    const items = Array.from({ length: 400 }, (_, i) => ({
+      ...MOCK_CATEGORY,
+      id: 800 + i,
+      name: 'x'.repeat(100),
+    }));
+    const text = formatList(items, formatCategory);
+    expect(text.endsWith('). Use pagination or filters to reduce results. ---')).toBe(true);
+  });
+
   it('omits the header entirely when there is no pagination meta', () => {
     expect(formatList([MOCK_CATEGORY], formatCategory)).toMatchInlineSnapshot(
       `"- **General** (800) — General category"`,

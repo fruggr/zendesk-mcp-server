@@ -1004,7 +1004,15 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         const cost = `${pagesScanned} Zendesk API request${pagesScanned === 1 ? '' : 's'}`;
         const note = scanCostNote(truncated, pagesScanned, cost);
         return {
-          content: [{ type: 'text', text: truncateIfNeeded(`${header}\n\n${body}${note}`) }],
+          content: [
+            {
+              type: 'text',
+              text: truncateIfNeeded(
+                `${header}\n\n${body}${note}`,
+                'list_promoted_articles takes no parameters, so this listing cannot be narrowed from the call; read a single article with get_article.',
+              ),
+            },
+          ],
         };
       },
     },
@@ -1463,7 +1471,12 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           content: [
             {
               type: 'text',
-              text: formatList(response.permission_groups ?? [], formatPermissionGroup),
+              text: formatList(
+                response.permission_groups ?? [],
+                formatPermissionGroup,
+                undefined,
+                'list_permission_groups takes no parameters, so this listing cannot be narrowed from the call.',
+              ),
             },
           ],
         };
@@ -1971,7 +1984,17 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           '/articles/labels',
         );
         return {
-          content: [{ type: 'text', text: formatList(response.labels ?? [], formatLabel) }],
+          content: [
+            {
+              type: 'text',
+              text: formatList(
+                response.labels ?? [],
+                formatLabel,
+                undefined,
+                'list_labels takes no parameters, so this listing cannot be narrowed from the call.',
+              ),
+            },
+          ],
         };
       },
     },
@@ -2011,7 +2034,15 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         }
         return {
           content: [
-            { type: 'text', text: formatList(response.user_segments ?? [], formatUserSegment) },
+            {
+              type: 'text',
+              text: formatList(
+                response.user_segments ?? [],
+                formatUserSegment,
+                undefined,
+                'list_user_segments takes no parameters, so this listing cannot be narrowed from the call.',
+              ),
+            },
           ],
         };
       },

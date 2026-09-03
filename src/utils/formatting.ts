@@ -469,13 +469,17 @@ export const formatUserSegment = (segment: ZendeskUserSegment): string =>
 export const formatAttachment = (attachment: ZendeskArticleAttachment): string =>
   `- **${attachment.file_name}** (${attachment.id}) — ${attachment.content_type} — ${attachment.size} bytes`;
 
+// `advice` overrides the truncation notice's closing sentence, for the callers
+// that render a list through this helper yet expose no pagination parameter of
+// their own (see truncateIfNeeded).
 export const formatList = <T>(
   items: T[],
   formatter: (item: T) => string,
   meta?: PaginationMeta,
+  advice?: string,
 ): string => {
   const header = meta ? formatPagination(meta) : '';
   const body = items.map(formatter).join('\n\n');
   const text = [header, body].filter(Boolean).join('\n\n');
-  return truncateIfNeeded(text);
+  return advice === undefined ? truncateIfNeeded(text) : truncateIfNeeded(text, advice);
 };

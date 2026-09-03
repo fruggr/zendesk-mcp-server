@@ -91,7 +91,11 @@ const base = {
 };
 
 const first = await fetchPage(base);
-const authorIds = new Set((first.comments ?? []).map((c) => c.author_id));
+// The system actor (-1) has no user record, so it can never be side-loaded and
+// resolveCommentAuthors skips it — counting it here would fake a "NO".
+const authorIds = new Set(
+  (first.comments ?? []).map((c) => c.author_id).filter((id): id is number => (id ?? 0) > 0),
+);
 const sideloaded = new Set((first.users ?? []).map((u) => u.id));
 console.log(
   `\nQ2 — authors ${[...authorIds].join(', ')} covered by the side-load? ` +

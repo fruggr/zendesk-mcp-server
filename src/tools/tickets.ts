@@ -638,7 +638,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: true,
       title: 'Get Zendesk Ticket',
       description:
-        'Retrieve a Zendesk ticket by ID, including its live SLA state (per-metric stage and breach countdown) when an SLA policy applies, plus its comments if requested. Returns ticket details (subject, status, priority, assignee, tags, description) and optionally all comments/internal notes. The per-ticket Show endpoint exposes no SLA, so the SLA block is resolved via a scoped search and may be absent for a very high-volume requester or a just-updated ticket; SLA targets and policy conditions live in list_sla_policies. This returns the ticket as it stands now; for the history of changes behind that state (who changed what, and when), use get_ticket_history. The comment thread is returned whole and is cut past the response character limit, so on a long ticket read it with list_ticket_comments, which pages the comments and returns the newest first.',
+        'Retrieve a Zendesk ticket by ID, including its live SLA state (per-metric stage and breach countdown) when an SLA policy applies, plus its comments if requested. Returns ticket details (subject, status, priority, assignee, tags, description) and optionally all comments/internal notes. The per-ticket Show endpoint exposes no SLA, so the SLA block is resolved via a scoped search and may be absent for a very high-volume requester or a just-updated ticket; SLA targets and policy conditions live in list_sla_policies. This returns the ticket as it stands now; for the history of changes behind that state (who changed what, and when), use get_ticket_history. The comment thread is appended in one block — the first page of comments Zendesk returns, cut past the response character limit — so on a long ticket read it with list_ticket_comments, which pages the comments and returns the newest first.',
       inputSchema: z.object({
         ticket_id: z
           .number()
@@ -650,7 +650,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           .boolean()
           .default(false)
           .describe(
-            'When true, appends the full public comment and internal note thread to the response. Defaults to false to keep the payload small; enable it when you need the conversation, not just the ticket fields. On a long thread prefer list_ticket_comments — this flag returns the entire thread in one message.',
+            "When true, appends the full public comment and internal note thread to the response. Defaults to false to keep the payload small; enable it when you need the conversation, not just the ticket fields. On a long thread prefer list_ticket_comments — this flag appends one unpaginated block, so comments past Zendesk's first page are absent and the rest is cut at the response character limit.",
           ),
       }),
       annotations: {
@@ -688,8 +688,8 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         // This tool takes no page or filter, so the default truncation advice
         // would send the caller in circles (#265). Name the tool that does.
         const advice = include_comments
-          ? `The whole thread is returned in one message; read it page by page with list_ticket_comments (ticket_id: ${ticket_id}, sort_order: "desc") to get the newest comments first.`
-          : "get_ticket takes no pagination parameters — this ticket's own fields exceed the limit.";
+          ? `get_ticket appends the thread as one unpaginated block; read it page by page with list_ticket_comments (ticket_id: ${ticket_id}, sort_order: "desc") to get the newest comments first.`
+          : 'get_ticket takes no pagination or filter parameters, so this response cannot be narrowed from the call.';
         return { content: [{ type: 'text', text: truncateIfNeeded(text, advice) }] };
       },
     },
@@ -860,10 +860,16 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           return { content: [{ type: 'text', text }] };
         }
         const authors = await resolveCommentAuthors(subdomain, token, comments, response.users);
-        // The page is rendered in the order Zendesk returned it: under "desc"
-        // that puts the newest comments first, so a page that still overflows
-        // loses its oldest end rather than its newest (#265).
-        const order = sort_order === 'desc' ? 'newest first' : 'oldest first';
+        // The page is rendered in the order Zendesk returned it, so a page that
+        // still overflows loses its trailing end (#265). The header therefore
+        // describes the *returned* order, read off the data rather than off what
+        // was asked for: a single comment has no order to read, so it falls back
+        // to the request.
+        const newestFirst =
+          comments.length > 1
+            ? (comments[0]?.created_at ?? '') >= (comments.at(-1)?.created_at ?? '')
+            : sort_order === 'desc';
+        const order = newestFirst ? 'newest first' : 'oldest first';
         const list = formatList(comments, (comment) => formatComment(comment, authors), meta);
         return {
           content: [
@@ -1328,7 +1334,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
               type: 'text',
               text: truncateIfNeeded(
                 text,
-                `get_linked_incidents takes no pagination parameters: problem #${problem_id} has more linked incidents than fit in one response.`,
+                'get_linked_incidents takes no pagination or filter parameters, so this response cannot be narrowed from the call.',
               ),
             },
           ],
@@ -1753,7 +1759,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
               type: 'text',
               text: truncateIfNeeded(
                 formatMacroPreviewDiff(ticket_id, macro_id, before, result),
-                'preview_macro_diff takes no pagination parameters: this macro rewrites more of the ticket than fits in one response. Read the macro on its own with list_macros to see every action it carries.',
+                'preview_macro_diff takes no pagination or filter parameters; read the macro on its own with list_macros to see every action it carries.',
               ),
             },
           ],

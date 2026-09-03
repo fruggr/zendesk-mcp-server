@@ -1302,6 +1302,26 @@ describe('help center tools', () => {
       const result = await tool.handler({});
       expect(result.content[0]?.text).toContain('getting-started');
     });
+
+    it('states it takes no parameters rather than advising pagination when truncating', async () => {
+      // A tool whose inputSchema is z.object({}) cannot be narrowed at all, so
+      // the generic "use pagination or filters" notice is unactionable (#265).
+      mswServer.use(
+        http.get(`${HC_BASE}/articles/labels`, () =>
+          HttpResponse.json({
+            labels: Array.from({ length: 400 }, (_, i) => ({
+              id: 7000 + i,
+              name: 'x'.repeat(100),
+            })),
+            count: 400,
+          }),
+        ),
+      );
+      const tool = findTool('list_labels');
+      const text = (await tool.handler({})).content[0]?.text ?? '';
+      expect(text).toContain('list_labels takes no parameters');
+      expect(text).not.toContain('Use pagination or filters');
+    });
   });
 
   describe('list_user_segments', () => {

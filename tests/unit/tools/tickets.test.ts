@@ -136,7 +136,7 @@ describe('ticket tools', () => {
       const tool = findTool('get_ticket');
       const text = getAllText(await tool.handler({ ticket_id: 1, include_comments: false }));
       expect(text).toContain('Response truncated');
-      expect(text).toContain('takes no pagination');
+      expect(text).toContain('takes no pagination or filter parameters');
       expect(text).not.toContain('Use pagination or filters');
     });
 
@@ -295,6 +295,47 @@ describe('ticket tools', () => {
       );
       expect(text).toContain('# Comments on ticket #1 (oldest first)');
       expect(text.indexOf('id 3000')).toBeLessThan(text.indexOf('id 3001'));
+    });
+
+    it('labels the page from the returned data, not from what was asked for', async () => {
+      // If Zendesk ever ignored `sort`, a request for "desc" would come back
+      // oldest-first — the header must not claim otherwise.
+      mswServer.use(
+        http.get(COMMENTS_URL, () =>
+          HttpResponse.json({
+            comments: [
+              MOCK_COMMENT,
+              { ...MOCK_COMMENT, id: 3001, created_at: '2026-02-01T00:00:00Z' },
+            ],
+            meta: { has_more: false, after_cursor: '' },
+          }),
+        ),
+      );
+      const tool = findTool('list_ticket_comments');
+      const text = getAllText(
+        await tool.handler({ ticket_id: 1, sort_order: 'desc', page_size: 20 }),
+      );
+      expect(text).toContain('# Comments on ticket #1 (oldest first)');
+    });
+
+    it('falls back to the requested order when a page holds a single comment', async () => {
+      mswServer.use(
+        http.get(COMMENTS_URL, () =>
+          HttpResponse.json({
+            comments: [MOCK_COMMENT],
+            meta: { has_more: false, after_cursor: '' },
+          }),
+        ),
+      );
+      const tool = findTool('list_ticket_comments');
+      const desc = getAllText(
+        await tool.handler({ ticket_id: 1, sort_order: 'desc', page_size: 20 }),
+      );
+      const asc = getAllText(
+        await tool.handler({ ticket_id: 1, sort_order: 'asc', page_size: 20 }),
+      );
+      expect(desc).toContain('(newest first)');
+      expect(asc).toContain('(oldest first)');
     });
 
     it('surfaces the pagination cursor when more comments remain', async () => {
@@ -1115,7 +1156,7 @@ describe('ticket tools', () => {
       );
       const tool = findTool('get_linked_incidents');
       const text = getAllText(await tool.handler({ problem_id: 1 }));
-      expect(text).toContain('takes no pagination parameters');
+      expect(text).toContain('takes no pagination or filter parameters');
       expect(text).not.toContain('Use pagination or filters');
     });
   });
@@ -1373,7 +1414,7 @@ describe('ticket tools', () => {
       );
       const tool = findTool('preview_macro_diff');
       const text = getAllText(await tool.handler({ ticket_id: 1, macro_id: 700 }));
-      expect(text).toContain('takes no pagination parameters');
+      expect(text).toContain('takes no pagination or filter parameters');
       expect(text).not.toContain('Use pagination or filters');
     });
 
