@@ -80,21 +80,67 @@ const END_USER_FORM_PARAMS = {
   fallback_to_default: 'true',
 } as const;
 
+/**
+ * Walk an offset-paginated listing to the end, following `next_page` and
+ * nothing else.
+ *
+ * `next_page` is the only trustworthy end-of-list signal on these endpoints:
+ * `count` can be the pre-filter total, and a short page can still be followed
+ * by another. Hitting the cap throws rather than returning a partial list --
+ * for both callers a missing entry is worse than an error, because it makes a
+ * form invisible or a required field unenforced, and the caller then gets a
+ * confidently wrong "no such form" or an opaque Zendesk 422.
+ */
+const fetchAllPages = async <T>(
+  subdomain: string,
+  token: string,
+  tool: string,
+  path: string,
+  extract: (response: ZendeskListResponse<T>) => T[] | undefined,
+  params: Record<string, string> = {},
+  maxPages = TICKET_FIELD_SCAN_MAX_PAGES,
+): Promise<T[]> => {
+  const items: T[] = [];
+  let page = 1;
+  while (true) {
+    const response = await withForbiddenGuidance(tool, `GET ${path}`, () =>
+      zendeskGet<ZendeskListResponse<T>>(subdomain, token, path, {
+        ...params,
+        ...buildOffsetParams(MAX_PAGE_SIZE, page),
+      }),
+    );
+    items.push(...(extract(response) ?? []));
+    if (!response.next_page) return items;
+    if (page >= maxPages) {
+      throw new Error(
+        `${tool} could not read all of ${path}: the account exposes more than ${maxPages} ` +
+          'pages of it. Continuing from a partial list would hide entries and produce a ' +
+          'confidently wrong answer, so this stops here. Raise ' +
+          'ZENDESK_TICKET_FIELD_SCAN_MAX_PAGES and retry.',
+      );
+    }
+    page += 1;
+  }
+};
+
+// Paginated for the same reason the field listing is: an account with more
+// forms than fit one page would otherwise have some of them invisible to
+// `list_request_forms`, and `resolveForm` would reject their ids with "no
+// request form with id X is available to you" -- a confident refusal of a form
+// that does exist.
 const fetchEndUserForms = async (
   subdomain: string,
   token: string,
   tool: string,
-): Promise<ZendeskTicketForm[]> => {
-  const response = await withForbiddenGuidance(tool, 'GET /ticket_forms', () =>
-    zendeskGet<ZendeskListResponse<ZendeskTicketForm>>(
-      subdomain,
-      token,
-      '/ticket_forms',
-      END_USER_FORM_PARAMS,
-    ),
+): Promise<ZendeskTicketForm[]> =>
+  fetchAllPages<ZendeskTicketForm>(
+    subdomain,
+    token,
+    tool,
+    '/ticket_forms',
+    (response) => response.ticket_forms,
+    END_USER_FORM_PARAMS,
   );
-  return response.ticket_forms ?? [];
-};
 
 /**
  * Every ticket field the caller can see, paged defensively.
@@ -114,38 +160,13 @@ const fetchVisibleTicketFields = async (
   token: string,
   tool: string,
 ): Promise<ZendeskTicketField[]> => {
-  const fields: ZendeskTicketField[] = [];
-  let page = 1;
-  let truncated = false;
-  while (true) {
-    const response = await withForbiddenGuidance(tool, 'GET /ticket_fields', () =>
-      zendeskGet<ZendeskListResponse<ZendeskTicketField>>(
-        subdomain,
-        token,
-        '/ticket_fields',
-        buildOffsetParams(MAX_PAGE_SIZE, page),
-      ),
-    );
-    fields.push(...(response.ticket_fields ?? []));
-    if (!response.next_page) break;
-    if (page >= TICKET_FIELD_SCAN_MAX_PAGES) {
-      truncated = true;
-      break;
-    }
-    page += 1;
-  }
-  // Hitting the cap is not a partial result to quietly live with: the form spec
-  // would omit a field, and validateSubmission would then not enforce it,
-  // producing exactly the opaque 422 that check exists to prevent. Fail loudly
-  // rather than describe a form we only half read.
-  if (truncated) {
-    throw new Error(
-      `${tool} could not read every ticket field: the account exposes more than ` +
-        `${TICKET_FIELD_SCAN_MAX_PAGES} pages of them. Describing the form from a partial ` +
-        'list would omit required fields and let a submission fail with an opaque Zendesk ' +
-        'error, so this stops here. Raise ZENDESK_TICKET_FIELD_SCAN_MAX_PAGES and retry.',
-    );
-  }
+  const fields = await fetchAllPages<ZendeskTicketField>(
+    subdomain,
+    token,
+    tool,
+    '/ticket_fields',
+    (response) => response.ticket_fields,
+  );
   // Zendesk already filters to portal-visible fields for an end-user token but
   // not for an agent one, so filter here too: the same tool must describe the
   // same form whichever identity calls it.

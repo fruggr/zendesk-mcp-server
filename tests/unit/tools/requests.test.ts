@@ -47,6 +47,70 @@ describe('list_request_forms', () => {
     expect(text).not.toContain('Internal name: Feature request');
   });
 
+  // An account with more forms than fit a page would otherwise have some of
+  // them invisible here, and resolveForm would then reject their ids as
+  // "not available to you" -- a confident refusal of a form that exists.
+  it('pages the form listing rather than showing only the first page', async () => {
+    let calls = 0;
+    mswServer.use(
+      http.get(`${BASE}/ticket_forms`, () => {
+        calls += 1;
+        if (calls === 1) {
+          return HttpResponse.json({
+            ticket_forms: [MOCK_TICKET_FORM_BUG],
+            next_page: `${BASE}/ticket_forms?page=2`,
+          });
+        }
+        return HttpResponse.json({
+          ticket_forms: [{ ...MOCK_TICKET_FORM_BUG, id: 902, display_name: 'Billing question' }],
+          next_page: null,
+        });
+      }),
+    );
+    const text = await textOf('list_request_forms', {});
+    expect(calls).toBe(2);
+    expect(text).toContain('Report a bug');
+    expect(text).toContain('Billing question');
+    expect(text).toContain('2 kind(s) of request available');
+  });
+
+  it('can resolve a form that only appears on a later page', async () => {
+    let calls = 0;
+    mswServer.use(
+      http.get(`${BASE}/ticket_forms`, () => {
+        calls += 1;
+        return calls === 1
+          ? HttpResponse.json({
+              ticket_forms: [MOCK_TICKET_FORM_BUG],
+              next_page: `${BASE}/ticket_forms?page=2`,
+            })
+          : HttpResponse.json({
+              ticket_forms: [
+                { ...MOCK_TICKET_FORM_BUG, id: 902, display_name: 'Billing question' },
+              ],
+              next_page: null,
+            });
+      }),
+    );
+    const text = await textOf('get_request_form', { form_id: 902 });
+    expect(text).toContain('Billing question (form id 902)');
+  });
+
+  it('refuses to list forms from a truncated scan', async () => {
+    mswServer.use(
+      http.get(`${BASE}/ticket_forms`, () =>
+        HttpResponse.json({
+          ticket_forms: [MOCK_TICKET_FORM_BUG],
+          // Always another page: forces the cap.
+          next_page: `${BASE}/ticket_forms?page=99`,
+        }),
+      ),
+    );
+    await expect(textOf('list_request_forms', {})).rejects.toThrow(
+      /could not read all of \/ticket_forms/,
+    );
+  });
+
   it('says so plainly when the Help Center exposes no form', async () => {
     mswServer.use(http.get(`${BASE}/ticket_forms`, () => HttpResponse.json({ ticket_forms: [] })));
     const text = await textOf('list_request_forms', {});
@@ -160,7 +224,7 @@ describe('get_request_form', () => {
       ),
     );
     await expect(textOf('get_request_form', { form_id: 900 })).rejects.toThrow(
-      /could not read every ticket field/,
+      /could not read all of \/ticket_fields/,
     );
   });
 
