@@ -481,5 +481,6 @@ export const formatList = <T>(
   const header = meta ? formatPagination(meta) : '';
   const body = items.map(formatter).join('\n\n');
   const text = [header, body].filter(Boolean).join('\n\n');
-  return advice === undefined ? truncateIfNeeded(text) : truncateIfNeeded(text, advice);
+  // `undefined` falls through to truncateIfNeeded's own default sentence.
+  return truncateIfNeeded(text, advice);
 };
