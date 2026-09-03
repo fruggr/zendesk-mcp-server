@@ -115,17 +115,29 @@ const fetchAllTicketComments = async (
 // The pagination fields of a comments page, narrowed out of the response: the
 // whole object cannot be passed as ZendeskListResponse<ZendeskComment>, whose
 // `users?: T[]` would clash with the side-load (see TicketCommentsResponse).
-// `next_page` is carried through so extractPaginationMeta's fallback still fires
-// if Zendesk ever answered this endpoint with offset pagination.
+// `next_page` is deliberately NOT forwarded: extractPaginationMeta would raise
+// `has_more` from it while leaving `after_cursor` null, and the footer would
+// then offer "More available (cursor: null)" — a continuation this cursor-only
+// tool cannot follow. offsetPageNote reports that case in words instead.
 const commentPageMeta = (response: TicketCommentsResponse, itemCount: number): PaginationMeta =>
   extractPaginationMeta<ZendeskComment>(
     {
       ...(response.meta && { meta: response.meta }),
       ...(response.count !== undefined && { count: response.count }),
-      ...(response.next_page !== undefined && { next_page: response.next_page }),
     },
     itemCount,
   );
+
+// Zendesk documents cursor pagination on this endpoint, so this is a defensive
+// path. If it ever answered offset-style, `next_page` says more comments exist
+// while no cursor comes with them — and this tool accepts only a cursor. Saying
+// nothing would report a truncated thread as complete, and faking a cursor would
+// send the caller nowhere, so the page carries this note and both levers that do
+// still work.
+const offsetPageNote = (response: TicketCommentsResponse, pageSize: number): string =>
+  response.meta?.after_cursor == null && response.next_page != null
+    ? `\n\n> ⚠ Zendesk paginated this response by offset rather than by cursor, so more comments exist beyond this page and no cursor leads to them. Re-read with a larger page_size (up to ${MAX_PAGE_SIZE}, currently ${pageSize}), or with get_ticket(include_comments=true).`
+    : '';
 
 // How the page actually came back, read off the data rather than off what was
 // asked for — a header that describes the wrong end is worse than none, and the
@@ -881,11 +893,12 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         );
         const comments = response.comments ?? [];
         const meta = commentPageMeta(response, comments.length);
+        const offsetNote = offsetPageNote(response, page_size);
         if (comments.length === 0) {
           const text = meta.has_more
             ? `No comments on this page of ticket #${ticket_id}. More available (cursor: ${meta.after_cursor}).`
             : `No comments to show for ticket #${ticket_id}.`;
-          return { content: [{ type: 'text', text }] };
+          return { content: [{ type: 'text', text: `${text}${offsetNote}` }] };
         }
         const authors = await resolveCommentAuthors(subdomain, token, comments, response.users);
         const body = comments.map((comment) => formatComment(comment, authors)).join('\n\n');
@@ -894,11 +907,11 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         // misreports its own size. The cursor is no way back to what the cut
         // dropped — it points past this whole page — so the advice names the
         // only recovery there is.
-        const text = [
+        const text = `${[
           `# Comments on ticket #${ticket_id} (${commentPageOrder(comments, sort_order)})`,
           formatPagination(meta),
           body,
-        ].join('\n\n');
+        ].join('\n\n')}${offsetNote}`;
         return {
           content: [
             {

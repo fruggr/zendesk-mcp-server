@@ -469,9 +469,9 @@ describe('ticket tools', () => {
       expect(text).not.toContain('Use pagination or filters');
     });
 
-    it('reports a further page even when Zendesk answers with next_page', async () => {
-      // If the endpoint fell back to offset pagination there is no `meta`, and
-      // dropping next_page would report a truncated thread as complete.
+    it('reports an offset-paginated answer in words, never as a cursor', async () => {
+      // Silence would report a truncated thread as complete; a `More available
+      // (cursor: null)` footer would offer a continuation the tool cannot take.
       mswServer.use(
         http.get(COMMENTS_URL, () =>
           HttpResponse.json({
@@ -484,7 +484,36 @@ describe('ticket tools', () => {
       const text = getAllText(
         await tool.handler({ ticket_id: 1, sort_order: 'desc', page_size: 20 }),
       );
-      expect(text).toContain('More available');
+      expect(text).toContain('paginated this response by offset');
+      expect(text).toContain('larger page_size (up to 100, currently 20)');
+      expect(text).not.toContain('cursor: null');
+      expect(text).not.toContain('More available');
+    });
+
+    it('reports the same on an empty offset-paginated page', async () => {
+      mswServer.use(
+        http.get(COMMENTS_URL, () =>
+          HttpResponse.json({
+            comments: [],
+            next_page: 'https://testsubdomain.zendesk.com/api/v2/tickets/1/comments.json?page=2',
+          }),
+        ),
+      );
+      const tool = findTool('list_ticket_comments');
+      const text = getAllText(
+        await tool.handler({ ticket_id: 1, sort_order: 'desc', page_size: 20 }),
+      );
+      expect(text).toContain('No comments to show for ticket #1');
+      expect(text).toContain('paginated this response by offset');
+      expect(text).not.toContain('cursor: null');
+    });
+
+    it('says nothing about offset pagination on a normal cursor page', async () => {
+      const tool = findTool('list_ticket_comments');
+      const text = getAllText(
+        await tool.handler({ ticket_id: 1, sort_order: 'desc', page_size: 20 }),
+      );
+      expect(text).not.toContain('paginated this response by offset');
     });
 
     it('falls back to the requested order when every comment shares a timestamp', async () => {
