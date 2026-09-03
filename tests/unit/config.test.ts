@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { loadConfig, VALUE_FLAG_NAMES } from '../../src/config';
+import { ConfigSchema, DEFAULT_NAMESPACES, loadConfig, VALUE_FLAG_NAMES } from '../../src/config';
 
 describe('loadConfig', () => {
   beforeEach(() => {
@@ -94,6 +94,46 @@ describe('loadConfig', () => {
   it('parses multiple --namespace flags', () => {
     const config = loadConfig(['mycompany', '--namespace', 'tickets', '--namespace', 'users']);
     expect(config.namespaces).toEqual(['tickets', 'users']);
+  });
+
+  // Asserted exactly, not with toContain: the whole point of the default list
+  // is which namespaces it leaves OUT, and a toContain-only test would pass
+  // just as happily if a namespace were dropped from it.
+  it('defaults to the agent namespaces, excluding the opt-in requests surface', () => {
+    const config = loadConfig(['mycompany']);
+    expect(config.namespaces).toEqual(['tickets', 'help_center', 'users']);
+    expect(config.namespaces).not.toContain('requests');
+  });
+
+  it('exposes that same list as DEFAULT_NAMESPACES', () => {
+    expect([...DEFAULT_NAMESPACES]).toEqual(['tickets', 'help_center', 'users']);
+  });
+
+  // The default must not survive an explicit --namespace: opting in to the
+  // end-user surface has to mean *only* that surface, or a customer-facing
+  // deployment would still carry the whole agent toolset.
+  it('replaces the default set entirely when --namespace requests is passed', () => {
+    const config = loadConfig(['mycompany', '--namespace', 'requests']);
+    expect(config.namespaces).toEqual(['requests']);
+  });
+
+  it('accepts requests alongside another namespace', () => {
+    const config = loadConfig([
+      'mycompany',
+      '--namespace',
+      'requests',
+      '--namespace',
+      'help_center',
+    ]);
+    expect(config.namespaces).toEqual(['requests', 'help_center']);
+  });
+
+  it('does not print the tool surface unless asked', () => {
+    expect(loadConfig(['mycompany']).printTools).toBe(false);
+  });
+
+  it('parses --print-tools flag', () => {
+    expect(loadConfig(['mycompany', '--print-tools']).printTools).toBe(true);
   });
 
   it('reads subdomain from env when not in CLI', () => {
@@ -579,5 +619,52 @@ describe('loadConfig', () => {
       expect(config.callbackPort).toBeUndefined();
       expect(config.logLevel).toBe('info');
     });
+  });
+});
+
+// The default lives in the schema rather than in loadConfig because the
+// integration harness parses a Config directly; these assertions pin that.
+describe('ConfigSchema namespaces', () => {
+  const parse = (namespaces?: unknown) =>
+    ConfigSchema.parse({
+      subdomain: 'mycompany',
+      oauthClientId: 'mycompany_zendesk',
+      logLevel: 'info',
+      mode: 'all',
+      readOnly: false,
+      transport: 'stdio',
+      host: '127.0.0.1',
+      port: 0,
+      ...(namespaces === undefined ? {} : { namespaces }),
+    });
+
+  it('applies the default when the field is absent, not only via loadConfig', () => {
+    expect(parse().namespaces).toEqual(['tickets', 'help_center', 'users']);
+  });
+
+  // loadConfig passes printTools explicitly, so its schema default is only ever
+  // reached through this parse path -- which the integration harness uses.
+  it('defaults printTools to false when the field is absent', () => {
+    expect(parse().printTools).toBe(false);
+  });
+
+  it('rejects an empty array instead of treating it as "every namespace"', () => {
+    // filterTools guards on `?.length`, so [] would mean "no filter" and would
+    // quietly expose the opt-in requests surface. Refuse it at parse time.
+    expect(() => parse([])).toThrow();
+  });
+
+  it('rejects an unknown namespace', () => {
+    expect(() => parse(['nope'])).toThrow();
+  });
+
+  it('accepts requests as a namespace', () => {
+    expect(parse(['requests']).namespaces).toEqual(['requests']);
+  });
+
+  it('does not mutate DEFAULT_NAMESPACES when a parsed config is edited', () => {
+    const config = parse();
+    config.namespaces.push('requests');
+    expect([...DEFAULT_NAMESPACES]).toEqual(['tickets', 'help_center', 'users']);
   });
 });

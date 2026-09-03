@@ -18,7 +18,10 @@ zendesk-mcp-server <subdomain> [options]
 
 Options:
   --mode <mode>           single | namespace (default) | all
-  --namespace <ns>        Filter by namespace (repeatable): tickets, help_center, users
+  --namespace <ns>        Filter by namespace (repeatable): tickets, help_center,
+                          users, requests. Defaults to tickets + help_center +
+                          users; `requests` (the end-user surface) is opt-in and
+                          only ever exposed when asked for by name
   --tool <name>           Filter by tool name (repeatable, forces --mode all)
   --read-only             Only expose read operations
   --no-topology           Disable the Help Center structural context
@@ -44,9 +47,25 @@ Options:
   --dev                   Dev-only: expose a reload_tools tool that hot-reloads
                           edited tool code on demand (stdio only; see "Dev mode"
                           below)
+  --print-tools           Print the tool surface these flags resolve to, then
+                          exit. No server, no Zendesk credential, no network
+                          call. Use it to check what a combination of --mode /
+                          --namespace / --tool / --read-only actually exposes
 ```
 
 `--namespace` and `--read-only` are applied before the proxies are registered, so they narrow the surface in every mode. In the default `namespace` mode, `--namespace help_center` registers a single proxy (`zendesk_help_center`) instead of the full set of namespace proxies.
+
+Passing `--namespace` **replaces** the default set rather than adding to it, so
+`--namespace requests` exposes the end-user surface *only*. To serve customers
+the knowledge base as well, name both: `--namespace requests --namespace help_center`.
+
+There is one way to pick the inventory (`--namespace` / `--tool`), `--mode`
+packages it, and `--read-only` narrows it. When the combination is hard to
+predict, don't guess — ask the server:
+
+```bash
+zendesk-mcp-server mycompany --print-tools --namespace requests --mode single
+```
 
 ### A malformed invocation fails at startup
 

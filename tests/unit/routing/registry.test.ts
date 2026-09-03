@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { filterTools, groupByNamespace } from '../../../src/routing/registry';
+import { Namespace } from '../../../src/config';
+import { filterTools, groupByNamespace, NAMESPACE_LABELS } from '../../../src/routing/registry';
 import type { ToolContext } from '../../../src/tools/definitions';
 import { createAllTools } from '../../../src/tools/index';
 
@@ -67,5 +68,25 @@ describe('groupByNamespace', () => {
     expect(ticketCount).toBe(18); // 17 ticket tools + 1 search
     expect(hcCount).toBe(29);
     expect(userCount).toBe(5);
+  });
+});
+
+// Asserted as a whole rather than probed key by key. These strings are the
+// client-visible proxy tool names and titles: a typo or an emptied value is a
+// broken tool surface, and nothing else in the suite reads the titles at all.
+describe('NAMESPACE_LABELS', () => {
+  it('maps every namespace to its proxy name and title', () => {
+    expect(NAMESPACE_LABELS).toEqual({
+      tickets: { toolName: 'zendesk_tickets', title: 'Zendesk Tickets' },
+      help_center: { toolName: 'zendesk_help_center', title: 'Zendesk Help Center' },
+      users: { toolName: 'zendesk_users', title: 'Zendesk Users' },
+      requests: { toolName: 'zendesk_requests', title: 'Zendesk Requests' },
+    });
+  });
+
+  // The type already makes an incomplete literal a compile error; this catches
+  // the reverse drift, a label left behind for a namespace that no longer exists.
+  it('covers exactly the Namespace enum, with no extra keys', () => {
+    expect(Object.keys(NAMESPACE_LABELS).sort()).toEqual([...Namespace.options].sort());
   });
 });

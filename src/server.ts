@@ -17,7 +17,7 @@ import {
   topologyResourceUri,
 } from './guidance/instructions';
 import { createTopologyProvider } from './guidance/topology';
-import { filterTools, groupByNamespace } from './routing/registry';
+import { filterTools, groupByNamespace, NAMESPACE_LABELS } from './routing/registry';
 import type { ToolAnnotations, ToolResult } from './tools/definitions';
 import { createAllTools, type ToolDefinition } from './tools/index';
 import { type Logger, silentLogger } from './utils/logger';
@@ -51,12 +51,6 @@ const runHandler = async (
     }
     throw err;
   }
-};
-
-const NAMESPACE_LABELS: Record<string, { toolName: string; title: string }> = {
-  tickets: { toolName: 'zendesk_tickets', title: 'Zendesk Tickets' },
-  help_center: { toolName: 'zendesk_help_center', title: 'Zendesk Help Center' },
-  users: { toolName: 'zendesk_users', title: 'Zendesk Users' },
 };
 
 // Keep proxy descriptions compact: a proxy tool concatenates one line per
@@ -276,6 +270,9 @@ export const registerToolset = (
       case 'namespace': {
         const grouped = groupByNamespace(filteredTools);
         for (const [namespace, nsTools] of grouped) {
+          // Total by construction: NAMESPACE_LABELS is typed Record<Namespace, ...>,
+          // so a namespace without a label is a compile error, not a silent skip.
+          // The guard is only here for noUncheckedIndexedAccess.
           const label = NAMESPACE_LABELS[namespace];
           if (label) {
             registered.push(

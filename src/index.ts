@@ -3,7 +3,9 @@ import { createTokenStore } from './auth/token-store';
 import type { Config } from './config';
 import { loadConfig } from './config';
 import { startDevServer } from './dev/reload';
+import { renderToolSurface } from './routing/print';
 import { createMcpServer } from './server';
+import { createAllTools } from './tools/index';
 import { startHttpTransport } from './transports/http';
 import { startStdioTransport } from './transports/stdio';
 import { createLogger, type Logger } from './utils/logger';
@@ -39,6 +41,17 @@ const connectStdio = async (
 
 const main = async (): Promise<void> => {
   const config = loadConfig();
+
+  // Diagnostic short-circuit: print the surface these flags resolve to and
+  // exit. Before the token store is built, and before any transport, because
+  // tool definitions are pure — auth only fires inside a handler — so this
+  // never needs a credential or a network call.
+  if (config.printTools) {
+    const tools = createAllTools({ subdomain: config.subdomain, getToken: () => '' });
+    console.log(renderToolSurface(config, tools));
+    return;
+  }
+
   const logger = createLogger(config.logLevel);
 
   if (config.transport === 'stdio') {

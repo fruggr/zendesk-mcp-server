@@ -7,8 +7,28 @@ export type ToolMode = z.infer<typeof ToolMode>;
 export const LogLevel = z.enum(['debug', 'info', 'warn', 'error']);
 export type LogLevel = z.infer<typeof LogLevel>;
 
-export const Namespace = z.enum(['tickets', 'help_center', 'users']);
+export const Namespace = z.enum(['tickets', 'help_center', 'users', 'requests']);
 export type Namespace = z.infer<typeof Namespace>;
+
+/**
+ * Namespaces exposed when the operator passes no `--namespace` flag.
+ *
+ * Deliberately NOT every member of the enum: `requests` is the end-user
+ * surface (issue #48) and is opt-in. Two reasons, in order of weight.
+ *
+ * 1. Under an agent token, part of that surface silently misbehaves rather
+ *    than failing: `PUT /requests/{id}` with `solved: true` returns 200 and
+ *    changes nothing, and Zendesk does not apply a form's `required_in_portal`
+ *    validation to agents. Registering those tools for every agent install
+ *    would ship an operation that reports success on a no-op.
+ * 2. An agent install keeps its tool list and context budget unchanged.
+ *
+ * A deployment serving customers opts in with `--namespace requests`
+ * (typically alongside `--namespace help_center`, so they can read the
+ * knowledge base before opening a ticket). `--print-tools` shows the resulting
+ * surface without starting a server.
+ */
+export const DEFAULT_NAMESPACES: readonly Namespace[] = ['tickets', 'help_center', 'users'];
 
 export const Transport = z.enum(['stdio', 'http']);
 export type Transport = z.infer<typeof Transport>;
@@ -19,7 +39,26 @@ export const ConfigSchema = z.object({
   logLevel: LogLevel,
   mode: ToolMode,
   readOnly: z.boolean(),
-  namespaces: z.array(Namespace).optional(),
+  /**
+   * Active namespaces. Defaults to DEFAULT_NAMESPACES (which excludes the
+   * opt-in `requests` surface) rather than to "everything".
+   *
+   * The default lives HERE and not in `loadConfig` on purpose: the integration
+   * harness builds its Config through `ConfigSchema.parse` and never calls
+   * `loadConfig`, so a default applied there would not reach the tests — the
+   * `requests` tools would be visible to every integration scenario while
+   * absent in production.
+   *
+   * `.min(1)` rejects an explicit empty array. `filterTools` treats `[]` as
+   * "no filter at all" (it guards on `?.length`), so an empty list would quietly
+   * expose every namespace including the opt-in one. `parseArgs` cannot produce
+   * `[]` — a repeatable flag left out is `undefined` — so refusing it costs
+   * nothing and keeps the invariant explicit.
+   */
+  namespaces: z
+    .array(Namespace)
+    .min(1)
+    .default([...DEFAULT_NAMESPACES]),
   tools: z.array(z.string()).optional(),
   /**
    * Whether to expose the Help Center structural context (the `instructions`
@@ -88,6 +127,14 @@ export const ConfigSchema = z.object({
    * the "Dev mode" section of docs/configuration.md.
    */
   dev: z.boolean().default(false),
+  /**
+   * Print the tool surface the current flags resolve to, then exit without
+   * starting a server or touching the network. `--print-tools` exists because
+   * the surface is shaped by three independent knobs (`--namespace` / `--tool`
+   * pick the inventory, `--mode` packages it, `--read-only` narrows it) and
+   * their combination is easier to read off a listing than to predict.
+   */
+  printTools: z.boolean().default(false),
   transport: Transport,
   host: z.string().min(1),
   port: z.number().int().min(0).max(65535),
@@ -132,6 +179,7 @@ interface CliResult {
   promotedArticles?: boolean;
   hcResourceScheme?: string;
   dev?: boolean;
+  printTools?: boolean;
   logLevel?: string;
   transport?: string;
   host?: string;
@@ -208,6 +256,7 @@ const CLI_OPTIONS = {
   'no-topology': { type: 'boolean' },
   'no-promoted-articles': { type: 'boolean' },
   dev: { type: 'boolean' },
+  'print-tools': { type: 'boolean' },
 } as const satisfies ParseArgsConfig['options'];
 
 // The value-taking subset, spelled as they appear on the command line. Exported
@@ -241,6 +290,7 @@ const STANDALONE_EFFECTS = new Map<string, Partial<CliResult>>([
   ['no-topology', { topology: false }],
   ['no-promoted-articles', { promotedArticles: false }],
   ['dev', { dev: true }],
+  ['print-tools', { printTools: true }],
 ]);
 
 const parseCliArgs = (args: string[]): CliResult => {
@@ -365,6 +415,7 @@ export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
     promotedArticles: cli.promotedArticles ?? true,
     hcResourceScheme,
     dev: cli.dev ?? false,
+    printTools: cli.printTools ?? false,
     callbackPort,
     ...resolveTransportSettings(cli),
   });
