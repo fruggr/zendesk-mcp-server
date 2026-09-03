@@ -7,10 +7,19 @@
 [![Node.js](https://img.shields.io/node/v/@fruggr/zendesk-mcp-server?logo=nodedotjs&logoColor=white&color=339933)](https://nodejs.org)
 
 A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that
-puts Zendesk inside your AI assistant. It finds answers in the Help Center;
-drafts, updates and translates articles while keeping the languages in sync; and
-handles Support tickets end to end, comments, triage and image attachments
-included. It all happens in plain language, without switching apps.
+puts Zendesk inside your AI assistant, for **both sides of the conversation**.
+
+**For agents**: it finds answers in the Help Center; drafts, updates and
+translates articles while keeping the languages in sync; and handles Support
+tickets end to end, comments, triage and image attachments included.
+
+**For your customers**: it opens the same door the Help Center's "Submit a
+request" form does. They pick the kind of request, get walked through the
+questions that form actually asks, attach a screenshot, then follow the
+ticket — read the replies, answer back, close it when it's resolved. See
+[End-user mode](#end-user-mode).
+
+It all happens in plain language, without switching apps.
 
 It does roughly what the
 [Zendesk agent for Microsoft 365 Copilot](https://support.zendesk.com/hc/en-us/articles/9958331458458-Using-the-Zendesk-agent-in-Microsoft-365-Copilot)
@@ -39,6 +48,9 @@ then calls the right tools on your behalf.
 - Draft and maintain knowledge-base articles. You can write a new one, or revise
   a large one a single section at a time, so the whole HTML body never has to
   round-trip through the model.
+- Submit and follow a request as a customer, not an agent. Choose between the
+  kinds of request the vendor offers, answer only the questions that form asks,
+  and then track it: what was replied, what you replied, and whether it's done.
 
 ## Why this server
 
@@ -51,6 +63,10 @@ differently.
   touches exactly what that person is allowed to, the same scoping you get by
   signing into Zendesk directly. Static API tokens are deliberately not
   supported ([why](#what-this-server-does-not-do)).
+- Two audiences, one server. Because auth is per-user rather than a shared admin
+  key, the same install serves your agents and your customers — the end-user
+  surface is a namespace you switch on, speaking the API path Zendesk reserves
+  for requesters. Most Zendesk MCP servers are agent-only by construction.
 - Section-based article editing. For large Help Center articles, read and
   rewrite one section at a time (parsed by `h1`/`h2`/`h3` headings) instead of
   shuffling the full HTML body through the assistant. On a targeted edit that
@@ -197,9 +213,10 @@ job: **[docs/http-deployment.md](docs/http-deployment.md)**.
 
 ## Tool surface
 
-Tools are grouped into four namespaces: **Tickets**, **Help Center**, **Users &
-Organizations** and **Search**. The server registers them in one of three modes,
-so you can trade granularity against context budget:
+Tools are grouped into namespaces: **Tickets**, **Help Center**, **Users &
+Organizations**, **Search**, and **Requests** — the end-user surface, which is
+opt-in and covered under [End-user mode](#end-user-mode). The server registers
+them in one of three modes, so you can trade granularity against context budget:
 
 - **`all`**: every operation as its own tool, for clients with good tool selection;
 - **`namespace`** (default): one proxy tool per namespace, a balanced middle ground;
@@ -210,9 +227,96 @@ Proxies take `{ "operation": "<tool_name>", "params": { … } }` and validate
 filter tools *before* the proxies are built, so each proxy describes only the
 operations that survive.
 
+There's one way to pick the inventory (`--namespace` / `--tool`), `--mode`
+packages it, and `--read-only` narrows it. When the combination isn't obvious,
+don't guess — ask the server, which needs no credentials to answer:
+
+```bash
+zendesk-mcp-server mycompany --print-tools --namespace requests --mode single
+```
+
 Every tool with its description and its `read`/`write` mode:
 **[docs/mcp-tools-reference.md](docs/mcp-tools-reference.md)**. The flags and
 worked examples: **[docs/configuration.md](docs/configuration.md)**.
+
+## End-user mode
+
+The audience for everything above is a Zendesk **agent**. This section is about
+the other one: your **customers**.
+
+On the web, a customer opens a ticket through the Help Center's "Submit a
+request" form — they pick a kind of request, fill in the fields that kind asks
+for, attach a file, and later come back to read the replies. End-user mode is
+that same journey, in their assistant.
+
+### Who it's for
+
+A vendor pointing their customers at an MCP server, so support happens where
+those customers already work. They install it themselves, sign in with their
+own Help Center account, and never see anything that isn't theirs.
+
+### Turning it on
+
+The end-user tools live in the `requests` namespace, which is **opt-in**:
+
+```bash
+zendesk-mcp-server mycompany --namespace requests --namespace help_center
+```
+
+`help_center` is worth adding — a customer who can search the knowledge base
+often doesn't need to open a ticket at all.
+
+Two things to know about the shape of that command. `--namespace` **replaces**
+the default set rather than adding to it, so this exposes the end-user surface
+only, not the agent tools as well. And `requests` is deliberately absent from
+the default: an agent install shouldn't inherit tools built for someone else,
+and one of them (marking a request solved) doesn't work under an agent token —
+Zendesk accepts it and silently does nothing. `--print-tools` shows you exactly
+what any combination of flags produces.
+
+`--read-only` composes with it, if you want customers to follow their tickets
+without opening new ones.
+
+### The journey it supports
+
+- **See what kinds of request are available.** The forms the vendor offers, by
+  their customer-facing names.
+- **Learn what one of them asks.** The questions on that form, which are
+  required, and for dropdowns the exact choices — so the assistant can gather
+  them in conversation instead of guessing at a payload.
+- **Submit it**, with attachments.
+- **Follow it.** List their requests, read one with its whole conversation
+  (each reply attributed, and support agents marked as such), reply back, and
+  mark it solved when it is.
+
+### Zendesk prerequisites
+
+- An **OAuth client** on the Zendesk account, with the local callback URL
+  registered. Same client the agent side uses; nothing extra.
+- The customer needs a **Help Center account** they can sign into. Signing in
+  with a Google account is enough where the Help Center allows it — Zendesk
+  provisions the user on first sign-in, with no admin action.
+- At least one ticket form **visible to end users**. Accounts with several get
+  a real choice; accounts with one get that one.
+
+Sign-in is interactive, through a browser, by design — there's no scripted or
+headless path to an end-user token. The step-by-step walkthrough, written for
+someone who doesn't work in a terminal:
+**[docs/end-user-onboarding.md](docs/end-user-onboarding.md)**.
+
+### What a customer can't do — and shouldn't
+
+A customer can do less than an agent. That's the point, not a gap:
+
+- **Only their own tickets.** Enforced by Zendesk, not by us.
+- **No internal notes**, in either direction. Agent-only notes never appear in
+  what this surface returns — Zendesk filters them out of the requester's view
+  of a ticket entirely.
+- **No priority or type.** Zendesk drops both when a customer sets them;
+  triage stays with the agents.
+- **Closing a ticket only once an agent has picked it up.** Until then Zendesk
+  won't let the requester solve it, so the tool says so rather than pretending.
+- **No search across the ticket base**, no user lookups, no views, no macros.
 
 ## Help Center context
 
