@@ -38,7 +38,10 @@ export const truncateIfNeeded = (
   return `${text.slice(0, CHARACTER_LIMIT)}\n\n--- Response truncated (${text.length} chars, limit ${CHARACTER_LIMIT}). ${advice} ---`;
 };
 
-const formatPagination = (meta: PaginationMeta): string => {
+// Exported so a caller that prefixes its own title can assemble header + body
+// itself and truncate the whole thing once, instead of truncating through
+// formatList and then prepending a title the character budget never saw.
+export const formatPagination = (meta: PaginationMeta): string => {
   const parts = [`Results: ${meta.count}`];
   if (meta.has_more) {
     parts.push(`More available (cursor: ${meta.after_cursor})`);

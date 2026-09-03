@@ -45,6 +45,7 @@ import {
   formatFieldValue,
   formatList,
   formatMacro,
+  formatPagination,
   formatSlaBlock,
   formatSlaPolicy,
   formatTagDiff,
@@ -109,6 +110,36 @@ const fetchAllTicketComments = async (
     cursor = response.meta.after_cursor;
   }
   return all;
+};
+
+// The pagination fields of a comments page, narrowed out of the response: the
+// whole object cannot be passed as ZendeskListResponse<ZendeskComment>, whose
+// `users?: T[]` would clash with the side-load (see TicketCommentsResponse).
+// `next_page` is carried through so extractPaginationMeta's fallback still fires
+// if Zendesk ever answered this endpoint with offset pagination.
+const commentPageMeta = (response: TicketCommentsResponse, itemCount: number): PaginationMeta =>
+  extractPaginationMeta<ZendeskComment>(
+    {
+      ...(response.meta && { meta: response.meta }),
+      ...(response.count !== undefined && { count: response.count }),
+      ...(response.next_page !== undefined && { next_page: response.next_page }),
+    },
+    itemCount,
+  );
+
+// How the page actually came back, read off the data rather than off what was
+// asked for — a header that describes the wrong end is worse than none, and the
+// truncation cut always lands on the trailing end (#265). Equal timestamps say
+// nothing about the order (a one-comment page, or several posted within the same
+// second), so those fall back to what was requested rather than guessing.
+const commentPageOrder = (
+  comments: ZendeskComment[],
+  sortOrder: 'asc' | 'desc',
+): 'newest first' | 'oldest first' => {
+  const first = comments[0]?.created_at ?? '';
+  const last = comments.at(-1)?.created_at ?? '';
+  const newestFirst = first === last ? sortOrder === 'desc' : first > last;
+  return newestFirst ? 'newest first' : 'oldest first';
 };
 
 // Fetch specific attachments by id. A 404 is swallowed: attachment ids come
@@ -383,12 +414,10 @@ const collectAuditIds = (audits: ZendeskAudit[]): { userIds: number[]; groupIds:
   return { userIds: [...userIds], groupIds: [...groupIds] };
 };
 
-// Resolve user and group ids to names via batched show_many look-ups (chunked to
-// the 100-id endpoint cap). Best-effort: a failed look-up degrades to id-only
-// rendering rather than failing the whole history — names are supplementary.
-// Resolve one entity kind to an id->name map via batched show_many (chunked to
-// the 100-id endpoint cap). Best-effort: a failed batch leaves those ids
-// unresolved (rendered as bare ids) rather than failing the whole response.
+// Resolve one entity kind to an id->name map via batched show_many look-ups
+// (chunked to the 100-id endpoint cap). Best-effort: a failed batch leaves those
+// ids unresolved (rendered as bare ids) rather than failing the whole response —
+// names are supplementary.
 const resolveEntityNames = async <T extends { id: number; name: string }>(
   subdomain: string,
   token: string,
@@ -417,6 +446,7 @@ const resolveUserNames = (
 ): Promise<Map<number, string>> =>
   resolveEntityNames<ZendeskUser>(subdomain, token, '/users/show_many', 'users', ids);
 
+// The user and group names a rendered audit timeline needs, resolved together.
 const resolveAuditNames = async (
   subdomain: string,
   token: string,
@@ -439,6 +469,10 @@ interface TicketCommentsResponse {
   users?: ZendeskUser[];
   meta?: { has_more: boolean; after_cursor: string };
   count?: number;
+  // Present only if Zendesk answers this endpoint with offset pagination
+  // (ignoring `page[size]`). Forwarded so extractPaginationMeta's `next_page`
+  // fallback still fires and a further page is never reported as "none left".
+  next_page?: string | null;
 }
 
 // Resolve the authors of a comment page to display names. The `include=users`
@@ -674,14 +708,14 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         let text =
           formatTicket(ticket) + formatSlaBlock(await fetchTicketSla(subdomain, token, ticket));
         if (include_comments) {
-          const { comments } = await zendeskGet<{ comments: ZendeskComment[] }>(
+          const { comments, users } = await zendeskGet<TicketCommentsResponse>(
             subdomain,
             token,
             `/tickets/${ticket_id}/comments`,
-            { include_inline_images: 'true' },
+            { include: 'users', include_inline_images: 'true' },
           );
-          const authors = await resolveCommentAuthors(subdomain, token, comments);
-          text += `\n\n---\n# Comments\n\n${comments
+          const authors = await resolveCommentAuthors(subdomain, token, comments ?? [], users);
+          text += `\n\n---\n# Comments\n\n${(comments ?? [])
             .map((comment) => formatComment(comment, authors))
             .join('\n\n')}`;
         }
@@ -787,7 +821,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: true,
       title: 'List Zendesk Ticket Comments',
       description:
-        'Read a ticket\'s conversation — public replies and internal notes with their full bodies — one cursor-paginated page at a time, newest comment first. Each entry carries the comment id, the author resolved to a name, the timestamp, whether it is public or internal, and the ids of any attached files. Prefer this over get_ticket(include_comments=true) whenever a thread is long or you only need the latest exchange: get_ticket returns the entire thread in a single message and cuts it past the response character limit, which drops the most recent comments first. Keep sort_order "desc" (the default) to read the latest reply first and follow the returned cursor to walk further back in time, or pass "asc" to replay the conversation forward from the ticket\'s opening description. For who changed which field and when — without comment bodies — use get_ticket_history; to download the attached files themselves, pass the attachment ids shown here to get_ticket_attachments.',
+        'Read a ticket\'s conversation — public replies and internal notes with their full bodies — one cursor-paginated page at a time, newest comment first. Each entry carries the comment id, the author resolved to a name, the timestamp, whether it is public or internal, and the ids of any attached files. Prefer this over get_ticket(include_comments=true) whenever a thread is long or you only need the latest exchange: get_ticket appends the thread as one unpaginated block and cuts it past the response character limit, which drops the most recent comments first. Keep sort_order "desc" (the default) to read the latest reply first and follow the returned cursor to walk further back in time, or pass "asc" to replay the conversation forward from the ticket\'s opening description. For who changed which field and when — without comment bodies — use get_ticket_history; to download the attached files themselves, pass the attachment ids shown here to get_ticket_attachments.',
       inputSchema: z.object({
         ticket_id: z
           .number()
@@ -845,14 +879,8 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
             include_inline_images: 'true',
           },
         );
-        const { comments = [], meta: page, count } = response;
-        // Narrowed to the pagination fields: the full response cannot be passed
-        // as ZendeskListResponse<ZendeskComment>, whose `users?: T[]` would
-        // clash with the side-load (see TicketCommentsResponse).
-        const meta = extractPaginationMeta<ZendeskComment>(
-          { ...(page && { meta: page }), ...(count !== undefined && { count }) },
-          comments.length,
-        );
+        const comments = response.comments ?? [];
+        const meta = commentPageMeta(response, comments.length);
         if (comments.length === 0) {
           const text = meta.has_more
             ? `No comments on this page of ticket #${ticket_id}. More available (cursor: ${meta.after_cursor}).`
@@ -860,20 +888,26 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           return { content: [{ type: 'text', text }] };
         }
         const authors = await resolveCommentAuthors(subdomain, token, comments, response.users);
-        // The page is rendered in the order Zendesk returned it, so a page that
-        // still overflows loses its trailing end (#265). The header therefore
-        // describes the *returned* order, read off the data rather than off what
-        // was asked for: a single comment has no order to read, so it falls back
-        // to the request.
-        const newestFirst =
-          comments.length > 1
-            ? (comments[0]?.created_at ?? '') >= (comments.at(-1)?.created_at ?? '')
-            : sort_order === 'desc';
-        const order = newestFirst ? 'newest first' : 'oldest first';
-        const list = formatList(comments, (comment) => formatComment(comment, authors), meta);
+        const body = comments.map((comment) => formatComment(comment, authors)).join('\n\n');
+        // Assembled and truncated in one go: the title has to be inside the
+        // character budget, or the response overshoots the limit and the notice
+        // misreports its own size. The cursor is no way back to what the cut
+        // dropped — it points past this whole page — so the advice names the
+        // only recovery there is.
+        const text = [
+          `# Comments on ticket #${ticket_id} (${commentPageOrder(comments, sort_order)})`,
+          formatPagination(meta),
+          body,
+        ].join('\n\n');
         return {
           content: [
-            { type: 'text', text: `# Comments on ticket #${ticket_id} (${order})\n\n${list}` },
+            {
+              type: 'text',
+              text: truncateIfNeeded(
+                text,
+                `The comments cut here are not reachable through the cursor, which points past this whole page: re-issue with a page_size smaller than ${page_size} to read them.`,
+              ),
+            },
           ],
         };
       },

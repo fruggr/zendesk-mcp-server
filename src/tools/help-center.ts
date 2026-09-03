@@ -254,6 +254,8 @@ interface GapReport {
   found: { categories: number; sections: number };
   /** True when the category or section listing itself spilled past one page. */
   listingIncomplete: boolean;
+  /** True when the caller already scoped the audit to one category. */
+  categoryScoped: boolean;
 }
 
 /**
@@ -378,7 +380,9 @@ const renderGapReport = (report: GapReport): string => {
           ]
         : []),
     ].join('\n'),
-    'find_translation_gaps takes no pagination parameter; narrow the audit to one branch of the tree with category_id instead.',
+    report.categoryScoped
+      ? 'find_translation_gaps takes no pagination parameter, and this audit is already scoped to one category: fix the nodes above with set_category_translation / set_section_translation, then re-run it.'
+      : 'find_translation_gaps takes no pagination parameter; narrow the audit to one branch of the tree with category_id instead.',
   );
 };
 
@@ -1037,7 +1041,17 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         const token = await getToken();
         const translations = await listTranslations(subdomain, token, article_id);
         return {
-          content: [{ type: 'text', text: formatList(translations, formatTranslationSummary) }],
+          content: [
+            {
+              type: 'text',
+              text: formatList(
+                translations,
+                formatTranslationSummary,
+                undefined,
+                'list_article_translations takes only article_id, so this listing cannot be narrowed from the call; read one locale in full with get_article.',
+              ),
+            },
+          ],
         };
       },
     },
@@ -1179,7 +1193,17 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         const token = await getToken();
         const translations = await listNodeTranslations(subdomain, token, 'sections', section_id);
         return {
-          content: [{ type: 'text', text: formatList(translations, formatNodeTranslationSummary) }],
+          content: [
+            {
+              type: 'text',
+              text: formatList(
+                translations,
+                formatNodeTranslationSummary,
+                undefined,
+                'list_section_translations takes only section_id, so this listing cannot be narrowed from the call; write one locale with set_section_translation.',
+              ),
+            },
+          ],
         };
       },
     },
@@ -1214,7 +1238,17 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           category_id,
         );
         return {
-          content: [{ type: 'text', text: formatList(translations, formatNodeTranslationSummary) }],
+          content: [
+            {
+              type: 'text',
+              text: formatList(
+                translations,
+                formatNodeTranslationSummary,
+                undefined,
+                'list_category_translations takes only category_id, so this listing cannot be narrowed from the call; write one locale with set_category_translation.',
+              ),
+            },
+          ],
         };
       },
     },
@@ -1285,6 +1319,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
                 listingIncomplete:
                   categoryScope.hasMore ||
                   extractPaginationMeta(sectionsRes, allSections.length).has_more,
+                categoryScoped: category_id !== undefined,
               }),
             },
           ],
@@ -2083,7 +2118,12 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           content: [
             {
               type: 'text',
-              text: formatList(attachments, formatAttachment),
+              text: formatList(
+                attachments,
+                formatAttachment,
+                undefined,
+                'list_article_attachments takes only article_id, so this listing cannot be narrowed from the call.',
+              ),
             },
           ],
         };

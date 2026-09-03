@@ -265,6 +265,26 @@ describe('help center tools', () => {
       const result = await tool.handler({ article_id: 5000 });
       expect(result.content[0]?.text).not.toContain('Guide de test');
     });
+
+    it('says the listing cannot be narrowed rather than advising pagination', async () => {
+      // The schema is {article_id} alone — there is nothing to paginate (#265).
+      mswServer.use(
+        http.get(`${HC_BASE}/articles/:id/translations`, () =>
+          HttpResponse.json({
+            translations: Array.from({ length: 300 }, (_, i) => ({
+              ...MOCK_TRANSLATION,
+              id: 9000 + i,
+              title: 'x'.repeat(100),
+            })),
+            count: 300,
+          }),
+        ),
+      );
+      const tool = findTool('list_article_translations');
+      const text = (await tool.handler({ article_id: 5000 })).content[0]?.text ?? '';
+      expect(text).toContain('list_article_translations takes only article_id');
+      expect(text).not.toContain('Use pagination or filters');
+    });
   });
 
   describe('create_article_translation', () => {
@@ -522,6 +542,32 @@ describe('help center tools', () => {
   });
 
   describe('find_translation_gaps', () => {
+    it('does not advise category_id back at a caller who already passed it', async () => {
+      const many = Array.from({ length: 300 }, (_, i) => ({
+        ...MOCK_SECTION,
+        id: 9000 + i,
+        name: `Section ${'x'.repeat(100)} ${i}`,
+        translations: [],
+      }));
+      mswServer.use(
+        http.get(`${HC_BASE}/categories/:id/sections`, () =>
+          HttpResponse.json({
+            sections: many,
+            meta: { has_more: false, after_cursor: '' },
+            count: many.length,
+          }),
+        ),
+      );
+      const tool = findTool('find_translation_gaps');
+      const text = (
+        (await tool.handler({ locale: 'fr', category_id: 800 })).content[0] as { text: string }
+      ).text;
+      expect(text).toContain('Response truncated');
+      expect(text).toContain('already scoped to one category');
+      expect(text).not.toContain('narrow the audit to one branch');
+      expect(text).not.toContain('Use pagination or filters');
+    });
+
     it('points at category_id rather than a pagination parameter when truncating', async () => {
       // Every listed section is a gap (its sideloaded translations are empty),
       // and long names push the report past the response character limit.

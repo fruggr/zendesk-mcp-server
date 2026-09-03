@@ -101,6 +101,21 @@ describe('ticket tools', () => {
       expect(inlineParam).toBe('true');
     });
 
+    it('side-loads users instead of paying an extra look-up round trip', async () => {
+      let showManyCalls = 0;
+      mswServer.use(
+        commentsWithUsersSideloadHandler,
+        http.get('https://testsubdomain.zendesk.com/api/v2/users/show_many', () => {
+          showManyCalls += 1;
+          return HttpResponse.json({ users: [] });
+        }),
+      );
+      const tool = findTool('get_ticket');
+      const text = getAllText(await tool.handler({ ticket_id: 1, include_comments: true }));
+      expect(text).toContain('Sideloaded Agent (9999)');
+      expect(showManyCalls).toBe(0);
+    });
+
     it('resolves comment authors to names rather than raw ids', async () => {
       const tool = findTool('get_ticket');
       const text = getAllText(await tool.handler({ ticket_id: 1, include_comments: true }));
@@ -424,6 +439,73 @@ describe('ticket tools', () => {
         await tool.handler({ ticket_id: 1, sort_order: 'desc', page_size: 20 }),
       );
       expect(text).toContain('next-comment-cursor');
+    });
+
+    it('keeps the title inside the character budget and names the only recovery', async () => {
+      // The title must be truncated *with* the body: prepending it afterwards
+      // overshoots the limit and makes the notice misreport its own size.
+      mswServer.use(
+        http.get(COMMENTS_URL, () =>
+          HttpResponse.json({
+            comments: [
+              { ...MOCK_COMMENT, body: 'x'.repeat(CHARACTER_LIMIT) },
+              { ...MOCK_COMMENT, id: 3001, created_at: '2025-12-01T00:00:00Z', body: 'older' },
+            ],
+            meta: { has_more: true, after_cursor: 'next-comment-cursor' },
+          }),
+        ),
+      );
+      const tool = findTool('list_ticket_comments');
+      const text = getAllText(
+        await tool.handler({ ticket_id: 1, sort_order: 'desc', page_size: 20 }),
+      );
+      expect(text.startsWith('# Comments on ticket #1')).toBe(true);
+      // The notice sits exactly at the limit: everything before it, title
+      // included, is what the budget paid for.
+      expect(text.indexOf('\n\n--- Response truncated')).toBe(CHARACTER_LIMIT);
+      // The cursor points past the whole page, so it cannot recover what the
+      // cut dropped — only a smaller page can.
+      expect(text).toContain('re-issue with a page_size smaller than 20');
+      expect(text).not.toContain('Use pagination or filters');
+    });
+
+    it('reports a further page even when Zendesk answers with next_page', async () => {
+      // If the endpoint fell back to offset pagination there is no `meta`, and
+      // dropping next_page would report a truncated thread as complete.
+      mswServer.use(
+        http.get(COMMENTS_URL, () =>
+          HttpResponse.json({
+            comments: [MOCK_COMMENT],
+            next_page: 'https://testsubdomain.zendesk.com/api/v2/tickets/1/comments.json?page=2',
+          }),
+        ),
+      );
+      const tool = findTool('list_ticket_comments');
+      const text = getAllText(
+        await tool.handler({ ticket_id: 1, sort_order: 'desc', page_size: 20 }),
+      );
+      expect(text).toContain('More available');
+    });
+
+    it('falls back to the requested order when every comment shares a timestamp', async () => {
+      // Zendesk timestamps are second-resolution, so a burst of comments can tie.
+      mswServer.use(
+        http.get(COMMENTS_URL, () =>
+          HttpResponse.json({
+            comments: [MOCK_COMMENT, { ...MOCK_COMMENT, id: 3001 }],
+            meta: { has_more: false, after_cursor: '' },
+          }),
+        ),
+      );
+      const tool = findTool('list_ticket_comments');
+      const asc = getAllText(
+        await tool.handler({ ticket_id: 1, sort_order: 'asc', page_size: 20 }),
+      );
+      const desc = getAllText(
+        await tool.handler({ ticket_id: 1, sort_order: 'desc', page_size: 20 }),
+      );
+      expect(asc).toContain('(oldest first)');
+      expect(desc).toContain('(newest first)');
     });
 
     it('has readOnly annotation', () => {
