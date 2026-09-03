@@ -543,6 +543,38 @@ describe('get_request', () => {
     expect(text).toContain('Comment by Sam Support (support agent)');
   });
 
+  // The same failure the form and field walks refuse: a partial thread on the
+  // one tool whose description promises "every public message".
+  it('refuses a conversation it could not read to the end', async () => {
+    mswServer.use(
+      http.get(`${BASE}/requests/:id/comments`, () =>
+        HttpResponse.json({
+          comments: [{ id: 1, body: 'First', author_id: 456, public: true, created_at: 'day1' }],
+          users: [{ id: 456, name: 'Dana Customer', agent: false }],
+          // Always another page: forces the cap.
+          next_page: `${BASE}/requests/5001/comments?page=99`,
+        }),
+      ),
+    );
+    await expect(
+      textOf('get_request', { request_id: 5001, include_comments: true }),
+    ).rejects.toThrow(/could not read all of \/requests\/5001\/comments/);
+  });
+
+  it('names the comment page cap variable, not the field one, when it truncates', async () => {
+    mswServer.use(
+      http.get(`${BASE}/requests/:id/comments`, () =>
+        HttpResponse.json({
+          comments: [],
+          next_page: `${BASE}/requests/5001/comments?page=99`,
+        }),
+      ),
+    );
+    await expect(
+      textOf('get_request', { request_id: 5001, include_comments: true }),
+    ).rejects.toThrow(/ZENDESK_MAX_COMMENT_PAGES/);
+  });
+
   it('falls back to the author id when the sideload is absent', async () => {
     mswServer.use(
       http.get(`${BASE}/requests/:id/comments`, () =>

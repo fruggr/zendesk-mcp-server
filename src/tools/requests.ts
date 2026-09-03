@@ -91,32 +91,49 @@ const END_USER_FORM_PARAMS = {
  * form invisible or a required field unenforced, and the caller then gets a
  * confidently wrong "no such form" or an opaque Zendesk 422.
  */
-const fetchAllPages = async <T>(
-  subdomain: string,
-  token: string,
-  tool: string,
-  path: string,
-  extract: (response: ZendeskListResponse<T>) => T[] | undefined,
-  params: Record<string, string> = {},
+interface PageWalk<T, R extends ZendeskListResponse<T>> {
+  subdomain: string;
+  token: string;
+  tool: string;
+  path: string;
+  extract: (response: R) => T[] | undefined;
+  /** Extra query params, merged before the pagination ones. */
+  params?: Record<string, string>;
+  maxPages?: number;
+  /** The env var to name when the cap is hit, so the message is actionable. */
+  capEnvVar?: string;
+  /** Called per page, for a listing that also carries a sideload to accumulate. */
+  onPage?: (response: R) => void;
+}
+
+const fetchAllPages = async <T, R extends ZendeskListResponse<T> = ZendeskListResponse<T>>({
+  subdomain,
+  token,
+  tool,
+  path,
+  extract,
+  params = {},
   maxPages = TICKET_FIELD_SCAN_MAX_PAGES,
-): Promise<T[]> => {
+  capEnvVar = 'ZENDESK_TICKET_FIELD_SCAN_MAX_PAGES',
+  onPage,
+}: PageWalk<T, R>): Promise<T[]> => {
   const items: T[] = [];
   let page = 1;
   while (true) {
     const response = await withForbiddenGuidance(tool, `GET ${path}`, () =>
-      zendeskGet<ZendeskListResponse<T>>(subdomain, token, path, {
+      zendeskGet<R>(subdomain, token, path, {
         ...params,
         ...buildOffsetParams(MAX_PAGE_SIZE, page),
       }),
     );
     items.push(...(extract(response) ?? []));
+    onPage?.(response);
     if (!response.next_page) return items;
     if (page >= maxPages) {
       throw new Error(
         `${tool} could not read all of ${path}: the account exposes more than ${maxPages} ` +
           'pages of it. Continuing from a partial list would hide entries and produce a ' +
-          'confidently wrong answer, so this stops here. Raise ' +
-          'ZENDESK_TICKET_FIELD_SCAN_MAX_PAGES and retry.',
+          `confidently wrong answer, so this stops here. Raise ${capEnvVar} and retry.`,
       );
     }
     page += 1;
@@ -133,14 +150,14 @@ const fetchEndUserForms = async (
   token: string,
   tool: string,
 ): Promise<ZendeskTicketForm[]> =>
-  fetchAllPages<ZendeskTicketForm>(
+  fetchAllPages<ZendeskTicketForm>({
     subdomain,
     token,
     tool,
-    '/ticket_forms',
-    (response) => response.ticket_forms,
-    END_USER_FORM_PARAMS,
-  );
+    path: '/ticket_forms',
+    extract: (response) => response.ticket_forms,
+    params: END_USER_FORM_PARAMS,
+  });
 
 /**
  * Every ticket field the caller can see, paged defensively.
@@ -160,13 +177,13 @@ const fetchVisibleTicketFields = async (
   token: string,
   tool: string,
 ): Promise<ZendeskTicketField[]> => {
-  const fields = await fetchAllPages<ZendeskTicketField>(
+  const fields = await fetchAllPages<ZendeskTicketField>({
     subdomain,
     token,
     tool,
-    '/ticket_fields',
-    (response) => response.ticket_fields,
-  );
+    path: '/ticket_fields',
+    extract: (response) => response.ticket_fields,
+  });
   // Zendesk already filters to portal-visible fields for an end-user token but
   // not for an agent one, so filter here too: the same tool must describe the
   // same form whichever identity calls it.
@@ -174,41 +191,41 @@ const fetchVisibleTicketFields = async (
 };
 
 /**
- * Every public comment on a request, paged.
+ * Every public comment on a request, paged through the same walker the form and
+ * field listings use.
  *
- * `get_request` promises the whole conversation, so it has to page: one GET
- * stops at Zendesk's page size, and a long-running ticket would lose its
- * oldest exchanges with nothing to say so. Bounded by the same cap the
- * agent-side comment walk uses.
+ * `get_request` promises the whole conversation, so it must page -- one GET
+ * stops at Zendesk's page size and a long-running ticket would lose its oldest
+ * exchanges. Sharing the walker is what makes it *fail* rather than truncate at
+ * the cap: a second loop here had the opposite semantics, silently returning a
+ * partial thread on the one tool that promises a complete one.
  *
- * The `users` sideload accumulates across pages -- it is what attributes each
- * comment, and a later page's authors need not appear in the first page's.
+ * The `users` sideload accumulates across pages via `onPage` -- it is what
+ * attributes each comment, and a later page's authors need not appear in the
+ * first page's.
  */
+type RequestCommentsResponse = ZendeskListResponse<ZendeskComment> & {
+  users?: ZendeskRequestCommentAuthor[];
+};
+
 const fetchAllRequestComments = async (
   subdomain: string,
   token: string,
   requestId: number,
 ): Promise<{ comments: ZendeskComment[]; authors: Map<number, ZendeskRequestCommentAuthor> }> => {
-  const comments: ZendeskComment[] = [];
   const authors = new Map<number, ZendeskRequestCommentAuthor>();
-  let page = 1;
-  while (page <= MAX_COMMENT_PAGES) {
-    const response = await withForbiddenGuidance(
-      'get_request',
-      `GET /requests/${requestId}/comments`,
-      () =>
-        zendeskGet<ZendeskListResponse<ZendeskComment> & { users?: ZendeskRequestCommentAuthor[] }>(
-          subdomain,
-          token,
-          `/requests/${requestId}/comments`,
-          buildOffsetParams(MAX_PAGE_SIZE, page),
-        ),
-    );
-    comments.push(...(response.comments ?? []));
-    for (const user of response.users ?? []) authors.set(user.id, user);
-    if (!response.next_page) break;
-    page += 1;
-  }
+  const comments = await fetchAllPages<ZendeskComment, RequestCommentsResponse>({
+    subdomain,
+    token,
+    tool: 'get_request',
+    path: `/requests/${requestId}/comments`,
+    extract: (response) => response.comments,
+    maxPages: MAX_COMMENT_PAGES,
+    capEnvVar: 'ZENDESK_MAX_COMMENT_PAGES',
+    onPage: (response) => {
+      for (const user of response.users ?? []) authors.set(user.id, user);
+    },
+  });
   return { comments, authors };
 };
 
