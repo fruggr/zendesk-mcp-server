@@ -1,9 +1,13 @@
 import { HttpResponse, http } from 'msw';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { CHARACTER_LIMIT } from '../../../src/constants';
 import type { ToolContext } from '../../../src/tools/definitions';
 import { createTicketTools } from '../../../src/tools/tickets';
 import {
   auditsMorePageHandler,
+  commentsMorePageHandler,
+  commentsWithUsersSideloadHandler,
+  MOCK_COMMENT,
   MOCK_SLA_SIDELOAD,
   MOCK_TICKET,
   MOCK_UPLOAD,
@@ -27,9 +31,9 @@ const getAllText = (result: { content: Array<{ type: string; text?: string }> })
     .join('\n');
 
 describe('ticket tools', () => {
-  it('creates 17 tools (search_tickets lives here; the unified search is elsewhere)', () => {
+  it('creates 18 tools (search_tickets lives here; the unified search is elsewhere)', () => {
     const tools = createTicketTools(ctx);
-    expect(tools).toHaveLength(17);
+    expect(tools).toHaveLength(18);
   });
 
   describe('get_ticket', () => {
@@ -95,6 +99,45 @@ describe('ticket tools', () => {
       const tool = findTool('get_ticket');
       await tool.handler({ ticket_id: 1, include_comments: true });
       expect(inlineParam).toBe('true');
+    });
+
+    it('resolves comment authors to names rather than raw ids', async () => {
+      const tool = findTool('get_ticket');
+      const text = getAllText(await tool.handler({ ticket_id: 1, include_comments: true }));
+      expect(text).toContain('### Public comment (id 3000) by User 9999 (9999)');
+    });
+
+    it('routes a truncated thread to list_ticket_comments instead of advising pagination', async () => {
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/comments', () =>
+          HttpResponse.json({
+            comments: [{ ...MOCK_COMMENT, body: 'x'.repeat(CHARACTER_LIMIT) }],
+          }),
+        ),
+      );
+      const tool = findTool('get_ticket');
+      const text = getAllText(await tool.handler({ ticket_id: 1, include_comments: true }));
+      expect(text).toContain('Response truncated');
+      expect(text).toContain('list_ticket_comments');
+      expect(text).toContain('sort_order');
+      // get_ticket accepts neither a page nor a filter — advising them sends
+      // the caller in circles (#265).
+      expect(text).not.toContain('Use pagination or filters');
+    });
+
+    it('does not advise pagination when the ticket alone overflows', async () => {
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id', () =>
+          HttpResponse.json({
+            ticket: { ...MOCK_TICKET, id: 1, description: 'x'.repeat(CHARACTER_LIMIT) },
+          }),
+        ),
+      );
+      const tool = findTool('get_ticket');
+      const text = getAllText(await tool.handler({ ticket_id: 1, include_comments: false }));
+      expect(text).toContain('Response truncated');
+      expect(text).toContain('takes no pagination');
+      expect(text).not.toContain('Use pagination or filters');
     });
 
     it('has readOnly annotation', () => {
@@ -182,6 +225,168 @@ describe('ticket tools', () => {
 
     it('has readOnly annotation', () => {
       const tool = findTool('get_ticket_history');
+      expect(tool.annotations.readOnlyHint).toBe(true);
+    });
+  });
+
+  describe('list_ticket_comments', () => {
+    const COMMENTS_URL = 'https://testsubdomain.zendesk.com/api/v2/tickets/:id/comments';
+
+    // Capture the query the tool actually sends: the sort/cursor mapping is the
+    // whole point of the tool, and it is invisible in the rendered output.
+    const captureQuery = (): URLSearchParams[] => {
+      const seen: URLSearchParams[] = [];
+      mswServer.use(
+        http.get(COMMENTS_URL, ({ request }) => {
+          seen.push(new URL(request.url).searchParams);
+          return HttpResponse.json({ comments: [], meta: { has_more: false, after_cursor: '' } });
+        }),
+      );
+      return seen;
+    };
+
+    it('asks Zendesk for the newest comments first by default', async () => {
+      const seen = captureQuery();
+      const tool = findTool('list_ticket_comments');
+      await tool.handler({ ticket_id: 1, sort_order: 'desc', page_size: 20 });
+      const query = seen[0];
+      // sort_order is offset-only on this endpoint; with cursor paging Zendesk
+      // takes `sort=-created_at`. That mapping is what this asserts.
+      expect(query?.get('sort')).toBe('-created_at');
+      expect(query?.get('page[size]')).toBe('20');
+      expect(query?.get('include')).toBe('users');
+      expect(query?.get('include_inline_images')).toBe('true');
+      expect(query?.has('page[after]')).toBe(false);
+    });
+
+    it('maps sort_order "asc" to the oldest-first sort', async () => {
+      const seen = captureQuery();
+      const tool = findTool('list_ticket_comments');
+      await tool.handler({ ticket_id: 1, sort_order: 'asc', page_size: 20 });
+      expect(seen[0]?.get('sort')).toBe('created_at');
+    });
+
+    it('passes the cursor through as page[after]', async () => {
+      const seen = captureQuery();
+      const tool = findTool('list_ticket_comments');
+      await tool.handler({ ticket_id: 1, sort_order: 'desc', page_size: 5, cursor: 'cur-42' });
+      expect(seen[0]?.get('page[after]')).toBe('cur-42');
+      expect(seen[0]?.get('page[size]')).toBe('5');
+    });
+
+    it('renders bodies newest first, with comment ids and resolved authors', async () => {
+      const tool = findTool('list_ticket_comments');
+      const text = getAllText(
+        await tool.handler({ ticket_id: 1, sort_order: 'desc', page_size: 20 }),
+      );
+      expect(text).toContain('# Comments on ticket #1 (newest first)');
+      expect(text).toContain('### Internal note (id 3001) by User 9998 (9998)');
+      expect(text).toContain('### Public comment (id 3000) by User 9999 (9999)');
+      expect(text).toContain('Internal analysis');
+      expect(text).toContain('This is a comment');
+      // The API's order is preserved: truncation must cut the oldest end.
+      expect(text.indexOf('id 3001')).toBeLessThan(text.indexOf('id 3000'));
+    });
+
+    it('labels an oldest-first page as such', async () => {
+      const tool = findTool('list_ticket_comments');
+      const text = getAllText(
+        await tool.handler({ ticket_id: 1, sort_order: 'asc', page_size: 20 }),
+      );
+      expect(text).toContain('# Comments on ticket #1 (oldest first)');
+      expect(text.indexOf('id 3000')).toBeLessThan(text.indexOf('id 3001'));
+    });
+
+    it('surfaces the pagination cursor when more comments remain', async () => {
+      mswServer.use(commentsMorePageHandler);
+      const tool = findTool('list_ticket_comments');
+      const text = getAllText(
+        await tool.handler({ ticket_id: 1, sort_order: 'desc', page_size: 1 }),
+      );
+      expect(text).toContain('More available');
+      expect(text).toContain('next-comment-cursor');
+    });
+
+    it('uses the users side-load and skips the extra look-up when it carries the authors', async () => {
+      let showManyCalls = 0;
+      mswServer.use(
+        commentsWithUsersSideloadHandler,
+        http.get('https://testsubdomain.zendesk.com/api/v2/users/show_many', () => {
+          showManyCalls += 1;
+          return HttpResponse.json({ users: [] });
+        }),
+      );
+      const tool = findTool('list_ticket_comments');
+      const text = getAllText(
+        await tool.handler({ ticket_id: 1, sort_order: 'desc', page_size: 20 }),
+      );
+      expect(text).toContain('Sideloaded Author (9998)');
+      expect(text).toContain('Sideloaded Agent (9999)');
+      expect(showManyCalls).toBe(0);
+    });
+
+    it('falls back to one batched look-up for authors the side-load omits', async () => {
+      let showManyCalls = 0;
+      let requestedIds: string | null = null;
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/users/show_many', ({ request }) => {
+          showManyCalls += 1;
+          requestedIds = new URL(request.url).searchParams.get('ids');
+          return HttpResponse.json({ users: [{ id: 9998, name: 'Looked Up' }] });
+        }),
+      );
+      const tool = findTool('list_ticket_comments');
+      const text = getAllText(
+        await tool.handler({ ticket_id: 1, sort_order: 'desc', page_size: 20 }),
+      );
+      expect(showManyCalls).toBe(1);
+      expect(requestedIds).toBe('9998,9999');
+      expect(text).toContain('Looked Up (9998)');
+    });
+
+    it('still renders when name resolution fails, falling back to bare ids', async () => {
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/users/show_many', () =>
+          HttpResponse.json({}, { status: 500 }),
+        ),
+      );
+      const tool = findTool('list_ticket_comments');
+      const result = await tool.handler({ ticket_id: 1, sort_order: 'desc', page_size: 20 });
+      expect(result.isError).toBeFalsy();
+      expect(getAllText(result)).toContain('### Internal note (id 3001) by 9998');
+    });
+
+    it('returns a clear message when the ticket has no comments', async () => {
+      mswServer.use(
+        http.get(COMMENTS_URL, () =>
+          HttpResponse.json({ comments: [], meta: { has_more: false, after_cursor: '' } }),
+        ),
+      );
+      const tool = findTool('list_ticket_comments');
+      const text = getAllText(
+        await tool.handler({ ticket_id: 1, sort_order: 'desc', page_size: 20 }),
+      );
+      expect(text).toContain('No comments to show for ticket #1');
+    });
+
+    it('mentions the cursor when an empty page is not the last one', async () => {
+      mswServer.use(
+        http.get(COMMENTS_URL, () =>
+          HttpResponse.json({
+            comments: [],
+            meta: { has_more: true, after_cursor: 'next-comment-cursor' },
+          }),
+        ),
+      );
+      const tool = findTool('list_ticket_comments');
+      const text = getAllText(
+        await tool.handler({ ticket_id: 1, sort_order: 'desc', page_size: 20 }),
+      );
+      expect(text).toContain('next-comment-cursor');
+    });
+
+    it('has readOnly annotation', () => {
+      const tool = findTool('list_ticket_comments');
       expect(tool.annotations.readOnlyHint).toBe(true);
     });
   });
@@ -899,6 +1104,20 @@ describe('ticket tools', () => {
       const result = await tool.handler({ problem_id: 1 });
       expect(result.content[0]?.text).toContain('Incidents linked to problem #1');
     });
+
+    it('does not advise pagination it cannot accept when truncating', async () => {
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/incidents', () =>
+          HttpResponse.json({
+            tickets: [{ ...MOCK_TICKET, description: 'x'.repeat(CHARACTER_LIMIT) }],
+          }),
+        ),
+      );
+      const tool = findTool('get_linked_incidents');
+      const text = getAllText(await tool.handler({ problem_id: 1 }));
+      expect(text).toContain('takes no pagination parameters');
+      expect(text).not.toContain('Use pagination or filters');
+    });
   });
 
   describe('manage_tags', () => {
@@ -1141,6 +1360,23 @@ describe('ticket tools', () => {
   });
 
   describe('preview_macro_diff', () => {
+    it('does not advise pagination it cannot accept when truncating', async () => {
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/macros/:mid/apply', () =>
+          HttpResponse.json({
+            result: {
+              ticket: { ...MOCK_TICKET, subject: 'x'.repeat(CHARACTER_LIMIT) },
+              comment: { body: 'A reply', public: true },
+            },
+          }),
+        ),
+      );
+      const tool = findTool('preview_macro_diff');
+      const text = getAllText(await tool.handler({ ticket_id: 1, macro_id: 700 }));
+      expect(text).toContain('takes no pagination parameters');
+      expect(text).not.toContain('Use pagination or filters');
+    });
+
     it('diffs the ticket before/after the macro, showing only what changes', async () => {
       const tool = findTool('preview_macro_diff');
       const result = await tool.handler({ ticket_id: 1, macro_id: 700 });

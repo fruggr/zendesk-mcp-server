@@ -7,6 +7,13 @@ export const MAX_PAGE_SIZE = 100;
 // allow up to 100. Reusing the shared MAX_PAGE_SIZE (100) here always failed
 // (issue #162), so list_content_tags gets its own limit.
 export const CONTENT_TAGS_MAX_PAGE_SIZE = 30;
+
+// Default page size for list_ticket_comments. Unlike CONTENT_TAGS_MAX_PAGE_SIZE
+// this is not an API cap (the endpoint allows 100): the binding constraint is
+// CHARACTER_LIMIT, because comment bodies are long. A default of 100 would make
+// almost every first page truncate, which is the very failure this tool exists
+// to fix (#265). Callers who want more follow the cursor.
+export const DEFAULT_TICKET_COMMENT_PAGE_SIZE = 20;
 export const TOKEN_CACHE_TTL_MS = 5 * 60 * 1000;
 
 // Read a positive-integer override from the environment, falling back to a safe

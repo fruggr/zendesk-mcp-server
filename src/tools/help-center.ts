@@ -378,6 +378,7 @@ const renderGapReport = (report: GapReport): string => {
           ]
         : []),
     ].join('\n'),
+    'find_translation_gaps takes no pagination parameter; narrow the audit to one branch of the tree with category_id instead.',
   );
 };
 
@@ -733,7 +734,17 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           (hint ?? '') +
           formatArticle(article) +
           `\n\n**Available translations**: ${translations.map((t) => t.locale).join(', ')}`;
-        return { content: [{ type: 'text', text: truncateIfNeeded(text) }] };
+        return {
+          content: [
+            {
+              type: 'text',
+              text: truncateIfNeeded(
+                text,
+                'get_article takes no pagination parameter; read a long article one part at a time with get_article_outline then get_article_section.',
+              ),
+            },
+          ],
+        };
       },
     },
     {
@@ -2167,7 +2178,13 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           '',
           content,
         ].join('\n');
-        return { content: [{ type: 'text', text: truncateIfNeeded(text) }] };
+        // No pagination here either, and there is nothing narrower than a
+        // section — but the Markdown rendering of the same content is smaller.
+        const advice =
+          format === 'markdown'
+            ? 'get_article_section takes no pagination parameter, and this single section already exceeds the limit.'
+            : 'get_article_section takes no pagination parameter; request this section as format="markdown", which renders the same content more compactly than HTML.';
+        return { content: [{ type: 'text', text: truncateIfNeeded(text, advice) }] };
       },
     },
     {

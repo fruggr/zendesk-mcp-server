@@ -1,5 +1,6 @@
 import { HttpResponse, http } from 'msw';
 import { describe, expect, it } from 'vitest';
+import { CHARACTER_LIMIT } from '../../../src/constants';
 import type { ToolContext } from '../../../src/tools/definitions';
 import { createHelpCenterTools } from '../../../src/tools/help-center';
 import {
@@ -104,6 +105,22 @@ describe('help center tools', () => {
   });
 
   describe('get_article', () => {
+    it('routes a truncated article to the section tools instead of advising pagination', async () => {
+      mswServer.use(
+        http.get(`${HC_BASE}/articles/:id`, () =>
+          HttpResponse.json({
+            article: { ...MOCK_ARTICLE, body: `<p>${'x'.repeat(CHARACTER_LIMIT)}</p>` },
+          }),
+        ),
+      );
+      const tool = findTool('get_article');
+      const text = tool
+        .handler({ article_id: 5000 })
+        .then((r) => (r.content[0] as { text: string }).text);
+      await expect(text).resolves.toContain('get_article_section');
+      await expect(text).resolves.not.toContain('Use pagination or filters');
+    });
+
     it('returns article with translations list', async () => {
       const tool = findTool('get_article');
       const result = await tool.handler({ article_id: 5000 });
@@ -505,6 +522,31 @@ describe('help center tools', () => {
   });
 
   describe('find_translation_gaps', () => {
+    it('points at category_id rather than a pagination parameter when truncating', async () => {
+      // Every listed section is a gap (its sideloaded translations are empty),
+      // and long names push the report past the response character limit.
+      const many = Array.from({ length: 300 }, (_, i) => ({
+        ...MOCK_SECTION,
+        id: 9000 + i,
+        name: `Section ${'x'.repeat(100)} ${i}`,
+        translations: [],
+      }));
+      mswServer.use(
+        http.get(`${HC_BASE}/sections`, () =>
+          HttpResponse.json({
+            sections: many,
+            meta: { has_more: false, after_cursor: '' },
+            count: many.length,
+          }),
+        ),
+      );
+      const tool = findTool('find_translation_gaps');
+      const text = ((await tool.handler({ locale: 'fr' })).content[0] as { text: string }).text;
+      expect(text).toContain('Response truncated');
+      expect(text).toContain('category_id');
+      expect(text).not.toContain('Use pagination or filters');
+    });
+
     // The default fixtures give category 800 a published `fr` translation and
     // section 600 a draft one, i.e. one gap of each interesting kind once the
     // listing is widened.
@@ -1343,6 +1385,49 @@ describe('help center tools', () => {
   });
 
   describe('get_article_section', () => {
+    // A single section has nothing narrower to page to, so the notice offers the
+    // one lever that exists — the more compact Markdown rendering — and never
+    // advises a parameter the tool does not accept (#265).
+    const hugeArticle = () =>
+      mswServer.use(
+        http.get(`${HC_BASE}/articles/:id/translations/:locale`, () =>
+          HttpResponse.json({
+            translation: {
+              ...MOCK_TRANSLATION,
+              body: `<h2>Setup</h2><p>${'x'.repeat(CHARACTER_LIMIT)}</p>`,
+            },
+          }),
+        ),
+      );
+
+    it('offers the markdown rendering when a truncated section was asked for as html', async () => {
+      hugeArticle();
+      const tool = findTool('get_article_section');
+      const result = await tool.handler({
+        article_id: 5000,
+        locale: 'en-us',
+        section_index: 0,
+        format: 'html',
+      });
+      const text = (result.content[0] as { text: string }).text;
+      expect(text).toContain('format="markdown"');
+      expect(text).not.toContain('Use pagination or filters');
+    });
+
+    it('states plainly that nothing narrower exists when markdown still overflows', async () => {
+      hugeArticle();
+      const tool = findTool('get_article_section');
+      const result = await tool.handler({
+        article_id: 5000,
+        locale: 'en-us',
+        section_index: 0,
+        format: 'markdown',
+      });
+      const text = (result.content[0] as { text: string }).text;
+      expect(text).toContain('this single section already exceeds the limit');
+      expect(text).not.toContain('Use pagination or filters');
+    });
+
     it('returns a single section as markdown', async () => {
       const tool = findTool('get_article_section');
       const result = await tool.handler({

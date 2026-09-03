@@ -9,6 +9,7 @@ import {
 } from '../client/zendesk-api';
 import {
   DEFAULT_PAGE_SIZE,
+  DEFAULT_TICKET_COMMENT_PAGE_SIZE,
   MAX_ATTACHMENT_BYTES,
   MAX_COMMENT_PAGES,
   MAX_EMBEDDED_IMAGE_COUNT,
@@ -385,39 +386,81 @@ const collectAuditIds = (audits: ZendeskAudit[]): { userIds: number[]; groupIds:
 // Resolve user and group ids to names via batched show_many look-ups (chunked to
 // the 100-id endpoint cap). Best-effort: a failed look-up degrades to id-only
 // rendering rather than failing the whole history — names are supplementary.
+// Resolve one entity kind to an id->name map via batched show_many (chunked to
+// the 100-id endpoint cap). Best-effort: a failed batch leaves those ids
+// unresolved (rendered as bare ids) rather than failing the whole response.
+const resolveEntityNames = async <T extends { id: number; name: string }>(
+  subdomain: string,
+  token: string,
+  path: string,
+  key: 'users' | 'groups',
+  ids: number[],
+): Promise<Map<number, string>> => {
+  const map = new Map<number, string>();
+  for (const batch of chunk(ids, 100)) {
+    try {
+      const res = await zendeskGet<Record<string, T[]>>(subdomain, token, path, {
+        ids: batch.join(','),
+      });
+      for (const entity of res[key] ?? []) map.set(entity.id, entity.name);
+    } catch {
+      // Best-effort: leave these ids unresolved.
+    }
+  }
+  return map;
+};
+
+const resolveUserNames = (
+  subdomain: string,
+  token: string,
+  ids: number[],
+): Promise<Map<number, string>> =>
+  resolveEntityNames<ZendeskUser>(subdomain, token, '/users/show_many', 'users', ids);
+
 const resolveAuditNames = async (
   subdomain: string,
   token: string,
   userIds: number[],
   groupIds: number[],
 ): Promise<AuditNames> => {
-  // Resolve one entity kind to an id->name map via batched show_many (chunked to
-  // the 100-id endpoint cap). Best-effort: a failed batch leaves those ids
-  // unresolved (rendered as bare ids) rather than failing the whole history.
-  const resolve = async <T extends { id: number; name: string }>(
-    path: string,
-    key: 'users' | 'groups',
-    ids: number[],
-  ): Promise<Map<number, string>> => {
-    const map = new Map<number, string>();
-    for (const batch of chunk(ids, 100)) {
-      try {
-        const res = await zendeskGet<Record<string, T[]>>(subdomain, token, path, {
-          ids: batch.join(','),
-        });
-        for (const entity of res[key] ?? []) map.set(entity.id, entity.name);
-      } catch {
-        // Best-effort: leave these ids unresolved.
-      }
-    }
-    return map;
-  };
   // The two look-ups hit independent endpoints — run them concurrently.
   const [users, groups] = await Promise.all([
-    resolve<ZendeskUser>('/users/show_many', 'users', userIds),
-    resolve<ZendeskGroup>('/groups/show_many', 'groups', groupIds),
+    resolveUserNames(subdomain, token, userIds),
+    resolveEntityNames<ZendeskGroup>(subdomain, token, '/groups/show_many', 'groups', groupIds),
   ]);
   return { users, groups };
+};
+
+// The List Comments response. Deliberately *not* ZendeskListResponse<ZendeskComment>:
+// that generic declares `users?: T[]`, which would silently type the `include=users`
+// side-load as an array of comments.
+interface TicketCommentsResponse {
+  comments?: ZendeskComment[];
+  users?: ZendeskUser[];
+  meta?: { has_more: boolean; after_cursor: string };
+  count?: number;
+}
+
+// Resolve the authors of a comment page to display names. The `include=users`
+// side-load is documented for email CCs, so it is treated as an optimisation
+// rather than the mechanism: whatever it returns is used as-is, and the author
+// ids it left out cost one batched show_many. The system actor (-1) has no user
+// record and is labelled by the formatter, so it is never looked up.
+const resolveCommentAuthors = async (
+  subdomain: string,
+  token: string,
+  comments: ZendeskComment[],
+  sideloaded: ZendeskUser[] = [],
+): Promise<Map<number, string>> => {
+  const authors = new Map(sideloaded.map((user) => [user.id, user.name]));
+  const missing = [...new Set(comments.map((comment) => comment.author_id))].filter(
+    (id) => id > 0 && !authors.has(id),
+  );
+  if (missing.length === 0) return authors;
+  for (const [id, name] of await resolveUserNames(subdomain, token, missing)) {
+    authors.set(id, name);
+  }
+  return authors;
 };
 
 // Keys the generic field diff must not emit. Two reasons, both in this set:
@@ -595,7 +638,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: true,
       title: 'Get Zendesk Ticket',
       description:
-        'Retrieve a Zendesk ticket by ID, including its live SLA state (per-metric stage and breach countdown) when an SLA policy applies, plus its comments if requested. Returns ticket details (subject, status, priority, assignee, tags, description) and optionally all comments/internal notes. The per-ticket Show endpoint exposes no SLA, so the SLA block is resolved via a scoped search and may be absent for a very high-volume requester or a just-updated ticket; SLA targets and policy conditions live in list_sla_policies. This returns the ticket as it stands now; for the history of changes behind that state (who changed what, and when), use get_ticket_history.',
+        'Retrieve a Zendesk ticket by ID, including its live SLA state (per-metric stage and breach countdown) when an SLA policy applies, plus its comments if requested. Returns ticket details (subject, status, priority, assignee, tags, description) and optionally all comments/internal notes. The per-ticket Show endpoint exposes no SLA, so the SLA block is resolved via a scoped search and may be absent for a very high-volume requester or a just-updated ticket; SLA targets and policy conditions live in list_sla_policies. This returns the ticket as it stands now; for the history of changes behind that state (who changed what, and when), use get_ticket_history. The comment thread is returned whole and is cut past the response character limit, so on a long ticket read it with list_ticket_comments, which pages the comments and returns the newest first.',
       inputSchema: z.object({
         ticket_id: z
           .number()
@@ -607,7 +650,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           .boolean()
           .default(false)
           .describe(
-            'When true, appends the full public comment and internal note thread to the response. Defaults to false to keep the payload small; enable it when you need the conversation, not just the ticket fields.',
+            'When true, appends the full public comment and internal note thread to the response. Defaults to false to keep the payload small; enable it when you need the conversation, not just the ticket fields. On a long thread prefer list_ticket_comments — this flag returns the entire thread in one message.',
           ),
       }),
       annotations: {
@@ -637,9 +680,17 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
             `/tickets/${ticket_id}/comments`,
             { include_inline_images: 'true' },
           );
-          text += `\n\n---\n# Comments\n\n${comments.map(formatComment).join('\n\n')}`;
+          const authors = await resolveCommentAuthors(subdomain, token, comments);
+          text += `\n\n---\n# Comments\n\n${comments
+            .map((comment) => formatComment(comment, authors))
+            .join('\n\n')}`;
         }
-        return { content: [{ type: 'text', text: truncateIfNeeded(text) }] };
+        // This tool takes no page or filter, so the default truncation advice
+        // would send the caller in circles (#265). Name the tool that does.
+        const advice = include_comments
+          ? `The whole thread is returned in one message; read it page by page with list_ticket_comments (ticket_id: ${ticket_id}, sort_order: "desc") to get the newest comments first.`
+          : "get_ticket takes no pagination parameters — this ticket's own fields exceed the limit.";
+        return { content: [{ type: 'text', text: truncateIfNeeded(text, advice) }] };
       },
     },
     {
@@ -648,7 +699,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: true,
       title: 'Get Zendesk Ticket History',
       description:
-        'Read a ticket\'s change history — its audit trail — as a chronological, oldest-first timeline of who changed what and when. Each entry shows the actor (name and id) and the channel, then the field changes that update carried (status, priority, assignee, group, tags, custom fields) as before → after, with assignee/requester/group ids resolved to names. Comments appear as one-line presence markers (public comment vs internal note added), not their text — fetch the bodies with get_ticket(include_comments=true). Purely system-generated notification events (trigger emails, collaborator/CC notifications, pushes) are filtered out — note this filters notification delivery, not CC-list edits, which are shown as changes — and an update carrying only such events produces no entry, so the timeline stays a readable narrative rather than a raw log. Use it to answer "what happened on this ticket?", "why was it reassigned?" or "when did it go to pending?", reading oldest-first so the founding context is not missed. Read-only, and cursor-paginated oldest-first: pass the returned cursor to page a long-lived ticket toward its most recent changes.',
+        'Read a ticket\'s change history — its audit trail — as a chronological, oldest-first timeline of who changed what and when. Each entry shows the actor (name and id) and the channel, then the field changes that update carried (status, priority, assignee, group, tags, custom fields) as before → after, with assignee/requester/group ids resolved to names. Comments appear as one-line presence markers (public comment vs internal note added), not their text — fetch the bodies with list_ticket_comments (or get_ticket(include_comments=true) for a short thread). Purely system-generated notification events (trigger emails, collaborator/CC notifications, pushes) are filtered out — note this filters notification delivery, not CC-list edits, which are shown as changes — and an update carrying only such events produces no entry, so the timeline stays a readable narrative rather than a raw log. Use it to answer "what happened on this ticket?", "why was it reassigned?" or "when did it go to pending?", reading oldest-first so the founding context is not missed. Read-only, and cursor-paginated oldest-first: pass the returned cursor to page a long-lived ticket toward its most recent changes.',
       inputSchema: z.object({
         ticket_id: z
           .number()
@@ -731,6 +782,97 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       },
     },
     {
+      name: 'list_ticket_comments',
+      namespace: 'tickets',
+      readOnly: true,
+      title: 'List Zendesk Ticket Comments',
+      description:
+        'Read a ticket\'s conversation — public replies and internal notes with their full bodies — one cursor-paginated page at a time, newest comment first. Each entry carries the comment id, the author resolved to a name, the timestamp, whether it is public or internal, and the ids of any attached files. Prefer this over get_ticket(include_comments=true) whenever a thread is long or you only need the latest exchange: get_ticket returns the entire thread in a single message and cuts it past the response character limit, which drops the most recent comments first. Keep sort_order "desc" (the default) to read the latest reply first and follow the returned cursor to walk further back in time, or pass "asc" to replay the conversation forward from the ticket\'s opening description. For who changed which field and when — without comment bodies — use get_ticket_history; to download the attached files themselves, pass the attachment ids shown here to get_ticket_attachments.',
+      inputSchema: z.object({
+        ticket_id: z
+          .number()
+          .int()
+          .describe(
+            'Ticket ID — the numeric id of the ticket whose conversation to read. Obtain it from search_tickets or list_tickets.',
+          ),
+        sort_order: z
+          .enum(['asc', 'desc'])
+          .default('desc')
+          .describe(
+            'Chronological direction of the page. "desc" (the default) starts at the most recent comment and walks backward in time, which is what you want to see the latest reply; "asc" replays the conversation forward, starting from the ticket\'s opening description — that first comment therefore lands on the last page under "desc".',
+          ),
+        page_size: z
+          .number()
+          .int()
+          .min(1)
+          .max(MAX_PAGE_SIZE)
+          .default(DEFAULT_TICKET_COMMENT_PAGE_SIZE)
+          .describe(
+            'Comments per page (1-100, default 20). The default is deliberately small because comment bodies are long and a bigger page risks being cut short by the response character limit; follow the returned cursor rather than raising it.',
+          ),
+        cursor: z
+          .string()
+          .optional()
+          .describe(
+            'Pagination cursor from a previous response; omit for the first page. Zendesk issues it for the ordering that response used, so after changing sort_order drop the cursor and start again from the first page.',
+          ),
+      }),
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+      handler: async (params) => {
+        const { ticket_id, sort_order, page_size, cursor } = params as {
+          ticket_id: number;
+          sort_order: 'asc' | 'desc';
+          page_size: number;
+          cursor?: string;
+        };
+        const token = await getToken();
+        const response = await zendeskGet<TicketCommentsResponse>(
+          subdomain,
+          token,
+          `/tickets/${ticket_id}/comments`,
+          {
+            ...buildCursorParams(page_size, cursor),
+            // `sort_order` is offset-only on this endpoint; cursor pagination
+            // takes `sort` instead. The tool exposes the friendlier name and
+            // maps it here.
+            sort: sort_order === 'desc' ? '-created_at' : 'created_at',
+            include: 'users',
+            include_inline_images: 'true',
+          },
+        );
+        const { comments = [], meta: page, count } = response;
+        // Narrowed to the pagination fields: the full response cannot be passed
+        // as ZendeskListResponse<ZendeskComment>, whose `users?: T[]` would
+        // clash with the side-load (see TicketCommentsResponse).
+        const meta = extractPaginationMeta<ZendeskComment>(
+          { ...(page && { meta: page }), ...(count !== undefined && { count }) },
+          comments.length,
+        );
+        if (comments.length === 0) {
+          const text = meta.has_more
+            ? `No comments on this page of ticket #${ticket_id}. More available (cursor: ${meta.after_cursor}).`
+            : `No comments to show for ticket #${ticket_id}.`;
+          return { content: [{ type: 'text', text }] };
+        }
+        const authors = await resolveCommentAuthors(subdomain, token, comments, response.users);
+        // The page is rendered in the order Zendesk returned it: under "desc"
+        // that puts the newest comments first, so a page that still overflows
+        // loses its oldest end rather than its newest (#265).
+        const order = sort_order === 'desc' ? 'newest first' : 'oldest first';
+        const list = formatList(comments, (comment) => formatComment(comment, authors), meta);
+        return {
+          content: [
+            { type: 'text', text: `# Comments on ticket #${ticket_id} (${order})\n\n${list}` },
+          ],
+        };
+      },
+    },
+    {
       name: 'get_ticket_attachments',
       namespace: 'tickets',
       readOnly: true,
@@ -748,7 +890,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           .array(z.number().int())
           .optional()
           .describe(
-            'Attachment IDs to fetch directly (e.g. extracted from a previous get_ticket(include_comments=true) call). When provided, skips the comments fetch entirely. When omitted, all attachments of the ticket are returned.',
+            'Attachment IDs to fetch directly (e.g. extracted from a previous list_ticket_comments or get_ticket(include_comments=true) call). When provided, skips the comments fetch entirely. When omitted, all attachments of the ticket are returned.',
           ),
       }),
       annotations: {
@@ -1180,7 +1322,17 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           incidents.length > 0
             ? `# Incidents linked to problem #${problem_id}\n\n${incidents.map(formatTicket).join('\n\n')}`
             : `No incidents linked to problem #${problem_id}.`;
-        return { content: [{ type: 'text', text: truncateIfNeeded(text) }] };
+        return {
+          content: [
+            {
+              type: 'text',
+              text: truncateIfNeeded(
+                text,
+                `get_linked_incidents takes no pagination parameters: problem #${problem_id} has more linked incidents than fit in one response.`,
+              ),
+            },
+          ],
+        };
       },
     },
     {
@@ -1599,7 +1751,10 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           content: [
             {
               type: 'text',
-              text: truncateIfNeeded(formatMacroPreviewDiff(ticket_id, macro_id, before, result)),
+              text: truncateIfNeeded(
+                formatMacroPreviewDiff(ticket_id, macro_id, before, result),
+                'preview_macro_diff takes no pagination parameters: this macro rewrites more of the ticket than fits in one response. Read the macro on its own with list_macros to see every action it carries.',
+              ),
             },
           ],
         };
