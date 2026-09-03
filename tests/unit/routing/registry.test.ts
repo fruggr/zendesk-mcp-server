@@ -56,6 +56,7 @@ describe('groupByNamespace', () => {
   it('groups tools by namespace', () => {
     const grouped = groupByNamespace(allTools);
     expect(grouped.has('tickets')).toBe(true);
+    expect(grouped.has('requests')).toBe(true);
     expect(grouped.has('help_center')).toBe(true);
     expect(grouped.has('users')).toBe(true);
   });
@@ -65,9 +66,11 @@ describe('groupByNamespace', () => {
     const ticketCount = grouped.get('tickets')?.length ?? 0;
     const hcCount = grouped.get('help_center')?.length ?? 0;
     const userCount = grouped.get('users')?.length ?? 0;
+    const requestCount = grouped.get('requests')?.length ?? 0;
     expect(ticketCount).toBe(18); // 17 ticket tools + 1 search
     expect(hcCount).toBe(29);
     expect(userCount).toBe(5);
+    expect(requestCount).toBe(7);
   });
 });
 

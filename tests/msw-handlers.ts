@@ -85,6 +85,10 @@ export const MOCK_TICKET_FIELD_SYSTEM = {
   description: 'Ticket priority',
   active: true,
   required: false,
+  // Agents see priority; customers do not. Keeps the end-user tools' portal
+  // filter honest instead of every fixture field being visible.
+  visible_in_portal: false,
+  required_in_portal: false,
   system_field_options: [
     { name: 'Low', value: 'low' },
     { name: 'High', value: 'high' },
@@ -99,9 +103,131 @@ export const MOCK_TICKET_FIELD_CUSTOM = {
   active: true,
   required: true,
   tag: null,
+  // Portal-visible AND portal-required, with a customer-facing label that
+  // differs from the agent title -- the case the end-user form spec must render.
+  visible_in_portal: true,
+  required_in_portal: true,
+  editable_in_portal: true,
+  title_in_portal: 'How severe is it?',
   custom_field_options: [
     { name: 'Sev-1', value: 'severity_1' },
     { name: 'Sev-2', value: 'severity_2' },
+  ],
+};
+
+// A portal-visible but OPTIONAL field, so the required/optional split in the
+// form spec is exercised rather than assumed.
+export const MOCK_TICKET_FIELD_PORTAL_OPTIONAL = {
+  id: 360000000002,
+  type: 'text',
+  title: 'Affected version',
+  description: 'Which version were you using?',
+  active: true,
+  required: false,
+  visible_in_portal: true,
+  required_in_portal: false,
+  editable_in_portal: true,
+};
+
+// GET /ticket_forms — the forms an end user picks between. `display_name` is
+// deliberately different from `name` (customer-facing vs internal), which is
+// what list_request_forms has to surface.
+export const MOCK_TICKET_FORM_BUG = {
+  id: 900,
+  name: 'Bug report (internal)',
+  display_name: 'Report a bug',
+  active: true,
+  end_user_visible: true,
+  default: true,
+  position: 1,
+  ticket_field_ids: [10, 360000000001, 360000000002],
+  end_user_conditions: [],
+};
+
+// A second form carrying a conditional rule, so the condition rendering is
+// covered: answering Severity = sev-1 makes the version field required.
+export const MOCK_TICKET_FORM_FEATURE = {
+  id: 901,
+  name: 'Feature request',
+  display_name: 'Feature request',
+  active: true,
+  end_user_visible: true,
+  default: false,
+  position: 2,
+  ticket_field_ids: [360000000002],
+  end_user_conditions: [
+    {
+      parent_field_id: 360000000001,
+      value: 'severity_1',
+      child_fields: [{ id: 360000000002, is_required: true }],
+    },
+  ],
+};
+
+// GET/POST/PUT /api/v2/requests — a ticket as its requester sees it. No `tags`,
+// no `assignee_id`, and `can_be_solved_by_me` true (an agent is assigned), which
+// is the state in which mark_request_solved is allowed to act.
+export const MOCK_REQUEST = {
+  id: 5001,
+  subject: 'The export button does nothing',
+  description: 'Clicking export spins forever and no file arrives.',
+  status: 'open',
+  priority: 'normal',
+  type: 'incident',
+  requester_id: 456,
+  organization_id: null,
+  ticket_form_id: 900,
+  can_be_solved_by_me: true,
+  due_at: null,
+  custom_fields: [{ id: 360000000001, value: 'severity_2' }],
+  via: { channel: 'web' },
+  created_at: '2026-01-05T09:00:00Z',
+  updated_at: '2026-01-06T11:30:00Z',
+};
+
+// Unassigned, so `can_be_solved_by_me` is false. Zendesk would answer 200 to
+// `solved: true` here and change nothing, which is exactly what the tool must
+// refuse to report as success.
+export const MOCK_REQUEST_UNSOLVABLE = {
+  ...MOCK_REQUEST,
+  id: 5002,
+  subject: 'Feature idea: bulk export',
+  status: 'new',
+  can_be_solved_by_me: false,
+};
+
+// GET /requests/{id}/comments — note the `users` sideload Zendesk returns by
+// default, whose `agent` flag is what tells a support reply from the customer's
+// own comment. Five keys only: no email, nothing agent-private.
+export const MOCK_REQUEST_COMMENTS = {
+  comments: [
+    {
+      id: 9001,
+      body: 'Clicking export spins forever and no file arrives.',
+      author_id: 456,
+      public: true,
+      created_at: '2026-01-05T09:00:00Z',
+    },
+    {
+      id: 9002,
+      body: 'Thanks for the report — which browser are you on?',
+      author_id: 789,
+      public: true,
+      created_at: '2026-01-06T11:30:00Z',
+      attachments: [
+        {
+          id: 4242,
+          file_name: 'diagnostic.txt',
+          content_url: 'https://testsubdomain.zendesk.com/attachments/4242/diagnostic.txt',
+          content_type: 'text/plain',
+          size: 128,
+        },
+      ],
+    },
+  ],
+  users: [
+    { id: 456, name: 'Dana Customer', agent: false },
+    { id: 789, name: 'Sam Support', agent: true },
   ],
 };
 
@@ -691,6 +817,55 @@ export const handlers = [
   ),
   http.post(`${BASE}/uploads`, () => HttpResponse.json({ upload: MOCK_UPLOAD })),
 
+  // --- End-user Requests surface (namespace: requests) ---
+  // Order matters: the literal `/requests/search` must be registered before
+  // `/requests/:id`, or MSW captures "search" as the id.
+  http.get(`${BASE}/ticket_forms`, () =>
+    HttpResponse.json({
+      ticket_forms: [MOCK_TICKET_FORM_BUG, MOCK_TICKET_FORM_FEATURE],
+      count: 2,
+      next_page: null,
+    }),
+  ),
+  http.get(`${BASE}/requests/search`, ({ request }) => {
+    const query = new URL(request.url).searchParams.get('query') ?? '';
+    // Echo the caller's query back through the filter so a search that matches
+    // nothing is distinguishable from one that matches.
+    const requests = query.includes('nothing') ? [] : [MOCK_REQUEST];
+    return HttpResponse.json({ requests, count: requests.length, next_page: null });
+  }),
+  http.get(`${BASE}/requests/:id/comments`, () => HttpResponse.json(MOCK_REQUEST_COMMENTS)),
+  http.get(`${BASE}/requests/:id`, ({ params }) => {
+    const id = Number(params['id']);
+    if (id === MOCK_REQUEST_UNSOLVABLE.id) {
+      return HttpResponse.json({ request: MOCK_REQUEST_UNSOLVABLE });
+    }
+    if (id === 5003) {
+      return HttpResponse.json({ request: { ...MOCK_REQUEST, id: 5003, status: 'solved' } });
+    }
+    return HttpResponse.json({ request: { ...MOCK_REQUEST, id } });
+  }),
+  http.get(`${BASE}/requests`, ({ request }) => {
+    const status = new URL(request.url).searchParams.get('status');
+    const requests = status === 'closed' ? [] : [MOCK_REQUEST];
+    return HttpResponse.json({ requests, count: requests.length, next_page: null });
+  }),
+  http.post(`${BASE}/requests`, async ({ request }) => {
+    const body = (await request.json()) as { request: Record<string, unknown> };
+    return HttpResponse.json({ request: { ...MOCK_REQUEST, id: 5010, ...body.request } });
+  }),
+  http.put(`${BASE}/requests/:id`, async ({ request, params }) => {
+    const body = (await request.json()) as {
+      request: { solved?: boolean; comment?: { body: string } };
+    };
+    // Mirror the two real transitions: `solved: true` solves it, and a comment
+    // on a solved request reopens it.
+    const status = body.request.solved ? 'solved' : 'open';
+    return HttpResponse.json({
+      request: { ...MOCK_REQUEST, id: Number(params['id']), status },
+    });
+  }),
+
   // Macros — active macros for the current user, and the per-ticket apply
   // (preview) endpoint. The apply route sits under /tickets/:id/ but has extra
   // path segments, so it does not collide with the Show Ticket handler above.
@@ -704,7 +879,11 @@ export const handlers = [
   // Ticket field definitions (system + custom), cursor-paginated like /tickets.
   http.get(`${BASE}/ticket_fields`, () =>
     HttpResponse.json({
-      ticket_fields: [MOCK_TICKET_FIELD_SYSTEM, MOCK_TICKET_FIELD_CUSTOM],
+      ticket_fields: [
+        MOCK_TICKET_FIELD_SYSTEM,
+        MOCK_TICKET_FIELD_CUSTOM,
+        MOCK_TICKET_FIELD_PORTAL_OPTIONAL,
+      ],
       meta: { has_more: false, after_cursor: '' },
     }),
   ),

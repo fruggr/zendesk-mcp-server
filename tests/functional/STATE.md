@@ -1,6 +1,6 @@
 ---
-branch: claude/issue-100-analysis-tj9dq9
-current_run: 2026-06-26-pr102
+branch: claude/issue-48-analysis-czaqzt
+current_run: 2026-09-03-pr264
 holder: leading
 ---
 
@@ -18,3 +18,4 @@ raw + report artifacts.
 | 03-single-readonly     | OK      | 2026-06-06  |
 | 04-all-baseline        | OK      | 2026-06-06  |
 | 05-strict-params       | OK      | 2026-06-27  |
+| 06-requests-namespace  | PENDING | 2026-09-03  |

@@ -13,6 +13,8 @@ import type {
   ZendeskMacroAction,
   ZendeskOrganization,
   ZendeskPermissionGroup,
+  ZendeskRequest,
+  ZendeskRequestCommentAuthor,
   ZendeskSection,
   ZendeskSlaLiveMetric,
   ZendeskSlaPolicy,
@@ -200,6 +202,54 @@ export const formatComment = (comment: ZendeskComment): string => {
   ];
   if (comment.attachments?.length) {
     const summary = comment.attachments.map((a) => `#${a.id} (${a.content_type})`).join(', ');
+    lines.push(`Attachments: ${summary}`);
+  }
+  lines.push('', comment.body);
+  return lines.join('\n');
+};
+
+// A request as its requester sees it. Deliberately NOT formatTicket: that one
+// dereferences `ticket.tags.length` unguarded and a Request carries no `tags`,
+// so reusing it would throw; it also renders `assignee_id`, which end users are
+// not shown, and omits `can_be_solved_by_me`, which is the field that decides
+// whether the "mark solved" operation is even offered.
+export const formatRequest = (request: ZendeskRequest): string =>
+  [
+    `## Request #${request.id}: ${request.subject}`,
+    `- **Status**: ${request.status}${request.type ? ` | **Type**: ${request.type}` : ''}${
+      request.priority ? ` | **Priority**: ${request.priority}` : ''
+    }`,
+    request.ticket_form_id ? `- **Form**: ${request.ticket_form_id}` : '',
+    // Stated in both directions on purpose: "no" is the answer to "can I close
+    // this?", and leaving it implicit invites a pointless attempt that Zendesk
+    // would accept with a 200 and silently ignore.
+    `- **Can you mark it solved**: ${request.can_be_solved_by_me ? 'yes' : 'no'}`,
+    request.via?.channel ? `- **Submitted via**: ${request.via.channel}` : '',
+    `- **Created**: ${request.created_at} | **Updated**: ${request.updated_at}`,
+    request.description ? `\n${request.description}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+// A comment on one's own request. formatComment is wrong here twice over: it
+// labels a non-public comment "Internal note", which cannot reach this path at
+// all (Zendesk filters agent notes out of /requests/{id}/comments), and it
+// prints a bare `author_id` where the endpoint hands us a `users` sideload with
+// a name and an `agent` flag -- which is exactly what tells an agent's reply
+// from the customer's own comment.
+export const formatRequestComment = (
+  comment: ZendeskComment,
+  authors: Map<number, ZendeskRequestCommentAuthor>,
+): string => {
+  const author = authors.get(comment.author_id);
+  const who = author
+    ? `${author.name}${author.agent ? ' (support agent)' : ''}`
+    : `user ${comment.author_id}`;
+  const lines = [`### Comment by ${who}`, `*${comment.created_at}*`];
+  if (comment.attachments?.length) {
+    const summary = comment.attachments
+      .map((a) => `${a.file_name} (#${a.id}, ${a.content_type})`)
+      .join(', ');
     lines.push(`Attachments: ${summary}`);
   }
   lines.push('', comment.body);

@@ -252,8 +252,28 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         expect(names).toContain('zendesk_tickets');
         expect(names).toContain('zendesk_help_center');
         expect(names).toContain('zendesk_users');
+        // The end-user surface is opt-in: absent unless named explicitly.
+        expect(names).not.toContain('zendesk_requests');
         // No individual tools leak through the proxy facade.
         expect(names).not.toContain('get_current_user');
+      });
+
+      it('exposes the requests proxy only when that namespace is named', async () => {
+        connected = await harness.connect(
+          makeConfig({ mode: 'namespace', namespaces: ['requests'] }),
+        );
+        const { tools } = await connected.client.listTools();
+
+        expect(toolNames(tools)).toEqual(['zendesk_requests']);
+      });
+
+      it('leaves the end-user tools out of flat mode by default', async () => {
+        connected = await harness.connect(makeConfig({ mode: 'all' }));
+        const names = toolNames((await connected.client.listTools()).tools);
+
+        expect(names).toContain('get_ticket');
+        expect(names).not.toContain('create_request');
+        expect(names).not.toContain('list_request_forms');
       });
 
       it('exposes a single proxy in "single" mode', async () => {
@@ -268,6 +288,20 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         const { tools } = await connected.client.listTools();
 
         expect(toolNames(tools)).toEqual(['zendesk_users']);
+      });
+
+      it('applies the read-only filter to the opt-in namespace too', async () => {
+        connected = await harness.connect(
+          makeConfig({ mode: 'all', namespaces: ['requests'], readOnly: true }),
+        );
+        const names = toolNames((await connected.client.listTools()).tools);
+
+        // "Follow my tickets but do not let me open new ones" is a real
+        // deployment shape, and it falls out of the existing filter for free.
+        expect(names).toContain('list_requests');
+        expect(names).toContain('get_request');
+        expect(names).not.toContain('create_request');
+        expect(names).not.toContain('mark_request_solved');
       });
 
       it('applies the read-only filter', async () => {
@@ -410,6 +444,83 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         // Per-section presence status, not a word-count verdict.
         expect(text).toContain('| Idx | Heading | Status');
         expect(text).not.toContain('different');
+      });
+
+      it('walks the end-user journey through the requests proxy (#48)', async () => {
+        // The opt-in namespace has to be named, both here and in production.
+        connected = await harness.connect(
+          makeConfig({ mode: 'namespace', namespaces: ['requests'] }),
+        );
+
+        const forms = await connected.client.callTool({
+          name: 'zendesk_requests',
+          arguments: { operation: 'list_request_forms', params: {} },
+        });
+        expect(forms.isError).toBeFalsy();
+        expect(textOf(forms)).toContain('Report a bug');
+
+        // The form spec is the cross-call join: the form carries field ids, and
+        // the field definitions come from a second endpoint.
+        const spec = await connected.client.callTool({
+          name: 'zendesk_requests',
+          arguments: { operation: 'get_request_form', params: { form_id: 900 } },
+        });
+        expect(spec.isError).toBeFalsy();
+        expect(textOf(spec)).toContain('How severe is it? (field id 360000000001)');
+
+        const submitted = await connected.client.callTool({
+          name: 'zendesk_requests',
+          arguments: {
+            operation: 'create_request',
+            params: {
+              subject: 'Export is broken',
+              body: 'Nothing downloads.',
+              form_id: 900,
+              custom_fields: [{ id: 360000000001, value: 'severity_2' }],
+            },
+          },
+        });
+        expect(submitted.isError).toBeFalsy();
+        expect(textOf(submitted)).toContain('submitted');
+
+        const thread = await connected.client.callTool({
+          name: 'zendesk_requests',
+          arguments: {
+            operation: 'get_request',
+            params: { request_id: 5001, include_comments: true },
+          },
+        });
+        expect(thread.isError).toBeFalsy();
+        expect(textOf(thread)).toContain('Comment by Sam Support (support agent)');
+      });
+
+      it('refuses to report a phantom solve through the requests proxy (#48)', async () => {
+        connected = await harness.connect(
+          makeConfig({ mode: 'namespace', namespaces: ['requests'] }),
+        );
+
+        // Request 5002 is unassigned, so Zendesk would answer 200 and change
+        // nothing. Over the wire, that must read as a refusal, not a success.
+        const result = await connected.client.callTool({
+          name: 'zendesk_requests',
+          arguments: { operation: 'mark_request_solved', params: { request_id: 5002 } },
+        });
+        expect(result.isError).toBeFalsy();
+        expect(textOf(result)).toContain('cannot be marked solved by you');
+      });
+
+      it('cannot reach a ticket operation through the requests proxy (#48)', async () => {
+        connected = await harness.connect(
+          makeConfig({ mode: 'namespace', namespaces: ['requests'] }),
+        );
+
+        // Each proxy dispatches only within its own namespace, so the end-user
+        // proxy must not be a back door to the agent surface.
+        const result = await connected.client.callTool({
+          name: 'zendesk_requests',
+          arguments: { operation: 'create_ticket', params: { subject: 'x', description: 'y' } },
+        });
+        expect(textOf(result)).toContain('Unknown operation "create_ticket"');
       });
 
       it('audits then publishes a section translation through the help_center proxy (#224)', async () => {
