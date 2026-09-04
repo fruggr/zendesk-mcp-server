@@ -26,8 +26,8 @@ importers:
         specifier: 10.1.2
         version: 10.1.2
       open:
-        specifier: 11.0.1
-        version: 11.0.1
+        specifier: 11.0.2
+        version: 11.0.2
       rehype-parse:
         specifier: 9.0.1
         version: 9.0.1
@@ -2959,8 +2959,8 @@ packages:
     resolution: {integrity: sha512-1FlR+gjXK7X+AsAHso35MnyN5KqGwJRi/31ft6x0M194ht7S+rWAvd7PHss9xSKMzE0asv1pyIHaJYq+BbacAQ==}
     engines: {node: '>=12'}
 
-  open@11.0.1:
-    resolution: {integrity: sha512-NzwMUB6C1D0+Kd+9iMS/H4k+Ck3cTX6Ckyfr/gAGlmvSE1LUQZnEZvWBi4PYmMwH/S5SMeTXnE+9uAz8uF+pWw==}
+  open@11.0.2:
+    resolution: {integrity: sha512-RWqF+pBSkqecEvCKOn8QYhaNdRMJDZRIrlS/7rTDdLHaPcfXGCZ/h8zb413NfvdeAV0MR7T1yJcA34/q+CSm1Q==}
     engines: {node: '>=20'}
 
   outvariant@1.4.3:
@@ -6813,7 +6813,7 @@ snapshots:
     dependencies:
       mimic-fn: 4.0.0
 
-  open@11.0.1:
+  open@11.0.2:
     dependencies:
       default-browser: 5.5.1
       define-lazy-prop: 3.0.0
