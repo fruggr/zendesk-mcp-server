@@ -160,16 +160,28 @@ describe('list_request_forms', () => {
     );
   });
 
-  // The plan cause belongs to the form listing alone: naming it on the request
-  // endpoints would be a wrong diagnosis, not a helpful extra.
-  it('does not blame the plan for a 403 on the request endpoints', async () => {
+  // Each 403 names the causes that apply to ITS path and no others: on a
+  // request id the likeliest cause is that the id belongs to somebody else, and
+  // the plan cause would be a wrong diagnosis here just as the other-user cause
+  // would be on the form listing.
+  it('blames the right thing for a 403 on a request id', async () => {
     mswServer.use(
       http.get(`${BASE}/requests/:id`, () => new HttpResponse('nope', { status: 403 })),
     );
     await expect(textOf('get_request', { request_id: 5001 })).rejects.toThrow(/HTTP 403/);
+    await expect(textOf('get_request', { request_id: 5001 })).rejects.toThrow(
+      /belongs to another user/,
+    );
     await expect(textOf('get_request', { request_id: 5001 })).rejects.not.toThrow(
       /plan without multiple ticket forms/,
     );
+  });
+
+  it('does not blame another user for a 403 on the form listing', async () => {
+    mswServer.use(
+      http.get(`${BASE}/ticket_forms`, () => new HttpResponse('nope', { status: 403 })),
+    );
+    await expect(textOf('list_request_forms', {})).rejects.not.toThrow(/belongs to another user/);
   });
 });
 
@@ -223,6 +235,115 @@ describe('get_request_form', () => {
     // values it accepts -- otherwise the rule names an unanswerable question.
     expect(text).toContain('### Is it blocking you? (field id 360000000003)');
     expect(text).toContain('Yes → yes');
+  });
+
+  // `is_required` alone is not the answer: required_on_statuses narrows it, and
+  // Zendesk documents that as applying to end-user forms too. A field required
+  // only once the request is open is NOT required to submit one, and saying
+  // "then required" would send the assistant hunting for an unwanted answer.
+  it('does not call a field required to submit when it is only required later', async () => {
+    mswServer.use(
+      http.get(`${BASE}/ticket_forms`, () =>
+        HttpResponse.json({
+          ticket_forms: [
+            {
+              ...MOCK_TICKET_FORM_FEATURE,
+              end_user_conditions: [
+                {
+                  parent_field_id: 360000000003,
+                  value: 'yes',
+                  child_fields: [
+                    {
+                      id: 360000000002,
+                      is_required: true,
+                      required_on_statuses: {
+                        type: 'SOME_STATUSES',
+                        statuses: ['open', 'pending'],
+                      },
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+          count: 1,
+          next_page: null,
+        }),
+      ),
+    );
+    const text = await textOf('get_request_form', { form_id: 901 });
+    expect(text).toContain('then required once the request is open or pending, not to submit it');
+  });
+
+  it('calls it required to submit when the statuses include a new request', async () => {
+    mswServer.use(
+      http.get(`${BASE}/ticket_forms`, () =>
+        HttpResponse.json({
+          ticket_forms: [
+            {
+              ...MOCK_TICKET_FORM_FEATURE,
+              end_user_conditions: [
+                {
+                  parent_field_id: 360000000003,
+                  value: 'yes',
+                  child_fields: [
+                    {
+                      id: 360000000002,
+                      is_required: true,
+                      required_on_statuses: { type: 'SOME_STATUSES', statuses: ['new', 'open'] },
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+          count: 1,
+          next_page: null,
+        }),
+      ),
+    );
+    const text = await textOf('get_request_form', { form_id: 901 });
+    expect(text).toContain('(then required)');
+    expect(text).not.toContain('not to submit it');
+  });
+
+  // NO_STATUSES means required nowhere, so `is_required` must not win.
+  it('drops the required marker when the rule requires the field on no status', async () => {
+    mswServer.use(
+      http.get(`${BASE}/ticket_forms`, () =>
+        HttpResponse.json({
+          ticket_forms: [
+            {
+              ...MOCK_TICKET_FORM_FEATURE,
+              end_user_conditions: [
+                {
+                  parent_field_id: 360000000003,
+                  value: 'yes',
+                  child_fields: [
+                    {
+                      id: 360000000002,
+                      is_required: true,
+                      required_on_statuses: { type: 'NO_STATUSES', statuses: [] },
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+          count: 1,
+          next_page: null,
+        }),
+      ),
+    );
+    const text = await textOf('get_request_form', { form_id: 901 });
+    // Asserted on the rule line itself: the document says "required" elsewhere
+    // (the Required summary, each field's own marker), so a whole-text
+    // assertion would pass for the wrong reason.
+    expect(text).toContain(
+      'When Is it blocking you? (field id 360000000003) is `yes`: ' +
+        'Affected version (field id 360000000002)\n',
+    );
+    expect(text).not.toContain('(then required)');
   });
 
   // The fallback path: a rule may name a field the caller cannot see (an

@@ -9,6 +9,7 @@ import {
 import type {
   ZendeskComment,
   ZendeskFormCondition,
+  ZendeskFormConditionChild,
   ZendeskListResponse,
   ZendeskRequest,
   ZendeskRequestCommentAuthor,
@@ -53,6 +54,15 @@ const forbidden = (tool: string, endpoint: string, error: ZendeskApiError, hint?
       'add_public_comment (namespace: tickets).',
     { cause: error },
   );
+
+// Every path scoped to a single request id has a cause the generic message
+// does not: the id may simply belong to somebody else. Zendesk answers 403
+// there, and telling the caller their Help Center is closed or their token is
+// not Help-Center-enabled sends them to fix something that is not broken. Named
+// only on these paths -- on `/ticket_forms` it would be a wrong diagnosis in
+// turn, and that path has its own hint.
+const OTHER_USERS_REQUEST_HINT =
+  'A request id that belongs to another user is refused the same way, so check the id is one of your own.';
 
 /** Run `fetch`, rewriting a 403 into guidance naming the end-user surface. */
 const withForbiddenGuidance = async <T>(
@@ -257,6 +267,7 @@ const fetchAllRequestComments = async (
     params: { include: 'users' },
     maxPages: MAX_COMMENT_PAGES,
     capEnvVar: 'ZENDESK_MAX_COMMENT_PAGES',
+    forbiddenHint: OTHER_USERS_REQUEST_HINT,
     onPage: (response) => {
       for (const user of response.users ?? []) authors.set(user.id, user);
     },
@@ -332,12 +343,38 @@ const fieldRef = (id: number, byId: Map<number, ZendeskTicketField>): string => 
   return field ? `${field.title_in_portal || field.title} (field id ${id})` : `field ${id}`;
 };
 
+/**
+ * Whether a conditional child field is required *of a submitter*, in words.
+ *
+ * `is_required` alone is not the answer: `required_on_statuses` narrows it to
+ * particular ticket statuses, and a field required only "when open" is not
+ * required of a customer submitting a new request. Saying "then required" there
+ * would send the assistant hunting for an answer Zendesk will not ask for.
+ *
+ * A new request starts at `new`, so that is the status this reads for -- with
+ * the caveat Zendesk documents, that a trigger can move a ticket off `new`
+ * immediately, which is why the wording says when the field becomes required
+ * rather than that it never will.
+ */
+const childRequirement = (child: ZendeskFormConditionChild): string => {
+  if (!child.is_required) return '';
+  const scope = child.required_on_statuses;
+  // No scope at all, or every status: required whenever the field shows.
+  if (!scope || scope.type === 'ALL_STATUSES') return ' (then required)';
+  if (scope.type === 'NO_STATUSES') return '';
+  const statuses = scope.statuses ?? [];
+  if (statuses.length === 0) return ' (then required)';
+  return statuses.includes('new')
+    ? ' (then required)'
+    : ` (then required once the request is ${statuses.join(' or ')}, not to submit it)`;
+};
+
 const conditionSpec = (
   condition: ZendeskFormCondition,
   byId: Map<number, ZendeskTicketField>,
 ): string => {
   const children = (condition.child_fields ?? [])
-    .map((child) => `${fieldRef(child.id, byId)}${child.is_required ? ' (then required)' : ''}`)
+    .map((child) => `${fieldRef(child.id, byId)}${childRequirement(child)}`)
     .join(', ');
   return `- When ${fieldRef(condition.parent_field_id, byId)} is \`${String(condition.value)}\`: ${
     children || 'no additional fields'
@@ -780,6 +817,7 @@ export const createRequestTools = (ctx: ToolContext): ToolDefinition[] => {
           `GET /requests/${request_id}`,
           () =>
             zendeskGet<{ request: ZendeskRequest }>(subdomain, token, `/requests/${request_id}`),
+          OTHER_USERS_REQUEST_HINT,
         );
         let text = formatRequest(request);
         if (include_comments) {
@@ -847,6 +885,7 @@ export const createRequestTools = (ctx: ToolContext): ToolDefinition[] => {
             zendeskPut<{ request: ZendeskRequest }>(subdomain, token, `/requests/${request_id}`, {
               request: { comment: { body, ...(uploads && { uploads }) } },
             }),
+          OTHER_USERS_REQUEST_HINT,
         );
         const suffix = formatAttachmentSuffix(attachments?.length);
         return {
@@ -892,6 +931,7 @@ export const createRequestTools = (ctx: ToolContext): ToolDefinition[] => {
           'mark_request_solved',
           `GET ${endpoint}`,
           () => zendeskGet<{ request: ZendeskRequest }>(subdomain, token, endpoint),
+          OTHER_USERS_REQUEST_HINT,
         );
         if (before.status === 'solved' || before.status === 'closed') {
           return {
@@ -926,6 +966,7 @@ export const createRequestTools = (ctx: ToolContext): ToolDefinition[] => {
             zendeskPut<{ request: ZendeskRequest }>(subdomain, token, endpoint, {
               request: { solved: true },
             }),
+          OTHER_USERS_REQUEST_HINT,
         );
         // Verified from the response body rather than assumed from the 2xx.
         const text =

@@ -132,13 +132,30 @@ export interface ZendeskTicketForm {
 
 // One condition set inside a form's `end_user_conditions`: when
 // `parent_field_id` holds `value`, the listed `child_fields` become visible,
-// each with its own `is_required` override. Rendered verbatim for the model to
-// reason about rather than evaluated -- whether the Requests API enforces these
+// each with its own `is_required` override. Rendered for the model to reason
+// about rather than evaluated -- whether the Requests API enforces these
 // server-side is unverified (no form on the probed instance carried any).
+//
+// `required_on_statuses` narrows `is_required` to particular ticket statuses,
+// and Zendesk documents it as applying to end-user forms, not only agent ones
+// (https://support.zendesk.com/hc/en-us/articles/4408846008218). It is what
+// makes `is_required` alone insufficient for a submission-time tool: a field
+// required only "when open" is NOT required of the customer submitting a new
+// request. Optional because a form without status-scoped requirements omits it.
+export interface ZendeskFormConditionChild {
+  id: number;
+  is_required?: boolean;
+  required_on_statuses?: {
+    /** ALL_STATUSES ignores `statuses`; NO_STATUSES means required nowhere. */
+    type?: 'ALL_STATUSES' | 'SOME_STATUSES' | 'NO_STATUSES';
+    statuses?: string[];
+  };
+}
+
 export interface ZendeskFormCondition {
   parent_field_id: number;
   value: unknown;
-  child_fields?: Array<{ id: number; is_required?: boolean; required_on_statuses?: unknown }>;
+  child_fields?: ZendeskFormConditionChild[];
 }
 
 // GET /api/v2/views — a Zendesk view: a saved, per-agent ticket queue
