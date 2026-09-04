@@ -30,7 +30,11 @@ omitting the plan.
 - **Independent validator.** Write the plan FOR someone other than the
   implementer — another agent (e.g. the local executor) or a human. Don't assume
   it shares your conversation context: spell out the state to manipulate and how
-  to observe results.
+  to observe results. Independence is about *context*, not identity: every agent
+  here posts under the same human's GitHub account, so a report is not the
+  author's just because it carries the author's login. Judge it on its evidence,
+  and leave the "does this count" call to the repository owner — stating the role
+  behind a run once is enough.
 - **Assume a fully ready environment — don't make the validator build it.** The
   validator's session is already **on the PR branch, in a live checkout, with the
   MCP server running and authenticated** and its tools loaded as `mcp__<server>__*`
@@ -110,13 +114,16 @@ it as a PR-activity event if subscribed):
 
 1. **Read the report** (`mcp__github__pull_request_read` / the comment body) and
    confirm it tested the right commit SHA. If it's stale (predates your last
-   push), ask for a re-run.
+   push), ask for a re-run. A stale SHA is a reason to re-run; the account it was
+   posted from never is.
 2. **Re-verify each scenario — don't trust the verdict blindly.** Check the
    reported evidence against the plan's expected observable yourself: a validator
    can misread a log line or mislabel a pass. Where the evidence is too thin to
    confirm, ask them to re-capture that scenario.
-3. **On all OK:** the loop is closed. Note the outcome (a short confirming PR
-   comment, or tell the user) — that green report is the deliverable, not a no-op.
+3. **On all OK:** the loop is closed. Note the outcome **once** — a short
+   confirming PR comment, or just tell the user — and stop there. That green
+   report is the deliverable, not a no-op, and not a prompt to re-argue whether
+   the pass was independent enough.
 4. **On any FAIL/BLOCKED:** diagnose the root cause. If it's a real bug, fix it on
    the branch in a separate commit, push, and ask the validator to re-run the
    affected ids against the new SHA. If it's a `BLOCKED` (missing creds/egress),
