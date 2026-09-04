@@ -235,6 +235,11 @@ const fetchAllRequestComments = async (
     tool: 'get_request',
     path: `/requests/${requestId}/comments`,
     extract: (response) => response.comments,
+    // Asked for explicitly rather than relying on the default: `users` is a
+    // documented sideload of this endpoint, and a sideload that has to be named
+    // to arrive would leave every comment attributed to a bare id. Harmless
+    // when it comes back anyway.
+    params: { include: 'users' },
     maxPages: MAX_COMMENT_PAGES,
     capEnvVar: 'ZENDESK_MAX_COMMENT_PAGES',
     onPage: (response) => {
@@ -264,6 +269,11 @@ const SYSTEM_FIELD_TYPES: ReadonlySet<string> = new Set([
   'group',
   'assignee',
   'tags',
+  // The Ticket status field on accounts using custom ticket statuses. Agent-set
+  // like `status`, and listed here for the same reason: left out, a form
+  // carrying it as portal-required would make create_request demand a value in
+  // `custom_fields` that no submitter can supply.
+  'custom_status',
 ]);
 
 const isCustomField = (field: ZendeskTicketField): boolean => !SYSTEM_FIELD_TYPES.has(field.type);
@@ -428,8 +438,16 @@ export const createRequestTools = (ctx: ToolContext): ToolDefinition[] => {
           'ticket with create_ticket (namespace: tickets).',
       );
     }
+    // With no id given, the account default is the right answer -- but a single
+    // visible form that is NOT the default is a real shape (the default form can
+    // be hidden from end users, and `fallback_to_default` only fires when
+    // NOTHING matched), and refusing it would break the promise that an account
+    // with one form gets that one. With several forms and no default, there is
+    // nothing to guess from and the refusal below stands.
     const form =
-      formId === undefined ? forms.find((f) => f.default) : forms.find((f) => f.id === formId);
+      formId === undefined
+        ? (forms.find((f) => f.default) ?? (forms.length === 1 ? forms[0] : undefined))
+        : forms.find((f) => f.id === formId);
     if (!form) {
       const available = forms.map((f) => `${f.display_name || f.name} (${f.id})`).join(', ');
       throw new Error(
@@ -478,7 +496,19 @@ export const createRequestTools = (ctx: ToolContext): ToolDefinition[] => {
           '',
           'Call get_request_form with a form id to see the questions it asks.',
         ].join('\n');
-        return { content: [{ type: 'text', text: truncateIfNeeded(text) }] };
+        // This tool takes no page or filter, so the default truncation advice
+        // would send the caller in circles (#265). Name what can be done.
+        return {
+          content: [
+            {
+              type: 'text',
+              text: truncateIfNeeded(
+                text,
+                'list_request_forms takes no parameters, so this listing cannot be narrowed from the call; read one form in full with get_request_form.',
+              ),
+            },
+          ],
+        };
       },
     },
     {
@@ -508,7 +538,15 @@ export const createRequestTools = (ctx: ToolContext): ToolDefinition[] => {
         const token = await getToken();
         const { form, fields } = await resolveForm('get_request_form', token, form_id);
         return {
-          content: [{ type: 'text', text: truncateIfNeeded(renderFormSpec(form, fields)) }],
+          content: [
+            {
+              type: 'text',
+              text: truncateIfNeeded(
+                renderFormSpec(form, fields),
+                'get_request_form takes only form_id, so this description cannot be narrowed from the call; the fields it lists are the ones this form asks for.',
+              ),
+            },
+          ],
         };
       },
     },
@@ -737,7 +775,13 @@ export const createRequestTools = (ctx: ToolContext): ToolDefinition[] => {
           const thread = comments.map((c) => formatRequestComment(c, authors)).join('\n\n');
           text += `\n\n---\n# Conversation\n\n${thread}`;
         }
-        return { content: [{ type: 'text', text: truncateIfNeeded(text) }] };
+        // Neither parameter narrows the payload, so the default "use pagination
+        // or filters" advice would send the caller in circles (#265): the one
+        // thing that shrinks this response is dropping the conversation.
+        const advice = include_comments
+          ? `get_request appends the whole conversation as one unpaginated block; call it again with include_comments false to read request #${request_id}'s status and description alone.`
+          : 'get_request takes no pagination or filter parameters, so this response cannot be narrowed from the call.';
+        return { content: [{ type: 'text', text: truncateIfNeeded(text, advice) }] };
       },
     },
     {

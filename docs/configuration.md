@@ -267,14 +267,16 @@ Hard cap on the number of comment pages fetched when collecting a ticket's attac
 ### `ZENDESK_TICKET_FIELD_SCAN_MAX_PAGES`
 **Required:** no · **Default:** `10`
 
-Hard cap on the number of `/ticket_fields` pages scanned when `get_request_form`
-joins a request form to its field definitions. The scan exists because
-`GET /ticket_fields/{id}` answers 403 for an end user, so the list is the only
-way to a field's label and accepted values. Hitting the cap **fails the call**
-rather than returning a partial list: a field missing from the join would leave
-a required question unasked, and the submitter would meet an opaque Zendesk 422
-instead. Raise it for an account with more portal fields than the default scan
-covers.
+Hard cap on the number of pages scanned when the end-user tools walk a listing
+that cannot say when it is done: the `/ticket_fields` scan `get_request_form`
+and `create_request` use to join a request form to its field definitions, and
+the `/ticket_forms` listing behind `list_request_forms`. The field scan exists
+because `GET /ticket_fields/{id}` answers 403 for an end user, so the list is
+the only way to a field's label and accepted values. Hitting the cap **fails the
+call** rather than returning a partial list: a field missing from the join would
+leave a required question unasked, and the submitter would meet an opaque
+Zendesk 422 instead. Raise it for an account with more portal fields, or more
+end-user forms, than the default scan covers.
 
 ### `ZENDESK_REORDER_CONFIRM_THRESHOLD`
 **Required:** no · **Default:** `20`

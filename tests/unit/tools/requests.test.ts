@@ -1,10 +1,13 @@
 import { HttpResponse, http } from 'msw';
 import { describe, expect, it } from 'vitest';
+import { CHARACTER_LIMIT } from '../../../src/constants';
 import type { ToolContext } from '../../../src/tools/definitions';
 import { createRequestTools } from '../../../src/tools/requests';
 import {
   MOCK_REQUEST,
   MOCK_TICKET_FIELD_CUSTOM,
+  MOCK_TICKET_FIELD_DESCRIPTION,
+  MOCK_TICKET_FIELD_SUBJECT,
   MOCK_TICKET_FORM_BUG,
   MOCK_TICKET_FORM_FEATURE,
 } from '../../msw-handlers';
@@ -114,6 +117,28 @@ describe('list_request_forms', () => {
     await expect(textOf('list_request_forms', {})).rejects.toThrow(
       /could not read all of \/ticket_forms/,
     );
+  });
+
+  // The schema is z.object({}) — there is nothing to paginate or filter, so the
+  // default "use pagination or filters" advice would send the caller in
+  // circles (#265).
+  it('says the listing cannot be narrowed rather than advising pagination', async () => {
+    mswServer.use(
+      http.get(`${BASE}/ticket_forms`, () =>
+        HttpResponse.json({
+          ticket_forms: Array.from({ length: 200 }, (_, i) => ({
+            ...MOCK_TICKET_FORM_BUG,
+            id: 900 + i,
+            display_name: 'x'.repeat(200),
+          })),
+          next_page: null,
+        }),
+      ),
+    );
+    const text = await textOf('list_request_forms', {});
+    expect(text).toContain('Response truncated');
+    expect(text).toContain('list_request_forms takes no parameters');
+    expect(text).not.toContain('Use pagination or filters');
   });
 
   it('says so plainly when the Help Center exposes no form', async () => {
@@ -267,6 +292,55 @@ describe('get_request_form', () => {
     );
   });
 
+  // The account default can be hidden from end users, and `fallback_to_default`
+  // fires only when NOTHING matched — so the single visible form is routinely
+  // not the default one. Refusing it would break the promise that an account
+  // with one form gets that one.
+  it('describes the only visible form even when it is not the account default', async () => {
+    mswServer.use(
+      http.get(`${BASE}/ticket_forms`, () =>
+        HttpResponse.json({ ticket_forms: [MOCK_TICKET_FORM_FEATURE], next_page: null }),
+      ),
+    );
+    const text = await textOf('get_request_form', {});
+    expect(text).toContain('Feature request (form id 901)');
+  });
+
+  // With several forms and no default there is nothing to guess from, so the
+  // refusal still stands rather than picking the first one.
+  it('still refuses to guess between several forms when none is the default', async () => {
+    mswServer.use(
+      http.get(`${BASE}/ticket_forms`, () =>
+        HttpResponse.json({
+          ticket_forms: [
+            MOCK_TICKET_FORM_FEATURE,
+            { ...MOCK_TICKET_FORM_FEATURE, id: 902, display_name: 'Billing question' },
+          ],
+          next_page: null,
+        }),
+      ),
+    );
+    await expect(textOf('get_request_form', {})).rejects.toThrow(/No default request form/);
+    await expect(textOf('get_request_form', {})).rejects.toThrow(/Billing question \(902\)/);
+  });
+
+  it('says the description cannot be narrowed rather than advising pagination', async () => {
+    mswServer.use(
+      http.get(`${BASE}/ticket_fields`, () =>
+        HttpResponse.json({
+          ticket_fields: [
+            { ...MOCK_TICKET_FIELD_CUSTOM, description: 'x'.repeat(CHARACTER_LIMIT) },
+          ],
+          next_page: null,
+        }),
+      ),
+    );
+    const text = await textOf('get_request_form', { form_id: 900 });
+    expect(text).toContain('Response truncated');
+    expect(text).toContain('get_request_form takes only form_id');
+    expect(text).not.toContain('Use pagination or filters');
+  });
+
   it('refuses an unknown form id and names the ones that exist', async () => {
     await expect(textOf('get_request_form', { form_id: 4242 })).rejects.toThrow(
       /No request form with id 4242/,
@@ -397,6 +471,43 @@ describe('create_request', () => {
   it('submits a form whose only portal-required fields are the system ones', async () => {
     const text = await textOf('create_request', { subject: 'S', body: 'B', form_id: 901 });
     expect(text).toContain('submitted');
+  });
+
+  // The Ticket status field (type `custom_status`) is agent-set like `status`.
+  // Treated as a custom field it would be demanded in `custom_fields`, which no
+  // submitter can satisfy -- the same trap the system subject sprung.
+  it('never demands the ticket status field, whatever the form marks required', async () => {
+    mswServer.use(
+      http.get(`${BASE}/ticket_forms`, () =>
+        HttpResponse.json({
+          ticket_forms: [{ ...MOCK_TICKET_FORM_BUG, ticket_field_ids: [1, 2, 11] }],
+          next_page: null,
+        }),
+      ),
+      http.get(`${BASE}/ticket_fields`, () =>
+        HttpResponse.json({
+          ticket_fields: [
+            MOCK_TICKET_FIELD_SUBJECT,
+            MOCK_TICKET_FIELD_DESCRIPTION,
+            {
+              id: 11,
+              type: 'custom_status',
+              title: 'Status',
+              description: null,
+              active: true,
+              required: false,
+              visible_in_portal: true,
+              required_in_portal: true,
+            },
+          ],
+          next_page: null,
+        }),
+      ),
+    );
+    const text = await textOf('create_request', { subject: 'S', body: 'B', form_id: 900 });
+    expect(text).toContain('submitted');
+    // And it is not presented as a question to ask either.
+    expect(await textOf('get_request_form', { form_id: 900 })).not.toContain('field id 11');
   });
 
   it('treats an empty value as absent for a required field', async () => {
@@ -612,6 +723,60 @@ describe('get_request', () => {
     await expect(
       textOf('get_request', { request_id: 5001, include_comments: true }),
     ).rejects.toThrow(/ZENDESK_MAX_COMMENT_PAGES/);
+  });
+
+  // `users` is a documented sideload of this endpoint, so it is asked for by
+  // name: a sideload that has to be requested to arrive would leave every
+  // comment attributed to a bare id.
+  it('asks for the users sideload by name', async () => {
+    const includes: (string | null)[] = [];
+    mswServer.use(
+      http.get(`${BASE}/requests/:id/comments`, ({ request }) => {
+        includes.push(new URL(request.url).searchParams.get('include'));
+        return HttpResponse.json({ comments: [], next_page: null });
+      }),
+    );
+    await textOf('get_request', { request_id: 5001, include_comments: true });
+    expect(includes).toEqual(['users']);
+  });
+
+  // Neither parameter narrows this response; the one thing that shrinks it is
+  // dropping the conversation, so that is what the advice names (#265).
+  it('points a truncated conversation at include_comments false, not at pagination', async () => {
+    mswServer.use(
+      http.get(`${BASE}/requests/:id/comments`, () =>
+        HttpResponse.json({
+          comments: [
+            {
+              id: 1,
+              body: 'x'.repeat(CHARACTER_LIMIT),
+              author_id: 456,
+              public: true,
+              created_at: 'day1',
+            },
+          ],
+          next_page: null,
+        }),
+      ),
+    );
+    const text = await textOf('get_request', { request_id: 5001, include_comments: true });
+    expect(text).toContain('Response truncated');
+    expect(text).toContain("include_comments false to read request #5001's status");
+    expect(text).not.toContain('Use pagination or filters');
+  });
+
+  it('says a request that overflows on its own cannot be narrowed', async () => {
+    mswServer.use(
+      http.get(`${BASE}/requests/:id`, () =>
+        HttpResponse.json({
+          request: { ...MOCK_REQUEST, description: 'x'.repeat(CHARACTER_LIMIT) },
+        }),
+      ),
+    );
+    const text = await textOf('get_request', { request_id: 5001, include_comments: false });
+    expect(text).toContain('Response truncated');
+    expect(text).toContain('get_request takes no pagination or filter parameters');
+    expect(text).not.toContain('Use pagination or filters');
   });
 
   it('falls back to the author id when the sideload is absent', async () => {
