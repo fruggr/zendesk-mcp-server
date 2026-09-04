@@ -209,6 +209,17 @@ connected to several servers.
 
 Log verbosity (`debug` surfaces the full OAuth flow trace).
 
+### `ZENDESK_CHARACTER_LIMIT`
+**Required:** no · **Default:** `25000`
+
+Ceiling on the characters a single tool response may carry. Past it the text is cut and a notice says what to do about it — the notice names a lever the tool in question actually accepts (a page parameter, a narrower filter, or the tool that pages the same data), so it differs per tool.
+
+Raising it is rarely what you want: the default exists to protect the client's own context budget, and a larger response mostly moves the problem downstream. **Lowering it is the useful direction** — it is how the truncation paths get exercised on a tenant whose real data never reaches 25 000 characters. Set it to a few hundred and any ordinary response trips the notice:
+
+```bash
+ZENDESK_CHARACTER_LIMIT=2000 pnpm dev -- <your-subdomain> --mode all
+```
+
 ### `ZENDESK_MAX_ATTACHMENT_BYTES`
 **Required:** no · **Default:** `5242880` (5 MB)
 

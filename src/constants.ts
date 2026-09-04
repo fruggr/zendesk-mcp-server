@@ -1,4 +1,23 @@
-export const CHARACTER_LIMIT = 25_000;
+// Read a positive-integer override from the environment, falling back to a safe
+// default. Unchecked Number() coercion is unsafe here: an empty string yields 0
+// and a typo yields NaN, either of which would silently break the guardrail that
+// relies on the value. Missing/empty/non-positive values and anything that is not
+// a positive safe integer (fractions like "1.5", values beyond 2^53) fall back —
+// these constants are all counts/sizes, so a fractional or unsafe value is a typo.
+const positiveIntEnv = (name: string, fallback: number): number => {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === '') return fallback;
+  const parsed = Number(raw);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+// Ceiling on the characters a single tool response may carry; past it the text is
+// cut and a notice explains what to do about it (see truncateIfNeeded). The
+// default protects the client's own context budget, so raising it is rarely what
+// you want. It is overridable mainly so the truncation paths can be exercised on
+// a tenant whose real data never reaches 25 000 characters: lower it and any
+// ordinary response will trip the notice. Override via ZENDESK_CHARACTER_LIMIT.
+export const CHARACTER_LIMIT = positiveIntEnv('ZENDESK_CHARACTER_LIMIT', 25_000);
 export const DEFAULT_PAGE_SIZE = 100;
 export const MAX_PAGE_SIZE = 100;
 
@@ -15,19 +34,6 @@ export const CONTENT_TAGS_MAX_PAGE_SIZE = 30;
 // to fix (#265). Callers who want more follow the cursor.
 export const DEFAULT_TICKET_COMMENT_PAGE_SIZE = 20;
 export const TOKEN_CACHE_TTL_MS = 5 * 60 * 1000;
-
-// Read a positive-integer override from the environment, falling back to a safe
-// default. Unchecked Number() coercion is unsafe here: an empty string yields 0
-// and a typo yields NaN, either of which would silently break the guardrail that
-// relies on the value. Missing/empty/non-positive values and anything that is not
-// a positive safe integer (fractions like "1.5", values beyond 2^53) fall back —
-// these constants are all counts/sizes, so a fractional or unsafe value is a typo.
-const positiveIntEnv = (name: string, fallback: number): number => {
-  const raw = process.env[name];
-  if (raw === undefined || raw.trim() === '') return fallback;
-  const parsed = Number(raw);
-  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
-};
 
 // TTL for the per-session Help Center topology cache (zendesk-hc://topology).
 // The tenant's structure (locales, category/section tree, segments) changes
