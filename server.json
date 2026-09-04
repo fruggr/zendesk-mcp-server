@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.fruggr/zendesk-mcp-server",
   "description": "Draft, translate and update Help Center articles and manage Zendesk tickets from your AI assistant.",
-  "version": "2.19.0",
+  "version": "2.20.0",
   "repository": {
     "url": "https://github.com/fruggr/zendesk-mcp-server",
     "source": "github",
@@ -14,7 +14,7 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@fruggr/zendesk-mcp-server",
-      "version": "2.19.0",
+      "version": "2.20.0",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"
