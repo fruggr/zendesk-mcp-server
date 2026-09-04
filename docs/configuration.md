@@ -163,7 +163,8 @@ Three deliberate exceptions:
   the value the server actually uses.
 - The **numeric tuning caps** — `ZENDESK_CHARACTER_LIMIT`,
   `ZENDESK_MAX_ATTACHMENT_BYTES`, `ZENDESK_MAX_EMBEDDED_IMAGES`,
-  `ZENDESK_MAX_COMMENT_PAGES`, `ZENDESK_REORDER_CONFIRM_THRESHOLD` and
+  `ZENDESK_MAX_COMMENT_PAGES`, `ZENDESK_REORDER_CONFIRM_THRESHOLD`,
+  `ZENDESK_TICKET_FIELD_SCAN_MAX_PAGES` and
   `ZENDESK_ARTICLE_RESOURCES_SCAN_MAX_PAGES` — read through a shared parser that
   treats an empty value as unset and falls back to the default, along with any
   value that is not a positive safe integer. They bound response sizes and scan
@@ -262,6 +263,18 @@ Maximum number of images embedded as native image content in a single tool call.
 **Required:** no · **Default:** `10`
 
 Hard cap on the number of comment pages fetched when collecting a ticket's attachments (raise it for tickets with very long comment threads).
+
+### `ZENDESK_TICKET_FIELD_SCAN_MAX_PAGES`
+**Required:** no · **Default:** `10`
+
+Hard cap on the number of `/ticket_fields` pages scanned when `get_request_form`
+joins a request form to its field definitions. The scan exists because
+`GET /ticket_fields/{id}` answers 403 for an end user, so the list is the only
+way to a field's label and accepted values. Hitting the cap **fails the call**
+rather than returning a partial list: a field missing from the join would leave
+a required question unasked, and the submitter would meet an opaque Zendesk 422
+instead. Raise it for an account with more portal fields than the default scan
+covers.
 
 ### `ZENDESK_REORDER_CONFIRM_THRESHOLD`
 **Required:** no · **Default:** `20`

@@ -161,6 +161,27 @@ export const MOCK_TICKET_FIELD_PORTAL_OPTIONAL = {
 // GET /ticket_forms — the forms an end user picks between. `display_name` is
 // deliberately different from `name` (customer-facing vs internal), which is
 // what list_request_forms has to surface.
+// The parent field of a conditional rule. Portal-visible and portal-OPTIONAL on
+// purpose: a condition gates on an answer the submitter gives freely, and
+// keeping it optional leaves MOCK_TICKET_FORM_FEATURE as the form with no
+// required custom field.
+export const MOCK_TICKET_FIELD_CONDITION_PARENT = {
+  id: 360000000003,
+  type: 'tagger',
+  title: 'Blocking',
+  description: 'Does this stop you working?',
+  active: true,
+  required: false,
+  visible_in_portal: true,
+  required_in_portal: false,
+  editable_in_portal: true,
+  title_in_portal: 'Is it blocking you?',
+  custom_field_options: [
+    { name: 'Yes', value: 'yes' },
+    { name: 'No', value: 'no' },
+  ],
+};
+
 export const MOCK_TICKET_FORM_BUG = {
   id: 900,
   name: 'Bug report (internal)',
@@ -183,11 +204,16 @@ export const MOCK_TICKET_FORM_FEATURE = {
   end_user_visible: true,
   default: false,
   position: 2,
-  ticket_field_ids: [1, 2, 360000000002],
+  // The condition's parent field is ON the form: a real Zendesk form cannot gate
+  // on a field a submitter has no way to answer, and leaving it out made the
+  // rendered rule name a field absent from the same output. It is deliberately
+  // the OPTIONAL parent, so this form keeps being the one whose only
+  // portal-required fields are the system ones.
+  ticket_field_ids: [1, 2, 360000000003, 360000000002],
   end_user_conditions: [
     {
-      parent_field_id: 360000000001,
-      value: 'severity_1',
+      parent_field_id: 360000000003,
+      value: 'yes',
       child_fields: [{ id: 360000000002, is_required: true }],
     },
   ],
@@ -961,6 +987,7 @@ export const handlers = [
         MOCK_TICKET_FIELD_SYSTEM,
         MOCK_TICKET_FIELD_CUSTOM,
         MOCK_TICKET_FIELD_PORTAL_OPTIONAL,
+        MOCK_TICKET_FIELD_CONDITION_PARENT,
       ],
       meta: { has_more: false, after_cursor: '' },
     }),

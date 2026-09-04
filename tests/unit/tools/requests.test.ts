@@ -2,7 +2,12 @@ import { HttpResponse, http } from 'msw';
 import { describe, expect, it } from 'vitest';
 import type { ToolContext } from '../../../src/tools/definitions';
 import { createRequestTools } from '../../../src/tools/requests';
-import { MOCK_REQUEST, MOCK_TICKET_FIELD_CUSTOM, MOCK_TICKET_FORM_BUG } from '../../msw-handlers';
+import {
+  MOCK_REQUEST,
+  MOCK_TICKET_FIELD_CUSTOM,
+  MOCK_TICKET_FORM_BUG,
+  MOCK_TICKET_FORM_FEATURE,
+} from '../../msw-handlers';
 import { mswServer } from '../../setup';
 
 const BASE = 'https://testsubdomain.zendesk.com/api/v2';
@@ -165,8 +170,42 @@ describe('get_request_form', () => {
   it('reports conditional rules as rules instead of resolving them', async () => {
     const text = await textOf('get_request_form', { form_id: 901 });
     expect(text).toContain('## Conditional fields');
-    expect(text).toContain('When field 360000000001 is `severity_1`: field 360000000002');
-    expect(text).toContain('(then required)');
+    // Both sides of the rule are named by their portal label, with the id kept
+    // so the rule joins onto the Fields section. A rule reading "when field
+    // 360000000003 is yes" is not something an assistant can ask a customer.
+    expect(text).toContain(
+      'When Is it blocking you? (field id 360000000003) is `yes`: ' +
+        'Affected version (field id 360000000002) (then required)',
+    );
+    // And the field the rule gates on is described in the same output, with the
+    // values it accepts -- otherwise the rule names an unanswerable question.
+    expect(text).toContain('### Is it blocking you? (field id 360000000003)');
+    expect(text).toContain('Yes → yes');
+  });
+
+  // The fallback path: a rule may name a field the caller cannot see (an
+  // agent-only parent, or one beyond the field scan). It degrades to the bare
+  // id rather than dropping the rule or inventing a label.
+  it('falls back to the bare field id when the rule names an invisible field', async () => {
+    mswServer.use(
+      http.get('https://testsubdomain.zendesk.com/api/v2/ticket_forms', () =>
+        HttpResponse.json({
+          ticket_forms: [
+            {
+              ...MOCK_TICKET_FORM_FEATURE,
+              end_user_conditions: [
+                { parent_field_id: 999999, value: 'x', child_fields: [{ id: 888888 }] },
+              ],
+            },
+          ],
+          count: 1,
+          next_page: null,
+        }),
+      ),
+    );
+    const text = await textOf('get_request_form', { form_id: 901 });
+    expect(text).toContain('When field 999999 is `x`: field 888888');
+    expect(text).not.toContain('(then required)');
   });
 
   it('omits the conditional section for a form without conditions', async () => {

@@ -81,17 +81,6 @@ const END_USER_FORM_PARAMS = {
 } as const;
 
 /**
- * Walk an offset-paginated listing to the end, following `next_page` and
- * nothing else.
- *
- * `next_page` is the only trustworthy end-of-list signal on these endpoints:
- * `count` can be the pre-filter total, and a short page can still be followed
- * by another. Hitting the cap throws rather than returning a partial list --
- * for both callers a missing entry is worse than an error, because it makes a
- * form invisible or a required field unenforced, and the caller then gets a
- * confidently wrong "no such form" or an opaque Zendesk 422.
- */
-/**
  * All the walker itself reads off a page. `extract` and `onPage` supply the
  * rest, so the response need not be a `ZendeskListResponse<T>` -- which matters
  * for a listing whose sideload is not of type `T` (see
@@ -116,6 +105,17 @@ interface PageWalk<T, R extends PagedResponse> {
   onPage?: (response: R) => void;
 }
 
+/**
+ * Walk an offset-paginated listing to the end, following `next_page` and
+ * nothing else.
+ *
+ * `next_page` is the only trustworthy end-of-list signal on these endpoints:
+ * `count` can be the pre-filter total, and a short page can still be followed
+ * by another. Hitting the cap throws rather than returning a partial list --
+ * for both callers a missing entry is worse than an error, because it makes a
+ * form invisible or a required field unenforced, and the caller then gets a
+ * confidently wrong "no such form" or an opaque Zendesk 422.
+ */
 const fetchAllPages = async <T, R extends PagedResponse = ZendeskListResponse<T>>({
   subdomain,
   token,
@@ -296,11 +296,25 @@ const fieldSpec = (field: ZendeskTicketField): string => {
 // API enforces that server-side is unverified -- so the model is told the rule
 // and left to conduct the conversation, rather than being handed a field list
 // that is wrong for half the answers.
-const conditionSpec = (condition: ZendeskFormCondition): string => {
+//
+// Named by label, not by bare id: a rule reading "when field 360000000001 is
+// severity_1" asks the model to conduct a conversation about a field the
+// customer has no name for. The id is kept alongside so the rule still joins
+// onto the Fields section below, and is the only thing left when the field is
+// not among those the caller can see.
+const fieldRef = (id: number, byId: Map<number, ZendeskTicketField>): string => {
+  const field = byId.get(id);
+  return field ? `${field.title_in_portal || field.title} (field id ${id})` : `field ${id}`;
+};
+
+const conditionSpec = (
+  condition: ZendeskFormCondition,
+  byId: Map<number, ZendeskTicketField>,
+): string => {
   const children = (condition.child_fields ?? [])
-    .map((child) => `field ${child.id}${child.is_required ? ' (then required)' : ''}`)
+    .map((child) => `${fieldRef(child.id, byId)}${child.is_required ? ' (then required)' : ''}`)
     .join(', ');
-  return `- When field ${condition.parent_field_id} is \`${String(condition.value)}\`: ${
+  return `- When ${fieldRef(condition.parent_field_id, byId)} is \`${String(condition.value)}\`: ${
     children || 'no additional fields'
   }`;
 };
@@ -333,7 +347,7 @@ const renderFormSpec = (form: ZendeskTicketForm, fields: ZendeskTicketField[]): 
           '## Conditional fields',
           'Some fields appear, or become required, only for certain answers. Ask for them once',
           'the controlling answer is known rather than up front:',
-          ...conditions.map(conditionSpec),
+          ...conditions.map((condition) => conditionSpec(condition, byId)),
         ].join('\n')
       : '',
     '',
