@@ -134,7 +134,7 @@ applying the default there would boot a server whose config silently disagrees
 with the deployment. Every single-value variable below therefore fails at
 startup when set but empty, naming the variable. Unset it to get the default.
 
-Two deliberate exceptions:
+Three deliberate exceptions:
 
 - `CORS_ORIGIN` is a *list*, where an empty value legitimately means "no extra
   origins" on top of the built-in allowlist.
@@ -142,6 +142,15 @@ Two deliberate exceptions:
   8080` alongside a stray `PORT=` still boots, and so does the positional
   `<subdomain>` alongside an empty `ZENDESK_SUBDOMAIN`. Validation applies to
   the value the server actually uses.
+- The **numeric tuning caps** — `ZENDESK_CHARACTER_LIMIT`,
+  `ZENDESK_MAX_ATTACHMENT_BYTES`, `ZENDESK_MAX_EMBEDDED_IMAGES`,
+  `ZENDESK_MAX_COMMENT_PAGES`, `ZENDESK_REORDER_CONFIRM_THRESHOLD` and
+  `ZENDESK_ARTICLE_RESOURCES_SCAN_MAX_PAGES` — read through a shared parser that
+  treats an empty value as unset and falls back to the default, along with any
+  value that is not a positive safe integer. They bound response sizes and scan
+  depth rather than describing the deployment, so a typo there degrades a
+  guardrail instead of misrouting traffic, and refusing to boot over one would
+  be the harsher failure.
 
 ### `ZENDESK_SUBDOMAIN`
 **Required:** yes (or the CLI `<subdomain>` argument) · **Default:** none

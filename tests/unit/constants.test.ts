@@ -34,7 +34,12 @@ describe('CHARACTER_LIMIT (positiveIntEnv)', () => {
 
   const load = async () => (await import('../../src/constants')).CHARACTER_LIMIT;
 
-  it('defaults to 25000 when unset', async () => {
+  it('defaults to 25000 when unset or empty', async () => {
+    // Stubbed rather than left to the ambient environment: positiveIntEnv reads
+    // the variable at import time, so a value set in the test process would
+    // decide this assertion. Empty is also the case the shell produces with
+    // `ZENDESK_CHARACTER_LIMIT="$UNSET"`, and it must fall back too.
+    vi.stubEnv('ZENDESK_CHARACTER_LIMIT', '');
     expect(await load()).toBe(25_000);
   });
 

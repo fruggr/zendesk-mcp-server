@@ -51,24 +51,32 @@ const subdomainFromMcpConfig = (): string | undefined => {
   return undefined;
 };
 
+// An exported-but-empty variable is what `FOO="$UNSET"` produces in a shell or a
+// compose file. Treating it as configured would strand the probe on `''` instead
+// of falling through to the source that does have the value — the same reading
+// positiveIntEnv applies to the numeric caps.
+const env = (name: string): string | undefined => {
+  const raw = process.env[name];
+  return raw !== undefined && raw.trim() !== '' ? raw : undefined;
+};
+
 const ticketId = process.argv[2];
 if (!ticketId) fail('Usage: pnpm tsx scripts/probe-ticket-comments.ts <ticket_id>');
 
-const subdomain = process.env['ZENDESK_SUBDOMAIN'] ?? subdomainFromMcpConfig();
+const subdomain = env('ZENDESK_SUBDOMAIN') ?? subdomainFromMcpConfig();
 if (!subdomain) {
   fail('No subdomain: set ZENDESK_SUBDOMAIN, or run from a checkout whose .mcp.json declares one.');
 }
 
-const token =
-  process.env['ZENDESK_OAUTH_TOKEN'] ??
-  loadToken(resolveTokenPath(subdomain as string))?.accessToken;
+const envToken = env('ZENDESK_OAUTH_TOKEN');
+const token = envToken ?? loadToken(resolveTokenPath(subdomain as string))?.accessToken;
 if (!token) {
   fail(
     `No token: set ZENDESK_OAUTH_TOKEN, or sign in once so the store at ${resolveTokenPath(subdomain as string)} is populated (docs/live-testing.md).`,
   );
 }
 console.log(
-  `Probing ${subdomain} with the ${process.env['ZENDESK_OAUTH_TOKEN'] ? 'ZENDESK_OAUTH_TOKEN' : 'cached token store'} credential.`,
+  `Probing ${subdomain} with the ${envToken ? 'ZENDESK_OAUTH_TOKEN' : 'cached token store'} credential.`,
 );
 
 interface ProbeComment {
