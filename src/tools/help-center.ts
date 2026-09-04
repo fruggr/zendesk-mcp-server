@@ -345,6 +345,20 @@ const renderGapVerdict = (report: GapReport, gapCount: number, unclassified: num
     : allClear;
 };
 
+// find_translation_gaps takes no pagination parameter, so a truncated report has
+// to name a lever that exists. Which one depends on the scope: an unscoped audit
+// narrows with category_id; a scoped one that saw every section is simply done;
+// a scoped one whose section listing spilled past a page is neither, and saying
+// "re-run it" there would hide the sections the scan never reached (#265).
+const gapAdvice = (report: GapReport): string => {
+  if (!report.categoryScoped) {
+    return 'find_translation_gaps takes no pagination parameter; narrow the audit to one branch of the tree with category_id instead.';
+  }
+  return report.listingIncomplete
+    ? 'find_translation_gaps takes no pagination parameter and this category holds more sections than one page, so the section listing is incomplete: list the rest with list_sections (category_id, following its cursor) and read them with list_section_translations.'
+    : 'find_translation_gaps takes no pagination parameter, and this audit is already scoped to one category: fix the nodes above with set_category_translation / set_section_translation, then re-run it.';
+};
+
 const renderGapReport = (report: GapReport): string => {
   const { locale, categoryGaps, sectionGaps, scanned, found } = report;
   const gapCount = categoryGaps.length + sectionGaps.length;
@@ -376,13 +390,13 @@ const renderGapReport = (report: GapReport): string => {
       ...(report.listingIncomplete
         ? [
             '',
-            `_Note: this Help Center has more than ${MAX_PAGE_SIZE} categories or sections, so only the first page of each was considered. Narrow the scan with category_id to audit the rest._`,
+            report.categoryScoped
+              ? `_Note: this category holds more than ${MAX_PAGE_SIZE} sections, so only the first page was considered. List the rest with list_sections (category_id, following its cursor) and read them with list_section_translations._`
+              : `_Note: this Help Center has more than ${MAX_PAGE_SIZE} categories or sections, so only the first page of each was considered. Narrow the scan with category_id to audit the rest._`,
           ]
         : []),
     ].join('\n'),
-    report.categoryScoped
-      ? 'find_translation_gaps takes no pagination parameter, and this audit is already scoped to one category: fix the nodes above with set_category_translation / set_section_translation, then re-run it.'
-      : 'find_translation_gaps takes no pagination parameter; narrow the audit to one branch of the tree with category_id instead.',
+    gapAdvice(report),
   );
 };
 

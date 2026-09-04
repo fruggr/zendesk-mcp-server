@@ -906,7 +906,9 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         // character budget, or the response overshoots the limit and the notice
         // misreports its own size. The cursor is no way back to what the cut
         // dropped — it points past this whole page — so the advice names the
-        // only recovery there is.
+        // only recovery there is. At page_size 1 there is no smaller page to
+        // ask for: the cut is inside one over-long comment, and recommending
+        // "smaller than 1" would itself be advice the schema rejects (#265).
         const text = `${[
           `# Comments on ticket #${ticket_id} (${commentPageOrder(comments, sort_order)})`,
           formatPagination(meta),
@@ -918,7 +920,9 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
               type: 'text',
               text: truncateIfNeeded(
                 text,
-                `The comments cut here are not reachable through the cursor, which points past this whole page: re-issue with a page_size smaller than ${page_size} to read them.`,
+                page_size > 1
+                  ? `The comments cut here are not reachable through the cursor, which points past this whole page: re-issue with a page_size smaller than ${page_size} to read them.`
+                  : 'This single comment is longer than the response character limit, so no page small enough exists: read it in Zendesk directly.',
               ),
             },
           ],

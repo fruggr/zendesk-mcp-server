@@ -469,6 +469,27 @@ describe('ticket tools', () => {
       expect(text).not.toContain('Use pagination or filters');
     });
 
+    it('names a reachable recovery when a single comment already fills the page', async () => {
+      // page_size has a minimum of 1, so "smaller than 1" would recommend a
+      // value the schema rejects — the very failure #265 is about.
+      mswServer.use(
+        http.get(COMMENTS_URL, () =>
+          HttpResponse.json({
+            comments: [{ ...MOCK_COMMENT, body: 'x'.repeat(CHARACTER_LIMIT) }],
+            meta: { has_more: true, after_cursor: 'next-comment-cursor' },
+          }),
+        ),
+      );
+      const tool = findTool('list_ticket_comments');
+      const text = getAllText(
+        await tool.handler({ ticket_id: 1, sort_order: 'desc', page_size: 1 }),
+      );
+      expect(text).toContain('Response truncated');
+      expect(text).toContain('longer than the response character limit');
+      expect(text).not.toContain('page_size smaller than 1');
+      expect(text).not.toContain('Use pagination or filters');
+    });
+
     it('reports an offset-paginated answer in words, never as a cursor', async () => {
       // Silence would report a truncated thread as complete; a `More available
       // (cursor: null)` footer would offer a continuation the tool cannot take.

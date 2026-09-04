@@ -542,6 +542,35 @@ describe('help center tools', () => {
   });
 
   describe('find_translation_gaps', () => {
+    it('does not call a scoped audit complete while its section listing spills over', async () => {
+      // Scoped *and* incomplete: the handler fetches only the first page, so
+      // "fix these and re-run" would hide the sections it never looked at.
+      const many = Array.from({ length: 300 }, (_, i) => ({
+        ...MOCK_SECTION,
+        id: 9000 + i,
+        name: `Section ${'x'.repeat(100)} ${i}`,
+        translations: [],
+      }));
+      mswServer.use(
+        http.get(`${HC_BASE}/categories/:id/sections`, () =>
+          HttpResponse.json({
+            sections: many,
+            meta: { has_more: true, after_cursor: 'next-section-cursor' },
+            count: many.length,
+          }),
+        ),
+      );
+      const tool = findTool('find_translation_gaps');
+      const text = (
+        (await tool.handler({ locale: 'fr', category_id: 800 })).content[0] as { text: string }
+      ).text;
+      expect(text).toContain('Response truncated');
+      expect(text).toContain('section listing is incomplete');
+      expect(text).toContain('list_sections');
+      expect(text).not.toContain('then re-run it');
+      expect(text).not.toContain('Use pagination or filters');
+    });
+
     it('does not advise category_id back at a caller who already passed it', async () => {
       const many = Array.from({ length: 300 }, (_, i) => ({
         ...MOCK_SECTION,
