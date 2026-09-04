@@ -192,7 +192,10 @@ export const formatTopology = (data: TopologyData): string => {
     ),
   ].join('\n');
 
-  return truncateIfNeeded(text);
+  return truncateIfNeeded(
+    text,
+    'This resource takes no parameters; walk the tree with list_categories and list_sections instead.',
+  );
 };
 
 export interface TopologyProvider {

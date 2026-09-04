@@ -254,6 +254,8 @@ interface GapReport {
   found: { categories: number; sections: number };
   /** True when the category or section listing itself spilled past one page. */
   listingIncomplete: boolean;
+  /** True when the caller already scoped the audit to one category. */
+  categoryScoped: boolean;
 }
 
 /**
@@ -343,6 +345,20 @@ const renderGapVerdict = (report: GapReport, gapCount: number, unclassified: num
     : allClear;
 };
 
+// find_translation_gaps takes no pagination parameter, so a truncated report has
+// to name a lever that exists. Which one depends on the scope: an unscoped audit
+// narrows with category_id; a scoped one that saw every section is simply done;
+// a scoped one whose section listing spilled past a page is neither, and saying
+// "re-run it" there would hide the sections the scan never reached (#265).
+const gapAdvice = (report: GapReport): string => {
+  if (!report.categoryScoped) {
+    return 'find_translation_gaps takes no pagination parameter; narrow the audit to one branch of the tree with category_id instead.';
+  }
+  return report.listingIncomplete
+    ? 'find_translation_gaps takes no pagination parameter and this category holds more sections than one page, so the section listing is incomplete: list the rest with list_sections (category_id, following its cursor) and read them with list_section_translations.'
+    : 'find_translation_gaps takes no pagination parameter, and this audit is already scoped to one category: fix the nodes above with set_category_translation / set_section_translation, then re-run it.';
+};
+
 const renderGapReport = (report: GapReport): string => {
   const { locale, categoryGaps, sectionGaps, scanned, found } = report;
   const gapCount = categoryGaps.length + sectionGaps.length;
@@ -374,10 +390,13 @@ const renderGapReport = (report: GapReport): string => {
       ...(report.listingIncomplete
         ? [
             '',
-            `_Note: this Help Center has more than ${MAX_PAGE_SIZE} categories or sections, so only the first page of each was considered. Narrow the scan with category_id to audit the rest._`,
+            report.categoryScoped
+              ? `_Note: this category holds more than ${MAX_PAGE_SIZE} sections, so only the first page was considered. List the rest with list_sections (category_id, following its cursor) and read them with list_section_translations._`
+              : `_Note: this Help Center has more than ${MAX_PAGE_SIZE} categories or sections, so only the first page of each was considered. Narrow the scan with category_id to audit the rest._`,
           ]
         : []),
     ].join('\n'),
+    gapAdvice(report),
   );
 };
 
@@ -733,7 +752,17 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           (hint ?? '') +
           formatArticle(article) +
           `\n\n**Available translations**: ${translations.map((t) => t.locale).join(', ')}`;
-        return { content: [{ type: 'text', text: truncateIfNeeded(text) }] };
+        return {
+          content: [
+            {
+              type: 'text',
+              text: truncateIfNeeded(
+                text,
+                'get_article takes no pagination parameter; read a long article one part at a time with get_article_outline then get_article_section.',
+              ),
+            },
+          ],
+        };
       },
     },
     {
@@ -993,7 +1022,15 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         const cost = `${pagesScanned} Zendesk API request${pagesScanned === 1 ? '' : 's'}`;
         const note = scanCostNote(truncated, pagesScanned, cost);
         return {
-          content: [{ type: 'text', text: truncateIfNeeded(`${header}\n\n${body}${note}`) }],
+          content: [
+            {
+              type: 'text',
+              text: truncateIfNeeded(
+                `${header}\n\n${body}${note}`,
+                'list_promoted_articles takes no parameters, so this listing cannot be narrowed from the call; read a single article with get_article.',
+              ),
+            },
+          ],
         };
       },
     },
@@ -1018,7 +1055,17 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         const token = await getToken();
         const translations = await listTranslations(subdomain, token, article_id);
         return {
-          content: [{ type: 'text', text: formatList(translations, formatTranslationSummary) }],
+          content: [
+            {
+              type: 'text',
+              text: formatList(
+                translations,
+                formatTranslationSummary,
+                undefined,
+                'list_article_translations takes only article_id, so this listing cannot be narrowed from the call; read one locale in full with get_article.',
+              ),
+            },
+          ],
         };
       },
     },
@@ -1160,7 +1207,17 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         const token = await getToken();
         const translations = await listNodeTranslations(subdomain, token, 'sections', section_id);
         return {
-          content: [{ type: 'text', text: formatList(translations, formatNodeTranslationSummary) }],
+          content: [
+            {
+              type: 'text',
+              text: formatList(
+                translations,
+                formatNodeTranslationSummary,
+                undefined,
+                'list_section_translations takes only section_id, so this listing cannot be narrowed from the call; write one locale with set_section_translation.',
+              ),
+            },
+          ],
         };
       },
     },
@@ -1195,7 +1252,17 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           category_id,
         );
         return {
-          content: [{ type: 'text', text: formatList(translations, formatNodeTranslationSummary) }],
+          content: [
+            {
+              type: 'text',
+              text: formatList(
+                translations,
+                formatNodeTranslationSummary,
+                undefined,
+                'list_category_translations takes only category_id, so this listing cannot be narrowed from the call; write one locale with set_category_translation.',
+              ),
+            },
+          ],
         };
       },
     },
@@ -1266,6 +1333,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
                 listingIncomplete:
                   categoryScope.hasMore ||
                   extractPaginationMeta(sectionsRes, allSections.length).has_more,
+                categoryScoped: category_id !== undefined,
               }),
             },
           ],
@@ -1452,7 +1520,12 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           content: [
             {
               type: 'text',
-              text: formatList(response.permission_groups ?? [], formatPermissionGroup),
+              text: formatList(
+                response.permission_groups ?? [],
+                formatPermissionGroup,
+                undefined,
+                'list_permission_groups takes no parameters, so this listing cannot be narrowed from the call.',
+              ),
             },
           ],
         };
@@ -1960,7 +2033,17 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           '/articles/labels',
         );
         return {
-          content: [{ type: 'text', text: formatList(response.labels ?? [], formatLabel) }],
+          content: [
+            {
+              type: 'text',
+              text: formatList(
+                response.labels ?? [],
+                formatLabel,
+                undefined,
+                'list_labels takes no parameters, so this listing cannot be narrowed from the call.',
+              ),
+            },
+          ],
         };
       },
     },
@@ -2000,7 +2083,15 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         }
         return {
           content: [
-            { type: 'text', text: formatList(response.user_segments ?? [], formatUserSegment) },
+            {
+              type: 'text',
+              text: formatList(
+                response.user_segments ?? [],
+                formatUserSegment,
+                undefined,
+                'list_user_segments takes no parameters, so this listing cannot be narrowed from the call.',
+              ),
+            },
           ],
         };
       },
@@ -2041,7 +2132,12 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           content: [
             {
               type: 'text',
-              text: formatList(attachments, formatAttachment),
+              text: formatList(
+                attachments,
+                formatAttachment,
+                undefined,
+                'list_article_attachments takes only article_id, so this listing cannot be narrowed from the call.',
+              ),
             },
           ],
         };
@@ -2167,7 +2263,13 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           '',
           content,
         ].join('\n');
-        return { content: [{ type: 'text', text: truncateIfNeeded(text) }] };
+        // No pagination here either, and there is nothing narrower than a
+        // section — but the Markdown rendering of the same content is smaller.
+        const advice =
+          format === 'markdown'
+            ? 'get_article_section takes no pagination parameter, and this single section already exceeds the limit.'
+            : 'get_article_section takes no pagination parameter; request this section as format="markdown", which renders the same content more compactly than HTML.';
+        return { content: [{ type: 'text', text: truncateIfNeeded(text, advice) }] };
       },
     },
     {

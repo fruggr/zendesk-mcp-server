@@ -144,6 +144,25 @@ describe('formatTopology', () => {
     expect(text).toContain('admin');
   });
 
+  it('points at the listing tools rather than a pagination parameter when truncated', () => {
+    // The resource takes no parameters at all, so the default "use pagination"
+    // notice would be advice the caller cannot act on (#265).
+    const data = baseData();
+    const first = data.categories[0];
+    if (!first) throw new Error('baseData must seed a category');
+    const text = formatTopology({
+      ...data,
+      categories: Array.from({ length: 400 }, (_, i) => ({
+        ...first,
+        id: 800 + i,
+        name: `Category ${'x'.repeat(100)} ${i}`,
+      })),
+    });
+    expect(text).toContain('Response truncated');
+    expect(text).toContain('list_categories and list_sections');
+    expect(text).not.toContain('Use pagination or filters');
+  });
+
   it('switches to summary mode (no partial tree) when sections are truncated', () => {
     const text = formatTopology({ ...baseData(), sections: [], sectionsHasMore: true });
     expect(text).toContain('list_sections');

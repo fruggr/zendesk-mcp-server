@@ -78,6 +78,21 @@ describe('truncateIfNeeded', () => {
       `\n\n--- Response truncated (${CHARACTER_LIMIT + 2} chars, limit ${CHARACTER_LIMIT}). Use pagination or filters to reduce results. ---`,
     );
   });
+
+  it('appends the caller-supplied advice in place of the default sentence', () => {
+    // A tool with no pagination parameters must not be told to paginate (#265),
+    // so the advice is per-call-site while the size/limit prefix stays shared.
+    const over = `${'x'.repeat(CHARACTER_LIMIT)}yz`;
+    const result = truncateIfNeeded(over, 'Read it with list_ticket_comments.');
+
+    expect(result.slice(CHARACTER_LIMIT)).toBe(
+      `\n\n--- Response truncated (${CHARACTER_LIMIT + 2} chars, limit ${CHARACTER_LIMIT}). Read it with list_ticket_comments. ---`,
+    );
+  });
+
+  it('ignores the advice when the text fits', () => {
+    expect(truncateIfNeeded('hello', 'Read it with list_ticket_comments.')).toBe('hello');
+  });
 });
 
 describe('formatTicket', () => {
@@ -315,9 +330,9 @@ describe('formatSlaBlock', () => {
 });
 
 describe('formatComment', () => {
-  it('renders a public comment with its attachment ids and content types', () => {
+  it('renders a public comment with its id, attachment ids and content types', () => {
     expect(formatComment(MOCK_COMMENT)).toMatchInlineSnapshot(`
-      "### Public comment by 9999
+      "### Public comment (id 3000) by 9999
       *2026-01-01T00:00:00Z*
       Attachments: #30001 (image/png), #30002 (application/pdf), #30003 (image/png)
 
@@ -329,7 +344,7 @@ describe('formatComment', () => {
     expect(
       formatComment({ ...MOCK_COMMENT, public: false, attachments: [] }),
     ).toMatchInlineSnapshot(`
-      "### Internal note by 9999
+      "### Internal note (id 3000) by 9999
       *2026-01-01T00:00:00Z*
 
       This is a comment"
@@ -339,6 +354,23 @@ describe('formatComment', () => {
   it('omits the Attachments line when the comment has none', () => {
     const result = formatComment({ ...MOCK_COMMENT, attachments: undefined });
     expect(result).not.toContain('Attachments:');
+  });
+
+  it('resolves the author to "Name (id)" when the map carries it', () => {
+    const result = formatComment(MOCK_COMMENT, new Map([[9999, 'Agent Smith']]));
+    expect(result).toContain('### Public comment (id 3000) by Agent Smith (9999)');
+  });
+
+  it('falls back to the bare id when the map lacks the author', () => {
+    const result = formatComment(MOCK_COMMENT, new Map([[1234, 'Someone Else']]));
+    expect(result).toContain('### Public comment (id 3000) by 9999');
+  });
+
+  it('labels the system actor rather than showing -1 alone', () => {
+    // Zendesk attributes trigger/automation-driven comments to author_id -1,
+    // which has no user record to resolve.
+    const result = formatComment({ ...MOCK_COMMENT, author_id: -1 }, new Map());
+    expect(result).toContain('### Public comment (id 3000) by System (-1)');
   });
 });
 
@@ -1006,6 +1038,26 @@ describe('formatList', () => {
 
       - **Billing** (801) — General category"
     `);
+  });
+
+  it('passes a caller-supplied advice through to the truncation notice', () => {
+    const items = Array.from({ length: 400 }, (_, i) => ({
+      ...MOCK_CATEGORY,
+      id: 800 + i,
+      name: 'x'.repeat(100),
+    }));
+    const text = formatList(items, formatCategory, undefined, 'This tool takes no parameters.');
+    expect(text.endsWith('). This tool takes no parameters. ---')).toBe(true);
+  });
+
+  it('keeps the default truncation advice when the caller supplies none', () => {
+    const items = Array.from({ length: 400 }, (_, i) => ({
+      ...MOCK_CATEGORY,
+      id: 800 + i,
+      name: 'x'.repeat(100),
+    }));
+    const text = formatList(items, formatCategory);
+    expect(text.endsWith('). Use pagination or filters to reduce results. ---')).toBe(true);
   });
 
   it('omits the header entirely when there is no pagination meta', () => {
