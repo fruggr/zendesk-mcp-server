@@ -1,14 +1,3 @@
-export const CHARACTER_LIMIT = 25_000;
-export const DEFAULT_PAGE_SIZE = 100;
-export const MAX_PAGE_SIZE = 100;
-
-// The Guide content-tags endpoint (/guide/content_tags) caps page[size] at 30
-// and 400s on anything larger, unlike the other Help Center list endpoints that
-// allow up to 100. Reusing the shared MAX_PAGE_SIZE (100) here always failed
-// (issue #162), so list_content_tags gets its own limit.
-export const CONTENT_TAGS_MAX_PAGE_SIZE = 30;
-export const TOKEN_CACHE_TTL_MS = 5 * 60 * 1000;
-
 // Read a positive-integer override from the environment, falling back to a safe
 // default. Unchecked Number() coercion is unsafe here: an empty string yields 0
 // and a typo yields NaN, either of which would silently break the guardrail that
@@ -21,6 +10,30 @@ const positiveIntEnv = (name: string, fallback: number): number => {
   const parsed = Number(raw);
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
 };
+
+// Ceiling on the characters a single tool response may carry; past it the text is
+// cut and a notice explains what to do about it (see truncateIfNeeded). The
+// default protects the client's own context budget, so raising it is rarely what
+// you want. It is overridable mainly so the truncation paths can be exercised on
+// a tenant whose real data never reaches 25 000 characters: lower it and any
+// ordinary response will trip the notice. Override via ZENDESK_CHARACTER_LIMIT.
+export const CHARACTER_LIMIT = positiveIntEnv('ZENDESK_CHARACTER_LIMIT', 25_000);
+export const DEFAULT_PAGE_SIZE = 100;
+export const MAX_PAGE_SIZE = 100;
+
+// The Guide content-tags endpoint (/guide/content_tags) caps page[size] at 30
+// and 400s on anything larger, unlike the other Help Center list endpoints that
+// allow up to 100. Reusing the shared MAX_PAGE_SIZE (100) here always failed
+// (issue #162), so list_content_tags gets its own limit.
+export const CONTENT_TAGS_MAX_PAGE_SIZE = 30;
+
+// Default page size for list_ticket_comments. Unlike CONTENT_TAGS_MAX_PAGE_SIZE
+// this is not an API cap (the endpoint allows 100): the binding constraint is
+// CHARACTER_LIMIT, because comment bodies are long. A default of 100 would make
+// almost every first page truncate, which is the very failure this tool exists
+// to fix (#265). Callers who want more follow the cursor.
+export const DEFAULT_TICKET_COMMENT_PAGE_SIZE = 20;
+export const TOKEN_CACHE_TTL_MS = 5 * 60 * 1000;
 
 // TTL for the per-session Help Center topology cache (zendesk-hc://topology).
 // The tenant's structure (locales, category/section tree, segments) changes

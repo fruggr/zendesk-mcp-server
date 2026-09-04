@@ -1,6 +1,7 @@
 import { HttpResponse, http } from 'msw';
 import { describe, expect, it, vi } from 'vitest';
 import { ZendeskApiError } from '../../../src/client/zendesk-api';
+import { CHARACTER_LIMIT } from '../../../src/constants';
 import {
   createArticleResourcesProvider,
   fetchArticleMarkdown,
@@ -50,6 +51,20 @@ describe('fetchPromotedArticles', () => {
 });
 
 describe('fetchArticleMarkdown', () => {
+  it('points at the section tools rather than a pagination parameter when truncated', async () => {
+    mswServer.use(
+      http.get(`${HC}/articles/:id`, () =>
+        HttpResponse.json({
+          article: { ...MOCK_PROMOTED_ARTICLE, body: `<p>${'x'.repeat(CHARACTER_LIMIT)}</p>` },
+        }),
+      ),
+    );
+    const text = await fetchArticleMarkdown(SUBDOMAIN, TOKEN, 5000);
+    expect(text).toContain('Response truncated');
+    expect(text).toContain('get_article_section');
+    expect(text).not.toContain('Use pagination or filters');
+  });
+
   it('renders the article as Markdown (body converted from HTML, not a raw dump)', async () => {
     const text = await fetchArticleMarkdown(SUBDOMAIN, TOKEN, 5000);
     expect(text).toContain('## How to test (5000)');

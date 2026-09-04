@@ -14,7 +14,8 @@ out every `write` tool before the proxies are built.
 
 | Tool | Description | Mode |
 |------|-------------|------|
-| `get_ticket` | Retrieve a ticket by ID with optional comments and its live SLA state (resolved via a scoped search) | read |
+| `get_ticket` | Retrieve a ticket by ID with optional comments and its live SLA state (resolved via a scoped search); the thread comes back whole, so reach for `list_ticket_comments` on a long one | read |
+| `list_ticket_comments` | Read a ticket's conversation (public replies and internal notes, full bodies) newest-first and cursor-paginated, with comment ids and authors resolved to names — the paged alternative to `get_ticket(include_comments=true)` on a long thread | read |
 | `get_ticket_history` | Read a ticket's change history (audit trail) as a chronological, oldest-first timeline of who changed what and when: field changes as before → after with actor names, comment presence (not bodies), system noise filtered; cursor-paginated | read |
 | `get_ticket_attachments` | Download ticket attachments. Images are delivered as native multimodal content for the client's own model to analyze; oversize/over-limit images and non-images come back as text references | read |
 | `search_tickets` | Search tickets using Zendesk query syntax, with per-result SLA state | read |

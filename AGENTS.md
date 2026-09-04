@@ -137,6 +137,16 @@ posts their report as a PR comment (English). Author the plan with the
 `functional-validation-plan` skill; the validator executes it with the
 `run-validation-plan` skill — don't inline either here.
 
+**Independence is about context, not identity.** Every agent here acts under the
+same human's GitHub account, so the author shown on a PR comment says nothing
+about which session wrote it. A validator is independent when it did not write
+the code: a separate session handed the branch and the plan, without the
+implementer's conversation. Sharing the account, the machine or the tenant does
+not make it the implementer, and a report is judged on its evidence, not on its
+login. State the role behind a run once, in one line; the repository owner
+decides whether it counts, and that decision is not reopened comment after
+comment.
+
 **Pure tooling / dev-tooling changes are exempt** — build scripts, the
 typecheck/lint/format setup, dev-only scripts, CI and release automation change
 nothing a client observes at runtime, so the standard gates (`pnpm typecheck` /

@@ -1,3 +1,32 @@
+## [2.20.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.19.0...v2.20.0) (2026-09-04)
+
+### Features
+
+* **tickets:** add list_ticket_comments and make truncation advice tool-aware ([#268](https://github.com/fruggr/zendesk-mcp-server/issues/268)) ([f5a062a](https://github.com/fruggr/zendesk-mcp-server/commit/f5a062ad3bad41d02c66738eaa9ecfd071c4ec91))
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Chores
+
+* **deps:** lock file maintenance ([#252](https://github.com/fruggr/zendesk-mcp-server/issues/252)) ([4c9320a](https://github.com/fruggr/zendesk-mcp-server/commit/4c9320a6e7d2f37317aca0b50d2976d1ee460412))
+* **deps:** lock file maintenance ([#254](https://github.com/fruggr/zendesk-mcp-server/issues/254)) ([23e2a1b](https://github.com/fruggr/zendesk-mcp-server/commit/23e2a1b47aaeb030d683ffdb7ae4ac0fd58c2711))
+* **deps:** lock file maintenance ([#255](https://github.com/fruggr/zendesk-mcp-server/issues/255)) ([7b5ee94](https://github.com/fruggr/zendesk-mcp-server/commit/7b5ee946df61a79e488033c70af7a7d6ca69b1f4))
+* **deps:** lock file maintenance ([#261](https://github.com/fruggr/zendesk-mcp-server/issues/261)) ([07be788](https://github.com/fruggr/zendesk-mcp-server/commit/07be788fa7c8184146aee33ce91c877b76530014))
+* **deps:** lock file maintenance ([#269](https://github.com/fruggr/zendesk-mcp-server/issues/269)) ([a41c9e1](https://github.com/fruggr/zendesk-mcp-server/commit/a41c9e1996cf28a198d282b86f88404f58d49590))
+* **deps:** lock file maintenance ([#270](https://github.com/fruggr/zendesk-mcp-server/issues/270)) ([dfdc16a](https://github.com/fruggr/zendesk-mcp-server/commit/dfdc16aac37888b1b1356a8179f1ea253a5767ef))
+* **deps:** update dependency @biomejs/biome to v2.5.10 ([#253](https://github.com/fruggr/zendesk-mcp-server/issues/253)) ([6488e88](https://github.com/fruggr/zendesk-mcp-server/commit/6488e8801f2c0efc2542fe301c4aa76643f5e156))
+* **deps:** update dependency @biomejs/biome to v2.5.11 ([#262](https://github.com/fruggr/zendesk-mcp-server/issues/262)) ([1115e9e](https://github.com/fruggr/zendesk-mcp-server/commit/1115e9e04e0537bdad3402e519a04786426720c6))
+* **deps:** update dependency @biomejs/biome to v2.5.9 ([#251](https://github.com/fruggr/zendesk-mcp-server/issues/251)) ([5958501](https://github.com/fruggr/zendesk-mcp-server/commit/595850135be1876019323b43dc054cb24a8f6e89))
+* **deps:** update pnpm to v11.23.0 ([#256](https://github.com/fruggr/zendesk-mcp-server/issues/256)) ([0cd550e](https://github.com/fruggr/zendesk-mcp-server/commit/0cd550e5b036ef43fbb1eae3fae992e440c30c65))
+* **deps:** update pnpm to v11.24.0 ([#257](https://github.com/fruggr/zendesk-mcp-server/issues/257)) ([9470d62](https://github.com/fruggr/zendesk-mcp-server/commit/9470d62690bc559c966389e1d11684f51e4443bc))
+* **deps:** update pnpm to v11.25.0 ([#267](https://github.com/fruggr/zendesk-mcp-server/issues/267)) ([7e08105](https://github.com/fruggr/zendesk-mcp-server/commit/7e08105a73e2e3af2c1a3f88f1af91f954f8cd91))
+
+### Tests
+
+* **utils:** raise src/utils/formatting.ts to zero escaped mutants and put it back under the gate ([#259](https://github.com/fruggr/zendesk-mcp-server/issues/259)) ([bee6b57](https://github.com/fruggr/zendesk-mcp-server/commit/bee6b57d1293035922fa4523746d06ae6df008b4))
+</details>
+
 ## [2.19.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.18.0...v2.19.0) (2026-08-22)
 
 ### Features

@@ -101,7 +101,10 @@ export const fetchArticleMarkdown = async (
   const path = locale ? `/${locale}/articles/${id}` : `/articles/${id}`;
   const { article } = await helpCenterGet<{ article: ZendeskArticle }>(subdomain, token, path);
   const text = [formatArticleSummary(article), '', htmlToMarkdown(article.body)].join('\n');
-  return truncateIfNeeded(text);
+  return truncateIfNeeded(
+    text,
+    'This resource takes no parameters; read a long article one part at a time with get_article_outline then get_article_section.',
+  );
 };
 
 export interface ArticleResourcesProvider {

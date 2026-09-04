@@ -354,6 +354,21 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         expect(textOf(result)).toContain('**status**: new → open');
       });
 
+      it("reads a ticket's comment thread newest-first over the wire", async () => {
+        connected = await harness.connect(makeConfig({ mode: 'all' }));
+        const result = await connected.client.callTool({
+          name: 'list_ticket_comments',
+          arguments: { ticket_id: 1 },
+        });
+
+        expect(result.isError).toBeFalsy();
+        const text = textOf(result);
+        expect(text).toContain('# Comments on ticket #1 (newest first)');
+        // Defaults applied end-to-end: newest first, author resolved to a name.
+        expect(text).toContain('### Internal note (id 3001) by User 9998 (9998)');
+        expect(text.indexOf('id 3001')).toBeLessThan(text.indexOf('id 3000'));
+      });
+
       it('uploads and attaches a file when posting a public comment', async () => {
         connected = await harness.connect(makeConfig({ mode: 'all' }));
         const result = await connected.client.callTool({

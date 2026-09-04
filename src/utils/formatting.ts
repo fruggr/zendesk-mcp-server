@@ -28,12 +28,22 @@ import type {
   ZendeskViewCount,
 } from '../types.js';
 
-export const truncateIfNeeded = (text: string): string => {
+// The advice closing the truncation notice is the caller's, because only the
+// call site knows what the caller can actually do about it: telling an agent to
+// paginate a tool that takes no pagination parameter sends it in circles (#265).
+// The default serves the paginated list renderers, which are the majority.
+export const truncateIfNeeded = (
+  text: string,
+  advice = 'Use pagination or filters to reduce results.',
+): string => {
   if (text.length <= CHARACTER_LIMIT) return text;
-  return `${text.slice(0, CHARACTER_LIMIT)}\n\n--- Response truncated (${text.length} chars, limit ${CHARACTER_LIMIT}). Use pagination or filters to reduce results. ---`;
+  return `${text.slice(0, CHARACTER_LIMIT)}\n\n--- Response truncated (${text.length} chars, limit ${CHARACTER_LIMIT}). ${advice} ---`;
 };
 
-const formatPagination = (meta: PaginationMeta): string => {
+// Exported so a caller that prefixes its own title can assemble header + body
+// itself and truncate the whole thing once, instead of truncating through
+// formatList and then prepending a title the character budget never saw.
+export const formatPagination = (meta: PaginationMeta): string => {
   const parts = [`Results: ${meta.count}`];
   if (meta.has_more) {
     parts.push(`More available (cursor: ${meta.after_cursor})`);
@@ -195,9 +205,22 @@ export const formatSlaBlock = (entry: ZendeskSlaSideloadEntry | undefined): stri
   return `\n\n${lines.join('\n')}`;
 };
 
-export const formatComment = (comment: ZendeskComment): string => {
+const withName = (id: unknown, names: Map<number, string>): string => {
+  const n = Number(id);
+  // Zendesk attributes automation/trigger-driven updates to the system actor
+  // (author_id -1), which has no user record to resolve — label it plainly.
+  if (n === -1) return 'System (-1)';
+  const name = names.get(n);
+  return name ? `${name} (${id})` : String(id);
+};
+
+// `authors` is the id -> name map the caller resolved (side-load or batched
+// look-up); an id it does not carry renders as the bare id rather than failing
+// the whole thread. The comment id is rendered because it is the only read path
+// that exposes it (#265).
+export const formatComment = (comment: ZendeskComment, authors?: Map<number, string>): string => {
   const lines = [
-    `### ${comment.public ? 'Public comment' : 'Internal note'} by ${comment.author_id}`,
+    `### ${comment.public ? 'Public comment' : 'Internal note'} (id ${comment.id}) by ${withName(comment.author_id, authors ?? new Map())}`,
     `*${comment.created_at}*`,
   ];
   if (comment.attachments?.length) {
@@ -306,15 +329,6 @@ export interface AuditNames {
   groups: Map<number, string>;
 }
 
-const withName = (id: unknown, names: Map<number, string>): string => {
-  const n = Number(id);
-  // Zendesk attributes automation/trigger-driven updates to the system actor
-  // (author_id -1), which has no user record to resolve — label it plainly.
-  if (n === -1) return 'System (-1)';
-  const name = names.get(n);
-  return name ? `${name} (${id})` : String(id);
-};
-
 // A Change/Create field value rendered for the timeline: user/group ids resolved
 // to "Name (id)", SLA-metric objects reduced to their minutes, everything else via
 // formatFieldValue. Returns '' for an empty/absent side.
@@ -372,7 +386,7 @@ const renderAuditEvent = (event: ZendeskAuditEvent, names: AuditNames): string |
       return renderChangeEvent(event, names);
     case 'Comment':
     case 'VoiceComment':
-      // Presence only — the body lives on get_ticket(include_comments), so the
+      // Presence only — the body lives on list_ticket_comments, so the
       // timeline attributes the reply without duplicating (or bloating with) it.
       return `- ${event.public === false ? 'Internal note' : 'Public comment'} added`;
     case 'CommentPrivacyChange':
@@ -508,13 +522,18 @@ export const formatUserSegment = (segment: ZendeskUserSegment): string =>
 export const formatAttachment = (attachment: ZendeskArticleAttachment): string =>
   `- **${attachment.file_name}** (${attachment.id}) — ${attachment.content_type} — ${attachment.size} bytes`;
 
+// `advice` overrides the truncation notice's closing sentence, for the callers
+// that render a list through this helper yet expose no pagination parameter of
+// their own (see truncateIfNeeded).
 export const formatList = <T>(
   items: T[],
   formatter: (item: T) => string,
   meta?: PaginationMeta,
+  advice?: string,
 ): string => {
   const header = meta ? formatPagination(meta) : '';
   const body = items.map(formatter).join('\n\n');
   const text = [header, body].filter(Boolean).join('\n\n');
-  return truncateIfNeeded(text);
+  // `undefined` falls through to truncateIfNeeded's own default sentence.
+  return truncateIfNeeded(text, advice);
 };

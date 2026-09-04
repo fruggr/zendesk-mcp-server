@@ -4,7 +4,7 @@
 
 ## Expected values
 
-- **A1.** `tools.length === 44`. Breakdown: 16 ticket tools + 22 Help Center
+- **A1.** `tools.length === 53`. Breakdown: 18 ticket tools + 29 Help Center
   tools + 5 user/organization tools + 1 unified search tool. If the count
   drifts, update the documentation listed in `AGENTS.md` "Documentation
   maintenance" before running.

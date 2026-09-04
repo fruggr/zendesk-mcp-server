@@ -588,6 +588,17 @@ export const MOCK_COMMENT = {
   ],
 };
 
+// A second, later comment by a different author: lets list_ticket_comments
+// assert both the rendered order (newest first by default) and the resolution
+// of more than one author id.
+export const MOCK_COMMENT_NOTE = {
+  id: 3001,
+  body: 'Internal analysis',
+  author_id: 9998,
+  public: false,
+  created_at: '2026-01-02T00:00:00Z',
+};
+
 // Uploads API response (POST /uploads). The token is what gets carried on a
 // comment via comment.uploads; subsequent files aggregate under it via ?token=.
 // A group, minimal shape used to resolve a group_id change to a name.
@@ -664,6 +675,30 @@ export const auditsMorePageHandler = http.get(`${BASE}/tickets/:id/audits`, () =
   HttpResponse.json({
     audits: [MOCK_AUDIT_CHANGE],
     meta: { has_more: true, after_cursor: 'next-audit-cursor' },
+  }),
+);
+
+// Opt-in via mswServer.use(): a comments page that reports more to come, so the
+// cursor/"More available" footer of list_ticket_comments can be asserted.
+export const commentsMorePageHandler = http.get(`${BASE}/tickets/:id/comments`, () =>
+  HttpResponse.json({
+    comments: [MOCK_COMMENT_NOTE],
+    meta: { has_more: true, after_cursor: 'next-comment-cursor' },
+  }),
+);
+
+// Opt-in via mswServer.use(): the same page carrying the `include=users`
+// side-load, so the "no extra show_many call" path can be asserted. The names
+// differ from the `User <id>` the show_many mock echoes, which is what makes the
+// two paths distinguishable in an assertion.
+export const commentsWithUsersSideloadHandler = http.get(`${BASE}/tickets/:id/comments`, () =>
+  HttpResponse.json({
+    comments: [MOCK_COMMENT_NOTE, MOCK_COMMENT],
+    users: [
+      { ...MOCK_USER, id: 9999, name: 'Sideloaded Agent' },
+      { ...MOCK_USER, id: 9998, name: 'Sideloaded Author' },
+    ],
+    meta: { has_more: false, after_cursor: '' },
   }),
 );
 
@@ -794,7 +829,19 @@ export const handlers = [
     // `include=slas` there, see #92), so no `slas` is ever returned here.
     return HttpResponse.json({ ticket: { ...MOCK_TICKET, id } });
   }),
-  http.get(`${BASE}/tickets/:id/comments`, () => HttpResponse.json({ comments: [MOCK_COMMENT] })),
+  // Single-page by default: fetchAllTicketComments (get_ticket_attachments)
+  // walks this endpoint in a loop, so `has_more: true` here would change how
+  // many pages those tests fetch. Cursor paging is opted into per test via
+  // commentsMorePageHandler. No `users` side-load either, so the default path
+  // exercises the batched show_many fallback.
+  http.get(`${BASE}/tickets/:id/comments`, ({ request }) => {
+    const sort = new URL(request.url).searchParams.get('sort');
+    const comments =
+      sort === '-created_at'
+        ? [MOCK_COMMENT_NOTE, MOCK_COMMENT]
+        : [MOCK_COMMENT, MOCK_COMMENT_NOTE];
+    return HttpResponse.json({ comments, meta: { has_more: false, after_cursor: '' } });
+  }),
   http.get(`${BASE}/tickets/:id/audits`, ({ params }) => {
     if (params['id'] === '404') return HttpResponse.json({}, { status: 404 });
     return HttpResponse.json({

@@ -153,7 +153,7 @@ applying the default there would boot a server whose config silently disagrees
 with the deployment. Every single-value variable below therefore fails at
 startup when set but empty, naming the variable. Unset it to get the default.
 
-Two deliberate exceptions:
+Three deliberate exceptions:
 
 - `CORS_ORIGIN` is a *list*, where an empty value legitimately means "no extra
   origins" on top of the built-in allowlist.
@@ -161,6 +161,15 @@ Two deliberate exceptions:
   8080` alongside a stray `PORT=` still boots, and so does the positional
   `<subdomain>` alongside an empty `ZENDESK_SUBDOMAIN`. Validation applies to
   the value the server actually uses.
+- The **numeric tuning caps** — `ZENDESK_CHARACTER_LIMIT`,
+  `ZENDESK_MAX_ATTACHMENT_BYTES`, `ZENDESK_MAX_EMBEDDED_IMAGES`,
+  `ZENDESK_MAX_COMMENT_PAGES`, `ZENDESK_REORDER_CONFIRM_THRESHOLD` and
+  `ZENDESK_ARTICLE_RESOURCES_SCAN_MAX_PAGES` — read through a shared parser that
+  treats an empty value as unset and falls back to the default, along with any
+  value that is not a positive safe integer. They bound response sizes and scan
+  depth rather than describing the deployment, so a typo there degrades a
+  guardrail instead of misrouting traffic, and refusing to boot over one would
+  be the harsher failure.
 
 ### `ZENDESK_SUBDOMAIN`
 **Required:** yes (or the CLI `<subdomain>` argument) · **Default:** none
@@ -227,6 +236,17 @@ connected to several servers.
 **Required:** no · **Default:** `info`
 
 Log verbosity (`debug` surfaces the full OAuth flow trace).
+
+### `ZENDESK_CHARACTER_LIMIT`
+**Required:** no · **Default:** `25000`
+
+Ceiling on the characters a single tool response may carry. Past it the text is cut and a notice says what to do about it — the notice names a lever the tool in question actually accepts (a page parameter, a narrower filter, or the tool that pages the same data), so it differs per tool.
+
+Raising it is rarely what you want: the default exists to protect the client's own context budget, and a larger response mostly moves the problem downstream. **Lowering it is the useful direction** — it is how the truncation paths get exercised on a tenant whose real data never reaches 25 000 characters. Set it to a few hundred and any ordinary response trips the notice:
+
+```bash
+ZENDESK_CHARACTER_LIMIT=2000 pnpm dev -- <your-subdomain> --mode all
+```
 
 ### `ZENDESK_MAX_ATTACHMENT_BYTES`
 **Required:** no · **Default:** `5242880` (5 MB)
