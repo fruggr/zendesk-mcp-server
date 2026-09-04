@@ -91,7 +91,17 @@ const END_USER_FORM_PARAMS = {
  * form invisible or a required field unenforced, and the caller then gets a
  * confidently wrong "no such form" or an opaque Zendesk 422.
  */
-interface PageWalk<T, R extends ZendeskListResponse<T>> {
+/**
+ * All the walker itself reads off a page. `extract` and `onPage` supply the
+ * rest, so the response need not be a `ZendeskListResponse<T>` -- which matters
+ * for a listing whose sideload is not of type `T` (see
+ * `RequestCommentsResponse`).
+ */
+interface PagedResponse {
+  next_page?: string | null;
+}
+
+interface PageWalk<T, R extends PagedResponse> {
   subdomain: string;
   token: string;
   tool: string;
@@ -106,7 +116,7 @@ interface PageWalk<T, R extends ZendeskListResponse<T>> {
   onPage?: (response: R) => void;
 }
 
-const fetchAllPages = async <T, R extends ZendeskListResponse<T> = ZendeskListResponse<T>>({
+const fetchAllPages = async <T, R extends PagedResponse = ZendeskListResponse<T>>({
   subdomain,
   token,
   tool,
@@ -204,7 +214,12 @@ const fetchVisibleTicketFields = async (
  * attributes each comment, and a later page's authors need not appear in the
  * first page's.
  */
-type RequestCommentsResponse = ZendeskListResponse<ZendeskComment> & {
+// `users` is omitted before being re-declared: `ZendeskListResponse<T>` types
+// every sideload key as `T[]`, so a plain intersection would make each author a
+// `ZendeskComment & ZendeskRequestCommentAuthor`. That compiles, and it lets a
+// comment field be read off an author record that never carries one -- exactly
+// the silently-missing-value trap, but type-checked.
+type RequestCommentsResponse = Omit<ZendeskListResponse<ZendeskComment>, 'users'> & {
   users?: ZendeskRequestCommentAuthor[];
 };
 
