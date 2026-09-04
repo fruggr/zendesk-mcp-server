@@ -17,23 +17,59 @@
  * body length — never body text), then follows one cursor page.
  *
  * Usage (auth is the one the running server already uses):
- *   ZENDESK_SUBDOMAIN=<subdomain> ZENDESK_OAUTH_TOKEN=<token> \
- *     pnpm tsx scripts/probe-ticket-comments.ts <ticket_id>
+ *   pnpm tsx scripts/probe-ticket-comments.ts <ticket_id>
+ *
+ * Auth is the one the running server already uses, so a session that can call
+ * the MCP tools can run this with no setup: the subdomain comes from
+ * ZENDESK_SUBDOMAIN or, failing that, from the committed .mcp.json; the token
+ * from ZENDESK_OAUTH_TOKEN or, failing that, from the same cached token file
+ * the stdio server reads (docs/live-testing.md).
  */
+import { readFileSync } from 'node:fs';
+import { loadToken, resolveTokenPath } from '../src/auth/token-persistence';
 import { getBaseUrl } from '../src/constants';
-
-const ticketId = process.argv[2];
-const subdomain = process.env['ZENDESK_SUBDOMAIN'];
-const token = process.env['ZENDESK_OAUTH_TOKEN'];
 
 const fail = (message: string): never => {
   console.error(message);
   process.exit(1);
 };
 
+// The project-scoped MCP config names the tenant the local server points at, so
+// it is the right fallback when the shell has no ZENDESK_SUBDOMAIN.
+const subdomainFromMcpConfig = (): string | undefined => {
+  try {
+    const raw: unknown = JSON.parse(readFileSync('.mcp.json', 'utf8'));
+    const servers = (raw as { mcpServers?: Record<string, { env?: Record<string, string> }> })
+      .mcpServers;
+    for (const server of Object.values(servers ?? {})) {
+      const value = server.env?.['ZENDESK_SUBDOMAIN'];
+      if (value) return value;
+    }
+  } catch {
+    // absent or malformed → no subdomain from here
+  }
+  return undefined;
+};
+
+const ticketId = process.argv[2];
 if (!ticketId) fail('Usage: pnpm tsx scripts/probe-ticket-comments.ts <ticket_id>');
-if (!subdomain) fail('ZENDESK_SUBDOMAIN is not set.');
-if (!token) fail('ZENDESK_OAUTH_TOKEN is not set (see docs/live-testing.md).');
+
+const subdomain = process.env['ZENDESK_SUBDOMAIN'] ?? subdomainFromMcpConfig();
+if (!subdomain) {
+  fail('No subdomain: set ZENDESK_SUBDOMAIN, or run from a checkout whose .mcp.json declares one.');
+}
+
+const token =
+  process.env['ZENDESK_OAUTH_TOKEN'] ??
+  loadToken(resolveTokenPath(subdomain as string))?.accessToken;
+if (!token) {
+  fail(
+    `No token: set ZENDESK_OAUTH_TOKEN, or sign in once so the store at ${resolveTokenPath(subdomain as string)} is populated (docs/live-testing.md).`,
+  );
+}
+console.log(
+  `Probing ${subdomain} with the ${process.env['ZENDESK_OAUTH_TOKEN'] ? 'ZENDESK_OAUTH_TOKEN' : 'cached token store'} credential.`,
+);
 
 interface ProbeComment {
   id?: number;
