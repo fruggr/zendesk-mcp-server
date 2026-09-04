@@ -130,13 +130,16 @@ const commentPageMeta = (response: TicketCommentsResponse, itemCount: number): P
 
 // Zendesk documents cursor pagination on this endpoint, so this is a defensive
 // path. If it ever answered offset-style, `next_page` says more comments exist
-// while no cursor comes with them — and this tool accepts only a cursor. Saying
-// nothing would report a truncated thread as complete, and faking a cursor would
-// send the caller nowhere, so the page carries this note and both levers that do
-// still work.
-const offsetPageNote = (response: TicketCommentsResponse, pageSize: number): string =>
+// while no cursor comes with them — and this tool sends and accepts only a
+// cursor. Nothing it exposes reaches those comments: `page_size` goes out as
+// `page[size]`, which an offset response has already ignored, and
+// get_ticket(include_comments=true) sends no paging at all, so it lands on the
+// same default page. Naming either would be advice that cannot work — the defect
+// this whole change is about (#265) — so the note says plainly that the
+// continuation is out of reach here and points at the one place that is not.
+const offsetPageNote = (response: TicketCommentsResponse): string =>
   response.meta?.after_cursor == null && response.next_page != null
-    ? `\n\n> ⚠ Zendesk paginated this response by offset rather than by cursor, so more comments exist beyond this page and no cursor leads to them. Re-read with a larger page_size (up to ${MAX_PAGE_SIZE}, currently ${pageSize}), or with get_ticket(include_comments=true).`
+    ? '\n\n> ⚠ Zendesk paginated this response by offset rather than by cursor, so more comments exist beyond this page and no cursor leads to them. This tool pages by cursor only, and no parameter it accepts reaches the rest: read the remaining comments in Zendesk directly.'
     : '';
 
 // How the page actually came back, read off the data rather than off what was
@@ -893,7 +896,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         );
         const comments = response.comments ?? [];
         const meta = commentPageMeta(response, comments.length);
-        const offsetNote = offsetPageNote(response, page_size);
+        const offsetNote = offsetPageNote(response);
         if (comments.length === 0) {
           const text = meta.has_more
             ? `No comments on this page of ticket #${ticket_id}. More available (cursor: ${meta.after_cursor}).`

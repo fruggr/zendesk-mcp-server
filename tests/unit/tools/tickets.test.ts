@@ -506,9 +506,31 @@ describe('ticket tools', () => {
         await tool.handler({ ticket_id: 1, sort_order: 'desc', page_size: 20 }),
       );
       expect(text).toContain('paginated this response by offset');
-      expect(text).toContain('larger page_size (up to 100, currently 20)');
+      expect(text).toContain('read the remaining comments in Zendesk directly');
+      // page_size goes out as page[size], which an offset response has already
+      // ignored, and get_ticket sends no paging at all — naming either would be
+      // advice that cannot work (#265).
+      expect(text).not.toContain('page_size');
+      expect(text).not.toContain('get_ticket(include_comments=true)');
       expect(text).not.toContain('cursor: null');
       expect(text).not.toContain('More available');
+    });
+
+    it('says the same at page_size 100, where no larger page exists either', async () => {
+      mswServer.use(
+        http.get(COMMENTS_URL, () =>
+          HttpResponse.json({
+            comments: [MOCK_COMMENT],
+            next_page: 'https://testsubdomain.zendesk.com/api/v2/tickets/1/comments.json?page=2',
+          }),
+        ),
+      );
+      const tool = findTool('list_ticket_comments');
+      const text = getAllText(
+        await tool.handler({ ticket_id: 1, sort_order: 'desc', page_size: 100 }),
+      );
+      expect(text).toContain('read the remaining comments in Zendesk directly');
+      expect(text).not.toContain('page_size');
     });
 
     it('reports the same on an empty offset-paginated page', async () => {
