@@ -10,9 +10,11 @@ import {
 import {
   DEFAULT_PAGE_SIZE,
   MAX_ATTACHMENT_BYTES,
+  MAX_BASE64_INPUT_CHARS,
   MAX_COMMENT_PAGES,
   MAX_EMBEDDED_IMAGE_COUNT,
   MAX_PAGE_SIZE,
+  MAX_RESPONSE_BYTES,
 } from '../constants';
 import type {
   PaginationMeta,
@@ -66,6 +68,36 @@ import type { ToolContext, ToolDefinition, ToolImageContent, ToolTextContent } f
 // The per-image cap in MB, for the skip message. Derived once: both operands
 // are module constants.
 const MAX_ATTACHMENT_MB = Number.parseFloat((MAX_ATTACHMENT_BYTES / (1024 * 1024)).toFixed(2));
+
+// The inbound base64 ceiling expressed as file megabytes, for the descriptions.
+// Base64 carries 3 bytes per 4 characters.
+const MAX_BASE64_INPUT_MB = Number.parseFloat(
+  (((MAX_BASE64_INPUT_CHARS / 4) * 3) / (1024 * 1024)).toFixed(2),
+);
+
+// The response budget in MB, for the skip and truncation messages.
+const MAX_RESPONSE_MB = Number.parseFloat((MAX_RESPONSE_BYTES / (1024 * 1024)).toFixed(2));
+
+// Bytes a block adds to the response once serialized. A JSON array weighs the sum
+// of its elements plus one separator each, so accumulating this is exact rather
+// than approximate: no assumption about file names, URLs or MIME types.
+const blockCost = (block: ToolTextContent | ToolImageContent): number =>
+  Buffer.byteLength(JSON.stringify(block), 'utf8') + 1;
+
+// What an image will weigh once embedded, known before downloading it. Base64
+// turns every 3 bytes into 4 characters, so the size Zendesk reports is enough,
+// and an image that cannot fit is never fetched.
+// What embedding this image would weigh, reference block included, known before
+// downloading it. Base64 turns every 3 bytes into 4 characters, so the size
+// Zendesk reports is enough, and an image that cannot fit is never fetched.
+const embeddedCost = (attachment: ZendeskTicketAttachment, reference: string): number =>
+  blockCost({ type: 'image', data: '', mimeType: attachment.content_type }) +
+  4 * Math.ceil(attachment.size / 3) +
+  blockCost({ type: 'text', text: reference });
+
+// Reserved up front for the truncation notice, so the block that reports the
+// omission is never itself what overflows the budget.
+const TRUNCATION_NOTICE_RESERVE = 256;
 
 const formatReference = (attachment: ZendeskTicketAttachment): string =>
   `**${attachment.file_name}** (id ${attachment.id}, ${attachment.content_type}, ${attachment.size} bytes) — ${attachment.content_url}`;
@@ -135,6 +167,41 @@ const fetchAttachmentsByIds = async (
   return attachments;
 };
 
+// Why an image is not embedded, or null when it is. Ordered from the narrowest
+// reason to the widest so the message names the actual cause: its own size, then
+// how many are already in, then what is left of the response budget.
+const imageSkipReason = (
+  attachment: ZendeskTicketAttachment,
+  embeddedCount: number,
+  withinBudget: boolean,
+): string | null => {
+  if (attachment.size > MAX_ATTACHMENT_BYTES)
+    return `skipped: exceeds ${MAX_ATTACHMENT_MB} MB per-image limit`;
+  if (embeddedCount >= MAX_EMBEDDED_IMAGE_COUNT)
+    return `skipped: max ${MAX_EMBEDDED_IMAGE_COUNT} embedded images reached`;
+  if (!withinBudget) return `skipped: response budget of ${MAX_RESPONSE_MB} MB reached`;
+  return null;
+};
+
+// Embed the image, or fall back to a reference that says why the download failed.
+// A failed download is one attachment lost, never the whole listing.
+const embedOrExplain = async (
+  subdomain: string,
+  token: string,
+  attachment: ZendeskTicketAttachment,
+  reference: string,
+): Promise<Array<ToolTextContent | ToolImageContent>> => {
+  try {
+    return await buildEmbeddedImageBlocks(subdomain, token, attachment, reference);
+  } catch (error) {
+    const reason =
+      error instanceof ZendeskApiError
+        ? `download failed: ${error.status} ${error.statusText}`
+        : 'download failed';
+    return [{ type: 'text', text: `${reference} — ${reason}` }];
+  }
+};
+
 const collectAttachmentBlocks = async (
   subdomain: string,
   token: string,
@@ -142,38 +209,39 @@ const collectAttachmentBlocks = async (
 ): Promise<Array<ToolTextContent | ToolImageContent>> => {
   const blocks: Array<ToolTextContent | ToolImageContent> = [];
   let embeddedCount = 0;
+  // Running weight of `blocks` once serialized, so the response never grows past
+  // what the transport accepts (#205).
+  let responseBytes = 0;
+  const fits = (cost: number): boolean =>
+    responseBytes + cost + TRUNCATION_NOTICE_RESERVE <= MAX_RESPONSE_BYTES;
 
-  for (const attachment of attachments) {
+  for (const [index, attachment] of attachments.entries()) {
     const reference = formatReference(attachment);
     const isImage = attachment.content_type.startsWith('image/');
+    const skipReason = isImage
+      ? imageSkipReason(attachment, embeddedCount, fits(embeddedCost(attachment, reference)))
+      : null;
 
-    if (!isImage) {
-      blocks.push({ type: 'text', text: reference });
-      continue;
+    const produced: Array<ToolTextContent | ToolImageContent> =
+      isImage && !skipReason
+        ? await embedOrExplain(subdomain, token, attachment, reference)
+        : [{ type: 'text', text: skipReason ? `${reference} — ${skipReason}` : reference }];
+
+    const cost = produced.reduce((total, block) => total + blockCost(block), 0);
+    if (!fits(cost)) {
+      // Even references have stopped fitting: stop walking and say how many were
+      // dropped, since silence here would read as a shorter ticket.
+      const omitted = attachments.length - index;
+      blocks.push({
+        type: 'text',
+        text: `${omitted} further attachments omitted: response budget of ${MAX_RESPONSE_MB} MB reached`,
+      });
+      break;
     }
 
-    let skipReason: string | null = null;
-    if (attachment.size > MAX_ATTACHMENT_BYTES) {
-      skipReason = `skipped: exceeds ${MAX_ATTACHMENT_MB} MB per-image limit`;
-    } else if (embeddedCount >= MAX_EMBEDDED_IMAGE_COUNT) {
-      skipReason = `skipped: max ${MAX_EMBEDDED_IMAGE_COUNT} embedded images reached`;
-    }
-
-    if (skipReason) {
-      blocks.push({ type: 'text', text: `${reference} — ${skipReason}` });
-      continue;
-    }
-
-    try {
-      blocks.push(...(await buildEmbeddedImageBlocks(subdomain, token, attachment, reference)));
-      embeddedCount += 1;
-    } catch (error) {
-      const reason =
-        error instanceof ZendeskApiError
-          ? `download failed: ${error.status} ${error.statusText}`
-          : 'download failed';
-      blocks.push({ type: 'text', text: `${reference} — ${reason}` });
-    }
+    blocks.push(...produced);
+    responseBytes += cost;
+    if (produced.some((block) => block.type === 'image')) embeddedCount += 1;
   }
 
   return blocks;
@@ -557,7 +625,17 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
 
   const attachmentSchema = z.object({
     file_name: z.string().min(1).describe('File name, e.g. "app.log" or "screenshot.png".'),
-    file_base64: z.string().min(1).base64().describe('File content encoded as base64.'),
+    file_base64: z
+      .string()
+      .min(1)
+      .base64()
+      .max(MAX_BASE64_INPUT_CHARS, {
+        error: (issue) =>
+          `Attachment too large: ${(issue.input as string).length} base64 characters, limit ${MAX_BASE64_INPUT_CHARS}. Downscale the file, split the upload, or link to it instead of uploading.`,
+      })
+      .describe(
+        `File content encoded as base64. At most ${MAX_BASE64_INPUT_CHARS} characters (about ${MAX_BASE64_INPUT_MB} MB of file), and the attachments of one call must stay under that total; the HTTP transport additionally caps request bodies at 4 MB.`,
+      ),
     content_type: z
       .string()
       .min(1)
@@ -565,6 +643,22 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       .describe('MIME type, e.g. "text/plain", "image/png", "application/pdf".'),
   });
   type AttachmentInput = z.infer<typeof attachmentSchema>;
+
+  // The per-file cap above bounds one attachment; this bounds a call, because
+  // `attachments` is a list and every file rides in the same message (#205).
+  const attachmentsParam = (description: string) =>
+    z
+      .array(attachmentSchema)
+      .superRefine((files, refinement) => {
+        const total = files.reduce((sum, file) => sum + file.file_base64.length, 0);
+        if (total > MAX_BASE64_INPUT_CHARS)
+          refinement.addIssue({
+            code: 'custom',
+            message: `Attachments too large: ${total} base64 characters in total, limit ${MAX_BASE64_INPUT_CHARS}. Send fewer files per call.`,
+          });
+      })
+      .optional()
+      .describe(description);
 
   // Upload each file via the Zendesk Uploads API, aggregating them under a single
   // upload token (the token from the first upload is passed to the next), and
@@ -1014,10 +1108,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           .describe(
             'Note text (internal, agent-only). Plain text or HTML; not shown to the requester.',
           ),
-        attachments: z
-          .array(attachmentSchema)
-          .optional()
-          .describe('Files to attach to this note (base64-encoded content).'),
+        attachments: attachmentsParam('Files to attach to this note (base64-encoded content).'),
       }),
       annotations: {
         readOnlyHint: false,
@@ -1064,10 +1155,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           .describe(
             'Comment text sent to the requester. Plain text or HTML; visible in the ticket.',
           ),
-        attachments: z
-          .array(attachmentSchema)
-          .optional()
-          .describe('Files to attach to this comment (base64-encoded content).'),
+        attachments: attachmentsParam('Files to attach to this comment (base64-encoded content).'),
       }),
       annotations: {
         readOnlyHint: false,

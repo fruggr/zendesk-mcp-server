@@ -63,6 +63,41 @@ export const MAX_ATTACHMENT_BYTES = positiveIntEnv('ZENDESK_MAX_ATTACHMENT_BYTES
 // images are returned as text references. Override via ZENDESK_MAX_EMBEDDED_IMAGES.
 export const MAX_EMBEDDED_IMAGE_COUNT = positiveIntEnv('ZENDESK_MAX_EMBEDDED_IMAGES', 10);
 
+// Largest JSON-RPC message the stdio transport accepts, and the ceiling every
+// payload guard below derives from. Deliberately our own number rather than the
+// SDK's STDIO_DEFAULT_MAX_BUFFER_SIZE: the input caps derived from it surface as
+// `maxLength` in the published JSON Schema, and a contract that shifts because a
+// dependency bumped its default would change what agents rely on with nobody
+// deciding it (docs/mcp-metadata.md). A unit test asserts this stays within what
+// the SDK accepts, so a lowered default is caught here rather than in production.
+// Not overridable: a transport contract, not a usage knob.
+export const STDIO_MAX_MESSAGE_BYTES = 10 * 1024 * 1024;
+
+// Room left for what wraps our content in a message: the JSON-RPC envelope, plus
+// a request id the client picks and the spec does not bound. Measured at 53 bytes
+// for a plain response, so this is oversized on purpose rather than tuned. It
+// costs 0.6% of the ceiling and buys the guards independence from an envelope we
+// do not control.
+const ENVELOPE_RESERVE_BYTES = 64 * 1024;
+
+// Budget for the content of one tool response, enforced by summing the serialized
+// weight of every block as it is appended. MAX_ATTACHMENT_BYTES bounds each image
+// and MAX_EMBEDDED_IMAGE_COUNT how many, but nothing bounded the total: ten 2 MB
+// images, each individually fine, built a message far past the ceiling, and enough
+// non-image attachments did the same in text references alone (#205). Override via
+// ZENDESK_MAX_RESPONSE_BYTES.
+export const MAX_RESPONSE_BYTES = positiveIntEnv(
+  'ZENDESK_MAX_RESPONSE_BYTES',
+  STDIO_MAX_MESSAGE_BYTES - ENVELOPE_RESERVE_BYTES,
+);
+
+// Longest base64 string accepted on an attachment input, and the summed ceiling
+// for the array parameters. It cannot prevent the overflow, since the read buffer
+// bursts before anything is parsed, but it is published as `maxLength` for an
+// agent to read before calling, and it turns a moderate overshoot into a plain
+// validation error instead of a dropped session.
+export const MAX_BASE64_INPUT_CHARS = STDIO_MAX_MESSAGE_BYTES - ENVELOPE_RESERVE_BYTES;
+
 // Hard cap on comment pages fetched when collecting ticket attachments.
 // Overridable via ZENDESK_MAX_COMMENT_PAGES for tickets with many comments.
 export const MAX_COMMENT_PAGES = positiveIntEnv('ZENDESK_MAX_COMMENT_PAGES', 10);

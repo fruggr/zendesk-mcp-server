@@ -1,5 +1,7 @@
 import { HttpResponse, http } from 'msw';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import * as z from 'zod/v4';
+import { MAX_BASE64_INPUT_CHARS } from '../../../src/constants';
 import type { ToolContext } from '../../../src/tools/definitions';
 import { createTicketTools } from '../../../src/tools/tickets';
 import {
@@ -609,6 +611,112 @@ describe('ticket tools', () => {
         expect(imageBlocks).toHaveLength(0);
         expect(getAllText(result)).toContain('exceeds 2 MB per-image limit');
       });
+
+      // #205: the per-image cap and the image count bound each image and how many,
+      // never the total. Two images that both pass built a message past the stdio
+      // ReadBuffer ceiling, which closes the transport instead of failing the call.
+      describe('response budget', () => {
+        // Serves as many bytes as the caller asks for via ?bytes=, so the response
+        // actually weighs what the attachment metadata claims. Without this the
+        // shared handler returns 4 bytes per image and any size assertion passes
+        // for the wrong reason.
+        const serveSizedBinary = () => {
+          mswServer.use(
+            http.get(
+              'https://testsubdomain.zendesk.com/attachments/token/:token/',
+              ({ request }) => {
+                const bytes = Number(new URL(request.url).searchParams.get('bytes') ?? '4');
+                return HttpResponse.arrayBuffer(new Uint8Array(bytes).buffer, {
+                  headers: { 'content-type': 'image/png' },
+                });
+              },
+            ),
+          );
+        };
+
+        const sizedImages = (count: number, size: number) =>
+          Array.from({ length: count }, (_, i) => ({
+            id: 81000 + i,
+            file_name: `sized-${i}.png`,
+            content_url: `https://testsubdomain.zendesk.com/attachments/token/s${i}/?bytes=${size}`,
+            content_type: 'image/png',
+            size,
+            inline: false,
+          }));
+
+        const serializedBytes = (result: { content: unknown[] }) =>
+          Buffer.byteLength(JSON.stringify(result.content), 'utf8');
+
+        it('keeps the serialized response within the budget, embedding what fits', async () => {
+          vi.resetModules();
+          // Small budget, small images: same arithmetic as production, without
+          // moving megabytes through the test.
+          vi.stubEnv('ZENDESK_MAX_RESPONSE_BYTES', String(200 * 1024));
+          const size = 60 * 1024;
+          mockCommentAttachments(sizedImages(4, size));
+          serveSizedBinary();
+
+          const tool = await loadAttachmentsTool();
+          const result = await tool.handler({ ticket_id: 1 });
+
+          // The assertion that matters: what would actually go on the wire.
+          expect(serializedBytes(result)).toBeLessThanOrEqual(200 * 1024);
+          // 60 KB of bytes is 80 KB of base64, so two fit in 200 KB and two do not.
+          expect(result.content.filter((c) => c.type === 'image')).toHaveLength(2);
+          const text = getAllText(result);
+          expect(text).toContain('sized-2.png');
+          expect(text).toMatch(/skipped: response budget of [\d.]+ MB reached/);
+        });
+
+        it('reports the budget skip on images that individually pass every other cap', async () => {
+          vi.resetModules();
+          vi.stubEnv('ZENDESK_MAX_RESPONSE_BYTES', String(200 * 1024));
+          mockCommentAttachments(sizedImages(4, 60 * 1024));
+          serveSizedBinary();
+
+          const tool = await loadAttachmentsTool();
+          const result = await tool.handler({ ticket_id: 1 });
+          const text = getAllText(result);
+
+          // Neither existing guardrail fired: each image is well under the 5 MB
+          // per-image cap and there are far fewer than 10 of them.
+          expect(text).not.toContain('per-image limit');
+          expect(text).not.toContain('embedded images reached');
+          expect(text).toContain('response budget');
+        });
+
+        // The image count never bounded text references, and comment paging walks
+        // up to MAX_COMMENT_PAGES x MAX_PAGE_SIZE comments, so references alone can
+        // fill a message. Truncation is what covers that.
+        it('truncates and says so when even text references stop fitting', async () => {
+          vi.resetModules();
+          vi.stubEnv('ZENDESK_MAX_RESPONSE_BYTES', String(4 * 1024));
+          mockCommentAttachments(
+            Array.from({ length: 200 }, (_, i) => ({
+              id: 82000 + i,
+              file_name: `doc-${i}.pdf`,
+              content_url: `https://testsubdomain.zendesk.com/attachments/token/d${i}/?name=doc-${i}.pdf`,
+              content_type: 'application/pdf',
+              size: 1024,
+              inline: false,
+            })),
+          );
+
+          const tool = await loadAttachmentsTool();
+          const result = await tool.handler({ ticket_id: 1 });
+
+          expect(serializedBytes(result)).toBeLessThanOrEqual(4 * 1024);
+          expect(result.content.length).toBeLessThan(200);
+          expect(getAllText(result)).toMatch(/\d+ further attachments omitted/);
+        });
+
+        it('falls back to the default budget when the override is empty or non-numeric', async () => {
+          vi.resetModules();
+          vi.stubEnv('ZENDESK_MAX_RESPONSE_BYTES', 'not-a-number');
+          const { MAX_RESPONSE_BYTES } = await import('../../../src/constants');
+          expect(MAX_RESPONSE_BYTES).toBe(10 * 1024 * 1024 - 64 * 1024);
+        });
+      });
     });
   });
 
@@ -714,6 +822,80 @@ describe('ticket tools', () => {
       const tool = findTool('update_ticket');
       const result = await tool.handler({ ticket_id: 1, status: 'solved' });
       expect(result.content[0]?.text).toContain('updated');
+    });
+  });
+
+  // #205 inbound side: nothing bounded the size of a base64 attachment input, and
+  // `attachments` takes a list, so several files add up inside one message. A
+  // schema cap cannot stop the overflow (the read buffer bursts before parsing),
+  // but it is published as `maxLength` for an agent to read, and it turns a
+  // moderate overshoot into a plain validation error rather than a lost session.
+  describe('attachment input caps', () => {
+    const b64 = (chars: number) => 'a'.repeat(chars);
+
+    const parse = (name: string, params: unknown) => {
+      const tool = findTool(name);
+      return tool.inputSchema.safeParse(params);
+    };
+
+    it('rejects a single attachment past the base64 ceiling, naming limit and size', () => {
+      const result = parse('add_private_note', {
+        ticket_id: 1,
+        body: 'note',
+        attachments: [
+          {
+            file_name: 'huge.bin',
+            file_base64: b64(MAX_BASE64_INPUT_CHARS + 4),
+            content_type: 'application/octet-stream',
+          },
+        ],
+      });
+      expect(result.success).toBe(false);
+      if (result.success) return;
+      const message = result.error.issues.map((i) => i.message).join(' ');
+      expect(message).toContain(String(MAX_BASE64_INPUT_CHARS));
+      expect(message).toContain(String(MAX_BASE64_INPUT_CHARS + 4));
+    });
+
+    it('rejects attachments that only overflow once summed', () => {
+      const half = Math.ceil((MAX_BASE64_INPUT_CHARS + 8) / 2 / 4) * 4;
+      const result = parse('add_public_comment', {
+        ticket_id: 1,
+        body: 'reply',
+        attachments: [
+          { file_name: 'a.bin', file_base64: b64(half), content_type: 'application/octet-stream' },
+          { file_name: 'b.bin', file_base64: b64(half), content_type: 'application/octet-stream' },
+        ],
+      });
+      expect(result.success).toBe(false);
+      if (result.success) return;
+      const message = result.error.issues.map((i) => i.message).join(' ');
+      // Each file passes on its own; only the total is over.
+      expect(half).toBeLessThanOrEqual(MAX_BASE64_INPUT_CHARS);
+      expect(message).toContain(String(half * 2));
+      expect(message).toContain(String(MAX_BASE64_INPUT_CHARS));
+    });
+
+    it('still accepts an ordinary attachment', () => {
+      const result = parse('add_private_note', {
+        ticket_id: 1,
+        body: 'note',
+        attachments: [{ file_name: 'a.txt', file_base64: 'aGVsbG8=', content_type: 'text/plain' }],
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('publishes the ceiling as maxLength so an agent sees it before calling', () => {
+      const schema = z.toJSONSchema(findTool('add_private_note').inputSchema, {
+        io: 'input',
+      }) as {
+        properties: {
+          attachments: { items: { properties: { file_base64: { maxLength?: number } } } };
+        };
+      };
+      expect(schema.properties.attachments.items.properties.file_base64.maxLength).toBe(
+        MAX_BASE64_INPUT_CHARS,
+      );
     });
   });
 
