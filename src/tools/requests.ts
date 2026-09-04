@@ -43,13 +43,14 @@ import type { ToolContext, ToolDefinition } from './definitions';
 //
 // ASCII only, same as the other rewritten auth messages: these can travel
 // through header-adjacent paths that reject non-ASCII bytes.
-const forbidden = (tool: string, endpoint: string, error: ZendeskApiError): Error =>
+const forbidden = (tool: string, endpoint: string, error: ZendeskApiError, hint?: string): Error =>
   new Error(
     `${tool} reads the end-user Requests surface (${endpoint}), which Zendesk serves to a ` +
       'signed-in requester. The current token was refused (HTTP 403). Either the Help Center ' +
-      'is closed to this account, or this token is not a Help-Center-enabled user. For the ' +
-      'agent-side equivalents use create_ticket, get_ticket, list_tickets or add_public_comment ' +
-      '(namespace: tickets).',
+      `is closed to this account, or this token is not a Help-Center-enabled user.${
+        hint ? ` ${hint}` : ''
+      } For the agent-side equivalents use create_ticket, get_ticket, list_tickets or ` +
+      'add_public_comment (namespace: tickets).',
     { cause: error },
   );
 
@@ -58,12 +59,13 @@ const withForbiddenGuidance = async <T>(
   tool: string,
   endpoint: string,
   fetch: () => Promise<T>,
+  hint?: string,
 ): Promise<T> => {
   try {
     return await fetch();
   } catch (error) {
     if (error instanceof ZendeskApiError && error.status === 403) {
-      throw forbidden(tool, endpoint, error);
+      throw forbidden(tool, endpoint, error, hint);
     }
     throw error;
   }
@@ -103,6 +105,8 @@ interface PageWalk<T, R extends PagedResponse> {
   capEnvVar?: string;
   /** Called per page, for a listing that also carries a sideload to accumulate. */
   onPage?: (response: R) => void;
+  /** Extra sentence for the 403 message, when this path has its own cause. */
+  forbiddenHint?: string;
 }
 
 /**
@@ -126,15 +130,20 @@ const fetchAllPages = async <T, R extends PagedResponse = ZendeskListResponse<T>
   maxPages = TICKET_FIELD_SCAN_MAX_PAGES,
   capEnvVar = 'ZENDESK_TICKET_FIELD_SCAN_MAX_PAGES',
   onPage,
+  forbiddenHint,
 }: PageWalk<T, R>): Promise<T[]> => {
   const items: T[] = [];
   let page = 1;
   while (true) {
-    const response = await withForbiddenGuidance(tool, `GET ${path}`, () =>
-      zendeskGet<R>(subdomain, token, path, {
-        ...params,
-        ...buildOffsetParams(MAX_PAGE_SIZE, page),
-      }),
+    const response = await withForbiddenGuidance(
+      tool,
+      `GET ${path}`,
+      () =>
+        zendeskGet<R>(subdomain, token, path, {
+          ...params,
+          ...buildOffsetParams(MAX_PAGE_SIZE, page),
+        }),
+      forbiddenHint,
     );
     items.push(...(extract(response) ?? []));
     onPage?.(response);
@@ -167,6 +176,12 @@ const fetchEndUserForms = async (
     path: '/ticket_forms',
     extract: (response) => response.ticket_forms,
     params: END_USER_FORM_PARAMS,
+    // Multiple ticket forms are a plan feature, so this endpoint has a third
+    // cause the generic message would mis-diagnose as a Help Center or token
+    // problem. Every request tool that needs a form goes through here,
+    // create_request included, so getting the blame right matters.
+    forbiddenHint:
+      'This endpoint can also be unavailable on a Zendesk plan without multiple ticket forms.',
   });
 
 /**

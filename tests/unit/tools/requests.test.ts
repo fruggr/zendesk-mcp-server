@@ -153,6 +153,23 @@ describe('list_request_forms', () => {
     );
     await expect(textOf('list_request_forms', {})).rejects.toThrow(/create_ticket/);
     await expect(textOf('list_request_forms', {})).rejects.toThrow(/HTTP 403/);
+    // Multiple ticket forms are a plan feature, so this path has a cause the
+    // generic message would mis-diagnose as a Help Center or token problem.
+    await expect(textOf('list_request_forms', {})).rejects.toThrow(
+      /plan without multiple ticket forms/,
+    );
+  });
+
+  // The plan cause belongs to the form listing alone: naming it on the request
+  // endpoints would be a wrong diagnosis, not a helpful extra.
+  it('does not blame the plan for a 403 on the request endpoints', async () => {
+    mswServer.use(
+      http.get(`${BASE}/requests/:id`, () => new HttpResponse('nope', { status: 403 })),
+    );
+    await expect(textOf('get_request', { request_id: 5001 })).rejects.toThrow(/HTTP 403/);
+    await expect(textOf('get_request', { request_id: 5001 })).rejects.not.toThrow(
+      /plan without multiple ticket forms/,
+    );
   });
 });
 
