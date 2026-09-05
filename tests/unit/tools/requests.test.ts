@@ -993,6 +993,11 @@ describe('mark_request_solved', () => {
     const text = await textOf('mark_request_solved', { request_id: 5001 });
     expect(text).toContain('still **open**');
     expect(text).toContain('so it was not solved');
+    // Naming only the assignment race sent a validator hunting: the likelier
+    // cause on this surface is an agent token, for which Zendesk answers 200
+    // and ignores `solved` outright.
+    expect(text).toContain('the token belongs to an agent rather than to the requester');
+    expect(text).toContain('the assignment changed between the check and the update');
   });
 });
 

@@ -973,8 +973,10 @@ export const createRequestTools = (ctx: ToolContext): ToolDefinition[] => {
           after.status === 'solved'
             ? `Request #${request_id} is now **solved**.`
             : `Zendesk accepted the update but request #${request_id} is still **${after.status}**, ` +
-              'so it was not solved. This usually means the assignment changed between the check ' +
-              'and the update; re-read it with get_request.';
+              'so it was not solved. Two causes produce this silently: the token belongs to an ' +
+              'agent rather than to the requester -- Zendesk answers 200 and ignores `solved` for ' +
+              'them -- or the assignment changed between the check and the update. Re-read it ' +
+              'with get_request.';
         return { content: [{ type: 'text', text }] };
       },
     },

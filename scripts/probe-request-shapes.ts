@@ -33,11 +33,15 @@ if (!subdomain) {
   process.exit(1);
 }
 
+// `accessToken`, not `access_token`: the key is the one `PersistedToken` in
+// src/auth/token-persistence.ts writes, not the one Zendesk's OAuth response
+// uses. Reading the wrong one made this script claim "No token found" on a
+// machine that had signed in, and send whoever ran it hunting for a token.
 const readCachedToken = (): string | undefined => {
   try {
     const raw = readFileSync(resolveTokenPath(subdomain), 'utf8');
-    const parsed = JSON.parse(raw) as { access_token?: string };
-    return parsed.access_token;
+    const parsed = JSON.parse(raw) as { accessToken?: string };
+    return parsed.accessToken;
   } catch {
     return undefined;
   }
