@@ -5,7 +5,6 @@ import {
   zendeskGet,
   zendeskPost,
   zendeskPut,
-  zendeskUpload,
 } from '../client/zendesk-api';
 import {
   DEFAULT_PAGE_SIZE,
@@ -29,7 +28,6 @@ import type {
   ZendeskTicket,
   ZendeskTicketAttachment,
   ZendeskTicketField,
-  ZendeskUpload,
   ZendeskUser,
   ZendeskView,
   ZendeskViewCount,
@@ -63,6 +61,12 @@ import {
   PAGE_DESC,
   PER_PAGE_DESC,
 } from '../utils/pagination';
+import {
+  type AttachmentInput,
+  attachmentSchema,
+  formatAttachmentSuffix,
+  uploadAttachments,
+} from './attachments';
 import type { ToolContext, ToolDefinition, ToolImageContent, ToolTextContent } from './definitions';
 
 // The per-image cap in MB, for the skip message. Derived once: both operands
@@ -647,39 +651,6 @@ const formatMacroPreviewDiff = (
 export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
   const { subdomain, getToken } = ctx;
 
-  const attachmentSchema = z.object({
-    file_name: z.string().min(1).describe('File name, e.g. "app.log" or "screenshot.png".'),
-    file_base64: z.string().min(1).base64().describe('File content encoded as base64.'),
-    content_type: z
-      .string()
-      .min(1)
-      .default('application/octet-stream')
-      .describe('MIME type, e.g. "text/plain", "image/png", "application/pdf".'),
-  });
-  type AttachmentInput = z.infer<typeof attachmentSchema>;
-
-  // Upload each file via the Zendesk Uploads API, aggregating them under a single
-  // upload token (the token from the first upload is passed to the next), and
-  // return that token for use in a comment's `uploads` array.
-  const uploadAttachments = async (token: string, files: AttachmentInput[]): Promise<string> => {
-    let uploadToken: string | undefined;
-    for (const file of files) {
-      const { upload } = await zendeskUpload<{ upload: ZendeskUpload }>(
-        subdomain,
-        token,
-        file.file_name,
-        Buffer.from(file.file_base64, 'base64'),
-        file.content_type,
-        uploadToken,
-      );
-      uploadToken = upload.token;
-    }
-    return uploadToken as string;
-  };
-
-  const formatAttachmentSuffix = (count?: number): string =>
-    count ? ` with ${count} attachment(s)` : '';
-
   return [
     {
       name: 'get_ticket',
@@ -1235,7 +1206,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         };
         const token = await getToken();
         const uploads = attachments?.length
-          ? [await uploadAttachments(token, attachments)]
+          ? [await uploadAttachments(subdomain, token, attachments)]
           : undefined;
         await zendeskPut(subdomain, token, `/tickets/${ticket_id}`, {
           ticket: { comment: { body, public: false, ...(uploads && { uploads }) } },
@@ -1285,7 +1256,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         };
         const token = await getToken();
         const uploads = attachments?.length
-          ? [await uploadAttachments(token, attachments)]
+          ? [await uploadAttachments(subdomain, token, attachments)]
           : undefined;
         await zendeskPut(subdomain, token, `/tickets/${ticket_id}`, {
           ticket: { comment: { body, public: true, ...(uploads && { uploads }) } },

@@ -80,6 +80,18 @@ export const MAX_EMBEDDED_IMAGE_COUNT = positiveIntEnv('ZENDESK_MAX_EMBEDDED_IMA
 // Overridable via ZENDESK_MAX_COMMENT_PAGES for tickets with many comments.
 export const MAX_COMMENT_PAGES = positiveIntEnv('ZENDESK_MAX_COMMENT_PAGES', 10);
 
+// Max /ticket_fields pages scanned when resolving a request form's fields. That
+// endpoint cannot be trusted to say when it is done: under an end-user token its
+// `count` is the UNFILTERED total (27 while returning 8 rows with
+// `next_page: null`), and in cursor mode `page[size]` is applied before the
+// visibility filter, so a short page is not the last page. We therefore follow
+// `next_page` alone and bound the walk here. Override via
+// ZENDESK_TICKET_FIELD_SCAN_MAX_PAGES.
+export const TICKET_FIELD_SCAN_MAX_PAGES = positiveIntEnv(
+  'ZENDESK_TICKET_FIELD_SCAN_MAX_PAGES',
+  10,
+);
+
 // Blast-radius guard for reorder_article. Reordering an article can require
 // rewriting the `position` of several neighbours (to break ties or shift a run);
 // if that write set exceeds this many articles the tool refuses unless the caller
