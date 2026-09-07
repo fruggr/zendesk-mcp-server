@@ -2430,7 +2430,11 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         file_base64: z
           .string()
           .min(1)
+          // `abort` stops the chain here, so the base64 regex does not scan
+          // megabytes already disqualified by their length. In-range inputs and
+          // the published schema are unaffected.
           .max(MAX_BASE64_INPUT_CHARS, {
+            abort: true,
             error: (issue) =>
               `File too large: ${(issue.input as string).length} base64 characters, limit ${MAX_BASE64_INPUT_CHARS}. Downscale the file, split it, or host it elsewhere and link to it.`,
           })

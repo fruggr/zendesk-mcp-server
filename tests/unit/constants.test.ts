@@ -125,21 +125,13 @@ describe('MAX_RESPONSE_BYTES (positiveIntEnv)', () => {
   });
 });
 
-describe('MAX_BASE64_INPUT_CHARS / MAX_BASE64_INPUT_MB', () => {
-  // Not overridable on purpose: it surfaces as `maxLength` in the published tool
-  // schema, which must not vary with the environment.
-  it('ignores an environment override', async () => {
-    vi.resetModules();
-    vi.stubEnv('ZENDESK_MAX_BASE64_INPUT_CHARS', '1024');
-    const { MAX_BASE64_INPUT_CHARS } = await import('../../src/constants');
-    expect(MAX_BASE64_INPUT_CHARS).toBe(10 * 1024 * 1024 - 64 * 1024);
-    vi.unstubAllEnvs();
-  });
-
-  it('renders the megabyte figure the descriptions quote', async () => {
+describe('MAX_BASE64_INPUT_MB', () => {
+  it('is the file size the base64 ceiling allows', async () => {
     vi.resetModules();
     const { MAX_BASE64_INPUT_CHARS, MAX_BASE64_INPUT_MB } = await import('../../src/constants');
-    // Base64 carries 3 bytes per 4 characters.
-    expect(MAX_BASE64_INPUT_MB).toBeCloseTo(((MAX_BASE64_INPUT_CHARS / 4) * 3) / (1024 * 1024), 2);
+    // Base64 carries 3 bytes per 4 characters. Asserted against the megabyte
+    // figure the tool descriptions quote, so a change to either is caught here.
+    expect(MAX_BASE64_INPUT_MB).toBe(7.45);
+    expect(MAX_BASE64_INPUT_CHARS).toBe(10 * 1024 * 1024 - 64 * 1024);
   });
 });

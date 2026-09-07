@@ -1050,6 +1050,68 @@ describe('ticket tools', () => {
           expect(text).not.toContain('embedded images reached');
         });
 
+        // #205 review F1: the estimate reads `attachment.size` and the declared
+        // content type, the built block carries what the download returned. When
+        // the real weight overshoots, one image must degrade to a reference, not
+        // take the rest of the listing with it.
+        it('degrades an image heavier than its estimate, keeping the rest listed', async () => {
+          const result = await runWithBudget(6000, [
+            {
+              id: 83000,
+              file_name: 'lies.png',
+              // Declares 3 KB, serves 40 KB: passes the estimate, overshoots on arrival.
+              content_url: 'https://testsubdomain.zendesk.com/attachments/token/l1/?bytes=40000',
+              content_type: 'image/png',
+              size: 3072,
+              inline: false,
+            },
+            {
+              id: 83001,
+              file_name: 'after.txt',
+              content_url: 'https://testsubdomain.zendesk.com/attachments/token/l2/?name=after.txt',
+              content_type: 'text/plain',
+              size: 10,
+              inline: false,
+            },
+          ]);
+
+          const text = getAllText(result);
+          // The image is not embedded, but it IS listed, with the reason.
+          expect(result.content.filter((c) => c.type === 'image')).toHaveLength(0);
+          expect(text).toContain('lies.png');
+          expect(text).toMatch(/lies\.png.*response budget/s);
+          // The listing continued: the next attachment survives and nothing is
+          // reported as omitted.
+          expect(text).toContain('after.txt');
+          expect(text).not.toMatch(/further attachments omitted/);
+          expect(serializedBytes(result)).toBeLessThanOrEqual(6000);
+        });
+
+        // #205 review F2: the handler's header block is built at the call site, so
+        // the budget must be told about it or it bounds only part of the message.
+        it('counts the handler header, including on the truncation path', async () => {
+          const tool = findTool('get_ticket_attachments');
+          for (const budget of [1013, 1100, 1200, 1337]) {
+            vi.resetModules();
+            vi.stubEnv('ZENDESK_MAX_RESPONSE_BYTES', String(budget));
+            mockCommentAttachments(
+              Array.from({ length: 40 }, (_, i) => ({
+                id: 84000 + i,
+                file_name: `ref-${i}.pdf`,
+                content_url: `https://testsubdomain.zendesk.com/attachments/token/r${i}/?name=ref-${i}.pdf`,
+                content_type: 'application/pdf',
+                size: 1024,
+                inline: false,
+              })),
+            );
+            const fresh = await loadAttachmentsTool();
+            const result = await fresh.handler({ ticket_id: 1 });
+            // The whole response, header included, is what the transport sees.
+            expect(serializedBytes(result)).toBeLessThanOrEqual(budget);
+          }
+          expect(tool.name).toBe('get_ticket_attachments');
+        });
+
         // The image count never bounded text references, and comment paging walks
         // up to MAX_COMMENT_PAGES x MAX_PAGE_SIZE comments, so references alone can
         // fill a message. Truncation is what covers that.
@@ -1237,6 +1299,32 @@ describe('ticket tools', () => {
         attachments: [{ file_name: 'a.txt', file_base64: 'aGVsbG8=', content_type: 'text/plain' }],
       });
       expect(result.success).toBe(true);
+    });
+
+    // The inbound ceiling shares its budget with MAX_RESPONSE_BYTES, which IS
+    // env-overridable. What the contract owes is that the maxLength an agent reads
+    // on tools/list does not move with the environment.
+    it('publishes a maxLength that no environment override can move', async () => {
+      const readMaxLength = async () => {
+        const { createTicketTools: fresh } = await import('../../../src/tools/tickets');
+        const tool = fresh(ctx).find((t) => t.name === 'add_private_note');
+        if (!tool) throw new Error('add_private_note not found');
+        const schema = z.toJSONSchema(tool.inputSchema, { io: 'input' }) as {
+          properties: {
+            attachments: { items: { properties: { file_base64: { maxLength?: number } } } };
+          };
+        };
+        return schema.properties.attachments.items.properties.file_base64.maxLength;
+      };
+
+      vi.resetModules();
+      const baseline = await readMaxLength();
+
+      vi.resetModules();
+      vi.stubEnv('ZENDESK_MAX_RESPONSE_BYTES', '4096');
+      expect(await readMaxLength()).toBe(baseline);
+      vi.unstubAllEnvs();
+      vi.resetModules();
     });
 
     it('publishes the ceiling as maxLength so an agent sees it before calling', () => {

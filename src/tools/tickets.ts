@@ -94,6 +94,18 @@ const embeddedCost = (attachment: ZendeskTicketAttachment, reference: string): n
   4 * Math.ceil(attachment.size / 3) +
   blockCost({ type: 'text', text: reference });
 
+// One wording for the budget, shared by the skip reason and the fallback
+// reference so the two cannot describe the same cause differently.
+const BUDGET_REACHED = `skipped: response budget of ${MAX_RESPONSE_MB} MB reached`;
+
+// An attachment listed rather than embedded, with the reason appended when there
+// is one. Every non-embedded attachment goes through here, so a client always
+// learns what it got instead of the file, never finding a silent hole.
+const referenceBlock = (reference: string, skipReason: string | null): ToolTextContent => ({
+  type: 'text',
+  text: skipReason ? `${reference} — ${skipReason}` : reference,
+});
+
 // The block that reports what the budget cut off. Its own weight is reserved up
 // front, so the notice is never what overflows.
 const truncationNotice = (omitted: number): ToolTextContent => ({
@@ -229,9 +241,21 @@ const imageSkipReason = (
     return `skipped: max ${MAX_EMBEDDED_IMAGE_COUNT} embedded images reached`;
   // Last, and only reached when the cheaper reasons did not fire, so the cost
   // estimate is never computed for an image already rejected.
-  if (!fits(embeddedCost(attachment, reference)))
-    return `skipped: response budget of ${MAX_RESPONSE_MB} MB reached`;
+  if (!fits(embeddedCost(attachment, reference))) return BUDGET_REACHED;
   return null;
+};
+
+// What to emit when what was produced does not fit. An image degrades to a
+// reference when that reference fits; null means nothing more fits at all, so the
+// listing has to stop.
+const overflowFallback = (
+  produced: Array<ToolTextContent | ToolImageContent>,
+  reference: string,
+  fits: (cost: number) => boolean,
+): ToolTextContent | null => {
+  if (!produced.some((block) => block.type === 'image')) return null;
+  const fallback = referenceBlock(reference, BUDGET_REACHED);
+  return fits(blockCost(fallback)) ? fallback : null;
 };
 
 // Embed the image, or fall back to a reference that says why the download failed.
@@ -257,12 +281,15 @@ const collectAttachmentBlocks = async (
   subdomain: string,
   token: string,
   attachments: ZendeskTicketAttachment[],
+  // What the caller already spends on the same response (its header, and the
+  // array wrapper). Counted here or the budget bounds only part of the message.
+  consumedBytes = 0,
 ): Promise<Array<ToolTextContent | ToolImageContent>> => {
   const blocks: Array<ToolTextContent | ToolImageContent> = [];
   let embeddedCount = 0;
-  // Running weight of `blocks` once serialized, so the response never grows past
-  // what the transport accepts (#205).
-  let responseBytes = 0;
+  // Running weight of the response once serialized, so it never grows past what
+  // the transport accepts (#205).
+  let responseBytes = consumedBytes;
   // Worst case for the notice is every attachment omitted, hence the widest count.
   const noticeReserve = blockCost(truncationNotice(attachments.length));
   const fits = (cost: number): boolean =>
@@ -276,11 +303,21 @@ const collectAttachmentBlocks = async (
     const produced: Array<ToolTextContent | ToolImageContent> =
       isImage && !skipReason
         ? await embedOrExplain(subdomain, token, attachment, reference)
-        : [{ type: 'text', text: skipReason ? `${reference} — ${skipReason}` : reference }];
+        : [referenceBlock(reference, skipReason)];
 
     const cost = produced.reduce((total, block) => total + blockCost(block), 0);
     if (!fits(cost)) {
-      // Even references have stopped fitting: stop walking and say how many were
+      // The estimate can undershoot: it reads `attachment.size` and the declared
+      // content type, while the built block carries what the download actually
+      // returned (`fetchZendeskBinary` prefers the response's Content-Type). One
+      // image not fitting is not the same as nothing fitting.
+      const fallback = overflowFallback(produced, reference, fits);
+      if (fallback) {
+        blocks.push(fallback);
+        responseBytes += blockCost(fallback);
+        continue;
+      }
+      // Even a reference has stopped fitting: stop walking and say how many were
       // dropped, since silence here would read as a shorter ticket.
       blocks.push(truncationNotice(attachments.length - index));
       break;
@@ -720,9 +757,13 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
     file_base64: z
       .string()
       .min(1)
-      // .max before .base64: zod runs checks in declaration order, so an oversized
-      // input is rejected in constant time instead of after a full regex pass.
+      // `abort` is what makes the ordering pay: zod respects declaration order but
+      // does not stop on its own, so without it the base64 regex still scans
+      // megabytes already disqualified by their length (measured 1.67ms -> 0.33ms).
+      // In-range inputs are unaffected, the published schema is unchanged, and the
+      // error becomes "too large" alone instead of "too large AND malformed".
       .max(MAX_BASE64_INPUT_CHARS, {
+        abort: true,
         error: (issue) =>
           `Attachment too large: ${(issue.input as string).length} base64 characters, limit ${MAX_BASE64_INPUT_CHARS}. Downscale the file, split the upload, or link to it instead of uploading.`,
       })
@@ -1074,16 +1115,19 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
             content: [{ type: 'text', text: `No attachments found on ticket #${ticket_id}.` }],
           };
         }
-        const blocks = await collectAttachmentBlocks(subdomain, token, attachments);
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `# Attachments for ticket #${ticket_id} (${attachments.length} total)`,
-            },
-            ...blocks,
-          ],
+        const header: ToolTextContent = {
+          type: 'text',
+          text: `# Attachments for ticket #${ticket_id} (${attachments.length} total)`,
         };
+        // `+ 1` is the array's opening bracket; blockCost accounts for a trailing
+        // separator per element but nothing for the wrapper itself.
+        const blocks = await collectAttachmentBlocks(
+          subdomain,
+          token,
+          attachments,
+          blockCost(header) + 1,
+        );
+        return { content: [header, ...blocks] };
       },
     },
     {

@@ -719,7 +719,11 @@ export const handlers = [
     // weighs what the attachment metadata claims. Size assertions on the
     // response budget would otherwise pass against a 4-byte stub.
     const bytes = Number(url.searchParams.get('bytes') ?? '4');
-    return HttpResponse.arrayBuffer(new Uint8Array(bytes).buffer, {
+    const payload = new Uint8Array(bytes);
+    // Keep the PNG magic at the front so the fixture still looks like an image
+    // whatever its size; `?bytes=` only controls the weight.
+    payload.set([0x89, 0x50, 0x4e, 0x47].slice(0, bytes));
+    return HttpResponse.arrayBuffer(payload.buffer, {
       headers: { 'content-type': 'image/png' },
     });
   }),
