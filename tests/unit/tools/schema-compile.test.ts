@@ -101,6 +101,10 @@ describe('tool input schemas compile', () => {
     const asyncRefined = z.object({ id: z.number() }).refine(async () => true);
 
     expect(() => z.compile(asyncRefined, { strict: true })).toThrow();
-    expect(z.compile(asyncRefined)).toBeDefined();
+    // The non-strict call cannot fail: it hands back the *same instance*, still on the
+    // runtime parser. Asserting only that it returns something would pass no matter what
+    // zod did here, so pin both halves of the silence.
+    expect(z.compile(asyncRefined)).toBe(asyncRefined);
+    expect(isCompiled(asyncRefined)).toBe(false);
   });
 });

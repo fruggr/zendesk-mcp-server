@@ -16,7 +16,9 @@ import { describe, expect, it } from 'vitest';
  * Background: `docs/decisions/zod-compile.md`.
  */
 
-const SIDE_EFFECT_IMPORT = /^import\s+['"]zod\/compile['"];?$/;
+// A trailing `//` comment on the import line is tolerated: the stripper below only removes
+// whole-line comments, and annotating the import is not the failure this guards against.
+const SIDE_EFFECT_IMPORT = /^import\s+['"]zod\/compile['"];?\s*(?:\/\/.*)?$/;
 
 // Strip comments before looking for the first statement, so reformatting the header from
 // `//` lines into a `/* … */` block doesn't fail the guard on a correctly placed import.
