@@ -18,13 +18,18 @@ import { describe, expect, it } from 'vitest';
 
 const SIDE_EFFECT_IMPORT = /^import\s+['"]zod\/compile['"];?$/;
 
+// Strip comments before looking for the first statement, so reformatting the header from
+// `//` lines into a `/* … */` block doesn't fail the guard on a correctly placed import.
 const firstCodeLine = (relative: string): string => {
-  const source = readFileSync(new URL(relative, import.meta.url), 'utf8');
-  const line = source
-    .split('\n')
-    .map((l) => l.trim())
-    .find((l) => l !== '' && !l.startsWith('//') && !l.startsWith('*') && !l.startsWith('/*'));
-  return line ?? '';
+  const source = readFileSync(new URL(relative, import.meta.url), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '');
+  return (
+    source
+      .split('\n')
+      .find((l) => l.trim() !== '')
+      ?.trim() ?? ''
+  );
 };
 
 describe('zod/compile opt-in', () => {
