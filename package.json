@@ -107,7 +107,7 @@
     "msw": "^2.12.13",
     "semantic-release": "^25.0.3",
     "shx": "^0.4.0",
-    "tsdown": "^0.22.0",
+    "tsdown": "^0.23.0",
     "tsx": "^4.21.0",
     "typescript": "^7.0.0",
     "typescript-legacy": "npm:typescript@6.0.3",
