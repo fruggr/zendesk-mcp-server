@@ -121,9 +121,10 @@ to leave in place:
 - `unrecognized_keys` issues preserved verbatim, so `createStrictParamsParser` still
   produces its exact message; the SDK's `-32602` text is unchanged too.
 - The full test suite runs with compilation active — `tests/setup.ts` carries the same
-  import, deliberately, so the suite exercises what ships. The trade-off is real: no
-  test now covers the uncompiled path. That is the right way round, since no user runs
-  it.
+  import, deliberately, so the suite exercises what ships. That would leave the
+  uncompiled path untested, so `tests/unit/zod-jitless.test.ts` covers it explicitly:
+  under `z.config({ jitless: true })` nothing compiles, and params, defaults, the
+  "Unknown parameter(s)" message and the exposed JSON Schema come out the same.
 
 ## Ordering is load-bearing
 
@@ -146,8 +147,9 @@ synchronous parse leaves the schema compiled and an asynchronous one does not.
 ## What would reverse this
 
 - **A runtime without `new Function`** (a CSP-restricted or edge deployment). zod
-  degrades gracefully via its `jitless` config, so nothing breaks — but the import would
-  be dead weight and should be dropped rather than left as decoration.
+  degrades gracefully via its `jitless` config — `tests/unit/zod-jitless.test.ts` proves
+  the behaviour is identical there — but the import would be dead weight and should be
+  dropped rather than left as decoration.
 - **A schema feature we need that the fast path cannot model.** The guard test will say
   so. Expressing the constraint differently is preferable; accepting the fallback is
   fine too, but then say which tool and why, here.

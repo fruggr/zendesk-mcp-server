@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import * as z from 'zod/v4';
 import { createAllTools, type ToolContext } from '../../../src/tools';
 import { createStrictParamsParser } from '../../../src/utils/validation';
@@ -57,19 +57,30 @@ describe('tool input schemas compile', () => {
     const tool = tools.find((t) => t.name === 'get_ticket');
     if (!tool) throw new Error('get_ticket is gone — repoint this test at another read tool');
 
-    const schema = tool.inputSchema.strict();
-    expect(isCompiled(schema), 'a freshly built schema is not compiled until first parsed').toBe(
-      false,
-    );
-
-    createStrictParamsParser(tool.inputSchema)({ ticket_id: 1 });
-    schema.safeParse({ ticket_id: 1 });
+    // `.strict()` clones, so the parser holds a schema instance nobody else can reach.
+    // Asserting on a clone of our own would pass even if the parser went async; spying on
+    // the call the parser itself makes is the narrowest way to get *its* instance.
+    const strictSpy = vi.spyOn(tool.inputSchema, 'strict');
+    const parse = createStrictParamsParser(tool.inputSchema);
+    const parserSchema = strictSpy.mock.results[0]?.value as z.ZodType | undefined;
+    strictSpy.mockRestore();
 
     expect(
-      isCompiled(schema),
-      'a synchronous safeParse must leave the schema compiled. If this fails, either the ' +
-        'parse moved to safeParseAsync (which the shim never compiles) or zod changed how ' +
-        'the global post-processor installs the fast path. See docs/decisions/zod-compile.md.',
+      parserSchema,
+      'createStrictParamsParser no longer derives its schema via .strict()',
+    ).toBeDefined();
+    expect(
+      isCompiled(parserSchema as z.ZodType),
+      'the parser schema is not compiled until it first parses something',
+    ).toBe(false);
+
+    parse({ ticket_id: 1 });
+
+    expect(
+      isCompiled(parserSchema as z.ZodType),
+      'the proxy parser must leave its schema compiled. If this fails, either that parse ' +
+        'moved to safeParseAsync (which the shim never compiles) or zod changed how the ' +
+        'global post-processor installs the fast path. See docs/decisions/zod-compile.md.',
     ).toBe(true);
   });
 
