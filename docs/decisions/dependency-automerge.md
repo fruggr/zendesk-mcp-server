@@ -66,12 +66,16 @@ dependency where attention is actually worth something.
 
 That bet is not free, and it is worth naming what backs it and what does not. The
 suite asserts tool *names* and round-trips every handler through its Zod schema
-over a real MCP transport (`tests/integration/core-scenarios.ts`), and
-`tests/unit/tools/tool-quality.test.ts` walks each tool's Zod shape. **Nothing
-asserts the serialised draft-07 JSON Schema itself.** A snapshot over `tools/list`
-would close that gap and is the obvious follow-up; until it exists, a schema
-regression from a patch would be caught by the inter-LLM functional tests in
-`tests/functional/`, which are run on demand, not by CI.
+over a real MCP transport (`tests/integration/core-scenarios.ts`),
+`tests/unit/tools/tool-quality.test.ts` walks each tool's Zod shape, and since
+[#273](https://github.com/fruggr/zendesk-mcp-server/pull/273)
+`tests/unit/tools/schema-compile.test.ts` fails loudly if any tool schema stops
+compiling under zod's AOT compiler — a zod-specific tripwire that a patch would
+trip. But **nothing asserts the serialised draft-07 JSON Schema itself.** A
+snapshot over `tools/list` would close that gap and is the obvious follow-up;
+until it exists, a schema regression from a patch reaches CI only if it also
+breaks parsing or compilation, and otherwise waits for the inter-LLM functional
+tests in `tests/functional/`, which are run on demand.
 
 ## 3. What protects the repo, and what does not
 
