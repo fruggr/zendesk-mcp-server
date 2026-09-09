@@ -169,7 +169,11 @@ and what the trade-offs are:
 **Security updates are never batched.** `vulnerabilityAlerts` pins `groupName` to `null` on
 purpose: a security update swept into a batch would inherit its `chore(deps)` title and stop
 publishing a release. It fails silently, hence the explicit pin on top of Renovate's own
-default of keeping alerted packages out of groups.
+default of keeping alerted packages out of groups. They also do **not** wait out the 5-day
+`minimumReleaseAge` — Renovate bypasses that check for vulnerability updates by design, so a
+security patch can land fast and publish a release. Only pnpm's own resolution-time gate still
+applies to them; the asymmetry and what it means are in
+[`docs/decisions/dependency-automerge.md`](decisions/dependency-automerge.md#3-what-protects-the-repo-and-what-does-not).
 
 **Dashboard approval** means: no PR is opened automatically. The update appears in the Renovate-managed "Dependency Dashboard" issue with a checkbox. Ticking the checkbox triggers PR creation. This is intentional for majors, which usually require reading the upstream CHANGELOG and following a migration procedure.
 

@@ -81,21 +81,37 @@ tests in `tests/functional/`, which are run on demand.
 
 **Human review does not detect a compromised package.** Nobody reads
 `"open": "11.0.1"` → `"11.0.2"` in a diff and sees a malicious postinstall. What
-catches that class of attack is time: compromised releases are typically found and
-yanked within 24–48 hours. This repo waits five days, twice over:
+catches that class of attack is time. This repo has two independent delays, and
+they do not cover the same ground:
 
-- `minimumReleaseAge: "5 days"` in `renovate.json`, on every update Renovate
-  proposes;
+- `minimumReleaseAge: "5 days"` in `renovate.json`, on every **ordinary** update
+  Renovate proposes;
 - `minimumReleaseAge: 7200` (minutes) in `pnpm-workspace.yaml`, which pnpm
   enforces natively at resolution time and which therefore also covers the
   transitive tree Renovate does not manage.
 
-Removing the human step does not remove the protection, because the human step was
-never the protection. Both gates stay, security updates included: a
-`fix(security):` PR is opened the moment the alert is detected, but
-`internalChecksFilter: "flexible"` holds it behind a pending
-`renovate/stability-days` check rather than hiding it. A critical, actively
-exploited CVE inside that window is still merged by hand.
+Removing the human step does not remove that protection, because the human step
+was never the protection.
+
+**The exception is security updates, and it is not ours to choose.** Renovate
+documents it plainly: "Security updates bypass any `minimumReleaseAge` checks, and
+so will be raised as soon as Renovate detects them"
+([key concepts / minimum release age](https://docs.renovatebot.com/key-concepts/minimum-release-age/)).
+So on a vulnerability alert the `renovate.json` delay does not apply, and
+`internalChecksFilter: "flexible"` in that block has no age check left to keep
+visible — it is inert for this purpose and kept only because it still governs any
+*other* internal check on those PRs. What remains is the pnpm gate, which bites at
+a different moment: Renovate has to run pnpm to update the lockfile, and pnpm
+refuses to resolve a version younger than five days. Whether that produces a clean
+wait or a failed lockfile step on a security PR has not been observed here yet —
+worth watching on the first real alert, because the two are not the same
+experience.
+
+The practical consequence, stated so nobody has to rediscover it: a **patch**-level
+security fix on a direct dependency can reach `main` quickly, and it publishes a
+release when it does. That is the intended trade for a known CVE — the delay exists
+against *unknown* compromise, which is a different threat. A minor or major
+security update still stops for a human.
 
 This is also where the ecosystem has landed. Renovate's own guidance is to
 [automerge](https://docs.renovatebot.com/key-concepts/automerge/) non-major
