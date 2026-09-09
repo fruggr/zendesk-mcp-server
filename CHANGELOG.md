@@ -1,3 +1,19 @@
+## [2.20.1](https://github.com/fruggr/zendesk-mcp-server/compare/v2.20.0...v2.20.1) (2026-09-09)
+
+### Performance Improvements
+
+* **zod:** compile schemas at runtime ([#273](https://github.com/fruggr/zendesk-mcp-server/issues/273)) ([9dfb1e5](https://github.com/fruggr/zendesk-mcp-server/commit/9dfb1e5b1de644933612ea5818537487d42121a4))
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Chores
+
+* **deps:** lock file maintenance ([#272](https://github.com/fruggr/zendesk-mcp-server/issues/272)) ([172dd82](https://github.com/fruggr/zendesk-mcp-server/commit/172dd82c3202017b02b1438d0c3b2b97db92b240))
+* **deps:** update dependency @biomejs/biome to v2.5.12 ([#274](https://github.com/fruggr/zendesk-mcp-server/issues/274)) ([2fe3b9c](https://github.com/fruggr/zendesk-mcp-server/commit/2fe3b9c9e5f7ed981bde09b6f1e05be7bd7fe712))
+* **deps:** update dependency tsdown to ^0.23.0 ([#275](https://github.com/fruggr/zendesk-mcp-server/issues/275)) ([d445638](https://github.com/fruggr/zendesk-mcp-server/commit/d4456388b2375d22e4c82c0599a002f96af214d9))
+</details>
+
 ## [2.20.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.19.0...v2.20.0) (2026-09-04)
 
 ### Features
