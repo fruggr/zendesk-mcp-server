@@ -1,12 +1,6 @@
-// Compile zod schemas on their first parse (zod >= 4.5). The import is side-effect only:
-// it installs a global post-processor, so no call site changes and no schema opts in.
-// Order is load-bearing — schemas built by modules that evaluate BEFORE this import keep
-// the runtime parser, so it must stay the FIRST import of the entrypoint. It reaches only
-// SYNCHRONOUS parses: every JSON-RPC message (`JSONRPCMessageSchema.parse`, all transports)
-// and the proxy params parse in `utils/validation.ts`. The SDK validates tool arguments with
-// `safeParseAsync`, which the compiler never accelerates. Guarded by
-// tests/unit/index-compile.test.ts and tests/unit/tools/schema-compile.test.ts; measurements
-// and what would reverse this: docs/decisions/zod-compile.md.
+// Compiles zod schemas on their first synchronous parse. Must stay the FIRST import:
+// schemas built before it keep the runtime parser, silently. Why, and what it is worth:
+// docs/decisions/zod-compile.md.
 import 'zod/compile';
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';

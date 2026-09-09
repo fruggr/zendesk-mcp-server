@@ -45,13 +45,6 @@ Zod schema. Each proxy dispatches only within its own scoped handler map, so a
 `--read-only` / `--tool` are applied by `filterTools` *before* the mode switch;
 `--tool` also forces `mode: all` (`config.ts`).
 
-`src/index.ts` opens with `import 'zod/compile'`, which compiles schemas on their first
-**synchronous** parse. Two constraints, both silent when broken: keep it the *first* import
-(schemas built before it keep the runtime parser), and keep our own parses synchronous — the
-compiler never touches an async one, which is why the SDK's `safeParseAsync` tool-argument
-validation is unaffected. What it is worth (2–7x on the parses it does reach, ~nil end to
-end) and what would reverse it: `docs/decisions/zod-compile.md`.
-
 Every Zendesk API request goes through `performFetch` in `client/zendesk-api.ts`
 (the OAuth token exchange in `auth/browser-oauth.ts` deliberately does not), so retry and
 network-error wrapping are decided once, in `client/retry.ts`: a new client method must
