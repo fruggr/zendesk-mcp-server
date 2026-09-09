@@ -98,10 +98,15 @@ const ENVELOPE_RESERVE_BYTES = 64 * 1024;
 const MESSAGE_CONTENT_BUDGET_BYTES = STDIO_MAX_MESSAGE_BYTES - ENVELOPE_RESERVE_BYTES;
 
 // Outbound: total weight of one tool response. The two caps above bound each
-// image and how many, never the sum (#205). Override via
-// ZENDESK_MAX_RESPONSE_BYTES.
-export const MAX_RESPONSE_BYTES = positiveIntEnv(
-  'ZENDESK_MAX_RESPONSE_BYTES',
+// image and how many, never the sum (#205). ZENDESK_MAX_RESPONSE_BYTES can only
+// lower it, which is the useful direction (a client whose own ceiling is smaller
+// than ours). A value above the budget is clamped rather than obeyed: emitting
+// past what the transport carries guarantees the very failure this guard exists
+// to prevent, and it happens on the client's side where nothing here can catch
+// it. Note the clamp wraps the lookup, so it bounds the override and not the
+// fallback.
+export const MAX_RESPONSE_BYTES = Math.min(
+  positiveIntEnv('ZENDESK_MAX_RESPONSE_BYTES', MESSAGE_CONTENT_BUDGET_BYTES),
   MESSAGE_CONTENT_BUDGET_BYTES,
 );
 

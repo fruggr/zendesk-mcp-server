@@ -123,6 +123,13 @@ describe('MAX_RESPONSE_BYTES (positiveIntEnv)', () => {
     vi.stubEnv('ZENDESK_MAX_RESPONSE_BYTES', 'not-a-number');
     expect(await load()).toBe(DEFAULT_BUDGET);
   });
+
+  // Lowering is the useful direction; raising would emit past what the transport
+  // carries and break the client, where no guard of ours runs.
+  it('clamps an override above the budget instead of obeying it', async () => {
+    vi.stubEnv('ZENDESK_MAX_RESPONSE_BYTES', String(50 * 1024 * 1024));
+    expect(await load()).toBe(DEFAULT_BUDGET);
+  });
 });
 
 describe('MAX_BASE64_INPUT_MB', () => {
