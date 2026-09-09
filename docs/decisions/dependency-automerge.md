@@ -11,6 +11,7 @@
 | --- | --- |
 | **Status** | Decided and applied |
 | **Date** | 2026-09-09 |
+| **Applied in** | [#276](https://github.com/fruggr/zendesk-mcp-server/pull/276) |
 | **Question** | Which dependency updates deserve a human read, and what actually protects the repo from the ones that do not get one? |
 | **Answer** | Gate on **what the dependency can reach**, not on its semver level. Two production dependencies define the exposed MCP surface and their minors are read by hand; everything else non-major is batched weekly and auto-merged. |
 
