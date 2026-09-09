@@ -19,11 +19,12 @@
     "timezone": "Europe/Paris"
   },
   "vulnerabilityAlerts": {
-    "description": "Renovate opens these PRs only for dependencies declared in package.json. It does not manage transitive dependencies, so an advisory on an indirect package never carries this prefix or label: it is remediated by the weekly lockFileMaintenance run, or by a pnpm override when a parent pins an exact version. Security fixes on direct dependencies surface immediately (a PR is opened as soon as the alert is detected) but are held by the same inherited 5-day minimumReleaseAge as every other update. internalChecksFilter 'flexible' keeps that PR visible with a pending renovate/stability-days check instead of suppressing it, so a freshly published fix is not auto-merged until it has aged past the supply-chain delay. A critical, actively-exploited CVE landing inside that window is merged manually.",
+    "description": "Renovate opens these PRs only for dependencies declared in package.json. It does not manage transitive dependencies, so an advisory on an indirect package never carries this prefix or label: it is remediated by the twice-weekly lockFileMaintenance run, or by a pnpm override when a parent pins an exact version. Security fixes on direct dependencies surface immediately (a PR is opened as soon as the alert is detected) but are held by the same inherited 5-day minimumReleaseAge as every other update. internalChecksFilter 'flexible' keeps that PR visible with a pending renovate/stability-days check instead of suppressing it, so a freshly published fix is not auto-merged until it has aged past the supply-chain delay. A critical, actively-exploited CVE landing inside that window is merged manually. groupName is pinned to null because the release pipeline depends on it: a security update swept into one of the weekly batches below would inherit the batch's 'chore(deps)' title and stop publishing a release. Renovate already keeps packages under alert out of standard grouping and this block takes precedence over packageRules, so the explicit null is defence in depth on an invariant that fails silently.",
     "enabled": true,
     "commitMessagePrefix": "fix(security):",
     "labels": ["security"],
     "internalChecksFilter": "flexible",
+    "groupName": null,
     "packageRules": [
       {
         "matchUpdateTypes": ["patch"],
@@ -46,9 +47,30 @@
       "dependencyDashboardApproval": true
     },
     {
+      "description": "Non-major production updates arrive as one auto-merged batch a week. What protects this repo from a compromised package is the 5-day minimumReleaseAge above, not a human reading a version number diff; what protects it from a behaviour change is CI, where tests/unit/utils/article-sections.test.ts pins the HTML/Markdown conversion these packages perform and tests/unit/utils/formatting.test.ts pins the text handed back to the LLM in committed inline snapshots. At roughly thirty dependency commits a quarter, reviewing each one by hand turns the review into a rubber stamp, which is worse than not reviewing. Monday deliberately: lockFileMaintenance runs Tuesday and Friday and both touch pnpm-lock.yaml, so keeping the windows apart avoids a rebase cascade. The dependencies that define the exposed MCP surface are carved back out below.",
+      "matchDepTypes": ["dependencies"],
+      "matchUpdateTypes": ["patch", "minor"],
+      "groupName": "prod dependencies",
+      "schedule": ["* 0-7 * * 1"],
+      "timezone": "Europe/Paris",
+      "automerge": true
+    },
+    {
+      "description": "Same batching for devDependencies, in its own group so a broken dev bump does not hold back a production one, or the other way round. These were already auto-merged one PR at a time; the change is that they now arrive together.",
       "matchDepTypes": ["devDependencies"],
       "matchUpdateTypes": ["patch", "minor"],
+      "groupName": "dev dependencies",
+      "schedule": ["* 0-7 * * 1"],
+      "timezone": "Europe/Paris",
       "automerge": true
+    },
+    {
+      "description": "@modelcontextprotocol/sdk and zod define the JSON Schema (draft-07) this server exposes to agents, so a minor on either can move the tool surface itself, which the multi-agent compatibility rule in AGENTS.md forbids degrading. Their minors are read by hand, and the three overrides here are what pull them back out of the batch above: without groupName they stay grouped, without a schedule their PR could only open on Monday morning, and automerge false is what actually holds them. Patches stay in the batch on purpose: a patch that moved the exposed schema would be an upstream bug, not a normal release. That is a calculated bet, not a guarantee, because nothing asserts the serialised draft-07 output today - docs/decisions/dependency-automerge.md says what would close the gap.",
+      "matchPackageNames": ["@modelcontextprotocol/sdk", "zod"],
+      "matchUpdateTypes": ["minor"],
+      "groupName": null,
+      "schedule": ["at any time"],
+      "automerge": false
     },
     {
       "matchDepNames": ["pnpm"],

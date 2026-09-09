@@ -132,33 +132,61 @@ either way the canary gates the merge.
 
 ## Auto-merge policy
 
-| Update kind                                       | Vulnerability (security) | Non-vulnerability        |
-| ------------------------------------------------- | ------------------------ | ------------------------ |
-| **patch** on `dependencies` (prod)                | auto-merge               | manual review            |
-| **minor** on `dependencies` (prod)                | manual review            | manual review            |
-| **patch** on `devDependencies`                    | auto-merge               | auto-merge               |
-| **minor** on `devDependencies`                    | manual review\*          | auto-merge               |
-| **major** (any deps, prod and dev)                | dashboard approval       | dashboard approval       |
-| **patch / minor** on `pnpm` (`packageManager`)    | auto-merge               | auto-merge               |
-| **patch / minor** on `pnpm.overrides` entries     | auto-merge               | auto-merge               |
-| Weekly `lockFileMaintenance` (Friday before 8am, Europe/Paris) | auto-merge | auto-merge |
-| GitHub Actions (`uses: org/action@…`)             | manual review            | manual review            |
+Two things decide what happens to an update: **which dependency it touches**, and whether it is
+a security fix. The semver level only refines those two. Everything auto-merged that is not a
+security fix arrives in one of two weekly batches.
+
+| Update kind                                                         | Vulnerability (security) | Non-vulnerability                |
+| ------------------------------------------------------------------- | ------------------------ | -------------------------------- |
+| **patch**, any `package.json` dependency                            | auto-merge, own PR       | auto-merge, weekly batch         |
+| **minor** on `@modelcontextprotocol/sdk` or `zod`                   | manual review            | **manual review**, never batched |
+| **minor**, any other `package.json` dependency                      | manual review\*          | auto-merge, weekly batch         |
+| **major**, any dependency (prod and dev)                            | dashboard approval       | dashboard approval               |
+| **patch / minor** on `pnpm` (`packageManager`)                      | auto-merge               | auto-merge, own PR               |
+| **patch / minor** on `pnpm.overrides` entries                       | auto-merge               | auto-merge, own PR               |
+| `lockFileMaintenance` (Tuesday and Friday before 8am, Europe/Paris) | auto-merge               | auto-merge                       |
+| GitHub Actions (`uses: org/action@…`)                               | manual review            | manual review                    |
 
 \* Vulnerability-minor updates carry the `fix(security):` prefix, so merging them publishes a release. We keep them under manual review to allow an impact assessment first.
+
+**The weekly batches.** Everything auto-merged and non-security is grouped into two PRs,
+`chore(deps): update prod dependencies` and `chore(deps): update dev dependencies`, opened
+Monday before 8am (Europe/Paris). Two groups and not one, so a broken dev bump does not hold
+back a production one. Monday and not the `lockFileMaintenance` window (Tuesday and Friday),
+because both rewrite `pnpm-lock.yaml` and overlapping windows cost a rebase cascade. A member
+that has not yet cleared the 5-day `minimumReleaseAge` is left out of the batch and joins the
+next one. The cost of batching is that one member breaking CI holds the whole batch open — the
+way out is in [Pause or disable](#pause-or-disable).
+
+**The exception list.** `@modelcontextprotocol/sdk` and `zod` define the JSON Schema (draft-07)
+this server exposes to agents, so a minor on either can move the tool surface itself. Those two
+minors are read by hand. Everything else is a leaf behind our own code, whose rendering output
+is pinned by the unit tests over the HTML/Markdown conversion and by the committed inline
+snapshots over the formatters. Why the criterion is the dependency and not the semver level,
+and what the trade-offs are:
+[`docs/decisions/dependency-automerge.md`](decisions/dependency-automerge.md).
+
+**Security updates are never batched.** `vulnerabilityAlerts` pins `groupName` to `null` on
+purpose: a security update swept into a batch would inherit its `chore(deps)` title and stop
+publishing a release. It fails silently, hence the explicit pin on top of Renovate's own
+default of keeping alerted packages out of groups.
 
 **Dashboard approval** means: no PR is opened automatically. The update appears in the Renovate-managed "Dependency Dashboard" issue with a checkbox. Ticking the checkbox triggers PR creation. This is intentional for majors, which usually require reading the upstream CHANGELOG and following a migration procedure.
 
 Concrete examples:
 
-- Patch vulnerability in `hono` (prod) → PR `fix(security): update hono to X` → auto-merge → patch release published.
-- Minor vulnerability in `hono` (prod) → PR `fix(security): update hono to X` → **manual review** → patch release published on merge.
-- Major vulnerability in `hono` (prod) → **no auto PR**, entry in the dashboard awaiting approval.
-- Minor update of `vitest` (devDep) → PR `chore(deps): update vitest to X` → auto-merge → no release.
+- Patch vulnerability in `open` (prod) → PR `fix(security): update open to X`, on its own → auto-merge → patch release published.
+- Minor vulnerability in `open` (prod) → PR `fix(security): update open to X` → **manual review** → patch release published on merge.
+- Major vulnerability in `open` (prod) → **no auto PR**, entry in the dashboard awaiting approval.
+- Non-vuln patch update of `open` (prod) → joins `chore(deps): update prod dependencies` on Monday → auto-merge → no release on merge.
+- Minor update of `cheerio` (prod) → same batch → auto-merge → no release.
+- Minor update of `zod` → PR `chore(deps): update dependency zod to X`, on its own, as soon as it clears the age gate → **manual review** → no release on merge.
+- Patch update of `zod` → joins the prod batch like any other patch.
+- Minor update of `vitest` (devDep) → joins `chore(deps): update dev dependencies` → auto-merge → no release.
 - Major update of `vitest` (devDep) → entry in the dashboard, manual approval required.
-- Patch or minor bump of `pnpm` (via `packageManager` field) → PR `chore(deps): update pnpm to X` → auto-merge → no release. The corepack hash in `packageManager` is updated automatically by Renovate when the format is `pnpm@VERSION+sha512.HASH`.
-- Non-vuln patch update of `hono` (prod) → PR `chore(deps): update hono to X` → manual review → no release on merge.
+- Patch or minor bump of `pnpm` (via `packageManager` field) → PR `chore(deps): update pnpm to X`, on its own → auto-merge → no release. The corepack hash in `packageManager` is updated automatically by Renovate when the format is `pnpm@VERSION+sha512.HASH`.
 - GitHub Action digest bump → PR `chore(deps): update actions/X` → manual review → no release.
-- Weekly Friday lockfile maintenance (before 8am, Europe/Paris) → PR `chore(deps): lock file maintenance` → auto-merge → no release. Picks up transitive updates whose parent ranges already allow the new version (e.g. a `^3.0.1`-ranged transitive moving from 3.1.0 to 3.1.2).
+- Lockfile maintenance, Tuesday and Friday before 8am (Europe/Paris) → PR `chore(deps): lock file maintenance` → auto-merge → no release. Picks up transitive updates whose parent ranges already allow the new version (e.g. a `^3.0.1`-ranged transitive moving from 3.1.0 to 3.1.2).
 
 ## Admin prerequisites (out-of-PR settings)
 
@@ -219,19 +247,12 @@ These cannot be versioned; a repository (or org) admin must apply them **once**:
 - **Pause Renovate on this repo**: add `"enabled": false` at the root of `renovate.json` and commit, or tick "rate limited" in the Dependency Dashboard.
 - **Disable auto-merge globally**: replace `"platformAutomerge": true` with `false` in `renovate.json`. PRs keep being opened, but must be merged manually.
 - **Disable auto-merge for one category**: remove `"automerge": true` from the relevant `packageRules` entry.
+- **Unblock a stuck batch**: one member breaking CI holds the whole batch. Either fix it (that is the point of the gate), or take the culprit out of the batch — `"enabled": false` or a narrowing `allowedVersions` on it, in a `packageRules` entry placed *after* the batch rule — and let the rest through. Dropping `groupName` from the batch rule altogether reverts that side to one PR per update.
 
 ## Future broadening
 
 Once test coverage is deemed sufficient to automate more widely:
 
-- Auto-merge non-vuln prod `dependencies` patches by adding to `packageRules`:
-  ```json
-  {
-    "matchDepTypes": ["dependencies"],
-    "matchUpdateTypes": ["patch"],
-    "automerge": true
-  }
-  ```
 - Auto-merge GitHub Actions patches: replace the current `github-actions` rule with one matching `matchUpdateTypes: ["patch"]` and `automerge: true`.
 
 Keep majors at `dependencyDashboardApproval: true`: they almost always require reading the upstream CHANGELOG.
