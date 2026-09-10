@@ -59,25 +59,26 @@ method. It only surfaces on a fresh checkout, which is exactly what the
 
 **Corepack cannot provision the binary.** The wrapper's Corepack entry
 (`bin/pnpm.mjs`) downloads the executable through the `get-pnpm` copy it vendors,
-and that copy refuses any platform outside `darwin`/`linux`/`win32` — so Corepack
-reports `Sorry! pnpm does not provide a pre-built binary for android` even though
-the package exists on npm ([pnpm/pnpm#14679](https://github.com/pnpm/pnpm/issues/14679)).
-[pnpm/get.pnpm.io#59](https://github.com/pnpm/get.pnpm.io/pull/59) is the fix; it
-is still a draft, and it reaches this device only through a `get-pnpm` release
-that a later pnpm then vendors. The way in meanwhile is npm, naming the version
-`packageManager` pins: `npm i -g --prefix ~/.local/share/pnpm pnpm@VERSION`. npm
-resolves the optional dependency for the host, and the package's own install
-script links the binary over the placeholder bin.
+and 12.4.0 vendors `get-pnpm@0.0.3`, which refuses any platform outside
+`darwin`/`linux`/`win32` — so Corepack reports `Sorry! pnpm does not provide a
+pre-built binary for android` even though the package exists on npm
+([pnpm/pnpm#14679](https://github.com/pnpm/pnpm/issues/14679)).
+[pnpm/get.pnpm.io#59](https://github.com/pnpm/get.pnpm.io/pull/59) fixed that, and
+`get-pnpm@0.0.4` carries the fix, so what is left is a pnpm release vendoring the
+newer copy. The way in meanwhile is npm, naming the version `packageManager` pins:
+`npm i -g --prefix ~/.local/share/pnpm pnpm@VERSION`. npm resolves the optional
+dependency for the host, and the package's own install script links the binary
+over the placeholder bin.
 
-Installing into pnpm's own home (`~/.local/share/pnpm`, which pnpm asks you to
-keep first on `PATH`) rather than over `$PREFIX/bin/pnpm` is deliberate: it leaves
-Corepack's shim in place, so deleting `~/.local/share/pnpm/bin/pnpm*` is the whole
-rollback. Note that the shadowing is machine-wide, so a checkout still pinned to
-pnpm 11 then fails with `ERR_PNPM_PNPM_ENGINE_NO_NATIVE_BINARY`, because pnpm 12
-honours the pin itself and no pnpm 11 binary can exist here. `pmOnFail: ignore`
-would skip that switch, but it is only settable in a project's
-`pnpm-workspace.yaml`, so there is no local escape hatch. The answer is to land
-the pin everywhere.
+Installing into pnpm's own home (`~/.local/share/pnpm`, whose `bin/` pnpm asks you
+to keep first on `PATH`) rather than over `$PREFIX/bin/pnpm` is deliberate: npm
+puts the binary at `<prefix>/bin/pnpm` and leaves Corepack's shim in place, so
+deleting `~/.local/share/pnpm/bin/pnpm*` is the whole rollback. Note that the
+shadowing is machine-wide, so a checkout still pinned to pnpm 11 then fails with
+`ERR_PNPM_PNPM_ENGINE_NO_NATIVE_BINARY`, because pnpm 12 honours the pin itself
+and no pnpm 11 binary can exist here. `pmOnFail: ignore` would skip that switch,
+but it is only settable in a project's `pnpm-workspace.yaml`, so there is no local
+escape hatch. The answer is to land the pin everywhere.
 
 **Every registry request panics.** The Rust CLI delegates TLS verification to
 `rustls-platform-verifier`, whose Android backend needs a JNI initialisation
@@ -88,8 +89,11 @@ precedes the empty-trust-store fallback added in
 runs. Pointing `NODE_EXTRA_CA_CERTS` at a CA bundle switches pnpm to its own root
 store and avoids the verifier entirely; `SSL_CERT_FILE`, `cafile` and
 `strict-ssl=false` do not, and a path that does not resolve falls back to the
-panic. Tracked upstream in
-[pnpm/pnpm#14777](https://github.com/pnpm/pnpm/issues/14777).
+panic. Reported as
+[pnpm/pnpm#14777](https://github.com/pnpm/pnpm/issues/14777), and fixed by
+[pnpm/pnpm#14783](https://github.com/pnpm/pnpm/pull/14783), which switches Android
+to the bundled roots. That fix is merged but unreleased as of 12.4.0, so the
+pinned version still needs the variable.
 
 ## What the pin bump implies for the repo
 
@@ -119,11 +123,15 @@ panic. Tracked upstream in
 
 ## When to retire the workarounds
 
-`packageImportMethod: copy` goes away if pnpm restores the copy fallback in
-`auto`, and it is harmless to keep either way on a filesystem that has no hard
-links to offer. The `npm i -g` route goes away when a pnpm release vendors a
-`get-pnpm` that knows about Android; check whether `pnpm` and `pnpx` still work
-from Corepack after any pnpm bump. `NODE_EXTRA_CA_CERTS` goes away when pnpm stops
-asking the Android platform verifier for a trust store it cannot reach. None of
-the three is worth a line of code here: they live in the contributor's shell and
+Two of the three are already fixed upstream and waiting on a release, so the next
+pnpm bump is the moment to re-test all three rather than carry them forward
+blindly. `NODE_EXTRA_CA_CERTS` goes with the first release carrying
+[pnpm/pnpm#14783](https://github.com/pnpm/pnpm/pull/14783), which stops asking the
+Android platform verifier for a trust store it cannot reach. The `npm i -g` route
+goes with the first release vendoring `get-pnpm@0.0.4` or later; the test is
+whether `pnpm` and `pnpx` work from Corepack again.
+`packageImportMethod: copy` waits on
+[pnpm/pnpm#14782](https://github.com/pnpm/pnpm/issues/14782) and is harmless to
+keep either way, on a filesystem that has no hard links to offer. None of the
+three is worth a line of code here: they live in the contributor's shell and
 machine config, and the repo only documents them.
