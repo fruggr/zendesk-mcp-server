@@ -1,6 +1,7 @@
 import { HttpResponse, http } from 'msw';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { CHARACTER_LIMIT } from '../../../src/constants';
+import * as z from 'zod/v4';
+import { CHARACTER_LIMIT, MAX_BASE64_INPUT_CHARS } from '../../../src/constants';
 import type { ToolContext } from '../../../src/tools/definitions';
 import { createTicketTools } from '../../../src/tools/tickets';
 import {
@@ -955,13 +956,15 @@ describe('ticket tools', () => {
         );
       };
 
-      const buildImages = (count: number) =>
+      // `size` drives both the declared metadata and the bytes the shared MSW
+      // handler serves (via `?bytes=`), so a response weighs what it claims.
+      const buildImages = (count: number, size = 1024) =>
         Array.from({ length: count }, (_, i) => ({
           id: 41000 + i,
           file_name: `img-${i}.png`,
-          content_url: `https://testsubdomain.zendesk.com/attachments/token/abc/?name=img-${i}.png`,
+          content_url: `https://testsubdomain.zendesk.com/attachments/token/abc/?name=img-${i}.png&bytes=${size}`,
           content_type: 'image/png',
-          size: 1024,
+          size,
           inline: false,
         }));
 
@@ -1008,6 +1011,127 @@ describe('ticket tools', () => {
         const imageBlocks = result.content.filter((c) => c.type === 'image');
         expect(imageBlocks).toHaveLength(0);
         expect(getAllText(result)).toContain('exceeds 2 MB per-image limit');
+      });
+
+      // #205: the per-image cap and the image count bound each image and how many,
+      // never the total. Two images that both pass built a message past the stdio
+      // ReadBuffer ceiling, which closes the transport instead of failing the call.
+      describe('response budget', () => {
+        const BUDGET = 200 * 1024;
+
+        const serializedBytes = (result: { content: unknown[] }) =>
+          Buffer.byteLength(JSON.stringify(result.content), 'utf8');
+
+        const runWithBudget = async (budget: number, attachments: Record<string, unknown>[]) => {
+          vi.resetModules();
+          vi.stubEnv('ZENDESK_MAX_RESPONSE_BYTES', String(budget));
+          mockCommentAttachments(attachments);
+          const tool = await loadAttachmentsTool();
+          return tool.handler({ ticket_id: 1 });
+        };
+
+        it('keeps the serialized response within the budget, embedding what fits', async () => {
+          // Small budget, small images: same arithmetic as production, without
+          // moving megabytes through the test.
+          const result = await runWithBudget(BUDGET, buildImages(4, 60 * 1024));
+
+          // The assertion that matters: what would actually go on the wire.
+          expect(serializedBytes(result)).toBeLessThanOrEqual(BUDGET);
+          // 60 KB of bytes is 80 KB of base64, so two fit in 200 KB and two do not.
+          expect(result.content.filter((c) => c.type === 'image')).toHaveLength(2);
+
+          const text = getAllText(result);
+          expect(text).toContain('img-2.png');
+          expect(text).toMatch(/skipped: response budget of [\d.]+ MB reached/);
+          // Neither existing guardrail fired: each image is far under the 5 MB
+          // per-image cap and there are fewer than 10 of them, so the budget is
+          // demonstrably what stopped it.
+          expect(text).not.toContain('per-image limit');
+          expect(text).not.toContain('embedded images reached');
+        });
+
+        // #205 review F1: the estimate reads `attachment.size` and the declared
+        // content type, the built block carries what the download returned. When
+        // the real weight overshoots, one image must degrade to a reference, not
+        // take the rest of the listing with it.
+        it('degrades an image heavier than its estimate, keeping the rest listed', async () => {
+          const result = await runWithBudget(6000, [
+            {
+              id: 83000,
+              file_name: 'lies.png',
+              // Declares 3 KB, serves 40 KB: passes the estimate, overshoots on arrival.
+              content_url: 'https://testsubdomain.zendesk.com/attachments/token/l1/?bytes=40000',
+              content_type: 'image/png',
+              size: 3072,
+              inline: false,
+            },
+            {
+              id: 83001,
+              file_name: 'after.txt',
+              content_url: 'https://testsubdomain.zendesk.com/attachments/token/l2/?name=after.txt',
+              content_type: 'text/plain',
+              size: 10,
+              inline: false,
+            },
+          ]);
+
+          const text = getAllText(result);
+          // The image is not embedded, but it IS listed, with the reason.
+          expect(result.content.filter((c) => c.type === 'image')).toHaveLength(0);
+          expect(text).toContain('lies.png');
+          expect(text).toMatch(/lies\.png.*response budget/s);
+          // The listing continued: the next attachment survives and nothing is
+          // reported as omitted.
+          expect(text).toContain('after.txt');
+          expect(text).not.toMatch(/further attachments omitted/);
+          expect(serializedBytes(result)).toBeLessThanOrEqual(6000);
+        });
+
+        // #205 review F2: the handler's header block is built at the call site, so
+        // the budget must be told about it or it bounds only part of the message.
+        it('counts the handler header, including on the truncation path', async () => {
+          const tool = findTool('get_ticket_attachments');
+          for (const budget of [1013, 1100, 1200, 1337]) {
+            vi.resetModules();
+            vi.stubEnv('ZENDESK_MAX_RESPONSE_BYTES', String(budget));
+            mockCommentAttachments(
+              Array.from({ length: 40 }, (_, i) => ({
+                id: 84000 + i,
+                file_name: `ref-${i}.pdf`,
+                content_url: `https://testsubdomain.zendesk.com/attachments/token/r${i}/?name=ref-${i}.pdf`,
+                content_type: 'application/pdf',
+                size: 1024,
+                inline: false,
+              })),
+            );
+            const fresh = await loadAttachmentsTool();
+            const result = await fresh.handler({ ticket_id: 1 });
+            // The whole response, header included, is what the transport sees.
+            expect(serializedBytes(result)).toBeLessThanOrEqual(budget);
+          }
+          expect(tool.name).toBe('get_ticket_attachments');
+        });
+
+        // The image count never bounded text references, and comment paging walks
+        // up to MAX_COMMENT_PAGES x MAX_PAGE_SIZE comments, so references alone can
+        // fill a message. Truncation is what covers that.
+        it('truncates and says so when even text references stop fitting', async () => {
+          const result = await runWithBudget(
+            4 * 1024,
+            Array.from({ length: 200 }, (_, i) => ({
+              id: 82000 + i,
+              file_name: `doc-${i}.pdf`,
+              content_url: `https://testsubdomain.zendesk.com/attachments/token/d${i}/?name=doc-${i}.pdf`,
+              content_type: 'application/pdf',
+              size: 1024,
+              inline: false,
+            })),
+          );
+
+          expect(serializedBytes(result)).toBeLessThanOrEqual(4 * 1024);
+          expect(result.content.length).toBeLessThan(200);
+          expect(getAllText(result)).toMatch(/\d+ further attachments omitted/);
+        });
       });
     });
   });
@@ -1114,6 +1238,106 @@ describe('ticket tools', () => {
       const tool = findTool('update_ticket');
       const result = await tool.handler({ ticket_id: 1, status: 'solved' });
       expect(result.content[0]?.text).toContain('updated');
+    });
+  });
+
+  // #205 inbound side: nothing bounded the size of a base64 attachment input, and
+  // `attachments` takes a list, so several files add up inside one message. A
+  // schema cap cannot stop the overflow (the read buffer bursts before parsing),
+  // but it is published as `maxLength` for an agent to read, and it turns a
+  // moderate overshoot into a plain validation error rather than a lost session.
+  describe('attachment input caps', () => {
+    const b64 = (chars: number) => 'a'.repeat(chars);
+
+    const parse = (name: string, params: unknown) => {
+      const tool = findTool(name);
+      return tool.inputSchema.safeParse(params);
+    };
+
+    it('rejects a single attachment past the base64 ceiling, naming limit and size', () => {
+      const result = parse('add_private_note', {
+        ticket_id: 1,
+        body: 'note',
+        attachments: [
+          {
+            file_name: 'huge.bin',
+            file_base64: b64(MAX_BASE64_INPUT_CHARS + 4),
+            content_type: 'application/octet-stream',
+          },
+        ],
+      });
+      expect(result.success).toBe(false);
+      if (result.success) return;
+      const message = result.error.issues.map((i) => i.message).join(' ');
+      expect(message).toContain(String(MAX_BASE64_INPUT_CHARS));
+      expect(message).toContain(String(MAX_BASE64_INPUT_CHARS + 4));
+    });
+
+    it('rejects attachments that only overflow once summed', () => {
+      const half = Math.ceil((MAX_BASE64_INPUT_CHARS + 8) / 2 / 4) * 4;
+      const result = parse('add_public_comment', {
+        ticket_id: 1,
+        body: 'reply',
+        attachments: [
+          { file_name: 'a.bin', file_base64: b64(half), content_type: 'application/octet-stream' },
+          { file_name: 'b.bin', file_base64: b64(half), content_type: 'application/octet-stream' },
+        ],
+      });
+      expect(result.success).toBe(false);
+      if (result.success) return;
+      const message = result.error.issues.map((i) => i.message).join(' ');
+      // Each file passes on its own; only the total is over.
+      expect(half).toBeLessThanOrEqual(MAX_BASE64_INPUT_CHARS);
+      expect(message).toContain(String(half * 2));
+      expect(message).toContain(String(MAX_BASE64_INPUT_CHARS));
+    });
+
+    it('still accepts an ordinary attachment', () => {
+      const result = parse('add_private_note', {
+        ticket_id: 1,
+        body: 'note',
+        attachments: [{ file_name: 'a.txt', file_base64: 'aGVsbG8=', content_type: 'text/plain' }],
+      });
+      expect(result.success).toBe(true);
+    });
+
+    // The inbound ceiling shares its budget with MAX_RESPONSE_BYTES, which IS
+    // env-overridable. What the contract owes is that the maxLength an agent reads
+    // on tools/list does not move with the environment.
+    it('publishes a maxLength that no environment override can move', async () => {
+      const readMaxLength = async () => {
+        const { createTicketTools: fresh } = await import('../../../src/tools/tickets');
+        const tool = fresh(ctx).find((t) => t.name === 'add_private_note');
+        if (!tool) throw new Error('add_private_note not found');
+        const schema = z.toJSONSchema(tool.inputSchema, { io: 'input' }) as {
+          properties: {
+            attachments: { items: { properties: { file_base64: { maxLength?: number } } } };
+          };
+        };
+        return schema.properties.attachments.items.properties.file_base64.maxLength;
+      };
+
+      vi.resetModules();
+      const baseline = await readMaxLength();
+
+      vi.resetModules();
+      vi.stubEnv('ZENDESK_MAX_RESPONSE_BYTES', '4096');
+      expect(await readMaxLength()).toBe(baseline);
+      vi.unstubAllEnvs();
+      vi.resetModules();
+    });
+
+    it('publishes the ceiling as maxLength so an agent sees it before calling', () => {
+      const schema = z.toJSONSchema(findTool('add_private_note').inputSchema, {
+        io: 'input',
+      }) as {
+        properties: {
+          attachments: { items: { properties: { file_base64: { maxLength?: number } } } };
+        };
+      };
+      expect(schema.properties.attachments.items.properties.file_base64.maxLength).toBe(
+        MAX_BASE64_INPUT_CHARS,
+      );
     });
   });
 

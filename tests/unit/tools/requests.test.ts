@@ -1,6 +1,6 @@
 import { HttpResponse, http } from 'msw';
 import { describe, expect, it } from 'vitest';
-import { CHARACTER_LIMIT } from '../../../src/constants';
+import { CHARACTER_LIMIT, MAX_BASE64_INPUT_CHARS } from '../../../src/constants';
 import type { ToolContext } from '../../../src/tools/definitions';
 import { createRequestTools } from '../../../src/tools/requests';
 import {
@@ -1008,5 +1008,61 @@ describe('the form fixture', () => {
     expect(MOCK_TICKET_FORM_BUG.default).toBe(true);
     expect(MOCK_TICKET_FORM_BUG.ticket_field_ids).toContain(360000000001);
     expect(MOCK_TICKET_FORM_BUG.ticket_field_ids).toContain(360000000002);
+  });
+});
+
+// The cap that reached the ticket tools in #205 is not audience-specific: an
+// end user's screenshot rides in the same message and bursts the same buffer,
+// so both write tools here take the shared capped `attachments` parameter.
+describe('attachment input caps', () => {
+  const b64 = (chars: number) => 'a'.repeat(chars);
+
+  const parse = (name: string, params: unknown) => findTool(name).inputSchema.safeParse(params);
+
+  it('rejects a single attachment past the base64 ceiling, naming limit and size', () => {
+    const result = parse('create_request', {
+      subject: 'Broken',
+      body: 'It broke',
+      attachments: [
+        {
+          file_name: 'huge.bin',
+          file_base64: b64(MAX_BASE64_INPUT_CHARS + 4),
+          content_type: 'application/octet-stream',
+        },
+      ],
+    });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    const message = result.error.issues.map((i) => i.message).join(' ');
+    expect(message).toContain(String(MAX_BASE64_INPUT_CHARS));
+    expect(message).toContain(String(MAX_BASE64_INPUT_CHARS + 4));
+  });
+
+  it('rejects attachments on a reply that only overflow once summed', () => {
+    const half = Math.ceil((MAX_BASE64_INPUT_CHARS + 8) / 2 / 4) * 4;
+    const result = parse('add_request_comment', {
+      request_id: 5001,
+      body: 'reply',
+      attachments: [
+        { file_name: 'a.bin', file_base64: b64(half), content_type: 'application/octet-stream' },
+        { file_name: 'b.bin', file_base64: b64(half), content_type: 'application/octet-stream' },
+      ],
+    });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    const message = result.error.issues.map((i) => i.message).join(' ');
+    // Each file passes on its own; only the total is over.
+    expect(half).toBeLessThanOrEqual(MAX_BASE64_INPUT_CHARS);
+    expect(message).toContain(String(half * 2));
+    expect(message).toContain(String(MAX_BASE64_INPUT_CHARS));
+  });
+
+  it('still accepts an ordinary attachment', () => {
+    const result = parse('create_request', {
+      subject: 'Broken',
+      body: 'It broke',
+      attachments: [{ file_name: 'a.txt', file_base64: 'aGVsbG8=', content_type: 'text/plain' }],
+    });
+    expect(result.success).toBe(true);
   });
 });

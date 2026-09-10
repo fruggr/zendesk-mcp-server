@@ -1,3 +1,8 @@
+// Compiles zod schemas on their first synchronous parse. Must stay the FIRST import:
+// schemas built before it keep the runtime parser, silently. Why, and what it is worth:
+// docs/decisions/zod-compile.md.
+import 'zod/compile';
+
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { createTokenStore } from './auth/token-store';
 import type { Config } from './config';

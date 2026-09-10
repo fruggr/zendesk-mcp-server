@@ -76,6 +76,54 @@ export const MAX_ATTACHMENT_BYTES = positiveIntEnv('ZENDESK_MAX_ATTACHMENT_BYTES
 // images are returned as text references. Override via ZENDESK_MAX_EMBEDDED_IMAGES.
 export const MAX_EMBEDDED_IMAGE_COUNT = positiveIntEnv('ZENDESK_MAX_EMBEDDED_IMAGES', 10);
 
+// Largest JSON-RPC message the stdio transport accepts, and the ceiling every
+// payload guard below derives from. Deliberately our own number rather than the
+// SDK's STDIO_DEFAULT_MAX_BUFFER_SIZE: the input caps derived from it surface as
+// `maxLength` in the published JSON Schema, and a contract that shifts because a
+// dependency bumped its default would change what agents rely on with nobody
+// deciding it (docs/mcp-metadata.md). A unit test asserts this stays within what
+// the SDK accepts, so a lowered default is caught here rather than in production.
+// Not overridable: a transport contract, not a usage knob.
+export const STDIO_MAX_MESSAGE_BYTES = 10 * 1024 * 1024;
+
+// Room left for what wraps our content in a message: the JSON-RPC envelope, plus
+// a request id the client picks and the spec does not bound. Measured at 53 bytes
+// for a plain response, so this is oversized on purpose rather than tuned, which
+// buys the guards independence from an envelope we do not control.
+const ENVELOPE_RESERVE_BYTES = 64 * 1024;
+
+// One budget for the content of a message, applied deliberately in both
+// directions: what we may emit, and what we accept. Named so the two cannot
+// drift apart by editing one expression.
+const MESSAGE_CONTENT_BUDGET_BYTES = STDIO_MAX_MESSAGE_BYTES - ENVELOPE_RESERVE_BYTES;
+
+// Outbound: total weight of one tool response. The two caps above bound each
+// image and how many, never the sum (#205). ZENDESK_MAX_RESPONSE_BYTES can only
+// lower it, which is the useful direction (a client whose own ceiling is smaller
+// than ours). A value above the budget is clamped rather than obeyed: emitting
+// past what the transport carries guarantees the very failure this guard exists
+// to prevent, and it happens on the client's side where nothing here can catch
+// it. Note the clamp wraps the lookup, so it bounds the override and not the
+// fallback.
+export const MAX_RESPONSE_BYTES = Math.min(
+  positiveIntEnv('ZENDESK_MAX_RESPONSE_BYTES', MESSAGE_CONTENT_BUDGET_BYTES),
+  MESSAGE_CONTENT_BUDGET_BYTES,
+);
+
+// Inbound: longest base64 string accepted on an attachment input, and the summed
+// ceiling for the array parameters. Published as `maxLength` for an agent to read
+// before calling; it cannot prevent the overflow itself, since the read buffer
+// bursts before anything is parsed. Not overridable, so the published schema stays
+// the same whatever the environment.
+export const MAX_BASE64_INPUT_CHARS = MESSAGE_CONTENT_BUDGET_BYTES;
+
+// The inbound ceiling as file megabytes, for the tool descriptions. Base64 carries
+// 3 bytes per 4 characters. Exported rather than derived per module so the two
+// tool files cannot advertise different figures for one ceiling.
+export const MAX_BASE64_INPUT_MB = Number.parseFloat(
+  (((MAX_BASE64_INPUT_CHARS / 4) * 3) / (1024 * 1024)).toFixed(2),
+);
+
 // Hard cap on comment pages fetched when collecting ticket attachments.
 // Overridable via ZENDESK_MAX_COMMENT_PAGES for tickets with many comments.
 export const MAX_COMMENT_PAGES = positiveIntEnv('ZENDESK_MAX_COMMENT_PAGES', 10);

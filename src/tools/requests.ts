@@ -30,7 +30,7 @@ import {
 } from '../utils/pagination';
 import {
   type AttachmentInput,
-  attachmentSchema,
+  attachmentsParam,
   formatAttachmentSuffix,
   uploadAttachments,
 } from './attachments';
@@ -635,12 +635,9 @@ export const createRequestTools = (ctx: ToolContext): ToolDefinition[] => {
           .describe(
             "Answers to the form's own questions, as { id, value } pairs. Take both the ids and the accepted values from get_request_form; a value Zendesk does not recognise is dropped without an error.",
           ),
-        attachments: z
-          .array(attachmentSchema)
-          .optional()
-          .describe(
-            'Files to attach to the request, such as a screenshot or a log, with their content base64-encoded.',
-          ),
+        attachments: attachmentsParam(
+          'Files to attach to the request, such as a screenshot or a log, with their content base64-encoded.',
+        ),
       }),
       annotations: {
         readOnlyHint: false,
@@ -855,12 +852,9 @@ export const createRequestTools = (ctx: ToolContext): ToolDefinition[] => {
           .describe(
             'The message to send. Visible to the support agents on the ticket and included in their email notification.',
           ),
-        attachments: z
-          .array(attachmentSchema)
-          .optional()
-          .describe(
-            'Files to attach to this reply, such as a screenshot or a log, with their content base64-encoded.',
-          ),
+        attachments: attachmentsParam(
+          'Files to attach to this reply, such as a screenshot or a log, with their content base64-encoded.',
+        ),
       }),
       annotations: {
         readOnlyHint: false,

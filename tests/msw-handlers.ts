@@ -889,13 +889,22 @@ export const handlers = [
     return HttpResponse.json({}, { status: 404 });
   }),
   http.get('https://testsubdomain.zendesk.com/attachments/token/:token/', ({ request }) => {
-    const token = new URL(request.url).pathname.split('/')[3];
+    const url = new URL(request.url);
+    const token = url.pathname.split('/')[3];
     if (token === 'def') {
       return HttpResponse.arrayBuffer(new Uint8Array([0x25, 0x50, 0x44, 0x46]).buffer, {
         headers: { 'content-type': 'application/pdf' },
       });
     }
-    return HttpResponse.arrayBuffer(new Uint8Array([0x89, 0x50, 0x4e, 0x47]).buffer, {
+    // `?bytes=` serves a payload of the requested size, so a response actually
+    // weighs what the attachment metadata claims. Size assertions on the
+    // response budget would otherwise pass against a 4-byte stub.
+    const bytes = Number(url.searchParams.get('bytes') ?? '4');
+    const payload = new Uint8Array(bytes);
+    // Keep the PNG magic at the front so the fixture still looks like an image
+    // whatever its size; `?bytes=` only controls the weight.
+    payload.set([0x89, 0x50, 0x4e, 0x47].slice(0, bytes));
+    return HttpResponse.arrayBuffer(payload.buffer, {
       headers: { 'content-type': 'image/png' },
     });
   }),
