@@ -9,7 +9,7 @@
 | --- | --- |
 | **Status** | Decided and applied |
 | **Date** | 2026-09-10 |
-| **Applied in** | [#278](https://github.com/fruggr/zendesk-mcp-server/pull/278) |
+| **Applied in** | [#281](https://github.com/fruggr/zendesk-mcp-server/pull/281) |
 | **Question** | pnpm 12 rewrites the CLI in Rust and ships it as a native binary per host. 12.4.0 is the first release to publish an Android one. Worth pinning, when two of its Android paths are broken upstream? |
 | **Answer** | **Yes.** Start-up drops from ~4 s to ~0.2 s on the affected device, and both gaps have a local answer that costs the other platforms nothing. |
 
