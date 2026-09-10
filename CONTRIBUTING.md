@@ -50,8 +50,9 @@ them upstream gaps that
   so a fresh install dies at the import step. Set the method once per machine:
   `pnpm config set packageImportMethod copy --global`.
 - Corepack cannot install pnpm 12 there, because the downloader it vendors refuses
-  the platform. Provision the pinned version with npm instead, into a prefix that
-  comes first on `PATH`: `npm i -g --prefix ~/.local/share/pnpm pnpm@<pin>`.
+  the platform. Provision the version `packageManager` pins with npm instead, into
+  a prefix that comes first on `PATH`:
+  `npm i -g --prefix ~/.local/share/pnpm pnpm@VERSION`.
 - `NODE_EXTRA_CA_CERTS` has to point at a CA bundle (`$PREFIX/etc/tls/cert.pem`),
   or every registry request aborts on a panic.
 

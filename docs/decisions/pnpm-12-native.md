@@ -64,9 +64,10 @@ reports `Sorry! pnpm does not provide a pre-built binary for android` even thoug
 the package exists on npm ([pnpm/pnpm#14679](https://github.com/pnpm/pnpm/issues/14679)).
 [pnpm/get.pnpm.io#59](https://github.com/pnpm/get.pnpm.io/pull/59) is the fix; it
 is still a draft, and it reaches this device only through a `get-pnpm` release
-that a later pnpm then vendors. `npm i -g --prefix ~/.local/share/pnpm pnpm@<pin>`
-is the way in meanwhile: npm resolves the optional dependency for the host and the
-package's own install script links the binary over the placeholder bin.
+that a later pnpm then vendors. The way in meanwhile is npm, naming the version
+`packageManager` pins: `npm i -g --prefix ~/.local/share/pnpm pnpm@VERSION`. npm
+resolves the optional dependency for the host, and the package's own install
+script links the binary over the placeholder bin.
 
 Installing into pnpm's own home (`~/.local/share/pnpm`, which pnpm asks you to
 keep first on `PATH`) rather than over `$PREFIX/bin/pnpm` is deliberate: it leaves
