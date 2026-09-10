@@ -93,25 +93,57 @@ they do not cover the same ground:
 Removing the human step does not remove that protection, because the human step
 was never the protection.
 
-**The exception is security updates, and it is not ours to choose.** Renovate
-documents it plainly: "Security updates bypass any `minimumReleaseAge` checks, and
+**Security updates look like an exception, and it turns out they need not be.**
+Renovate documents that "Security updates bypass any `minimumReleaseAge` checks, and
 so will be raised as soon as Renovate detects them"
-([key concepts / minimum release age](https://docs.renovatebot.com/key-concepts/minimum-release-age/)).
-So on a vulnerability alert the `renovate.json` delay does not apply, and
-`internalChecksFilter: "flexible"` in that block has no age check left to keep
-visible — it is inert for this purpose and kept only because it still governs any
-*other* internal check on those PRs. What remains is the pnpm gate, which bites at
-a different moment: Renovate has to run pnpm to update the lockfile, and pnpm
-refuses to resolve a version younger than five days. Whether that produces a clean
-wait or a failed lockfile step on a security PR has not been observed here yet —
-worth watching on the first real alert, because the two are not the same
-experience.
+([key concepts / minimum release age](https://docs.renovatebot.com/key-concepts/minimum-release-age/)),
+and that is true of the defaults. It is not, however, hardcoded behaviour, which the
+docs do not say. In `lib/config/options`, the `vulnerabilityAlerts` option ships a
+**default object** carrying `minimumReleaseAge: null` (alongside `groupName: null`,
+`schedule: []`, `prCreation: "immediate"` and `dependencyDashboardApproval: false`).
+That option is `mergeable`, so an explicit key in `renovate.json` wins over the
+default, and `mergeChildConfig` then applies the whole block as `force`, which also
+beats `packageRules`. Setting `"minimumReleaseAge": "5 days"` inside the block
+therefore puts vulnerability updates back under the same quarantine as everything
+else — which is what this repo does.
 
-The practical consequence, stated so nobody has to rediscover it: a **patch**-level
-security fix on a direct dependency can reach `main` quickly, and it publishes a
-release when it does. That is the intended trade for a known CVE — the delay exists
-against *unknown* compromise, which is a different threat. A minor or major
-security update still stops for a human.
+The reasoning is that the quarantine's threat model does not change because an
+advisory exists. It guards against a *published package being malicious*, and a
+release that fixes a CVE is a package like any other; a compromised release
+announced as a security fix is precisely the case the delay is for.
+
+**How the wait is actually enforced is layered, and worth knowing before touching
+it.** Three mechanisms, only one of which is load-bearing:
+
+1. Renovate marks the update pending and posts `renovate/stability-days` as a yellow
+   commit status. With `internalChecksFilter: "flexible"` in the block, the PR is
+   still opened immediately, so a CVE is visible the day it lands rather than five
+   days later. This status is **documentation, not enforcement**: it is not in the
+   `main` ruleset's required checks, and it cannot reasonably be added — Renovate
+   only posts it on branches where the age gate applies, so requiring it would leave
+   every other PR, human ones included, permanently unmergeable.
+2. `platformAutomerge` arms GitHub's auto-merge on the PR as soon as it opens, and
+   GitHub waits only on *required* checks. So point 1 does not hold the merge.
+3. **pnpm does.** `minimumReleaseAge: 7200` in `pnpm-workspace.yaml` refuses to
+   resolve a version younger than five days, and `minimumReleaseAgeStrict` defaults
+   to `true` once the age is set explicitly, so it is a hard resolution failure
+   rather than a silent fallback to an older version. Renovate cannot update the
+   lockfile, CI runs `pnpm install --frozen-lockfile` and goes red, and GitHub's
+   auto-merge cannot fire. Once the fix ages out, the branch refreshes, CI goes
+   green, and a patch merges on its own.
+
+So the visible cost of the policy is a red security PR for a few days. That is
+accepted: it is loud, it is self-clearing, and it fails closed. Do not "fix" it by
+setting `minimumReleaseAgeStrict: false` — pnpm would then quietly resolve an older
+version, and the PR would go green *without applying the fix*, which is the one
+outcome worse than red.
+
+One asymmetry remains, and it is a default rather than a choice:
+`dependencyDashboardApproval: false` is forced by the same block, so a **major**
+update carrying an advisory opens a PR directly instead of waiting on the Dependency
+Dashboard like an ordinary major. It is labelled `needs-review` and merged by hand,
+so nothing lands unread — but the gate a reader expects from the majors rule is not
+the one in force.
 
 This is also where the ecosystem has landed. Renovate's own guidance is to
 [automerge](https://docs.renovatebot.com/key-concepts/automerge/) non-major

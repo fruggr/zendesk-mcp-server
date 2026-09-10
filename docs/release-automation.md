@@ -141,13 +141,15 @@ security fix arrives in one of two weekly batches.
 | **patch**, any `package.json` dependency                            | auto-merge, own PR       | auto-merge, weekly batch         |
 | **minor** on `@modelcontextprotocol/sdk` or `zod`                   | manual review            | **manual review**, never batched |
 | **minor**, any other `package.json` dependency                      | manual review\*          | auto-merge, weekly batch         |
-| **major**, any dependency (prod and dev)                            | dashboard approval       | dashboard approval               |
+| **major**, any dependency (prod and dev)                            | manual review\*\*         | dashboard approval               |
 | **patch / minor** on `pnpm` (`packageManager`)                      | auto-merge               | auto-merge, own PR               |
 | **patch / minor** on `pnpm.overrides` entries                       | auto-merge               | auto-merge, own PR               |
 | `lockFileMaintenance` (Tuesday and Friday before 8am, Europe/Paris) | auto-merge               | auto-merge                       |
 | GitHub Actions (`uses: org/action@…`)                               | manual review            | manual review                    |
 
 \* Vulnerability-minor updates carry the `fix(security):` prefix, so merging them publishes a release. We keep them under manual review to allow an impact assessment first.
+
+\*\* A major carrying an advisory does **not** wait on the dashboard: the `vulnerabilityAlerts` defaults force `dependencyDashboardApproval: false`, which beats the `matchUpdateTypes: ["major"]` rule. The PR is opened, labelled `needs-review`, and merged by hand.
 
 **The weekly batches.** Everything auto-merged and non-security is grouped into two PRs,
 `chore(deps): update prod dependencies` and `chore(deps): update dev dependencies`, opened
@@ -169,19 +171,25 @@ and what the trade-offs are:
 **Security updates are never batched.** `vulnerabilityAlerts` pins `groupName` to `null` on
 purpose: a security update swept into a batch would inherit its `chore(deps)` title and stop
 publishing a release. It fails silently, hence the explicit pin on top of Renovate's own
-default of keeping alerted packages out of groups. They also do **not** wait out the 5-day
-`minimumReleaseAge` — Renovate bypasses that check for vulnerability updates by design, so a
-security patch can land fast and publish a release. Only pnpm's own resolution-time gate still
-applies to them; the asymmetry and what it means are in
+default of keeping alerted packages out of groups.
+
+**They do wait out the 5-day delay, and that takes one line.** Renovate's docs say security
+updates bypass `minimumReleaseAge`; that bypass is a *default value* of the `vulnerabilityAlerts`
+block, not fixed behaviour, so setting `minimumReleaseAge` inside that block restores the gate.
+What you see during the wait: the PR is opened immediately (so a CVE is never hidden), carries a
+pending `renovate/stability-days` check, and its CI is **red** — pnpm refuses to resolve a version
+younger than the delay, so the lockfile cannot be updated yet. Both clear once the fix ages out,
+and the patch case then auto-merges on its own. Why it is layered this way, and why the status
+check is not simply made required:
 [`docs/decisions/dependency-automerge.md`](decisions/dependency-automerge.md#3-what-protects-the-repo-and-what-does-not).
 
 **Dashboard approval** means: no PR is opened automatically. The update appears in the Renovate-managed "Dependency Dashboard" issue with a checkbox. Ticking the checkbox triggers PR creation. This is intentional for majors, which usually require reading the upstream CHANGELOG and following a migration procedure.
 
 Concrete examples:
 
-- Patch vulnerability in `open` (prod) → PR `fix(security): update open to X`, on its own → auto-merge → patch release published.
-- Minor vulnerability in `open` (prod) → PR `fix(security): update open to X` → **manual review** → patch release published on merge.
-- Major vulnerability in `open` (prod) → **no auto PR**, entry in the dashboard awaiting approval.
+- Patch vulnerability in `open` (prod) → PR `fix(security): update open to X`, on its own, immediately → red and pending until the fix is 5 days old → auto-merge → patch release published.
+- Minor vulnerability in `open` (prod) → same PR and same wait → **manual review** → patch release published on merge.
+- Major vulnerability in `open` (prod) → PR opened too, labelled `needs-review` (the dashboard gate does not apply to advisories) → **manual review**.
 - Non-vuln patch update of `open` (prod) → joins `chore(deps): update prod dependencies` on Monday → auto-merge → no release on merge.
 - Minor update of `cheerio` (prod) → same batch → auto-merge → no release.
 - Minor update of `zod` → PR `chore(deps): update dependency zod to X`, on its own, as soon as it clears the age gate → **manual review** → no release on merge.
