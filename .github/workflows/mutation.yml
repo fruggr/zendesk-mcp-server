@@ -81,7 +81,7 @@ jobs:
       - uses: ./.github/actions/mutation-baseline
         id: cache
 
-      # Reports, never `break`s. No `--`: pnpm 11 forwards the separator itself.
+      # Reports, never `break`s. No `--`: pnpm forwards the separator itself.
       # Step-scoped secret, so only the baseline can publish — same rule as the cache.
       - name: Run the full scope
         env:

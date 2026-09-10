@@ -13,7 +13,7 @@ documentation.
   it's user-facing (→ `README.md`) or a deep dive (→ `docs/`): link it, don't
   inline it.
 
-Toolchain (Node 24 + pnpm 11) is the dev floor; the published package still runs on Node 20+ (a CI job exercises the packed tarball on Node 20).
+Toolchain (Node 24 + pnpm 12) is the dev floor; the published package still runs on Node 20+ (a CI job exercises the packed tarball on Node 20).
 
 On **Claude Code on the web**, the Node environment is set up automatically at session start (dependencies installed), so tests and linters work right away.
 

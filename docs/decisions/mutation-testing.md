@@ -658,7 +658,7 @@ over loopback is indistinguishable from a slow one.
 ## Appendix — reproducing
 
 ```sh
-# Flags go straight after the script name — pnpm 11 forwards a `--` separator
+# Flags go straight after the script name — pnpm forwards a `--` separator
 # literally, and `stryker run -- --incremental` fails with "too many arguments".
 pnpm test:mutation                                # full scope, cold — always trustworthy
 pnpm test:mutation --mutate 'src/utils/**/*.ts'   # one directory

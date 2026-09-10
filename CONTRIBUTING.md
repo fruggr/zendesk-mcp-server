@@ -35,12 +35,21 @@ External contributions follow the same standard.
 | Tool | Version | Source of truth |
 | ---- | ------- | ---------------- |
 | Node | 24 | [`.nvmrc`](.nvmrc), read by `nvm`, `fnm`, `mise`, `asdf`, `volta` |
-| pnpm | 11 | [`package.json#packageManager`](package.json) (pinned with a corepack integrity hash) |
+| pnpm | 12 | [`package.json#packageManager`](package.json) (pinned with a corepack integrity hash) |
 
-The toolchain (Node 24 + pnpm 11) is used to build, lint, type-check and
+The toolchain (Node 24 + pnpm 12) is used to build, lint, type-check and
 test the project. The **published package** still runs on Node 20+ (see
 `engines.node`); a dedicated CI job installs the packed tarball on Node 20
 and runs the smoke test to keep that promise honest.
+
+Native Termux (`android-arm64`) needs two things no other platform does. Corepack
+cannot install pnpm 12 there, because the downloader it vendors refuses the
+platform, so provision the pinned version with npm instead — `npm i -g --prefix
+"$PNPM_HOME" pnpm@<pin>` resolves the `@pnpm/exe.android-arm64` optional
+dependency and links the native binary. And `NODE_EXTRA_CA_CERTS` has to point at
+a CA bundle (`$PREFIX/etc/tls/cert.pem`), or every registry request aborts on a
+panic. Both are upstream gaps, and
+[`docs/decisions/pnpm-12-native.md`](decisions/pnpm-12-native.md) tracks them.
 
 ```bash
 # Clone, install, build

@@ -65,9 +65,12 @@ Two independent causes, both from `platform === 'android'`:
   installed at all: repointing `lefthook.yml` serves the other platforms and
   will take effect here if lefthook itself becomes runnable. Until then,
   formatting and import sorting stay CI-only on that device.
-- The hooks invoke `node scripts/biome.mjs` rather than a pnpm script: `pnpm`
-  costs 3.7 s of start-up on this device against 0.37 s for `node`, and the
-  per-edit hook itself runs in 0.31 s.
+- The hooks invoke `node scripts/biome.mjs` rather than a pnpm script: pnpm 11
+  cost 3.7 s of start-up on this device against 0.37 s for `node`, and the
+  per-edit hook itself runs in 0.31 s. The pnpm 12 native CLI closes that gap
+  (0.2 s, see [`pnpm-12-native.md`](pnpm-12-native.md)), so that reason has
+  expired; whether the hooks go back through pnpm is
+  [#279](https://github.com/fruggr/zendesk-mcp-server/issues/279).
 - A direct `node_modules/.bin/biome` from outside the repo (an IDE extension,
   an ad-hoc `pnpm exec biome`) still fails on Termux. `BIOME_BINARY` is the
   escape hatch: `export BIOME_BINARY=$(node scripts/biome.mjs --print-binary)`,
