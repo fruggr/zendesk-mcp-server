@@ -42,6 +42,9 @@ describe('grantCovers', () => {
     { granted: 'write read', requested: 'read write', covered: true, why: 'order is irrelevant' },
     { granted: 'read  write', requested: 'read write', covered: true, why: 'extra whitespace' },
     { granted: '', requested: 'read', covered: false, why: 'an empty grant covers nothing' },
+    // Padding must not become a token of its own: an unfiltered split would
+    // look for an empty scope the grant cannot contain.
+    { granted: 'read write', requested: ' read ', covered: true, why: 'padded request' },
   ])('$why', ({ granted, requested, covered }) => {
     expect(grantCovers(granted, requested)).toBe(covered);
   });

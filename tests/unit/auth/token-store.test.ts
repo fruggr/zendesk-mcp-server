@@ -69,6 +69,14 @@ const deferredStarted = () => {
   return { started: { authorizeUrl: AUTH_URL, tokenPromise }, resolveToken, rejectToken };
 };
 
+const makeLogger = () => ({
+  debug: vi.fn(),
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  attachServer: vi.fn(),
+});
+
 // Flush the microtask + immediate queue so the store's token-promise handlers run.
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
@@ -216,10 +224,17 @@ describe('createTokenStore', () => {
       expiresAt: FUTURE(),
     });
     startBrowserAuthMock.mockResolvedValue(deferredStarted().started);
-    const store = createTokenStore(CONFIG);
+    const logger = makeLogger();
+    const store = createTokenStore(CONFIG, logger);
 
     await expect(store.getToken()).rejects.toThrow('authentication required');
     expect(startBrowserAuthMock).toHaveBeenCalledTimes(1);
+    // Why the sign-in happened has to be visible in the logs, or a narrowed
+    // OAuth client looks like a random re-prompt.
+    expect(logger.warn).toHaveBeenCalledWith('oauth_token_scope_insufficient', {
+      requested: 'read write',
+      granted: 'read',
+    });
     // Refreshing would mint an equally narrow token and burn the single-use
     // refresh token on every call.
     expect(refreshAccessTokenMock).not.toHaveBeenCalled();

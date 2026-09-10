@@ -33,6 +33,9 @@ export const requestedScope = (readOnly: boolean): string =>
 export const supportedScopes = (readOnly: boolean): string[] => requestedScope(readOnly).split(' ');
 
 // Hoisted: the predicate below runs on every token read.
+// Stryker disable next-line Regex: the empty-token filter below makes `/\s/`
+// and `/\s+/` produce identical output, so the quantifier is clarity, not
+// behaviour, and no test can tell the two apart.
 const WHITESPACE = /\s+/;
 
 const scopeTokens = (scope: string): string[] =>
