@@ -15,6 +15,8 @@ import {
   DEFAULT_PAGE_SIZE,
   LARGE_ARTICLE_BODY_CHARS,
   LARGE_ARTICLE_SECTION_COUNT,
+  MAX_BASE64_INPUT_CHARS,
+  MAX_BASE64_INPUT_MB,
   MAX_PAGE_SIZE,
   REORDER_CONFIRM_THRESHOLD,
 } from '../constants';
@@ -2428,8 +2430,16 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         file_base64: z
           .string()
           .min(1)
+          // `abort` stops the chain here, so the base64 regex does not scan
+          // megabytes already disqualified by their length. In-range inputs and
+          // the published schema are unaffected.
+          .max(MAX_BASE64_INPUT_CHARS, {
+            abort: true,
+            error: (issue) =>
+              `File too large: ${(issue.input as string).length} base64 characters, limit ${MAX_BASE64_INPUT_CHARS}. Downscale the file, split it, or host it elsewhere and link to it.`,
+          })
           .describe(
-            "The file's raw bytes as a base64-encoded string; the server decodes them before upload.",
+            `The file's raw bytes as a base64-encoded string; the server decodes them before upload. At most ${MAX_BASE64_INPUT_CHARS} characters (about ${MAX_BASE64_INPUT_MB} MB of file); the HTTP transport additionally caps request bodies at 4 MB.`,
           ),
         content_type: z
           .string()

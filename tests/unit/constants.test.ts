@@ -93,3 +93,52 @@ describe('REORDER_CONFIRM_THRESHOLD (positiveIntEnv)', () => {
     expect(await load()).toBe(20);
   });
 });
+
+describe('MAX_RESPONSE_BYTES (positiveIntEnv)', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  const load = async () => (await import('../../src/constants')).MAX_RESPONSE_BYTES;
+  // The stdio ceiling less the envelope reserve, both non-overridable.
+  const DEFAULT_BUDGET = 10 * 1024 * 1024 - 64 * 1024;
+
+  it('defaults to the stdio ceiling less the envelope reserve', async () => {
+    expect(await load()).toBe(DEFAULT_BUDGET);
+  });
+
+  it('honors a valid positive integer', async () => {
+    vi.stubEnv('ZENDESK_MAX_RESPONSE_BYTES', String(512 * 1024));
+    expect(await load()).toBe(512 * 1024);
+  });
+
+  it('falls back to the default when empty or non-numeric', async () => {
+    vi.stubEnv('ZENDESK_MAX_RESPONSE_BYTES', '');
+    expect(await load()).toBe(DEFAULT_BUDGET);
+    vi.resetModules();
+    vi.stubEnv('ZENDESK_MAX_RESPONSE_BYTES', 'not-a-number');
+    expect(await load()).toBe(DEFAULT_BUDGET);
+  });
+
+  // Lowering is the useful direction; raising would emit past what the transport
+  // carries and break the client, where no guard of ours runs.
+  it('clamps an override above the budget instead of obeying it', async () => {
+    vi.stubEnv('ZENDESK_MAX_RESPONSE_BYTES', String(50 * 1024 * 1024));
+    expect(await load()).toBe(DEFAULT_BUDGET);
+  });
+});
+
+describe('MAX_BASE64_INPUT_MB', () => {
+  it('is the file size the base64 ceiling allows', async () => {
+    vi.resetModules();
+    const { MAX_BASE64_INPUT_CHARS, MAX_BASE64_INPUT_MB } = await import('../../src/constants');
+    // Base64 carries 3 bytes per 4 characters. Asserted against the megabyte
+    // figure the tool descriptions quote, so a change to either is caught here.
+    expect(MAX_BASE64_INPUT_MB).toBe(7.45);
+    expect(MAX_BASE64_INPUT_CHARS).toBe(10 * 1024 * 1024 - 64 * 1024);
+  });
+});
