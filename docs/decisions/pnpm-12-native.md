@@ -10,8 +10,8 @@
 | **Status** | Decided and applied |
 | **Date** | 2026-09-10 |
 | **Applied in** | [#281](https://github.com/fruggr/zendesk-mcp-server/pull/281) |
-| **Question** | pnpm 12 rewrites the CLI in Rust and ships it as a native binary per host. 12.4.0 is the first release to publish an Android one. Worth pinning, when two of its Android paths are broken upstream? |
-| **Answer** | **Yes.** Start-up drops from ~4 s to ~0.2 s on the affected device, and both gaps have a local answer that costs the other platforms nothing. |
+| **Question** | pnpm 12 rewrites the CLI in Rust and ships it as a native binary per host. 12.4.0 is the first release to publish an Android one. Worth pinning, when three of its Android paths are broken upstream? |
+| **Answer** | **Yes.** Start-up drops from ~4 s to ~0.2 s on the affected device, and all three gaps have a local answer that costs the other platforms nothing. |
 
 Measured on the affected device (Termux, `android-arm64`, 6 cores), pnpm 11.25.0
 through Corepack against pnpm 12.4.0 native, on this repo's own manifest.
@@ -37,7 +37,25 @@ install, and on a slow connection that check dominates the total (20.7 s of the
 24.8 s above, 6 s of the 6.3 s, and 55 s on a cold run). It is network-bound, so
 read the start-up row rather than the totals for what the rewrite itself buys.
 
-## The two Android gaps
+## The three Android gaps
+
+**A fresh install cannot materialise `node_modules`.** No hard link can be created
+anywhere on this device: `link()` returns `EPERM` in `$HOME`, in `$PREFIX/tmp`, in
+the pnpm store and inside the worktrees alike, and every store file sits at
+`nlink 1`. pnpm 11 coped, because `packageImportMethod: auto` falls back to
+copying; pnpm 12 stops at the refused link and fails with `failed to import …
+Permission denied (os error 13)`, for `pnpm add`, `pnpm install` and `pnpm dlx`
+alike ([pnpm/pnpm#14782](https://github.com/pnpm/pnpm/issues/14782)). Naming the
+method explicitly is the answer, and it belongs in the machine's own config rather
+than in this repo, because it describes the filesystem and not the project:
+`pnpm config set packageImportMethod copy --global`. With that in place a cold
+install of the 766 packages here takes 21 s against a cold store and 6.4 s against
+a warm one.
+
+This gap hides easily, so it is worth knowing how to see it: an install that finds
+`node_modules` already materialised skips the import step and passes whatever the
+method. It only surfaces on a fresh checkout, which is exactly what the
+`post-switch` hook in `.config/wt.toml` produces on every new worktree.
 
 **Corepack cannot provision the binary.** The wrapper's Corepack entry
 (`bin/pnpm.mjs`) downloads the executable through the `get-pnpm` copy it vendors,
@@ -92,12 +110,19 @@ panic. Tracked upstream in
   [`dependency-automerge.md`](dependency-automerge.md) rests on. That file's
   warning against weakening the gate now covers the two hatches v12 adds,
   `minimumReleaseAgeExclude` and approving a pick at an interactive prompt.
+- **An ignored build script is now an error.** `ERR_PNPM_IGNORED_BUILDS` replaces
+  the warning pnpm 11 printed, which the repo does not feel because
+  `pnpm-workspace.yaml` whitelists what needs building. A throwaway `pnpm dlx`
+  has no such file, so a package with a build script needs
+  `--allow-build=<pkg>` there (`pnpm dlx --allow-build=esbuild tsx …`).
 
 ## When to retire the workarounds
 
-The `npm i -g` route goes away when a pnpm release vendors a `get-pnpm` that
-knows about Android; check whether `pnpm` and `pnpx` still work from Corepack
-after any pnpm bump. `NODE_EXTRA_CA_CERTS` goes away when pnpm stops asking the
-Android platform verifier for a trust store it cannot reach. Neither is worth
-keeping a line of code for here: both live in the contributor's shell, and the
-repo only documents them.
+`packageImportMethod: copy` goes away if pnpm restores the copy fallback in
+`auto`, and it is harmless to keep either way on a filesystem that has no hard
+links to offer. The `npm i -g` route goes away when a pnpm release vendors a
+`get-pnpm` that knows about Android; check whether `pnpm` and `pnpx` still work
+from Corepack after any pnpm bump. `NODE_EXTRA_CA_CERTS` goes away when pnpm stops
+asking the Android platform verifier for a trust store it cannot reach. None of
+the three is worth a line of code here: they live in the contributor's shell and
+machine config, and the repo only documents them.

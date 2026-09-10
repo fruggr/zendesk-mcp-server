@@ -42,14 +42,18 @@ test the project. The **published package** still runs on Node 20+ (see
 `engines.node`); a dedicated CI job installs the packed tarball on Node 20
 and runs the smoke test to keep that promise honest.
 
-Native Termux (`android-arm64`) needs two things no other platform does. Corepack
-cannot install pnpm 12 there, because the downloader it vendors refuses the
-platform, so provision the pinned version with npm instead, into a prefix that
-comes first on `PATH`: `npm i -g --prefix ~/.local/share/pnpm pnpm@<pin>` resolves
-the `@pnpm/exe.android-arm64` optional dependency and links the native binary. And
-`NODE_EXTRA_CA_CERTS` has to point at a CA bundle (`$PREFIX/etc/tls/cert.pem`), or
-every registry request aborts on a panic. Both are upstream gaps, and
-[`docs/decisions/pnpm-12-native.md`](docs/decisions/pnpm-12-native.md) tracks them.
+Native Termux (`android-arm64`) needs three things no other platform does, all of
+them upstream gaps that
+[`docs/decisions/pnpm-12-native.md`](docs/decisions/pnpm-12-native.md) details:
+
+- Hard links are refused device-wide and pnpm 12 no longer falls back to copying,
+  so a fresh install dies at the import step. Set the method once per machine:
+  `pnpm config set packageImportMethod copy --global`.
+- Corepack cannot install pnpm 12 there, because the downloader it vendors refuses
+  the platform. Provision the pinned version with npm instead, into a prefix that
+  comes first on `PATH`: `npm i -g --prefix ~/.local/share/pnpm pnpm@<pin>`.
+- `NODE_EXTRA_CA_CERTS` has to point at a CA bundle (`$PREFIX/etc/tls/cert.pem`),
+  or every registry request aborts on a panic.
 
 ```bash
 # Clone, install, build
