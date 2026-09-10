@@ -74,11 +74,15 @@ Installing into pnpm's own home (`~/.local/share/pnpm`, whose `bin/` pnpm asks y
 to keep first on `PATH`) rather than over `$PREFIX/bin/pnpm` is deliberate: npm
 puts the binary at `<prefix>/bin/pnpm` and leaves Corepack's shim in place, so
 deleting `~/.local/share/pnpm/bin/pnpm*` is the whole rollback. Note that the
-shadowing is machine-wide, so a checkout still pinned to pnpm 11 then fails with
+shadowing is machine-wide, so a checkout still pinned to pnpm 11 fails with
 `ERR_PNPM_PNPM_ENGINE_NO_NATIVE_BINARY`, because pnpm 12 honours the pin itself
-and no pnpm 11 binary can exist here. `pmOnFail: ignore` would skip that switch,
-but it is only settable in a project's `pnpm-workspace.yaml`, so there is no local
-escape hatch. The answer is to land the pin everywhere.
+and no pnpm 11 binary can exist here. `pmOnFail: ignore` skips that switch, and it
+does not need the project's own config: `--pm-on-fail=ignore` on the command and
+`PNPM_CONFIG_PM_ON_FAIL=ignore` in the environment both work, for `pnpm exec` and
+`pnpm install` alike, and an install run that way writes the lockfile in the
+pinned major's shape rather than pnpm 12's. Treat it as a bridge while the pin
+spreads rather than a destination: with it set, the pin no longer decides which
+pnpm runs.
 
 **Every registry request panics.** The Rust CLI delegates TLS verification to
 `rustls-platform-verifier`, whose Android backend needs a JNI initialisation
