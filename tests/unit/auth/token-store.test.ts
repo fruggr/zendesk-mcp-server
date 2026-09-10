@@ -183,10 +183,15 @@ describe('createTokenStore', () => {
 
   it('reuses a token loaded from disk without starting a browser flow', async () => {
     loadTokenMock.mockReturnValue({ accessToken: 'disk-token' });
-    const store = createTokenStore(CONFIG);
+    const logger = makeLogger();
+    const store = createTokenStore(CONFIG, logger);
 
     await expect(store.getToken()).resolves.toBe('disk-token');
     expect(startBrowserAuthMock).not.toHaveBeenCalled();
+    // The counterpart of oauth_token_scope_insufficient: a record that was
+    // accepted has to be visible in the logs too, or a start that skipped
+    // sign-in is indistinguishable from one that had no record at all.
+    expect(logger.debug).toHaveBeenCalledWith('oauth_token_loaded_from_disk');
   });
 
   it('forwards the configured callback port to the browser flow', async () => {
