@@ -1,5 +1,6 @@
 import { type Logger, silentLogger } from '../utils/logger';
 import { refreshAccessToken, startBrowserAuth } from './browser-oauth';
+import { grantCovers, requestedScope } from './oauth-scopes';
 import {
   clearToken as clearPersistedToken,
   loadToken,
@@ -48,10 +49,17 @@ const expiryFrom = (expiresIn: number | undefined): number | undefined =>
   typeof expiresIn === 'number' ? Date.now() + expiresIn * 1000 : undefined;
 
 export const createTokenStore = (
-  config: { subdomain: string; oauthClientId: string; callbackPort?: number | undefined },
+  config: {
+    subdomain: string;
+    oauthClientId: string;
+    callbackPort?: number | undefined;
+    readOnly: boolean;
+  },
   logger: Logger = silentLogger,
 ) => {
   const tokenPath = resolveTokenPath(config.subdomain);
+  // Fixed for the life of the process: the tool surface cannot change under us.
+  const requested = requestedScope(config.readOnly);
   // Seed the in-memory cache from disk so a restart (notably the Cowork-on-Windows
   // process churn) reuses the existing token instead of re-prompting.
   let token: StoredToken | undefined = loadToken(tokenPath);
@@ -92,6 +100,26 @@ export const createTokenStore = (
       ? Date.now() >= t.expiresAt - EXPIRY_SKEW_MS
       : t.refreshToken !== undefined && !probedUnknownExpiry;
 
+  // Whether the cached token may be served, dropping it from memory when its
+  // grant falls short of what this process needs.
+  //
+  // Deliberately NOT folded into `needsRefresh`: a refresh cannot widen a grant
+  // (and our refresh request sends no scope at all), so routing a shortfall
+  // through the refresh path would mint an equally narrow token, serve it, and
+  // burn Zendesk's single-use refresh token again on the next call. The only
+  // way out of a shortfall is a fresh authorization.
+  //
+  // The drop is memory-only, never `clearPersistedToken`: one token file serves
+  // every process on this subdomain, so a record this server refuses may be
+  // exactly right for a read-only sibling -- and a successful sign-in overwrites
+  // the file regardless.
+  const mayServeCachedGrant = (): boolean => {
+    if (!token || grantCovers(token.scope, requested)) return true;
+    logger.warn('oauth_token_scope_insufficient', { requested, granted: token.scope });
+    token = undefined;
+    return false;
+  };
+
   // Try to silently mint a fresh access token from the stored refresh token.
   // Resolves to the new access token, or `undefined` if there's nothing to
   // refresh / the refresh failed. On failure the on-demand path drops the dead
@@ -119,6 +147,9 @@ export const createTokenStore = (
         accessToken: result.access_token,
         refreshToken: result.refresh_token ?? current.refreshToken,
         expiresAt: expiryFrom(result.expires_in),
+        // Same rule as the refresh token above: an omitted `scope` means the
+        // grant is unchanged, not unknown.
+        scope: result.scope ?? current.scope,
       };
       // Freshly refreshed: if expiry is still unknown, don't re-probe every call.
       probedUnknownExpiry = true;
@@ -147,6 +178,7 @@ export const createTokenStore = (
         subdomain: config.subdomain,
         oauthClientId: config.oauthClientId,
         callbackPort: config.callbackPort,
+        readOnly: config.readOnly,
       },
       logger,
     )
@@ -158,6 +190,7 @@ export const createTokenStore = (
               accessToken: result.access_token,
               refreshToken: result.refresh_token,
               expiresAt: expiryFrom(result.expires_in),
+              scope: result.scope ?? requested,
             };
             // Freshly minted: trust it without an immediate probe-refresh.
             probedUnknownExpiry = true;
@@ -211,6 +244,10 @@ export const createTokenStore = (
     // resolved value were being tested.
     if (refreshing !== undefined) await refreshing;
 
+    // Before the cache-hit gate: a token whose grant is too narrow is never
+    // served, however fresh it is.
+    mayServeCachedGrant();
+
     if (token && !needsRefresh(token)) {
       logger.debug('oauth_token_cache_hit');
       return token.accessToken;
@@ -219,7 +256,9 @@ export const createTokenStore = (
     // Expired, near-expiry, or unknown-expiry but refreshable → refresh silently
     // before falling back to a browser prompt.
     const refreshed = await refreshIfPossible();
-    if (refreshed) return refreshed;
+    // Checked again: a refresh response may declare a narrower grant than the
+    // record it replaced, and that token must not be handed out either.
+    if (refreshed && mayServeCachedGrant()) return refreshed;
 
     if (starting === undefined) {
       starting = beginAuth();
@@ -240,7 +279,12 @@ export const createTokenStore = (
   // when there's no refresh token do we wipe the record entirely.
   const invalidate = (): void => {
     if (token?.refreshToken) {
-      token = { accessToken: token.accessToken, refreshToken: token.refreshToken, expiresAt: 0 };
+      token = {
+        accessToken: token.accessToken,
+        refreshToken: token.refreshToken,
+        expiresAt: 0,
+        scope: token.scope,
+      };
       persist(token);
     } else {
       token = undefined;
