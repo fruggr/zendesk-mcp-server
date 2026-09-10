@@ -1,3 +1,17 @@
+## [2.20.2](https://github.com/fruggr/zendesk-mcp-server/compare/v2.20.1...v2.20.2) (2026-09-10)
+
+### Bug Fixes
+
+* cap attachment payloads so an oversized message cannot drop the session ([#282](https://github.com/fruggr/zendesk-mcp-server/issues/282)) ([e6bac49](https://github.com/fruggr/zendesk-mcp-server/commit/e6bac498df90e3938ea853968dc963ffa75b88aa))
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Chores
+
+* **renovate:** batch non-major updates, gate the MCP-surface deps, quarantine security fixes ([#276](https://github.com/fruggr/zendesk-mcp-server/issues/276)) ([48b2f5b](https://github.com/fruggr/zendesk-mcp-server/commit/48b2f5b7f5842f0ef84998fed8a7b10995e3affa))
+</details>
+
 ## [2.20.1](https://github.com/fruggr/zendesk-mcp-server/compare/v2.20.0...v2.20.1) (2026-09-09)
 
 ### Performance Improvements
