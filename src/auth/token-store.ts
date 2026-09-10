@@ -63,7 +63,28 @@ export const createTokenStore = (
   // Seed the in-memory cache from disk so a restart (notably the Cowork-on-Windows
   // process churn) reuses the existing token instead of re-prompting.
   let token: StoredToken | undefined = loadToken(tokenPath);
-  if (token) logger.debug('oauth_token_loaded_from_disk');
+  if (token && !grantCovers(token.scope, requested)) {
+    // The disk record was minted for a narrower surface (typically: this server
+    // dropped `--read-only` since). A refresh cannot widen a grant, so the only
+    // way out is a fresh authorization -- which the empty cache below triggers
+    // on the first tool call.
+    //
+    // Checked here and nowhere else, on purpose. A freshly minted token is the
+    // best this client can obtain: refusing it would open a browser window on
+    // every single tool call, forever, where the pre-#283 behaviour merely got
+    // a 403 on writes. A refreshed one cannot have widened either, and dropping
+    // it would rotate Zendesk's single-use refresh token for nothing. Both are
+    // served, and the next start re-decides from the record on disk.
+    //
+    // The drop is memory-only, never `clearPersistedToken`: one token file
+    // serves every process on this subdomain, so a record this server refuses
+    // may be exactly right for a read-only sibling -- and a successful sign-in
+    // overwrites the file regardless.
+    logger.warn('oauth_token_scope_insufficient', { requested, granted: token.scope });
+    token = undefined;
+  } else if (token) {
+    logger.debug('oauth_token_loaded_from_disk');
+  }
 
   // The authorize URL of the in-flight flow (set once the callback server is
   // listening); `undefined` means no flow is currently pending.
@@ -82,7 +103,10 @@ export const createTokenStore = (
   const persist = (t: StoredToken): void => saveToken(tokenPath, t, logger);
 
   const setToken = (accessToken: string, refreshToken?: string | undefined) => {
-    token = { accessToken, refreshToken };
+    // Recorded like any other installation path: an absent scope means "the
+    // read write grant this server used to be the only one to request", which
+    // is not what a token installed under `--read-only` holds.
+    token = { accessToken, refreshToken, scope: requested };
     // A token installed this way has no known expiry and unknown age, like the
     // disk-loaded one: let it be probe-refreshed once rather than inheriting a
     // previous token's "already probed" state (the flag is store-wide).
@@ -99,26 +123,6 @@ export const createTokenStore = (
     typeof t.expiresAt === 'number'
       ? Date.now() >= t.expiresAt - EXPIRY_SKEW_MS
       : t.refreshToken !== undefined && !probedUnknownExpiry;
-
-  // Whether the cached token may be served, dropping it from memory when its
-  // grant falls short of what this process needs.
-  //
-  // Deliberately NOT folded into `needsRefresh`: a refresh cannot widen a grant
-  // (and our refresh request sends no scope at all), so routing a shortfall
-  // through the refresh path would mint an equally narrow token, serve it, and
-  // burn Zendesk's single-use refresh token again on the next call. The only
-  // way out of a shortfall is a fresh authorization.
-  //
-  // The drop is memory-only, never `clearPersistedToken`: one token file serves
-  // every process on this subdomain, so a record this server refuses may be
-  // exactly right for a read-only sibling -- and a successful sign-in overwrites
-  // the file regardless.
-  const mayServeCachedGrant = (): boolean => {
-    if (!token || grantCovers(token.scope, requested)) return true;
-    logger.warn('oauth_token_scope_insufficient', { requested, granted: token.scope });
-    token = undefined;
-    return false;
-  };
 
   // Try to silently mint a fresh access token from the stored refresh token.
   // Resolves to the new access token, or `undefined` if there's nothing to
@@ -148,8 +152,9 @@ export const createTokenStore = (
         refreshToken: result.refresh_token ?? current.refreshToken,
         expiresAt: expiryFrom(result.expires_in),
         // Same rule as the refresh token above: an omitted `scope` means the
-        // grant is unchanged, not unknown.
-        scope: result.scope ?? current.scope,
+        // grant is unchanged, not unknown. `||`, not `??`: an empty string is
+        // "not reported" too, and must not be recorded as a grant of nothing.
+        scope: result.scope || current.scope,
       };
       // Freshly refreshed: if expiry is still unknown, don't re-probe every call.
       probedUnknownExpiry = true;
@@ -190,7 +195,7 @@ export const createTokenStore = (
               accessToken: result.access_token,
               refreshToken: result.refresh_token,
               expiresAt: expiryFrom(result.expires_in),
-              scope: result.scope ?? requested,
+              scope: result.scope || requested,
             };
             // Freshly minted: trust it without an immediate probe-refresh.
             probedUnknownExpiry = true;
@@ -244,10 +249,6 @@ export const createTokenStore = (
     // resolved value were being tested.
     if (refreshing !== undefined) await refreshing;
 
-    // Before the cache-hit gate: a token whose grant is too narrow is never
-    // served, however fresh it is.
-    mayServeCachedGrant();
-
     if (token && !needsRefresh(token)) {
       logger.debug('oauth_token_cache_hit');
       return token.accessToken;
@@ -256,9 +257,7 @@ export const createTokenStore = (
     // Expired, near-expiry, or unknown-expiry but refreshable → refresh silently
     // before falling back to a browser prompt.
     const refreshed = await refreshIfPossible();
-    // Checked again: a refresh response may declare a narrower grant than the
-    // record it replaced, and that token must not be handed out either.
-    if (refreshed && mayServeCachedGrant()) return refreshed;
+    if (refreshed) return refreshed;
 
     if (starting === undefined) {
       starting = beginAuth();

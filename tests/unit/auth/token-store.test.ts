@@ -314,7 +314,23 @@ describe('createTokenStore', () => {
     );
   });
 
-  it('re-authenticates when a refresh comes back with a narrower grant', async () => {
+  it('serves a freshly minted token even when Zendesk granted less than asked', async () => {
+    // The alternative is a browser window on every single tool call: a new
+    // authorization would grant exactly the same narrow scope. Writes then fail
+    // with 403 from Zendesk, which is the pre-#283 behaviour.
+    const { started, resolveToken } = deferredStarted();
+    startBrowserAuthMock.mockResolvedValue(started);
+    const store = createTokenStore(CONFIG);
+
+    await expect(store.getToken()).rejects.toThrow('authentication required');
+    resolveToken({ access_token: 'narrow', refresh_token: 'r1', scope: 'read' });
+    await flush();
+
+    await expect(store.getToken()).resolves.toBe('narrow');
+    expect(startBrowserAuthMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('serves a refreshed token rather than rotating for a grant that cannot widen', async () => {
     loadTokenMock.mockReturnValue({
       accessToken: 'old',
       refreshToken: 'r1',
@@ -325,8 +341,37 @@ describe('createTokenStore', () => {
     startBrowserAuthMock.mockResolvedValue(deferredStarted().started);
     const store = createTokenStore(CONFIG);
 
-    await expect(store.getToken()).rejects.toThrow('authentication required');
-    expect(startBrowserAuthMock).toHaveBeenCalledTimes(1);
+    await expect(store.getToken()).resolves.toBe('narrowed');
+    expect(startBrowserAuthMock).not.toHaveBeenCalled();
+  });
+
+  it('records an empty reported scope as unchanged rather than as a grant of nothing', async () => {
+    loadTokenMock.mockReturnValue({
+      accessToken: 'old',
+      refreshToken: 'r1',
+      scope: 'read write',
+      expiresAt: Date.now() - 1000,
+    });
+    refreshAccessTokenMock.mockResolvedValue({ access_token: 'new', scope: '' });
+    const store = createTokenStore(CONFIG);
+
+    await expect(store.getToken()).resolves.toBe('new');
+    expect(saveTokenMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ scope: 'read write' }),
+      expect.anything(),
+    );
+  });
+
+  it('records the requested scope for a token installed through setToken', async () => {
+    const store = createTokenStore(RO_CONFIG);
+    store.setToken('preset');
+
+    expect(saveTokenMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ accessToken: 'preset', scope: 'read' }),
+      expect.anything(),
+    );
   });
 
   it('preserves the recorded grant when invalidating an access token', async () => {
