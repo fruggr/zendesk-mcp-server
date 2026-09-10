@@ -35,12 +35,26 @@ External contributions follow the same standard.
 | Tool | Version | Source of truth |
 | ---- | ------- | ---------------- |
 | Node | 24 | [`.nvmrc`](.nvmrc), read by `nvm`, `fnm`, `mise`, `asdf`, `volta` |
-| pnpm | 11 | [`package.json#packageManager`](package.json) (pinned with a corepack integrity hash) |
+| pnpm | 12 | [`package.json#packageManager`](package.json) (pinned with a corepack integrity hash) |
 
-The toolchain (Node 24 + pnpm 11) is used to build, lint, type-check and
+The toolchain (Node 24 + pnpm 12) is used to build, lint, type-check and
 test the project. The **published package** still runs on Node 20+ (see
 `engines.node`); a dedicated CI job installs the packed tarball on Node 20
 and runs the smoke test to keep that promise honest.
+
+Native Termux (`android-arm64`) needs three things no other platform does, all of
+them upstream gaps that
+[`docs/decisions/pnpm-12-native.md`](docs/decisions/pnpm-12-native.md) details:
+
+- Hard links are refused device-wide and pnpm 12 no longer falls back to copying,
+  so a fresh install dies at the import step. Set the method once per machine:
+  `pnpm config set packageImportMethod copy --global`.
+- Corepack cannot install pnpm 12 there, because the downloader it vendors refuses
+  the platform. Provision the version `packageManager` pins with npm instead, into
+  a prefix whose `bin/` comes first on `PATH`:
+  `npm i -g --prefix ~/.local/share/pnpm pnpm@VERSION`.
+- `NODE_EXTRA_CA_CERTS` has to point at a CA bundle (`$PREFIX/etc/tls/cert.pem`),
+  or every registry request aborts on a panic.
 
 ```bash
 # Clone, install, build
