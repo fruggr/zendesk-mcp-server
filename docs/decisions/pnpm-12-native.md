@@ -46,18 +46,19 @@ reports `Sorry! pnpm does not provide a pre-built binary for android` even thoug
 the package exists on npm ([pnpm/pnpm#14679](https://github.com/pnpm/pnpm/issues/14679)).
 [pnpm/get.pnpm.io#59](https://github.com/pnpm/get.pnpm.io/pull/59) is the fix; it
 is still a draft, and it reaches this device only through a `get-pnpm` release
-that a later pnpm then vendors. `npm i -g --prefix "$PNPM_HOME" pnpm@<pin>` is
-the way in meanwhile: npm resolves the optional dependency for the host and the
+that a later pnpm then vendors. `npm i -g --prefix ~/.local/share/pnpm pnpm@<pin>`
+is the way in meanwhile: npm resolves the optional dependency for the host and the
 package's own install script links the binary over the placeholder bin.
 
-Installing into `$PNPM_HOME` rather than over `$PREFIX/bin/pnpm` is deliberate.
-It is first on `PATH` and it leaves Corepack's shim in place, so deleting
-`$PNPM_HOME/bin/pnpm*` is the whole rollback. Note the shadowing is machine-wide:
-a checkout still pinned to pnpm 11 then fails with
-`ERR_PNPM_PNPM_ENGINE_NO_NATIVE_BINARY`, because pnpm 12 honours the pin itself
-and no pnpm 11 binary can exist here. `pmOnFail: ignore` would skip that switch,
-but it is only settable in a project's `pnpm-workspace.yaml`, so there is no local
-escape hatch — the answer is to land the pin everywhere.
+Installing into pnpm's own home (`~/.local/share/pnpm`, which pnpm asks you to
+keep first on `PATH`) rather than over `$PREFIX/bin/pnpm` is deliberate: it leaves
+Corepack's shim in place, so deleting `~/.local/share/pnpm/bin/pnpm*` is the whole
+rollback. Note that the shadowing is machine-wide, so a checkout still pinned to
+pnpm 11 then fails with `ERR_PNPM_PNPM_ENGINE_NO_NATIVE_BINARY`, because pnpm 12
+honours the pin itself and no pnpm 11 binary can exist here. `pmOnFail: ignore`
+would skip that switch, but it is only settable in a project's
+`pnpm-workspace.yaml`, so there is no local escape hatch. The answer is to land
+the pin everywhere.
 
 **Every registry request panics.** The Rust CLI delegates TLS verification to
 `rustls-platform-verifier`, whose Android backend needs a JNI initialisation
@@ -89,8 +90,8 @@ panic. Tracked upstream in
   fails closed — a version published the day before is refused with
   `ERR_PNPM_NO_MATURE_MATCHING_VERSION`, which is the invariant
   [`dependency-automerge.md`](dependency-automerge.md) rests on. That file's
-  warning against `minimumReleaseAgeStrict: false` now has two more escape
-  hatches to cover: `minimumReleaseAgeExclude` and interactive approval.
+  warning against weakening the gate now covers the two hatches v12 adds,
+  `minimumReleaseAgeExclude` and approving a pick at an interactive prompt.
 
 ## When to retire the workarounds
 

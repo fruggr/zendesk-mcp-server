@@ -44,12 +44,12 @@ and runs the smoke test to keep that promise honest.
 
 Native Termux (`android-arm64`) needs two things no other platform does. Corepack
 cannot install pnpm 12 there, because the downloader it vendors refuses the
-platform, so provision the pinned version with npm instead — `npm i -g --prefix
-"$PNPM_HOME" pnpm@<pin>` resolves the `@pnpm/exe.android-arm64` optional
-dependency and links the native binary. And `NODE_EXTRA_CA_CERTS` has to point at
-a CA bundle (`$PREFIX/etc/tls/cert.pem`), or every registry request aborts on a
-panic. Both are upstream gaps, and
-[`docs/decisions/pnpm-12-native.md`](decisions/pnpm-12-native.md) tracks them.
+platform, so provision the pinned version with npm instead, into a prefix that
+comes first on `PATH`: `npm i -g --prefix ~/.local/share/pnpm pnpm@<pin>` resolves
+the `@pnpm/exe.android-arm64` optional dependency and links the native binary. And
+`NODE_EXTRA_CA_CERTS` has to point at a CA bundle (`$PREFIX/etc/tls/cert.pem`), or
+every registry request aborts on a panic. Both are upstream gaps, and
+[`docs/decisions/pnpm-12-native.md`](docs/decisions/pnpm-12-native.md) tracks them.
 
 ```bash
 # Clone, install, build
