@@ -13,6 +13,10 @@ export interface PersistedToken {
   accessToken: string;
   refreshToken?: string | undefined;
   expiresAt?: number | undefined;
+  // The scope Zendesk *granted*, as reported by the token response. Absent on a
+  // record written before the server tracked grants -- which means `read write`,
+  // the only scope it ever requested back then (see grantCovers).
+  scope?: string | undefined;
 }
 
 const isWindows = process.platform === 'win32';

@@ -1,5 +1,6 @@
 import { type Logger, silentLogger } from '../utils/logger';
 import { refreshAccessToken, startBrowserAuth } from './browser-oauth';
+import { grantCovers, requestedScope } from './oauth-scopes';
 import {
   clearToken as clearPersistedToken,
   loadToken,
@@ -48,14 +49,32 @@ const expiryFrom = (expiresIn: number | undefined): number | undefined =>
   typeof expiresIn === 'number' ? Date.now() + expiresIn * 1000 : undefined;
 
 export const createTokenStore = (
-  config: { subdomain: string; oauthClientId: string; callbackPort?: number | undefined },
+  config: {
+    subdomain: string;
+    oauthClientId: string;
+    callbackPort?: number | undefined;
+    readOnly: boolean;
+  },
   logger: Logger = silentLogger,
 ) => {
   const tokenPath = resolveTokenPath(config.subdomain);
+  // Fixed for the life of the process: the tool surface cannot change under us.
+  const requested = requestedScope(config.readOnly);
   // Seed the in-memory cache from disk so a restart (notably the Cowork-on-Windows
   // process churn) reuses the existing token instead of re-prompting.
   let token: StoredToken | undefined = loadToken(tokenPath);
-  if (token) logger.debug('oauth_token_loaded_from_disk');
+  if (token) {
+    if (grantCovers(token.scope, requested)) {
+      logger.debug('oauth_token_loaded_from_disk');
+    } else {
+      // Minted for a narrower surface (this server dropped `--read-only`
+      // since), and a refresh cannot widen a grant, so the empty cache sends
+      // the first call through a sign-in. Checked here only: a minted token is
+      // the best we can get. Memory-only -- a sibling may still need the record.
+      logger.warn('oauth_token_scope_insufficient', { requested, granted: token.scope });
+      token = undefined;
+    }
+  }
 
   // The authorize URL of the in-flight flow (set once the callback server is
   // listening); `undefined` means no flow is currently pending.
@@ -74,7 +93,10 @@ export const createTokenStore = (
   const persist = (t: StoredToken): void => saveToken(tokenPath, t, logger);
 
   const setToken = (accessToken: string, refreshToken?: string | undefined) => {
-    token = { accessToken, refreshToken };
+    // Recorded like any other installation path: an absent scope means "the
+    // read write grant this server used to be the only one to request", which
+    // is not what a token installed under `--read-only` holds.
+    token = { accessToken, refreshToken, scope: requested };
     // A token installed this way has no known expiry and unknown age, like the
     // disk-loaded one: let it be probe-refreshed once rather than inheriting a
     // previous token's "already probed" state (the flag is store-wide).
@@ -91,6 +113,19 @@ export const createTokenStore = (
     typeof t.expiresAt === 'number'
       ? Date.now() >= t.expiresAt - EXPIRY_SKEW_MS
       : t.refreshToken !== undefined && !probedUnknownExpiry;
+
+  // Records a grant on its way into the cache, warning when it falls short of
+  // what this process asked for. The token is still served: a new authorization
+  // would return the same narrow grant, so refusing it would re-prompt forever.
+  // Zendesk rejects an out-of-allowance scope outright (`invalid_scope`, no
+  // token), so this is a guard against an RFC-legal downgrade we have not seen,
+  // whose only other symptom would be unexplained 403s on writes.
+  const noteGrant = (granted: string | undefined): string | undefined => {
+    if (!grantCovers(granted, requested)) {
+      logger.warn('oauth_token_grant_narrowed', { requested, granted });
+    }
+    return granted;
+  };
 
   // Try to silently mint a fresh access token from the stored refresh token.
   // Resolves to the new access token, or `undefined` if there's nothing to
@@ -119,6 +154,10 @@ export const createTokenStore = (
         accessToken: result.access_token,
         refreshToken: result.refresh_token ?? current.refreshToken,
         expiresAt: expiryFrom(result.expires_in),
+        // Same rule as the refresh token above: an omitted `scope` means the
+        // grant is unchanged, not unknown. `||`, not `??`: an empty string is
+        // "not reported" too, and must not be recorded as a grant of nothing.
+        scope: noteGrant(result.scope || current.scope),
       };
       // Freshly refreshed: if expiry is still unknown, don't re-probe every call.
       probedUnknownExpiry = true;
@@ -147,6 +186,7 @@ export const createTokenStore = (
         subdomain: config.subdomain,
         oauthClientId: config.oauthClientId,
         callbackPort: config.callbackPort,
+        readOnly: config.readOnly,
       },
       logger,
     )
@@ -158,6 +198,7 @@ export const createTokenStore = (
               accessToken: result.access_token,
               refreshToken: result.refresh_token,
               expiresAt: expiryFrom(result.expires_in),
+              scope: noteGrant(result.scope || requested),
             };
             // Freshly minted: trust it without an immediate probe-refresh.
             probedUnknownExpiry = true;
@@ -240,7 +281,12 @@ export const createTokenStore = (
   // when there's no refresh token do we wipe the record entirely.
   const invalidate = (): void => {
     if (token?.refreshToken) {
-      token = { accessToken: token.accessToken, refreshToken: token.refreshToken, expiresAt: 0 };
+      token = {
+        accessToken: token.accessToken,
+        refreshToken: token.refreshToken,
+        expiresAt: 0,
+        scope: token.scope,
+      };
       persist(token);
     } else {
       token = undefined;

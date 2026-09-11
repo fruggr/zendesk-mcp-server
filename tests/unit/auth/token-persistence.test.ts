@@ -101,9 +101,14 @@ describe('token-persistence', () => {
     const path = '/cfg/acme.json';
     const { saveToken, loadToken } = await importFresh();
 
-    saveToken(path, { accessToken: 'a', refreshToken: 'r', expiresAt: 123 });
+    saveToken(path, { accessToken: 'a', refreshToken: 'r', expiresAt: 123, scope: 'read' });
 
-    expect(loadToken(path)).toEqual({ accessToken: 'a', refreshToken: 'r', expiresAt: 123 });
+    expect(loadToken(path)).toEqual({
+      accessToken: 'a',
+      refreshToken: 'r',
+      expiresAt: 123,
+      scope: 'read',
+    });
     // Written to a temp file (chmod 0600) then renamed onto the final path.
     expect(chmodCalls.some((c) => c.path.endsWith('.tmp') && c.mode === 0o600)).toBe(true);
   });

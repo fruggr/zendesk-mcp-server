@@ -5,6 +5,7 @@ import { release } from 'node:os';
 import open from 'open';
 import { DEFAULT_CALLBACK_PORT, getOAuthUrls } from '../constants';
 import { type Logger, silentLogger } from '../utils/logger';
+import { requestedScope } from './oauth-scopes';
 
 const AUTH_TIMEOUT_MS = 5 * 60 * 1000;
 
@@ -22,13 +23,17 @@ interface BrowserOAuthConfig {
   subdomain: string;
   oauthClientId: string;
   callbackPort?: number | undefined;
+  // Required, not optional: the "forgot to thread it through" default would
+  // otherwise be requesting `write`, which is the dangerous direction.
+  readOnly: boolean;
 }
 
 interface TokenResult {
   access_token: string;
   refresh_token?: string;
   token_type: string;
-  scope: string;
+  // Omitted when identical to what was requested (RFC 6749 5.1).
+  scope?: string;
   // Present only when the Zendesk OAuth client has token expiration enabled.
   // Seconds until the access/refresh token expires.
   expires_in?: number;
@@ -123,7 +128,7 @@ export const startBrowserAuth = (
   config: BrowserOAuthConfig,
   logger: Logger = silentLogger,
 ): Promise<StartedBrowserAuth> => {
-  const { subdomain, oauthClientId } = config;
+  const { subdomain, oauthClientId, readOnly } = config;
   const { authorizeUrl: authorizeBase, tokenUrl } = getOAuthUrls(subdomain);
   const codeVerifier = generateCodeVerifier();
   const codeChallenge = generateCodeChallenge(codeVerifier);
@@ -271,7 +276,7 @@ export const startBrowserAuth = (
         response_type: 'code',
         client_id: oauthClientId,
         redirect_uri: redirectUri,
-        scope: 'read write',
+        scope: requestedScope(readOnly),
         code_challenge: codeChallenge,
         code_challenge_method: 'S256',
       });
