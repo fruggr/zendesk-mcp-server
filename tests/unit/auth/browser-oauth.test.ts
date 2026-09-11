@@ -109,6 +109,7 @@ describe('authenticateViaBrowser', () => {
     const result = await authenticateViaBrowser({
       subdomain: SUB,
       oauthClientId: CLIENT_ID,
+      readOnly: false,
       callbackPort: 0,
     });
 
@@ -146,7 +147,12 @@ describe('authenticateViaBrowser', () => {
       return {};
     });
 
-    await authenticateViaBrowser({ subdomain: SUB, oauthClientId: CLIENT_ID, callbackPort: 0 });
+    await authenticateViaBrowser({
+      subdomain: SUB,
+      oauthClientId: CLIENT_ID,
+      callbackPort: 0,
+      readOnly: false,
+    });
 
     const body = await bodyPromise;
     expect(body).toContain('Authentication successful!');
@@ -172,7 +178,12 @@ describe('authenticateViaBrowser', () => {
     });
 
     await expect(
-      authenticateViaBrowser({ subdomain: SUB, oauthClientId: CLIENT_ID, callbackPort: 0 }),
+      authenticateViaBrowser({
+        subdomain: SUB,
+        oauthClientId: CLIENT_ID,
+        callbackPort: 0,
+        readOnly: false,
+      }),
     ).rejects.toThrow(/OAuth error/);
 
     const body = await bodyPromise;
@@ -207,7 +218,12 @@ describe('authenticateViaBrowser', () => {
     });
 
     await expect(
-      authenticateViaBrowser({ subdomain: SUB, oauthClientId: CLIENT_ID, callbackPort: 0 }),
+      authenticateViaBrowser({
+        subdomain: SUB,
+        oauthClientId: CLIENT_ID,
+        callbackPort: 0,
+        readOnly: false,
+      }),
     ).rejects.toThrow(/Token exchange failed/);
 
     const body = await bodyPromise;
@@ -241,7 +257,7 @@ describe('authenticateViaBrowser', () => {
     });
 
     const result = await authenticateViaBrowser(
-      { subdomain: SUB, oauthClientId: CLIENT_ID, callbackPort: 0 },
+      { subdomain: SUB, oauthClientId: CLIENT_ID, callbackPort: 0, readOnly: false },
       logger,
     );
 
@@ -262,6 +278,35 @@ describe('startBrowserAuth', () => {
     callbackServers.length = 0;
   });
 
+  // The requested scope follows the tool surface: a read-only server asking for
+  // `write` would request an authority it cannot exercise, and an OAuth client
+  // whose allowed scopes stop at `read` rejects such a request outright (#283).
+  it('requests the read scope only in read-only mode', async () => {
+    openMock.mockResolvedValue({});
+
+    const started = await startBrowserAuth({
+      subdomain: SUB,
+      oauthClientId: CLIENT_ID,
+      callbackPort: 0,
+      readOnly: true,
+    });
+
+    expect(new URL(started.authorizeUrl).searchParams.get('scope')).toBe('read');
+  });
+
+  it('requests read and write when write tools are exposed', async () => {
+    openMock.mockResolvedValue({});
+
+    const started = await startBrowserAuth({
+      subdomain: SUB,
+      oauthClientId: CLIENT_ID,
+      callbackPort: 0,
+      readOnly: false,
+    });
+
+    expect(new URL(started.authorizeUrl).searchParams.get('scope')).toBe('read write');
+  });
+
   it('stops the callback server and cancels the timeout once the flow completes', async () => {
     mswServer.use(oauthTokenHandler);
     const logger = makeLogger();
@@ -278,7 +323,7 @@ describe('startBrowserAuth', () => {
       });
 
       const started = await startBrowserAuth(
-        { subdomain: SUB, oauthClientId: CLIENT_ID, callbackPort: 0 },
+        { subdomain: SUB, oauthClientId: CLIENT_ID, callbackPort: 0, readOnly: false },
         logger,
       );
       await started.tokenPromise;
@@ -305,6 +350,7 @@ describe('startBrowserAuth', () => {
     const started = await startBrowserAuth({
       subdomain: SUB,
       oauthClientId: CLIENT_ID,
+      readOnly: false,
       callbackPort: 0,
     });
     const redirectUri = new URL(started.authorizeUrl).searchParams.get('redirect_uri') ?? '';
@@ -332,7 +378,7 @@ describe('startBrowserAuth', () => {
       openMock.mockResolvedValue({});
 
       const started = await startBrowserAuth(
-        { subdomain: SUB, oauthClientId: CLIENT_ID, callbackPort: 0 },
+        { subdomain: SUB, oauthClientId: CLIENT_ID, callbackPort: 0, readOnly: false },
         logger,
       );
       const server = lastCallbackServer();
@@ -395,7 +441,7 @@ describe('startBrowserAuth', () => {
         attachServer: vi.fn(),
       };
       const started = await startBrowserAuth(
-        { subdomain: SUB, oauthClientId: CLIENT_ID, callbackPort: 0 },
+        { subdomain: SUB, oauthClientId: CLIENT_ID, callbackPort: 0, readOnly: false },
         logger,
       );
       const rejection = expect(started.tokenPromise).rejects.toThrow('timed out');

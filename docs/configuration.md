@@ -20,7 +20,8 @@ Options:
   --mode <mode>           single | namespace (default) | all
   --namespace <ns>        Filter by namespace (repeatable): tickets, help_center, users
   --tool <name>           Filter by tool name (repeatable, forces --mode all)
-  --read-only             Only expose read operations
+  --read-only             Only expose read operations, and request the
+                          `read` OAuth scope alone
   --no-topology           Disable the Help Center structural context
                           (instructions + zendesk-hc://topology resource)
   --no-promoted-articles  Disable the promoted-article PRE-LISTING (the
@@ -47,6 +48,8 @@ Options:
 ```
 
 `--namespace` and `--read-only` are applied before the proxies are registered, so they narrow the surface in every mode. In the default `namespace` mode, `--namespace help_center` registers a single proxy (`zendesk_help_center`) instead of the full set of namespace proxies.
+
+`--read-only` also narrows the OAuth scope the server asks Zendesk for, from `read write` down to `read`, so it works with an OAuth client whose allowed scopes stop at `read` (and in HTTP mode the advertised `scopes_supported` follows the same rule). What it does *not* do is revoke a grant you already have: a broader token found in the [token cache](#zendesk_token_file) is still used as-is. Dropping the flag on a server whose cached token is `read`-only costs one browser sign-in, because OAuth cannot widen a grant on refresh.
 
 ### A malformed invocation fails at startup
 

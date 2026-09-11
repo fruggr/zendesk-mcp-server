@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { supportedScopes } from '../auth/oauth-scopes';
 import type { Config } from '../config';
 import { getOAuthUrls } from '../constants';
 import { createMcpServer } from '../server';
@@ -181,12 +182,13 @@ export const buildOAuthMetadata = (
   const { authorizeUrl, tokenUrl } = getOAuthUrls(config.subdomain);
   const issuer = `https://${config.subdomain}.zendesk.com`;
   const resource = resolveResourceUrl(config, logger);
+  const scopes = () => supportedScopes(config.readOnly);
   return {
     protectedResource: {
       authorization_servers: [issuer],
       resource,
       bearer_methods_supported: ['header'],
-      scopes_supported: ['read', 'write'],
+      scopes_supported: scopes(),
     },
     authorizationServer: {
       issuer,
@@ -196,7 +198,7 @@ export const buildOAuthMetadata = (
       grant_types_supported: ['authorization_code', 'refresh_token'],
       code_challenge_methods_supported: ['S256'],
       token_endpoint_auth_methods_supported: ['none'],
-      scopes_supported: ['read', 'write'],
+      scopes_supported: scopes(),
     },
   };
 };

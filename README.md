@@ -126,6 +126,10 @@ Signing in needs a Zendesk OAuth client, so register one first (next section).
      `ZENDESK_OAUTH_CALLBACK_PORT` / `--callback-port` if you override it; Zendesk
      accepts several redirect URLs, one per line)
 
+If the client restricts its **allowed scopes**, it needs `read` — plus `write`
+unless the server runs with [`--read-only`](docs/configuration.md), which asks
+Zendesk for the `read` scope alone.
+
 On the first tool call the server starts the sign-in flow: it opens a browser
 window and returns the authorize URL in a tool message. The call does not block
 waiting for sign-in, so authenticate in the browser and then retry the request.
