@@ -114,6 +114,19 @@ export const createTokenStore = (
       ? Date.now() >= t.expiresAt - EXPIRY_SKEW_MS
       : t.refreshToken !== undefined && !probedUnknownExpiry;
 
+  // Records a grant on its way into the cache, warning when it falls short of
+  // what this process asked for. The token is still served: a new authorization
+  // would return the same narrow grant, so refusing it would re-prompt forever.
+  // Zendesk rejects an out-of-allowance scope outright (`invalid_scope`, no
+  // token), so this is a guard against an RFC-legal downgrade we have not seen,
+  // whose only other symptom would be unexplained 403s on writes.
+  const noteGrant = (granted: string | undefined): string | undefined => {
+    if (!grantCovers(granted, requested)) {
+      logger.warn('oauth_token_grant_narrowed', { requested, granted });
+    }
+    return granted;
+  };
+
   // Try to silently mint a fresh access token from the stored refresh token.
   // Resolves to the new access token, or `undefined` if there's nothing to
   // refresh / the refresh failed. On failure the on-demand path drops the dead
@@ -144,7 +157,7 @@ export const createTokenStore = (
         // Same rule as the refresh token above: an omitted `scope` means the
         // grant is unchanged, not unknown. `||`, not `??`: an empty string is
         // "not reported" too, and must not be recorded as a grant of nothing.
-        scope: result.scope || current.scope,
+        scope: noteGrant(result.scope || current.scope),
       };
       // Freshly refreshed: if expiry is still unknown, don't re-probe every call.
       probedUnknownExpiry = true;
@@ -185,7 +198,7 @@ export const createTokenStore = (
               accessToken: result.access_token,
               refreshToken: result.refresh_token,
               expiresAt: expiryFrom(result.expires_in),
-              scope: result.scope || requested,
+              scope: noteGrant(result.scope || requested),
             };
             // Freshly minted: trust it without an immediate probe-refresh.
             probedUnknownExpiry = true;

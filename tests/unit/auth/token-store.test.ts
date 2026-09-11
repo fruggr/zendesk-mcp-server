@@ -335,6 +335,38 @@ describe('createTokenStore', () => {
     expect(startBrowserAuthMock).toHaveBeenCalledTimes(1);
   });
 
+  it('warns when a minted grant falls short of what was requested', async () => {
+    const { started, resolveToken } = deferredStarted();
+    startBrowserAuthMock.mockResolvedValue(started);
+    const logger = makeLogger();
+    const store = createTokenStore(CONFIG, logger);
+
+    await expect(store.getToken()).rejects.toThrow('authentication required');
+    resolveToken({ access_token: 'narrow', refresh_token: 'r1', scope: 'read' });
+    await flush();
+
+    // Served anyway -- the warning is the only thing standing between the
+    // operator and unexplained 403s on every write.
+    expect(logger.warn).toHaveBeenCalledWith('oauth_token_grant_narrowed', {
+      requested: 'read write',
+      granted: 'read',
+    });
+    await expect(store.getToken()).resolves.toBe('narrow');
+  });
+
+  it('stays quiet when the granted scope covers the request', async () => {
+    const { started, resolveToken } = deferredStarted();
+    startBrowserAuthMock.mockResolvedValue(started);
+    const logger = makeLogger();
+    const store = createTokenStore(RO_CONFIG, logger);
+
+    await expect(store.getToken()).rejects.toThrow('authentication required');
+    resolveToken({ access_token: 'wide', refresh_token: 'r1', scope: 'read write' });
+    await flush();
+
+    expect(logger.warn).not.toHaveBeenCalledWith('oauth_token_grant_narrowed', expect.anything());
+  });
+
   it('serves a refreshed token rather than rotating for a grant that cannot widen', async () => {
     loadTokenMock.mockReturnValue({
       accessToken: 'old',
