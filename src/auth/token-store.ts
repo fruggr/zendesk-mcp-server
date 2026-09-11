@@ -67,22 +67,10 @@ export const createTokenStore = (
     if (grantCovers(token.scope, requested)) {
       logger.debug('oauth_token_loaded_from_disk');
     } else {
-      // The disk record was minted for a narrower surface (typically: this server
-      // dropped `--read-only` since). A refresh cannot widen a grant, so the only
-      // way out is a fresh authorization -- which the empty cache below triggers
-      // on the first tool call.
-      //
-      // Checked here and nowhere else, on purpose. A freshly minted token is the
-      // best this client can obtain: refusing it would open a browser window on
-      // every single tool call, forever, where the pre-#283 behaviour merely got
-      // a 403 on writes. A refreshed one cannot have widened either, and dropping
-      // it would rotate Zendesk's single-use refresh token for nothing. Both are
-      // served, and the next start re-decides from the record on disk.
-      //
-      // The drop is memory-only, never `clearPersistedToken`: one token file
-      // serves every process on this subdomain, so a record this server refuses
-      // may be exactly right for a read-only sibling -- and a successful sign-in
-      // overwrites the file regardless.
+      // Minted for a narrower surface (this server dropped `--read-only`
+      // since), and a refresh cannot widen a grant, so the empty cache sends
+      // the first call through a sign-in. Checked here only: a minted token is
+      // the best we can get. Memory-only -- a sibling may still need the record.
       logger.warn('oauth_token_scope_insufficient', { requested, granted: token.scope });
       token = undefined;
     }

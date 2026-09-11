@@ -189,10 +189,6 @@ export const buildOAuthMetadata = (
   const { authorizeUrl, tokenUrl } = getOAuthUrls(config.subdomain);
   const issuer = `https://${config.subdomain}.zendesk.com`;
   const resource = resolveResourceUrl(config, logger);
-  // Derived from what the stdio flow requests, so a client reading either
-  // document is told the same thing. Built twice rather than shared: the two
-  // documents are separately owned, and a future scope that belongs to only
-  // one of them must not leak into the other through a shared array.
   const scopes = () => supportedScopes(config.readOnly);
   return {
     protectedResource: {

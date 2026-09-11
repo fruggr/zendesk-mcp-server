@@ -43,27 +43,10 @@ export const supportedScopes = (readOnly: boolean): string[] =>
   scopeTokens(requestedScope(readOnly));
 
 /**
- * Whether a token granted `granted` may still be used to serve a request for
- * `requested` — a flat "every requested token is present" subset test.
- *
- * Coverage rather than equality, because one token file is shared by every
- * server on this subdomain: a write-mode server re-authenticates once and
- * upgrades the record, after which a read-only sibling accepts it. An equality
- * check would make the two re-authenticate in turn, forever.
- *
- * A `granted` that is not a string means the record predates scope tracking.
- * That is not a guess: `read write` is the only scope this server has ever
- * requested, so any record written by any released version carries that grant —
- * hence `true`, and nobody is pushed through a sign-in on upgrade. The
- * `typeof` (rather than an `undefined` check) also absorbs a hand-edited
- * `"scope": null`, which `loadToken` would otherwise pass through unvalidated.
- *
- * What this deliberately does NOT model is Zendesk's scope hierarchy: a
- * granular grant such as `tickets:read` is judged not to cover a `read`
- * request, and vice versa. Both misjudgements only ever cost one extra
- * interactive sign-in, and neither is reachable while `read` and `read write`
- * are the only scopes requested. Granular scopes (#284) must replace this
- * predicate rather than extend it.
+ * Whether a grant still covers what this process needs: a flat subset test.
+ * Coverage, not equality, so a broader token stays usable and two servers
+ * sharing a token file converge. A non-string `granted` is a pre-#283 record,
+ * i.e. `read write`. No scope hierarchy: granular scopes (#284) replace this.
  */
 export const grantCovers = (granted: string | undefined, requested: string): boolean => {
   if (typeof granted !== 'string') return true;
