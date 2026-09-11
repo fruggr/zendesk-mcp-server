@@ -63,6 +63,22 @@ so (and logs `oauth_callback_listen_failed`). Pick a free port with
 the matching `http://localhost:<port>/callback` redirect URL in your Zendesk
 OAuth client.
 
+## Sign-in fails with `invalid_scope`
+
+The Zendesk OAuth client restricts its **allowed scopes** and the server asked
+for one it does not permit. Without `--read-only` the server requests
+`read write`; a client whose allowed scopes stop at `read` rejects that outright
+and mints no token at all. Either allow `write` on the client, or run the server
+with [`--read-only`](configuration.md), which requests `read` alone.
+
+## I am asked to sign in again after dropping `--read-only`
+
+Expected, once. The cached token was granted the `read` scope, the server now
+needs `write`, and OAuth cannot widen an existing grant — a refresh only ever
+returns what was already granted. Sign in once and the new, broader token is
+cached in its place. The reverse direction costs nothing: adding `--read-only`
+keeps using a `read write` token you already have.
+
 ## I have to re-authenticate every time
 
 The OAuth token is persisted to an owner-only (`0600`) file in your OS config

@@ -24,6 +24,7 @@ const buildStdioTokenStore = (config: Config, logger: Logger) =>
       subdomain: config.subdomain,
       oauthClientId: config.oauthClientId,
       callbackPort: config.callbackPort,
+      readOnly: config.readOnly,
     },
     logger,
   );
