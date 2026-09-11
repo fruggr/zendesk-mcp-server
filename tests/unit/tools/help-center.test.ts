@@ -314,12 +314,10 @@ describe('help center tools', () => {
     });
   });
 
-  // The tools originally told callers that a locale-filtered listing omits a
-  // draft-translated node just as it omits an untranslated one, so "absent from
-  // list_sections(locale)" was the whole story. Validating #225 against a live
-  // tenant disproved the draft half: with an admin token such a node IS returned,
-  // under its draft name. An agent reading the old wording would conclude
-  // "listed ⇒ published" on exactly the path these tools exist to fix.
+  // A locale-filtered listing does NOT hide a draft-translated node: with an admin
+  // token it comes back under its draft name (#225). A description implying
+  // otherwise would have an agent conclude "listed ⇒ published" on exactly the
+  // path these tools exist to fix.
   describe('translation-gap tool descriptions', () => {
     it.each(['list_section_translations', 'list_category_translations', 'find_translation_gaps'])(
       '%s does not promise that a draft translation is hidden from the locale listing',
@@ -331,13 +329,10 @@ describe('help center tools', () => {
     );
   });
 
-  // Sections and categories are iso by design: the same endpoint family, the same
-  // translation object, and one shared upsertNodeTranslation behind both write
-  // tools. So every behaviour is asserted on BOTH levels from one table rather
-  // than written twice — a new case added here cannot land on one level only.
-  // This matters more than usual for categories: live validation of the category
-  // write path was skipped for want of an expendable category on the tenant
-  // (#225, S12), so these are the only proof that half carries.
+  // Sections and categories are iso by design, so every behaviour is asserted on
+  // BOTH levels from one table: a new case cannot land on one level only.
+  // Categories need that most — live validation of their write path was skipped
+  // for want of an expendable category (#225, S12).
   const NODE_LEVELS = [
     {
       level: 'section',
@@ -996,12 +991,11 @@ describe('help center tools', () => {
   });
 
   describe('reorder_article', () => {
-    // Stateful section mock: GET returns the section's articles in effective order,
-    // PUT mutates positions and records the write sequence. This lets the tool's
-    // post-write verification observe the effect, the way a real manual section
-    // behaves. Pass fixedOrder to simulate an auto-sorted section (GET ignores the
-    // written positions). Pass foreignSections to place a looked-up article in
-    // another section.
+    // Stateful section mock: GET returns the articles in effective order, PUT
+    // mutates positions and records the write sequence, so the tool's post-write
+    // verification observes what a real manual section would produce. fixedOrder
+    // simulates an auto-sorted section; foreignSections places a looked-up article
+    // elsewhere.
     const seedSection = (
       sectionId: number,
       articles: Array<{ id: number; position: number }>,
@@ -1727,11 +1721,10 @@ describe('help center tools', () => {
     });
 
     it('reports outdated "unknown" when the list omits the flag for an existing target', async () => {
-      // Defensive path: the target translation exists but its list entry carries
-      // no `outdated` field (some tenants/endpoints omit it). Must degrade to
-      // "unknown" rather than crash or invent a value. This branch is not
-      // reproducible against a live tenant (the list there always returns the
-      // flag), so it is only covered here.
+      // The target translation exists but its list entry carries no `outdated`
+      // field (some tenants omit it): degrade to "unknown" rather than crash or
+      // invent a value. Not reproducible against a live tenant, so covered only
+      // here.
       mswServer.use(
         http.get(`${HC_BASE}/articles/:id/translations`, () =>
           HttpResponse.json({

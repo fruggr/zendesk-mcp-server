@@ -223,10 +223,9 @@ describe('createLogger', () => {
     log.error('hostile_tojson', { hostile });
 
     // Pinned whole: the `[function]` marker is what proves the callable was
-    // *replaced* rather than merely omitted. Asserting only the absence of the
-    // secret passes just as well if the marker becomes an empty string, which
-    // would leave `JSON.stringify` a `toJSON` of `""` — no longer callable, but
-    // no longer evidence of anything either.
+    // *replaced* rather than merely omitted. Asserting only the secret's absence
+    // passes just as well if the marker becomes an empty string — no longer
+    // callable, but no longer evidence either.
     expect(errSpy.mock.calls[0]?.[0]).toBe(
       '[zendesk-mcp] [error] hostile_tojson hostile={"token":"[REDACTED]","toJSON":"[function]"}',
     );

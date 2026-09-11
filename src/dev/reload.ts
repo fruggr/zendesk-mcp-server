@@ -13,13 +13,10 @@ const thisDir = dirname(fileURLToPath(import.meta.url));
 // `src/tools/` — the leaf factory modules re-imported on reload.
 const toolsDir = join(thisDir, '..', 'tools');
 
-// The leaf tool-factory modules, mirroring `createAllTools` in tools/index.ts.
-// Reload re-imports THESE files directly (with a cache-busting query) because
-// an ESM cache-bust does not cascade to a module's own imports: busting
-// tools/index.ts would keep serving the stale tickets.ts/etc. So we bust the
-// leaves — where handler code and schemas live — and recompose here. Modules
-// deeper than these (client, definitions, guidance) are not re-imported; edits
-// there need a full restart. Keep this list in sync with createAllTools.
+// Reload re-imports THESE leaf modules directly, because an ESM cache-bust does
+// not cascade to a module's own imports: busting tools/index.ts would keep
+// serving a stale tickets.ts. Deeper modules are not re-imported, so edits there
+// need a restart. Keep in sync with createAllTools.
 const TOOL_MODULES = [
   { file: 'tickets.ts', factory: 'createTicketTools' },
   { file: 'search.ts', factory: 'createSearchTools' },

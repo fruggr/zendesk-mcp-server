@@ -82,23 +82,19 @@ export const createTokenStore = (
     persist(token);
   };
 
-  // Whether the cached token must be refreshed before use. A known `expiresAt`
-  // uses the skew window; an *unknown* expiry (token minted before Zendesk
-  // enabled expiration, or a refresh response without `expires_in`) is probed
-  // once — refreshed on first use if it has a refresh token, then trusted so we
-  // don't refresh on every call when `expires_in` keeps being omitted.
+  // A known `expiresAt` uses the skew window; an *unknown* expiry (token minted
+  // before Zendesk enabled expiration, or a refresh response without
+  // `expires_in`) is probed once, then trusted — otherwise an omitted
+  // `expires_in` would have us refresh on every call.
   const needsRefresh = (t: StoredToken): boolean =>
     typeof t.expiresAt === 'number'
       ? Date.now() >= t.expiresAt - EXPIRY_SKEW_MS
       : t.refreshToken !== undefined && !probedUnknownExpiry;
 
-  // Try to silently mint a fresh access token from the stored refresh token.
-  // Resolves to the new access token, or `undefined` if there's nothing to
-  // refresh / the refresh failed. On failure the on-demand path drops the dead
-  // token (so getToken falls back to the browser flow); the background keepalive
-  // passes `dropOnFailure: false` because it refreshes preemptively while the
-  // access token may still be valid — a transient 5xx/network blip must not wipe
-  // a usable token and force needless re-auth.
+  // Silently mints an access token from the stored refresh token. On failure the
+  // on-demand path drops the dead token, so getToken falls back to the browser;
+  // the keepalive passes `dropOnFailure: false`, as it refreshes while the token
+  // may still be valid, and a blip must not wipe a usable one.
   const tryRefresh = async (
     current: StoredToken,
     { dropOnFailure = true }: { dropOnFailure?: boolean } = {},
@@ -201,14 +197,10 @@ export const createTokenStore = (
   };
 
   const getToken = async (): Promise<string> => {
-    // A refresh already in flight (on-demand or the scheduled background one)
-    // owns the next token: wait for it instead of serving a token that's about
-    // to be replaced or launching a competing refresh. Zendesk rotates the
-    // refresh token on every use, so two concurrent refreshes would invalidate
-    // each other — this makes the refresh exclusive.
-    // `!== undefined`, not truthiness: `refreshing` is a Promise handle used as
-    // a presence flag, and a bare `if (refreshing)` reads as if the promise's
-    // resolved value were being tested.
+    // A refresh already in flight owns the next token: wait for it rather than
+    // serve a token about to be replaced, or launch a competing refresh. Zendesk
+    // rotates the refresh token on every use, so two concurrent refreshes would
+    // invalidate each other.
     if (refreshing !== undefined) await refreshing;
 
     if (token && !needsRefresh(token)) {
@@ -233,11 +225,10 @@ export const createTokenStore = (
     throw createAuthRequiredError(url);
   };
 
-  // Backstop for an access token the server rejected mid-life (e.g. revoked).
-  // A 401 invalidates the *access* token, not necessarily the refresh token —
-  // so keep the latter and just mark the access token expired, letting the next
-  // getToken attempt a silent refresh before falling back to the browser. Only
-  // when there's no refresh token do we wipe the record entirely.
+  // Backstop for an access token the server rejected mid-life (revoked, say). A
+  // 401 invalidates the *access* token, not necessarily the refresh token — keep
+  // the latter and mark the access token expired, so the next getToken tries a
+  // silent refresh before the browser.
   const invalidate = (): void => {
     if (token?.refreshToken) {
       token = { accessToken: token.accessToken, refreshToken: token.refreshToken, expiresAt: 0 };
@@ -249,12 +240,10 @@ export const createTokenStore = (
     logger.info('oauth_token_invalidated');
   };
 
-  // Background refresh keeps a long-lived, possibly idle stdio session's token
-  // fresh: refreshing every 4h means the first request after a quiet stretch
-  // never races a token expired by Zendesk's ~8h inactivity window. Shares the
-  // `refreshing` single-flight guard with getToken; a no-op until a refreshable
-  // token exists. unref()'d so it never keeps the process (or test runner) alive.
-  // stdio-only: HTTP carries a per-session bearer and doesn't use this store.
+  // Keeps a long-lived, possibly idle stdio session's token fresh: every 4h means
+  // the first request after a quiet stretch never races Zendesk's ~8h inactivity
+  // window. unref()'d so it never keeps the process (or test runner) alive.
+  // stdio-only: HTTP carries a per-session bearer.
   const scheduledRefresh = setInterval(() => {
     if (token?.refreshToken && !refreshing) {
       refreshing = tryRefresh(token, { dropOnFailure: false }).finally(() => {

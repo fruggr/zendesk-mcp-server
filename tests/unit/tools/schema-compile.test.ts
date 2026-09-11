@@ -3,20 +3,10 @@ import * as z from 'zod/v4';
 import { createAllTools, type ToolContext } from '../../../src/tools';
 import { createStrictParamsParser } from '../../../src/utils/validation';
 
-// Two things have to hold for `import 'zod/compile'` (src/index.ts) to be worth its line,
-// and both fail silently:
-//
-//  1. Every tool schema must be *compilable*. Hand the compiler a schema whose semantics
-//     the fast path can't model and it returns it unchanged, still on the runtime parser.
-//     Parsing stays correct, so nothing fails — the tool just stops being covered.
-//     `{ strict: true }` turns that silence into a thrown ZodCompileUnsupportedError.
-//
-//  2. The path that actually runs must be the *synchronous* one. The global shim bypasses
-//     the fast path entirely for async parses, and never compiles the schema at all — so a
-//     switch from `safeParse` to `safeParseAsync` anywhere in our own code would disable
-//     compilation there with no other symptom. That is not hypothetical: it is exactly why
-//     the MCP SDK's own tool-argument validation (`safeParseAsync`) is never compiled.
-//     See docs/decisions/zod-compile.md.
+// `import 'zod/compile'` (src/index.ts) earns its line only if every tool schema is
+// compilable and the parse that runs is synchronous — both fail silently. A schema the
+// fast path cannot model comes back unchanged, silently uncovered; `{ strict: true }`
+// turns that into a thrown error. See docs/decisions/zod-compile.md.
 
 const ctx: ToolContext = { subdomain: 'testsubdomain', getToken: () => 'test-token' };
 const tools = createAllTools(ctx);

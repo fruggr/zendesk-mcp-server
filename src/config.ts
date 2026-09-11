@@ -60,11 +60,10 @@ export const ConfigSchema = z.object({
       // does not pile a misleading second message onto e.g. `Wiki`.
       abort: true,
     })
-    // WHATWG "special" schemes (http, https, ws, wss, ftp, file) serialize
-    // with a trailing slash (`new URL('http://x').toString()` === 'http://x/'),
-    // so the SDK's read handler — which normalizes the requested URI through
-    // `URL` before its exact-string registry lookup — would list the resource
-    // but never find it on read. Require the actual URI to round-trip.
+    // WHATWG "special" schemes (http, https, ws, wss, ftp, file) serialize with a
+    // trailing slash, so the SDK's read handler — which normalizes through `URL`
+    // before its exact-string registry lookup — would list the resource and never
+    // find it on read. Require the URI to round-trip.
     .refine(
       (scheme) => {
         const uri = `${scheme}://topology`;
@@ -141,17 +140,12 @@ interface CliResult {
   callbackPort?: number;
 }
 
-// Number.parseInt('8080abc', 10) === 8080 — silently accepts a numeric
-// prefix. Validate strictly so malformed values fail loudly instead. Range
-// checks (0 vs 1 minimum etc.) stay in ConfigSchema, the single authority.
+// Number.parseInt('8080abc', 10) === 8080 — a numeric prefix passes silently, so
+// validate strictly. Range checks stay in ConfigSchema, the single authority.
 //
-// The error intentionally does NOT echo the offending value: when `label`
-// names a variable CodeQL's heuristics treat as sensitive (anything with
-// "OAUTH" / "TOKEN" / etc. in the name, like ZENDESK_OAUTH_CALLBACK_PORT),
-// reflecting `raw` into a thrown Error.message that bubbles up to the
-// `console.error('Fatal error:', error)` in src/index.ts gets flagged as
-// `js/clear-text-logging`. The label alone tells the operator which knob is
-// wrong; they can re-read their env / CLI to see what they actually set.
+// The error must not echo the value: reflecting `raw` from a sensitive-looking
+// variable (ZENDESK_OAUTH_CALLBACK_PORT) into a message that reaches
+// `console.error` trips CodeQL's js/clear-text-logging. The label names the knob.
 const DIGITS_ONLY = /^\d+$/;
 
 const parsePort = (raw: string, label: string): number => {
@@ -164,21 +158,10 @@ const parsePort = (raw: string, label: string): number => {
 const parsePortEnv = (raw: string | undefined, label: string): number | undefined =>
   raw === undefined ? undefined : parsePort(raw, label);
 
-// An empty environment variable is a misconfiguration, not "unset": `FOO=` in a
-// compose file, and `FOO="$BAR"` with BAR unset, both reach us as ''. Applying
-// the default there boots a server whose config silently disagrees with the
-// deployment's intent, so fail naming the variable instead (issue #174). The
-// value is not echoed, same policy as parsePort above.
-//
-// Deliberately not applied to CORS_ORIGIN: that one is a comma-separated *list*,
-// where `CORS_ORIGIN=` legitimately means "no extra origins" on top of the
-// built-in allowlist. Empty single-value variable is an error; empty list
-// variable is an empty list.
-//
-// Reached through `??`, so it only fires for a variable that is actually
-// consulted: a CLI flag wins over the env by contract, and the variable it
-// shadows is dead config rather than a misconfiguration worth refusing to boot
-// over (`--port 8080` next to a stray `PORT=` in a compose file is normal).
+// An empty variable is a misconfiguration, not "unset": `FOO=` and `FOO="$BAR"`
+// with BAR unset both reach us as ''. Defaulting there boots a config that
+// disagrees with the deployment's intent, so fail naming it (#174). CORS_ORIGIN
+// is exempt — as a list, empty means "no extra origins".
 const requireNonEmptyEnv = (name: string): string | undefined => {
   const raw = process.env[name];
   if (raw === '') {
@@ -187,11 +170,9 @@ const requireNonEmptyEnv = (name: string): string | undefined => {
   return raw;
 };
 
-// The whole CLI surface as one declarative table. `parseArgs` derives from it the
-// rejection of an unknown flag, of a value-taking flag left at the end of argv,
-// of a flag whose value is another dash-leading token, and of a value handed to a
-// standalone flag — so those guarantees cannot drift per-flag the way the
-// previous branch-per-flag chain could. Adding a flag is one entry here.
+// The whole CLI surface as one declarative table: `parseArgs` derives the
+// unknown-flag, missing-value and stray-value rejections from it, so those
+// guarantees cannot drift per flag. Adding a flag is one entry here.
 const CLI_OPTIONS = {
   mode: { type: 'string' },
   namespace: { type: 'string', multiple: true },
@@ -253,11 +234,10 @@ const parseCliArgs = (args: string[]): CliResult => {
     allowPositionals: true,
   });
 
-  // A second positional is always a mistake, and dropping it silently is the
-  // exact failure this module refuses to commit elsewhere: `--namespace tickets
-  // help_center mycompany` would take `help_center` as the subdomain and discard
-  // `mycompany`, reaching the wrong Zendesk tenant with a narrowed tool surface
-  // and no diagnostic at all. Counted, never echoed (same policy as parsePort).
+  // Dropping a second positional silently would be the worst outcome here:
+  // `--namespace tickets help_center mycompany` takes `help_center` as the
+  // subdomain and discards `mycompany` — wrong tenant, narrowed tool surface, no
+  // diagnostic. Counted, never echoed.
   if (positionals.length > 1) {
     throw new Error(
       `Expected one positional argument (the subdomain), got ${positionals.length}. ` +
@@ -315,11 +295,10 @@ interface TransportSettings {
 // they are the surface documented in docs/http-deployment.md. stdio ignores all
 // of them.
 const resolveTransportSettings = (cli: CliResult): TransportSettings => {
-  // CORS allowlist extension: CLI flags first, then comma-separated env var.
-  // The defaults (major web MCP clients + localhost-any-port) are baked into
-  // the HTTP transport — this list ADDS to them, never replaces them.
-  // Read directly, not through requireNonEmptyEnv: as a list variable, an empty
-  // CORS_ORIGIN means "no extra origins" rather than a misconfiguration.
+  // The defaults (major web MCP clients + localhost-any-port) live in the HTTP
+  // transport — this list ADDS to them, never replaces them. Read directly, not
+  // through requireNonEmptyEnv: as a list, an empty CORS_ORIGIN means "no extra
+  // origins" rather than a misconfiguration.
   const corsFromEnv = (process.env['CORS_ORIGIN'] ?? '')
     .split(',')
     .map((s) => s.trim())

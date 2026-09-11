@@ -343,11 +343,10 @@ describe('startHttpTransport (HTTP roundtrip)', () => {
   });
 
   it('responds 413 mid-upload and drops the connection (no deadlock on slow clients)', async () => {
-    // Regression for a CI-only deadlock: when the cap is hit while the client
-    // is still uploading, the request stream is paused; unless the server
-    // destroys the socket after the 413, the connection wedges and
-    // handle.close() (in afterEach) hangs forever. Reproduced here with a
-    // request that announces more than it ever sends.
+    // Regression for a CI-only deadlock: hitting the cap mid-upload pauses the
+    // request stream, and unless the server destroys the socket after the 413 the
+    // connection wedges, hanging handle.close() in afterEach forever. Reproduced
+    // with a request that announces more than it ever sends.
     handle = await startHttpTransport(baseConfig, undefined, { maxBodyBytes: SMALL_CAP });
     const status = await new Promise<number>((resolve, reject) => {
       const req = httpRequest({
@@ -582,19 +581,10 @@ describe('startHttpTransport (Zendesk 401 backstop)', () => {
     handle = undefined;
   });
 
-  // Spec under test (locked here so a future refactor can't quietly change it):
-  //
-  // In HTTP mode the bearer is the OAuth access token the MCP client just sent;
-  // there is no server-side token store. When Zendesk rejects it (401) we want:
-  //   1. the tool call to come back to the client as a tool result with
-  //      `isError: true` (NOT a transport-level 500, NOT a session crash);
-  //   2. the HTTP session to remain usable for further requests so the client
-  //      can either re-authenticate via the discovery metadata or try a
-  //      different tool;
-  //   3. NO `onUnauthorized` callback to be invoked server-side — there is
-  //      nothing to invalidate (this is asserted indirectly by point 2 and
-  //      explicitly in the http.ts construction `createMcpServer(config, () =>
-  //      auth.bearer, logger)` which omits the fourth argument).
+  // Spec under test, locked against a quiet refactor. In HTTP mode the bearer is
+  // the client's own OAuth token, so a Zendesk 401 must come back as a tool result
+  // with `isError: true` — not a 500, not a session crash. No `onUnauthorized`
+  // fires: there is nothing server-side to invalidate.
   it('surfaces a Zendesk 401 as an MCP tool error and keeps the session open', async () => {
     mswServer.use(errorHandlers.usersMeUnauthorized);
     handle = await startHttpTransport(baseConfig);
@@ -625,20 +615,17 @@ describe('startHttpTransport (Zendesk 401 backstop)', () => {
       };
     };
     expect(payload.result?.isError).toBe(true);
-    // The error must convey "your bearer is no good, re-do OAuth" so the MCP
-    // client knows to restart the discovery flow against Zendesk. We match the
-    // semantic intent (re-authenticate) rather than the literal string — the
-    // wrapping in `ZendeskApiError.buildMessage` (`src/client/zendesk-api.ts`)
-    // is keyed strictly on `status === 401`, so this pattern is a tight proxy
-    // for "a 401 reached the user-visible payload".
+    // The error must convey "your bearer is no good, re-do OAuth" so the client
+    // restarts discovery. Matched on intent rather than the literal string:
+    // `ZendeskApiError.buildMessage` keys that wording strictly on `status ===
+    // 401`, so the pattern is a tight proxy for "a 401 reached the payload".
     const text = (payload.result?.content ?? []).map((c) => c.text ?? '').join(' ');
     expect(text).toMatch(/re-?authenticate/i);
 
-    // Claim 2: the session must still be alive — a follow-up tools/list on the
-    // same mcp-session-id has to come back 200, not a freshly minted 401 or a
-    // dead session. (We can't fully assert claim 3 — that onUnauthorized was
-    // not wired — without spying on createMcpServer; the wiring is enforced by
-    // http.ts:304 and the survival of this call is a behavioral proxy.)
+    // The session must still be alive: a follow-up tools/list on the same
+    // mcp-session-id has to come back 200, not a fresh 401 or a dead session.
+    // That onUnauthorized stays unwired cannot be asserted without spying on
+    // createMcpServer; this call surviving is the behavioural proxy.
     const followUp = await fetch(`http://127.0.0.1:${handle.port}/mcp`, {
       method: 'POST',
       headers: {

@@ -1241,11 +1241,10 @@ describe('ticket tools', () => {
     });
   });
 
-  // #205 inbound side: nothing bounded the size of a base64 attachment input, and
-  // `attachments` takes a list, so several files add up inside one message. A
-  // schema cap cannot stop the overflow (the read buffer bursts before parsing),
-  // but it is published as `maxLength` for an agent to read, and it turns a
-  // moderate overshoot into a plain validation error rather than a lost session.
+  // #205 inbound: `attachments` takes a list, so several files add up inside one
+  // message. A cap cannot stop the overflow (the read buffer bursts before
+  // parsing), but it is published as `maxLength` for an agent to read, and turns
+  // an overshoot into a validation error, not a lost session.
   describe('attachment input caps', () => {
     const b64 = (chars: number) => 'a'.repeat(chars);
 

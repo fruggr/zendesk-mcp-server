@@ -1,9 +1,6 @@
-// Read a positive-integer override from the environment, falling back to a safe
-// default. Unchecked Number() coercion is unsafe here: an empty string yields 0
-// and a typo yields NaN, either of which would silently break the guardrail that
-// relies on the value. Missing/empty/non-positive values and anything that is not
-// a positive safe integer (fractions like "1.5", values beyond 2^53) fall back —
-// these constants are all counts/sizes, so a fractional or unsafe value is a typo.
+// Unchecked Number() coercion is unsafe here: '' yields 0 and a typo NaN, either
+// silently breaking the guardrail that reads the value. These constants are all
+// counts and sizes, so a fraction or an unsafe integer is a typo — fall back.
 const positiveIntEnv = (name: string, fallback: number): number => {
   const raw = process.env[name];
   if (raw === undefined || raw.trim() === '') return fallback;
@@ -11,12 +8,10 @@ const positiveIntEnv = (name: string, fallback: number): number => {
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
 };
 
-// Ceiling on the characters a single tool response may carry; past it the text is
-// cut and a notice explains what to do about it (see truncateIfNeeded). The
-// default protects the client's own context budget, so raising it is rarely what
-// you want. It is overridable mainly so the truncation paths can be exercised on
-// a tenant whose real data never reaches 25 000 characters: lower it and any
-// ordinary response will trip the notice. Override via ZENDESK_CHARACTER_LIMIT.
+// Ceiling on one tool response; past it the text is cut and a notice explains
+// what to do (truncateIfNeeded). The default protects the client's context
+// budget, so raising it is rarely right; it is overridable mainly to exercise
+// truncation on a small tenant.
 export const CHARACTER_LIMIT = positiveIntEnv('ZENDESK_CHARACTER_LIMIT', 25_000);
 export const DEFAULT_PAGE_SIZE = 100;
 export const MAX_PAGE_SIZE = 100;
@@ -27,11 +22,10 @@ export const MAX_PAGE_SIZE = 100;
 // (issue #162), so list_content_tags gets its own limit.
 export const CONTENT_TAGS_MAX_PAGE_SIZE = 30;
 
-// Default page size for list_ticket_comments. Unlike CONTENT_TAGS_MAX_PAGE_SIZE
-// this is not an API cap (the endpoint allows 100): the binding constraint is
-// CHARACTER_LIMIT, because comment bodies are long. A default of 100 would make
-// almost every first page truncate, which is the very failure this tool exists
-// to fix (#265). Callers who want more follow the cursor.
+// Not an API cap (the endpoint allows 100): the binding constraint is
+// CHARACTER_LIMIT, because comment bodies are long. A default of 100 would
+// truncate almost every first page — the failure this tool exists to fix (#265).
+// Callers who want more follow the cursor.
 export const DEFAULT_TICKET_COMMENT_PAGE_SIZE = 20;
 export const TOKEN_CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -47,23 +41,19 @@ export const TOPOLOGY_TTL_MS = 5 * 60 * 1000;
 // without going stale for long.
 export const ARTICLE_RESOURCES_TTL_MS = 5 * 60 * 1000;
 
-// Max article pages scanned to find promoted articles. The Help Center API has no
-// server-side promoted filter (only label_names / sort_by / sort_order), so the
-// list callback pages through /articles and filters `promoted` client-side; this
-// bounds that scan on a large Help Center. Promoted articles beyond the cap are
-// omitted (and the truncation is logged). Override via
-// ZENDESK_ARTICLE_RESOURCES_SCAN_MAX_PAGES.
+// Bounds the promoted-article scan on a large Help Center: the API has no
+// server-side promoted filter, so the list callback pages through /articles and
+// filters client-side. Promoted articles beyond the cap are omitted, and the
+// truncation logged.
 export const ARTICLE_RESOURCES_SCAN_MAX_PAGES = positiveIntEnv(
   'ZENDESK_ARTICLE_RESOURCES_SCAN_MAX_PAGES',
   20,
 );
 
-// Local port the OAuth PKCE flow listens on for the browser callback. Must match
-// the redirect URL registered in the Zendesk OAuth client. Deliberately picked
-// outside the usual dev range (3000/5000/8080…) and below the OS ephemeral
-// ranges (Linux ≥ 32768, Windows ≥ 49152) so it is neither commonly taken nor
-// grabbed by a transient socket. Override via ZENDESK_OAUTH_CALLBACK_PORT /
-// --callback-port (and register the matching redirect URL in Zendesk).
+// Must match the redirect URL registered in the Zendesk OAuth client. Picked
+// outside the usual dev range (3000/5000/8080…) and below the OS ephemeral ranges
+// (Linux ≥ 32768, Windows ≥ 49152), so it is neither commonly taken nor grabbed
+// by a transient socket.
 export const DEFAULT_CALLBACK_PORT = 27439;
 
 // Per-attachment cap for inline image content. Images larger than this are
@@ -76,20 +66,17 @@ export const MAX_ATTACHMENT_BYTES = positiveIntEnv('ZENDESK_MAX_ATTACHMENT_BYTES
 // images are returned as text references. Override via ZENDESK_MAX_EMBEDDED_IMAGES.
 export const MAX_EMBEDDED_IMAGE_COUNT = positiveIntEnv('ZENDESK_MAX_EMBEDDED_IMAGES', 10);
 
-// Largest JSON-RPC message the stdio transport accepts, and the ceiling every
-// payload guard below derives from. Deliberately our own number rather than the
-// SDK's STDIO_DEFAULT_MAX_BUFFER_SIZE: the input caps derived from it surface as
-// `maxLength` in the published JSON Schema, and a contract that shifts because a
-// dependency bumped its default would change what agents rely on with nobody
-// deciding it (docs/mcp-metadata.md). A unit test asserts this stays within what
-// the SDK accepts, so a lowered default is caught here rather than in production.
-// Not overridable: a transport contract, not a usage knob.
+// Largest JSON-RPC message the stdio transport accepts, and the ceiling the
+// payload guards derive from. Ours rather than the SDK's default: the caps
+// derived from it are published as `maxLength`, and a contract that moves when a
+// dependency bumps its own is one nobody decided (docs/mcp-metadata.md). Not
+// overridable.
 export const STDIO_MAX_MESSAGE_BYTES = 10 * 1024 * 1024;
 
-// Room left for what wraps our content in a message: the JSON-RPC envelope, plus
-// a request id the client picks and the spec does not bound. Measured at 53 bytes
-// for a plain response, so this is oversized on purpose rather than tuned, which
-// buys the guards independence from an envelope we do not control.
+// Room for what wraps our content: the JSON-RPC envelope, plus a request id the
+// client picks and the spec does not bound. Measured at 53 bytes for a plain
+// response — oversized on purpose, which buys the guards independence from an
+// envelope we do not control.
 const ENVELOPE_RESERVE_BYTES = 64 * 1024;
 
 // One budget for the content of a message, applied deliberately in both
@@ -98,13 +85,9 @@ const ENVELOPE_RESERVE_BYTES = 64 * 1024;
 const MESSAGE_CONTENT_BUDGET_BYTES = STDIO_MAX_MESSAGE_BYTES - ENVELOPE_RESERVE_BYTES;
 
 // Outbound: total weight of one tool response. The two caps above bound each
-// image and how many, never the sum (#205). ZENDESK_MAX_RESPONSE_BYTES can only
-// lower it, which is the useful direction (a client whose own ceiling is smaller
-// than ours). A value above the budget is clamped rather than obeyed: emitting
-// past what the transport carries guarantees the very failure this guard exists
-// to prevent, and it happens on the client's side where nothing here can catch
-// it. Note the clamp wraps the lookup, so it bounds the override and not the
-// fallback.
+// image and how many, never the sum (#205). The override can only lower it; a
+// larger value is clamped, because emitting past what the transport carries
+// fails on the client's side.
 export const MAX_RESPONSE_BYTES = Math.min(
   positiveIntEnv('ZENDESK_MAX_RESPONSE_BYTES', MESSAGE_CONTENT_BUDGET_BYTES),
   MESSAGE_CONTENT_BUDGET_BYTES,
@@ -112,9 +95,8 @@ export const MAX_RESPONSE_BYTES = Math.min(
 
 // Inbound: longest base64 string accepted on an attachment input, and the summed
 // ceiling for the array parameters. Published as `maxLength` for an agent to read
-// before calling; it cannot prevent the overflow itself, since the read buffer
-// bursts before anything is parsed. Not overridable, so the published schema stays
-// the same whatever the environment.
+// before calling; it cannot prevent the overflow itself, as the read buffer bursts
+// before anything is parsed. Not overridable, so the schema is environment-independent.
 export const MAX_BASE64_INPUT_CHARS = MESSAGE_CONTENT_BUDGET_BYTES;
 
 // The inbound ceiling as file megabytes, for the tool descriptions. Base64 carries
@@ -128,11 +110,9 @@ export const MAX_BASE64_INPUT_MB = Number.parseFloat(
 // Overridable via ZENDESK_MAX_COMMENT_PAGES for tickets with many comments.
 export const MAX_COMMENT_PAGES = positiveIntEnv('ZENDESK_MAX_COMMENT_PAGES', 10);
 
-// Blast-radius guard for reorder_article. Reordering an article can require
-// rewriting the `position` of several neighbours (to break ties or shift a run);
-// if that write set exceeds this many articles the tool refuses unless the caller
-// passes confirm:true, so a single "move to top" can't silently rewrite hundreds
-// of articles. Override via ZENDESK_REORDER_CONFIRM_THRESHOLD.
+// Blast-radius guard: moving one article can rewrite the `position` of several
+// neighbours, so past this many the tool refuses without confirm:true — a single
+// "move to top" must not silently rewrite hundreds of articles.
 export const REORDER_CONFIRM_THRESHOLD = positiveIntEnv('ZENDESK_REORDER_CONFIRM_THRESHOLD', 20);
 
 // Thresholds used to nudge callers toward section-scoped article tools

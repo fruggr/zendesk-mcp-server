@@ -9,13 +9,10 @@ import { type Logger, silentLogger } from '../utils/logger';
 const WILDCARD_HOSTS = new Set(['0.0.0.0', '::', '*']);
 const TRAILING_SLASHES = /\/+$/;
 
-// Default CORS allowlist: the major web MCP clients that work today via
-// Custom Connector UIs. Native clients (Claude Desktop, Claude Code CLI,
-// Cursor, VS Code, Zed) send no Origin header — they're unaffected. Extend
-// the list with --cors-origin / CORS_ORIGIN per deployment.
-//
-// Ordered by current usage share (ChatGPT first). Update over time as the
-// MCP client landscape evolves.
+// The major web MCP clients, reachable through Custom Connector UIs. Native
+// clients (Claude Desktop, Claude Code CLI, Cursor, VS Code, Zed) send no Origin
+// header, so they are unaffected; extend per deployment with --cors-origin /
+// CORS_ORIGIN. Ordered by usage share.
 export const DEFAULT_BROWSER_MCP_CLIENT_ORIGINS: readonly string[] = [
   'https://chatgpt.com',
   'https://chat.openai.com',
@@ -122,15 +119,11 @@ const handleCorsPreflight = (
   return true;
 };
 
-// Build the canonical `resource` URL we advertise in the OAuth metadata.
-// Precedence:
-//   1. Explicit --public-url / PUBLIC_URL (operators behind a reverse proxy
-//      must set this; Azure App Service: PUBLIC_URL="https://${WEBSITE_HOSTNAME}").
-//   2. host:port when host is a real, routable hostname or IP (not the bind
-//      wildcard 0.0.0.0 / :: / unspecified).
-//   3. Fallback to host:port + warning. Clients following RFC 8707 strictly
-//      will reject this resource identifier, so log a clear warning so the
-//      operator knows to set PUBLIC_URL.
+// The canonical `resource` URL advertised in the OAuth metadata. Explicit
+// --public-url / PUBLIC_URL wins (operators behind a reverse proxy must set it),
+// then host:port when host is routable rather than the bind wildcard, then
+// host:port with a warning, since clients strict about RFC 8707 reject that
+// identifier.
 export const resolveResourceUrl = (config: Config, logger: Logger = silentLogger): string => {
   if (config.publicUrl) return config.publicUrl.replace(TRAILING_SLASHES, '');
   if (!WILDCARD_HOSTS.has(config.host)) {
