@@ -2,6 +2,10 @@
 # Schema reference: https://docs.coderabbit.ai/reference/configuration
 # Only keys documented in the official schema are set here. New options
 # should be added with a comment linking to the doc that introduced them.
+# Repo-wide rules are NOT duplicated here: AGENTS.md (and its CLAUDE.md symlink)
+# are auto-detected as code guidelines and applied on every review
+# (https://docs.coderabbit.ai/knowledge-base/code-guidelines). This file only
+# adds review emphasis CodeRabbit would otherwise under-weight.
 
 language: en-US
 
@@ -22,6 +26,18 @@ reviews:
     - '!pnpm-lock.yaml'
     - '!CHANGELOG.md'
   path_instructions:
+    - path: '**/*.ts'
+      instructions: |
+        Comments are optional in this repo and the code is the first
+        explanation. Flag a comment that paraphrases the code under it (the
+        "how"), restates an identifier, or narrates a past change ("renamed
+        from", "used to be", "was moved") — git history holds that. Keep the
+        ones carrying a "why": constraint, trade-off, non-obvious Zendesk or
+        SDK behaviour, pointer to docs/decisions/.
+        Flag any single comment running past ~50 words: it should shrink to the
+        why, or move to docs/decisions/ with a one-line pointer from the code.
+        Ignore license headers and tool pragmas (Stryker, Biome, ts-expect-error
+        justifications).
     - path: 'src/tools/**'
       instructions: |
         These files define MCP tools exposed to the LLM. Check that:
