@@ -13,6 +13,8 @@ import {
   formatNodeTranslationSummary,
   formatOrganization,
   formatPermissionGroup,
+  formatRequest,
+  formatRequestComment,
   formatSection,
   formatSlaBlock,
   formatSlaPolicy,
@@ -36,6 +38,8 @@ import {
   MOCK_MACRO,
   MOCK_ORGANIZATION,
   MOCK_PERMISSION_GROUP,
+  MOCK_REQUEST,
+  MOCK_REQUEST_COMMENTS,
   MOCK_SECTION,
   MOCK_SECTION_TRANSLATION,
   MOCK_SLA_POLICY,
@@ -1233,5 +1237,114 @@ describe('formatNodeTranslationSummary', () => {
       - **Draft**: false
       - **Updated**: 2026-01-02T00:00:00Z"
     `);
+  });
+});
+
+describe('formatRequest', () => {
+  // Not formatTicket: that one dereferences `tags.length`, which a Request does
+  // not carry, and would throw here.
+  it('renders a request with its status, form and solvability', () => {
+    expect(formatRequest(MOCK_REQUEST)).toMatchInlineSnapshot(`
+      "## Request #5001: The export button does nothing
+      - **Status**: open | **Type**: incident | **Priority**: normal
+      - **Form**: 900
+      - **Can you mark it solved**: yes
+      - **Submitted via**: web
+      - **Created**: 2026-01-05T09:00:00Z | **Updated**: 2026-01-06T11:30:00Z
+
+      Clicking export spins forever and no file arrives."
+    `);
+  });
+
+  it('says no when the requester cannot solve it, rather than omitting the line', () => {
+    const text = formatRequest({ ...MOCK_REQUEST, can_be_solved_by_me: false });
+    expect(text).toContain('**Can you mark it solved**: no');
+  });
+
+  // `via` absent entirely, not `via: {}` -- the two differ, and only the absent
+  // case proves the optional chaining is load-bearing.
+  it('survives a request carrying no via block at all', () => {
+    const { via: _via, ...withoutVia } = MOCK_REQUEST;
+    expect(formatRequest(withoutVia)).not.toContain('Submitted via');
+  });
+
+  it('omits the channel line when via carries no channel', () => {
+    expect(formatRequest({ ...MOCK_REQUEST, via: {} })).not.toContain('Submitted via');
+  });
+
+  it('omits the optional lines a request may not carry', () => {
+    const text = formatRequest({
+      ...MOCK_REQUEST,
+      priority: null,
+      type: null,
+      ticket_form_id: null,
+      via: {},
+      description: '',
+    });
+    expect(text).toMatchInlineSnapshot(`
+      "## Request #5001: The export button does nothing
+      - **Status**: open
+      - **Can you mark it solved**: yes
+      - **Created**: 2026-01-05T09:00:00Z | **Updated**: 2026-01-06T11:30:00Z"
+    `);
+  });
+});
+
+describe('formatRequestComment', () => {
+  const authors = new Map(MOCK_REQUEST_COMMENTS.users.map((user) => [user.id, user]));
+
+  it('names the customer and does not label them an agent', () => {
+    const comment = MOCK_REQUEST_COMMENTS.comments[0];
+    if (!comment) throw new Error('fixture missing');
+    expect(formatRequestComment(comment, authors)).toMatchInlineSnapshot(`
+      "### Comment by Dana Customer
+      *2026-01-05T09:00:00Z*
+
+      Clicking export spins forever and no file arrives."
+    `);
+  });
+
+  it('marks a support agent and lists the attachment by name', () => {
+    const comment = MOCK_REQUEST_COMMENTS.comments[1];
+    if (!comment) throw new Error('fixture missing');
+    expect(formatRequestComment(comment, authors)).toMatchInlineSnapshot(`
+      "### Comment by Sam Support (support agent)
+      *2026-01-06T11:30:00Z*
+      Attachments: diagnostic.txt (#4242, text/plain)
+
+      Thanks for the report — which browser are you on?"
+    `);
+  });
+
+  // Two attachments, so the separator itself is asserted rather than just the
+  // presence of a file name.
+  it('comma-separates several attachments on one comment', () => {
+    const comment = MOCK_REQUEST_COMMENTS.comments[1];
+    if (!comment) throw new Error('fixture missing');
+    const text = formatRequestComment(
+      {
+        ...comment,
+        attachments: [
+          ...(comment.attachments ?? []),
+          {
+            id: 4243,
+            file_name: 'screenshot.png',
+            content_url: 'https://example.test/screenshot.png',
+            content_type: 'image/png',
+            size: 2048,
+          },
+        ],
+      },
+      authors,
+    );
+    expect(text).toContain(
+      'Attachments: diagnostic.txt (#4242, text/plain), screenshot.png (#4243, image/png)',
+    );
+  });
+
+  it('falls back to the author id when the sideload does not carry them', () => {
+    const comment = MOCK_REQUEST_COMMENTS.comments[0];
+    if (!comment) throw new Error('fixture missing');
+    expect(formatRequestComment(comment, new Map())).toContain('Comment by user 456');
   });
 });

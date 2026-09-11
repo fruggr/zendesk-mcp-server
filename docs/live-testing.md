@@ -11,6 +11,17 @@ Two complementary ways to drive a running instance of this server against the
 Both boot the same `createMcpServer` the production entry point uses
 (`src/index.ts`), so what you test is the actual server, not a stub.
 
+## Why `.mcp.json` names every namespace
+
+The committed `.mcp.json` passes `--mode all` **and** lists all four namespaces
+explicitly. That is not redundant: `requests` (the end-user surface) is excluded
+from the default namespace set, so a bare `--mode all` would expose everything
+*except* those seven tools and live-testing them would be impossible. Listing
+the namespaces makes the rig show the whole surface.
+
+Add a namespace here when you add one to the enum, or it will be invisible to
+live testing.
+
 ## Auth note (important)
 
 This server is **OAuth 2.1 PKCE only**; there is no API-token mode. The PKCE

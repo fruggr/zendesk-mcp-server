@@ -58,10 +58,36 @@ browser PKCE via `token-store.ts`. HTTP: per-session bearer captured from
 credential — insufficiently secure, doesn't scale to multi-user/remote); the
 rationale lives in `README.md` ("What this server does *not* do").
 
-Local setup and auth flows live in `README.md`; CLI flags and env vars in
+Local setup and auth flows live in `README.md`; the customer-facing walkthrough
+in `docs/end-user-onboarding.md`; CLI flags and env vars in
 `docs/configuration.md`; remote HTTP deployment in `docs/http-deployment.md`;
 troubleshooting in `docs/troubleshooting.md`; manual tool testing in
 `docs/live-testing.md`.
+
+## Two audiences
+
+The server serves **agents** and **end users**, and they are different products
+sharing a codebase. The agent surface speaks `/api/v2/tickets`; the end-user
+surface speaks `/api/v2/requests`, which is the path Zendesk reserves for
+requesters and the only one an end-user token can reach. `requests` is a
+namespace excluded from `DEFAULT_NAMESPACES` (`config.ts`), so it ships opt-in.
+
+Changing the agent ticket surface? Ask whether the end-user side needs the
+equivalent — and when it doesn't, say why in the PR rather than leaving the
+asymmetry unexplained. They are not mirrors: a customer cannot set priority or
+type (Zendesk drops both), cannot post an internal note, and cannot solve a
+ticket no agent has picked up.
+
+The trap is testing an end-user tool with an agent token. Several operations
+behave differently: `solved: true` is a silent no-op for an agent, a form's
+`required_in_portal` validation is not applied to them, and `priority`/`type`
+are stored rather than dropped. An agent-token check will pass where a
+customer's real call fails. Rationale and the rejected `--profile` alternative:
+`docs/decisions/end-user-namespace.md`.
+
+Being opt-in is not a lower bar. Glama scores the flat surface, and the server
+score is `60% mean + 40% min`, so a thin definition behind a flag drags the
+whole thing down exactly as much as one in the default set.
 
 ## Design principle — usage-first, not API-shaped
 

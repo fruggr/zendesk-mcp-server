@@ -86,6 +86,27 @@ out every `write` tool before the proxies are built.
 </details>
 
 <details>
+<summary><strong>Requests</strong> (end-user surface, opt-in)</summary>
+
+The customer-facing half of the server: submitting and following one's *own*
+tickets, through the API path Zendesk reserves for requesters. Exposed only
+when asked for by name (`--namespace requests`) — see
+[End-user mode](../README.md#end-user-mode) for why, and for what a customer
+deliberately cannot do.
+
+| Tool | Description | Mode |
+|------|-------------|------|
+| `list_request_forms` | List the kinds of request a customer can submit (the Help Center's forms), with each one's customer-facing name and whether it is the account default | read |
+| `get_request_form` | Read what one form asks for: its fields in portal order, which are required, the exact values dropdowns accept, and any conditional rules — joins the form definition with the field definitions | read |
+| `list_requests` | List the caller's own requests with status and solvability; pass `query` to search them instead of listing all | read |
+| `get_request` | Read one of the caller's own requests, optionally with the full public conversation, each reply attributed and support agents marked | read |
+| `create_request` | Submit a new request on a chosen form, with attachments; refuses an unknown form id or a missing portal-required field rather than letting Zendesk substitute or accept silently | write |
+| `add_request_comment` | Reply on the caller's own request, optionally with attachments; reports the resulting status, since replying to a solved request reopens it | write |
+| `mark_request_solved` | Close the caller's own request, refusing when Zendesk would accept the update and change nothing (it only allows it once an agent is assigned) | write |
+
+</details>
+
+<details>
 <summary><strong>Search</strong></summary>
 
 | Tool | Description | Mode |
