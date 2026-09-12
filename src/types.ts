@@ -117,10 +117,9 @@ export interface ZendeskViewCountManyResponse {
 }
 
 // GET /api/v2/views/{id}/execute — a view executed with its own column set and
-// configured sort order. Each row carries the view's column values inlined plus a
-// *partial* ticket object; we use the rows only for the view-ordered ticket ids,
-// then hydrate full tickets via /tickets/show_many (the partial ticket and the
-// view-dependent columns are not a reliable full ticket, see #121).
+// sort order. Rows carry the view's column values plus a *partial* ticket, so we
+// take only the view-ordered ids from them and hydrate through
+// /tickets/show_many (#121).
 export interface ZendeskViewExecuteRow {
   ticket?: { id?: number };
   [key: string]: unknown;
@@ -177,13 +176,10 @@ export interface ZendeskMacroApplyField {
 }
 
 // GET /tickets/{id}/macros/{macro_id}/apply returns the WHOLE ticket as it would
-// be after the macro runs (not just the changed fields — confirmed against the
-// live tenant), plus the comment it would add. Nothing is persisted; the caller
-// commits via update_ticket / add_public_comment / add_private_note.
-// preview_macro_diff isolates the macro's actual effect by diffing this against
-// the ticket's current state. Standard fields (status, priority, assignee_id,
-// group_id, tags, subject, type, …) appear as top-level keys; custom fields
-// arrive under `fields` (or `custom_fields`).
+// be after the macro runs, plus the comment it would add; nothing is persisted.
+// preview_macro_diff isolates the macro's effect by diffing it against the
+// current ticket. Standard fields are top-level keys; custom fields arrive under
+// `fields` or `custom_fields`.
 export interface ZendeskMacroApplyTicket {
   comment?: ZendeskMacroApplyComment;
   // The apply endpoint renders one changed custom field as a bare object and
@@ -218,13 +214,11 @@ export interface ZendeskComment {
   attachments?: ZendeskTicketAttachment[];
 }
 
-// GET /api/v2/tickets/{id}/audits — the immutable, chronological record of every
-// update to a ticket. Each audit is one update; its `events` list the individual
-// changes/comments that update carried. `Change`/`Create` events expose
-// `field_name`/`value`/`previous_value` (the before→after of a field); comment
-// events carry `public` (and a body we deliberately do not render — see
-// get_ticket_history). Values are strings, except `tags` (array) and SLA-metric
-// fields (object). Many event types are system noise and are filtered out.
+// GET /api/v2/tickets/{id}/audits — the immutable record of every update. Each
+// audit is one update; its `events` are the changes that update carried.
+// `Change`/`Create` events expose `field_name`/`value`/`previous_value`; comment
+// events carry `public`. Values are strings, except `tags` (array) and SLA-metric
+// fields (object).
 export interface ZendeskAuditEvent {
   id: number;
   type: string;

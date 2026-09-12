@@ -124,12 +124,9 @@ export const MOCK_MACRO = {
 };
 
 // GET /tickets/{id}/macros/{macro_id}/apply — the WHOLE ticket as it would be
-// after the macro runs (not just the changed fields — confirmed against the live
-// tenant), plus the comment it would add, nested under `result.ticket`. Nothing
-// is persisted. Modelled on MOCK_TICKET (the "before") with the macro's changes
-// applied: status open→solved, two tags added, one custom field set. The
-// identity fields (id/url/created_at/updated_at) match the before so the diff
-// correctly drops them; preview_macro_diff surfaces only the real changes.
+// after the macro runs, plus the comment it would add. Modelled on MOCK_TICKET
+// (the "before") with the macro's changes applied, identity fields left equal to
+// it so the diff drops them and only the real changes surface.
 export const MOCK_MACRO_APPLY = {
   result: {
     ticket: {

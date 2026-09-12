@@ -159,6 +159,10 @@ The same checklist appears on the
   strings are what an MCP agent reads back, so re-baselining a snapshot changes
   the server's output. Re-read the diff the update produced and say in the PR why
   the new wording is right, exactly as for any other behaviour change.
+- **Comments are optional, and explain the *why*, not the *how*.** The code is
+  the first explanation; a comment that paraphrases it is noise. Keep a single
+  comment under ~50 words — longer rationale belongs in `docs/decisions/` with a
+  one-line pointer from the code.
 - Functional style: pure functions, immutable data, no classes (except
   `ZendeskApiError`). See `AGENTS.md` for the full architecture and
   conventions.

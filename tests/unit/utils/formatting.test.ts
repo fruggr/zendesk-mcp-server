@@ -273,11 +273,10 @@ describe('formatSlaBlock', () => {
   });
 
   it('omits the countdown for paused, achieved and fulfilled stages', () => {
-    // The `Next breach` line in this snapshot is today's output, not endorsed
-    // behaviour: the header counts every future `breach_at` regardless of stage,
-    // so it announces a breach for metrics this very test shows carry no live
-    // countdown. Pinned here so the disagreement is visible rather than silent —
-    // #260 owns the fix and the call on whether `paused` should feed the header.
+    // The `Next breach` line here is today's output, not endorsed behaviour: the
+    // header counts every future `breach_at` whatever the stage, so it announces a
+    // breach for metrics this test shows carry no live countdown. Pinned so the
+    // disagreement stays visible; #260 owns the fix.
     expect(
       formatSlaBlock(
         entry([
@@ -704,10 +703,9 @@ describe('formatAudit — Change events', () => {
 
   it('renders an emptied entity field as (none), whatever the name maps carry', () => {
     // `withName` resolves through `Number(value)`, and `Number('')` is 0. The
-    // production caller never puts 0 in these maps, but `AuditNames` is a plain
-    // `Map<number, string>` and cannot say so — the empty-value guard in
-    // `renderAuditValue` is what keeps a cleared field from picking up whatever
-    // name happens to sit at that key.
+    // production caller never puts 0 in these maps, but `AuditNames` cannot say
+    // so — the empty-value guard in `renderAuditValue` is what keeps a cleared
+    // field from picking up whatever name sits at that key.
     expect(
       formatAudit(
         change([

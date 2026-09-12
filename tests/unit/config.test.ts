@@ -535,11 +535,10 @@ describe('loadConfig', () => {
     });
 
     it('ignores an empty variable that a CLI flag overrides', () => {
-      // Deliberate: validation applies to the value that is actually consulted.
-      // CLI > env is the documented precedence, so an empty variable the flag
-      // shadows is dead config, not a misconfiguration worth refusing to boot
-      // over — `--port 8080` alongside a stray `PORT=` in a compose file is a
-      // normal deployment, not a broken one.
+      // Validation applies to the value actually consulted. CLI > env is the
+      // documented precedence, so an empty variable a flag shadows is dead config,
+      // not a misconfiguration worth refusing to boot over — `--port 8080` next to
+      // a stray `PORT=` is a normal deployment.
       process.env['PORT'] = '';
       process.env['HC_RESOURCE_SCHEME'] = '';
       const config = loadConfig([

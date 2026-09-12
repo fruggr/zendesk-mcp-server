@@ -26,10 +26,10 @@ import type {
   ZendeskViewCount,
 } from '../types.js';
 
-// The advice closing the truncation notice is the caller's, because only the
-// call site knows what the caller can actually do about it: telling an agent to
-// paginate a tool that takes no pagination parameter sends it in circles (#265).
-// The default serves the paginated list renderers, which are the majority.
+// The advice closing the truncation notice is the caller's: only the call site
+// knows what can be done about it, and telling an agent to paginate a tool
+// without pagination sends it in circles (#265). The default serves the
+// paginated list renderers.
 export const truncateIfNeeded = (
   text: string,
   advice = 'Use pagination or filters to reduce results.',
@@ -114,12 +114,10 @@ export const formatTicketField = (field: ZendeskTicketField): string => {
     .join('\n');
 };
 
-// Render an arbitrary Zendesk field value — a macro action value, a macro-apply
-// field change — as a compact string: arrays as comma-joined tokens, scalars and
-// objects via the shared `formatConditionValue` ladder (null/undefined → empty,
-// object → JSON, else String). Shared by the macro formatters (here and in the
-// preview-diff renderer) so list_macros and preview_macro_diff stringify values
-// the same way instead of drifting apart.
+// Render an arbitrary Zendesk field value as a compact string: arrays as
+// comma-joined tokens, scalars and objects through the shared
+// `formatConditionValue` ladder. Shared by the macro formatters so list_macros
+// and preview_macro_diff cannot drift apart.
 export const formatFieldValue = (value: unknown): string =>
   // Recurse per element so an array of objects renders as JSON tokens rather than
   // the useless "[object Object]" a bare join produces; scalars/objects reuse the
@@ -184,11 +182,10 @@ const formatSlaMetric = (m: ZendeskSlaLiveMetric): string => {
   return parts.join('; ');
 };
 
-// Live SLA block appended after a formatted ticket. Renders only the state the
-// Search `slas` sideload actually carries (per-metric stage + breach countdown)
-// — targets and policy identity are not on the wire (see `list_sla_policies`).
-// Returns '' when no policy applies, so it is safe to concatenate
-// unconditionally (incl. in search rows).
+// Live SLA block appended after a formatted ticket. Renders only what the Search
+// `slas` sideload carries (per-metric stage + breach countdown) — targets and
+// policy identity are not on the wire (see `list_sla_policies`). Returns '' when
+// no policy applies, so concatenating is always safe.
 export const formatSlaBlock = (entry: ZendeskSlaSideloadEntry | undefined): string => {
   if (!entry?.policy_metrics || entry.policy_metrics.length === 0) return '';
   const lines = ['### SLA'];
@@ -285,10 +282,8 @@ export interface AuditNames {
 const renderAuditValue = (field: string, value: unknown, names: AuditNames): string => {
   // The empty-value guard is the contract, not an optimisation: without it an
   // entity field would resolve `''` through `withName`, where `Number('')` is 0 —
-  // rendering a name whenever the caller's map happens to carry that key. The
-  // production caller filters 0 out (`addPositiveId` in `tools/tickets.ts`), but
-  // `AuditNames` does not, so the guard has to hold here. Asserted in
-  // "renders an emptied entity field as (none), whatever the name maps carry".
+  // rendering a name whenever the caller's map carries that key. The production
+  // caller filters 0 out, but `AuditNames` does not.
   if (value === null || value === undefined || value === '') return '';
   const entity = AUDIT_ENTITY_FIELDS[field];
   if (entity === 'user') return withName(value, names.users);
@@ -425,12 +420,11 @@ export const formatTranslationSummary = (translation: ZendeskTranslation): strin
 export const formatTranslation = (translation: ZendeskTranslation): string =>
   [formatTranslationSummary(translation), '', translation.body].join('\n');
 
-// Translations of a section or a category, which reuse the article translation
-// object with different meanings: `title` is the localized *name* and `body` the
-// localized *description*. Rendered with the vocabulary list_sections /
-// list_categories already use, so the caller never has to map the two. The
-// description is reported as present/absent rather than inlined — it is metadata
-// here, not content, and Zendesk leaves it empty when unset.
+// Section and category translations reuse the article translation object with
+// different meanings: `title` is the localized *name*, `body` the localized
+// *description*. Rendered in the vocabulary list_sections / list_categories
+// already use. The description is reported present/absent — metadata, not
+// content.
 export const formatNodeTranslationSummary = (translation: ZendeskTranslation): string =>
   [
     `## Translation: ${translation.locale} (${translation.id})`,
@@ -446,11 +440,10 @@ export const formatCategory = (category: ZendeskCategory): string =>
 export const formatSection = (section: ZendeskSection): string =>
   `- **${section.name}** (${section.id}) — Category: ${section.category_id} — ${section.description || 'No description'}`;
 
-// Compact one-line view entry for list_views: title, id, and — when a count was
-// resolved — the queue size. Counts are cached by Zendesk; a non-fresh one is
-// marked "(count updating)" so the caller does not treat a stale/estimated value
-// (or "...") as exact. Rendered via `count.pretty`, which already carries the
-// exact/approximate/"not yet computed" form.
+// Counts are cached by Zendesk; a non-fresh one is marked "(count updating)" so
+// the caller does not read a stale or estimated value as exact. Rendered via
+// `count.pretty`, which already carries the exact/approximate/"not yet computed"
+// form.
 export const formatView = (view: ZendeskView, count?: ZendeskViewCount): string => {
   const countText = count
     ? ` — ${count.pretty} ticket(s)${count.fresh ? '' : ' (count updating)'}`

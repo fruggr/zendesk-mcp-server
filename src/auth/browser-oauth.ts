@@ -244,12 +244,10 @@ export const startBrowserAuth = (
 
     const requestedPort = config.callbackPort ?? DEFAULT_CALLBACK_PORT;
 
-    // Listen failure (e.g. port already in use) before we ever get a URL: the
-    // whole start fails so the caller can surface/retry. EADDRINUSE is rewrapped
-    // into an actionable message (user *and* LLM can act on it).
-    // No `clearTimeout` here on purpose: `authTimeout` is only assigned inside the
-    // `listen` callback, which also `off`s this handler first — so whenever this
-    // runs the timeout is still `undefined` and clearing it was a no-op.
+    // A listen failure lands before any URL exists, so the whole start fails and
+    // the caller can surface or retry it; EADDRINUSE is rewrapped into something a
+    // user and an LLM can both act on. No `clearTimeout`: `authTimeout` is only
+    // assigned inside the `listen` callback, which `off`s this handler first.
     const onStartError = (err: Error) => {
       const code = (err as NodeJS.ErrnoException).code;
       logger.error('oauth_callback_listen_failed', { port: requestedPort, errorCode: code });

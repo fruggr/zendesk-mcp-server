@@ -2,14 +2,11 @@ import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-// The `dashboard` reporter publishes to a third party, and whether it is active
-// is decided by an environment variable rather than by the reporter list being
-// read literally. That indirection is the whole safety property — the workflow
-// gives `STRYKER_DASHBOARD_API_KEY` to the baseline step only, so a PR run
-// (fork included) has no key and cannot publish a diff-scoped report over the
-// trend. Nothing else in the repo would fail if someone "simplified" the
-// conditional into an unconditional entry, so it is pinned here.
-// Reasoning: `docs/decisions/mutation-testing.md` (section 7).
+// The `dashboard` reporter publishes to a third party and is gated by an
+// environment variable. That indirection is the safety property: the workflow
+// gives `STRYKER_DASHBOARD_API_KEY` to the baseline step only, so a PR run cannot
+// publish a diff-scoped report over the trend. Why:
+// `docs/decisions/mutation-testing.md`.
 
 const CONFIG_PATH = join(fileURLToPath(new URL('../../', import.meta.url)), 'stryker.config.mjs');
 
