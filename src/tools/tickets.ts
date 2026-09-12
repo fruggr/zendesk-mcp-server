@@ -560,10 +560,12 @@ const SUBSCRIBER_PARAMS = [
 const toSubscriberActions = (edit: SubscriberEdit | undefined): SubscriberAction[] | undefined => {
   if (!edit) return undefined;
   const removed = new Set(edit.remove);
-  const actions: SubscriberAction[] = [...new Set(edit.add)]
-    .filter((id) => !removed.has(id))
-    .map((id) => ({ user_id: id, action: 'put' }));
-  for (const id of removed) actions.push({ user_id: id, action: 'delete' });
+  const actions: SubscriberAction[] = [
+    ...[...new Set(edit.add)]
+      .filter((id) => !removed.has(id))
+      .map((id) => ({ user_id: id, action: 'put' }) as const),
+    ...[...removed].map((id) => ({ user_id: id, action: 'delete' }) as const),
+  ];
   return actions.length > 0 ? actions : undefined;
 };
 
@@ -659,28 +661,34 @@ interface TicketCommentsResponse {
   next_page?: string | null;
 }
 
-// Resolve the authors of a comment page to display names. The `include=users`
-// side-load is documented for email CCs, so it is treated as an optimisation
-// rather than the mechanism: whatever it returns is used as-is, and the author
-// ids it left out cost one batched show_many. The system actor (-1) has no user
-// record and is labelled by the formatter, so it is never looked up.
-const resolveCommentAuthors = async (
+// Resolve every user a ticket response has to name, in one batch: comment
+// authors, followers, email CCs, whatever the caller hands over. The
+// `include=users` side-load is documented for email CCs, so it is treated as an
+// optimisation rather than the mechanism: whatever it returns seeds the map, and
+// the ids it left out cost one batched show_many. The system actor (-1) has no
+// user record and is labelled by the formatter, so it is never looked up.
+const resolveUserDisplayNames = async (
   subdomain: string,
   token: string,
-  comments: ZendeskComment[],
+  ids: number[],
   sideloaded: ZendeskUser[] = [],
-  extraIds: number[] = [],
 ): Promise<Map<number, string>> => {
-  const authors = new Map(sideloaded.map((user) => [user.id, user.name]));
-  const missing = [
-    ...new Set([...comments.map((comment) => comment.author_id), ...extraIds]),
-  ].filter((id) => id > 0 && !authors.has(id));
-  if (missing.length === 0) return authors;
+  const names = new Map(sideloaded.map((user) => [user.id, user.name]));
+  const missing = [...new Set(ids)].filter((id) => id > 0 && !names.has(id));
+  if (missing.length === 0) return names;
   for (const [id, name] of await resolveUserNames(subdomain, token, missing)) {
-    authors.set(id, name);
+    names.set(id, name);
   }
-  return authors;
+  return names;
 };
+
+// The users a ticket response has to name beyond its comment authors. Both keys
+// are absent on an account without the "CCs and followers" setting, hence the
+// guards; de-duplication and the positive-id filter live in the resolver.
+const collectSubscriberIds = (ticket: ZendeskTicket): number[] => [
+  ...(ticket.follower_ids ?? []),
+  ...(ticket.email_cc_ids ?? []),
+];
 
 // Keys the generic field diff must not emit. Two reasons, both in this set:
 //   - `comment`/`fields`/`custom_fields` are routed to their own render paths, so
@@ -860,6 +868,14 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       .optional()
       .describe(description);
 
+  // One side of a subscriber edit. Only the cap and the prose differ between
+  // followers and email CCs, and the published `maxItems` is what tells an agent
+  // about Zendesk's 48-CC ceiling before it calls.
+  const subscriberIdList = (description: string, max?: number) => {
+    const ids = z.array(z.number().int().positive());
+    return (max === undefined ? ids : ids.max(max)).optional().describe(description);
+  };
+
   // Upload each file via the Zendesk Uploads API, aggregating them under a single
   // upload token (the token from the first upload is passed to the next), and
   // return that token for use in a comment's `uploads` array.
@@ -921,39 +937,40 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           token,
           `/tickets/${ticket_id}`,
         );
-        // Followers and CCs are the ids Zendesk notifies; both keys are absent
-        // on an account without the "CCs and followers" setting, hence the
-        // guards. Resolved in the same batch as the comment authors when the
-        // thread is requested, so the whole response still costs one show_many.
-        const subscriberIds = [
-          ...new Set([...(ticket.follower_ids ?? []), ...(ticket.email_cc_ids ?? [])]),
-        ].filter((id) => id > 0);
-        // Show Ticket exposes no SLA (#92); resolve it via a scoped Search.
-        let text =
-          formatTicket(ticket) + formatSlaBlock(await fetchTicketSla(subdomain, token, ticket));
-        let names: Map<number, string>;
-        let commentsBlock = '';
-        if (include_comments) {
-          const { comments, users } = await zendeskGet<TicketCommentsResponse>(
-            subdomain,
-            token,
-            `/tickets/${ticket_id}/comments`,
-            { include: 'users', include_inline_images: 'true' },
-          );
-          names = await resolveCommentAuthors(
-            subdomain,
-            token,
-            comments ?? [],
-            users,
-            subscriberIds,
-          );
-          commentsBlock = `\n\n---\n# Comments\n\n${(comments ?? [])
-            .map((comment) => formatComment(comment, names))
-            .join('\n\n')}`;
-        } else {
-          names = await resolveUserNames(subdomain, token, subscriberIds);
-        }
-        text += formatSubscribersBlock(ticket, names) + commentsBlock;
+        // Show Ticket exposes no SLA (#92); resolve it via a scoped Search. That
+        // search needs only the ticket and the thread needs only its id, so the
+        // two go out together instead of one after the other.
+        const [sla, thread] = await Promise.all([
+          fetchTicketSla(subdomain, token, ticket),
+          include_comments
+            ? zendeskGet<TicketCommentsResponse>(
+                subdomain,
+                token,
+                `/tickets/${ticket_id}/comments`,
+                { include: 'users', include_inline_images: 'true' },
+              )
+            : undefined,
+        ]);
+        const comments = thread?.comments ?? [];
+        // Subscribers and comment authors resolve in the same batch, so the whole
+        // response costs one show_many, and none at all when there is no name to
+        // look up.
+        const names = await resolveUserDisplayNames(
+          subdomain,
+          token,
+          [...collectSubscriberIds(ticket), ...comments.map((comment) => comment.author_id)],
+          thread?.users,
+        );
+        const commentsBlock = thread
+          ? `\n\n---\n# Comments\n\n${comments
+              .map((comment) => formatComment(comment, names))
+              .join('\n\n')}`
+          : '';
+        const text =
+          formatTicket(ticket) +
+          formatSlaBlock(sla) +
+          formatSubscribersBlock(ticket, names) +
+          commentsBlock;
         // This tool takes no page or filter, so the default truncation advice
         // would send the caller in circles (#265). Name the tool that does.
         const advice = include_comments
@@ -1123,7 +1140,12 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
             : `No comments to show for ticket #${ticket_id}.`;
           return { content: [{ type: 'text', text: `${text}${offsetNote}` }] };
         }
-        const authors = await resolveCommentAuthors(subdomain, token, comments, response.users);
+        const authors = await resolveUserDisplayNames(
+          subdomain,
+          token,
+          comments.map((comment) => comment.author_id),
+          response.users,
+        );
         const body = comments.map((comment) => formatComment(comment, authors)).join('\n\n');
         // Assembled and truncated in one go: the title has to be inside the
         // character budget, or the response overshoots the limit and the notice
@@ -1398,14 +1420,8 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           ),
         followers: z
           .object({
-            add: z
-              .array(z.number().int().positive())
-              .optional()
-              .describe('User ids to start following the ticket. Omit to only remove.'),
-            remove: z
-              .array(z.number().int().positive())
-              .optional()
-              .describe('User ids to stop following the ticket. Omit to only add.'),
+            add: subscriberIdList('User ids to start following the ticket. Omit to only remove.'),
+            remove: subscriberIdList('User ids to stop following the ticket. Omit to only add.'),
           })
           .strict()
           .optional()
@@ -1414,15 +1430,11 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           ),
         email_ccs: z
           .object({
-            add: z
-              .array(z.number().int().positive())
-              .max(48)
-              .optional()
-              .describe('User ids to CC on the ticket, at most 48. Omit to only remove.'),
-            remove: z
-              .array(z.number().int().positive())
-              .optional()
-              .describe('User ids to drop from the CC list. Omit to only add.'),
+            add: subscriberIdList(
+              'User ids to CC on the ticket, at most 48. Omit to only remove.',
+              48,
+            ),
+            remove: subscriberIdList('User ids to drop from the CC list. Omit to only add.'),
           })
           .strict()
           .optional()
@@ -1461,10 +1473,11 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         // Only a call that touched subscribers pays the look-up and reports the
         // block; a plain status change keeps the output it always had.
         if (followerActions || ccActions) {
-          const ids = [
-            ...new Set([...(ticket.follower_ids ?? []), ...(ticket.email_cc_ids ?? [])]),
-          ].filter((id) => id > 0);
-          const names = await resolveUserNames(subdomain, token, ids);
+          const names = await resolveUserDisplayNames(
+            subdomain,
+            token,
+            collectSubscriberIds(ticket),
+          );
           text += formatSubscribersBlock(ticket, names) + formatSubscriberOutcome(sent, ticket);
         }
         return { content: [{ type: 'text', text }] };
