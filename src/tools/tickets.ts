@@ -577,9 +577,10 @@ const unappliedActions = (
   ids: number[] | undefined,
 ): SubscriberAction[] => {
   const present = Array.isArray(ids) ? new Set(ids) : undefined;
-  return actions.filter(({ user_id, action }) =>
-    action === 'put' ? !present?.has(user_id) : present === undefined || present.has(user_id),
-  );
+  return actions.filter(({ user_id, action }) => {
+    if (action === 'put') return !present?.has(user_id);
+    return present === undefined || present.has(user_id);
+  });
 };
 
 // Zendesk never errors on a subscriber write: an id it does not know is ignored,

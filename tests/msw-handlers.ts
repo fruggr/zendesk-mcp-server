@@ -548,7 +548,7 @@ export const commentsWithUsersSideloadHandler = http.get(`${BASE}/tickets/:id/co
 );
 
 // Opt-in via mswServer.use(): the Show Ticket response carrying subscribers.
-// Deliberately NOT folded into MOCK_TICKET — the absent-keys path is the default
+// Deliberately NOT folded into MOCK_TICKET: the absent-keys path is the default
 // every other ticket test asserts, and it is the one that omits the block.
 export const ticketWithSubscribersHandler = http.get(`${BASE}/tickets/:id`, ({ params }) =>
   HttpResponse.json({
