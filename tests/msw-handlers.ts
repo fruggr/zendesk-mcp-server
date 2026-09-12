@@ -547,6 +547,28 @@ export const commentsWithUsersSideloadHandler = http.get(`${BASE}/tickets/:id/co
   }),
 );
 
+// Opt-in via mswServer.use(): the Show Ticket response carrying subscribers.
+// Deliberately NOT folded into MOCK_TICKET: the absent-keys path is the default
+// every other ticket test asserts, and it is the one that omits the block.
+export const ticketWithSubscribersHandler = http.get(`${BASE}/tickets/:id`, ({ params }) =>
+  HttpResponse.json({
+    ticket: {
+      ...MOCK_TICKET,
+      id: Number(params['id']),
+      follower_ids: [501, 502],
+      email_cc_ids: [601],
+    },
+  }),
+);
+
+// Same, with both lists reported empty: Zendesk answered, and the answer is
+// "nobody". Distinct from the keys being absent altogether.
+export const ticketWithNoSubscribersHandler = http.get(`${BASE}/tickets/:id`, ({ params }) =>
+  HttpResponse.json({
+    ticket: { ...MOCK_TICKET, id: Number(params['id']), follower_ids: [], email_cc_ids: [] },
+  }),
+);
+
 export const oauthTokenHandler = http.post('https://testsubdomain.zendesk.com/oauth/tokens', () =>
   HttpResponse.json({ access_token: 'token-abc', token_type: 'bearer', scope: 'read write' }),
 );
@@ -742,9 +764,29 @@ export const handlers = [
       ticket: { ...MOCK_TICKET, id: 42, subject: (ticket['subject'] as string) ?? 'New' },
     });
   }),
-  http.put(`${BASE}/tickets/:id`, ({ params }) =>
-    HttpResponse.json({ ticket: { ...MOCK_TICKET, id: Number(params['id']), status: 'solved' } }),
-  ),
+  // Echoes the subscriber lists Zendesk would report after applying the request,
+  // and ONLY when the request carried them: every pre-existing update_ticket
+  // assertion keeps seeing a ticket with both keys absent.
+  http.put(`${BASE}/tickets/:id`, async ({ request, params }) => {
+    const body = (await request.json().catch(() => ({}))) as {
+      ticket?: Record<string, unknown>;
+    };
+    const update = body.ticket ?? {};
+    const applied = (entries: unknown): number[] =>
+      Array.isArray(entries)
+        ? entries
+            .filter((entry) => (entry as { action?: string }).action !== 'delete')
+            .map((entry) => Number((entry as { user_id?: number }).user_id))
+        : [];
+    const ticket: Record<string, unknown> = {
+      ...MOCK_TICKET,
+      id: Number(params['id']),
+      status: 'solved',
+    };
+    if (update['followers']) ticket['follower_ids'] = applied(update['followers']);
+    if (update['email_ccs']) ticket['email_cc_ids'] = applied(update['email_ccs']);
+    return HttpResponse.json({ ticket });
+  }),
   http.post(`${BASE}/uploads`, () => HttpResponse.json({ upload: MOCK_UPLOAD })),
 
   // Macros — active macros for the current user, and the per-ticket apply
