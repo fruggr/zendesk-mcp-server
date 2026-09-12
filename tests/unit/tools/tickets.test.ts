@@ -12,7 +12,10 @@ import {
   MOCK_SLA_SIDELOAD,
   MOCK_TICKET,
   MOCK_UPLOAD,
+  MOCK_USER,
   MOCK_VIEW,
+  ticketWithNoSubscribersHandler,
+  ticketWithSubscribersHandler,
 } from '../../msw-handlers';
 import { mswServer } from '../../setup';
 
@@ -23,6 +26,24 @@ const findTool = (name: string) => {
   const tool = tools.find((t) => t.name === name);
   if (!tool) throw new Error(`Tool ${name} not found`);
   return tool;
+};
+
+// Count the batched user look-ups a tool makes: the "resolve nothing, call
+// nothing" guarantee is invisible in the rendered text, so it has to be asserted
+// on the wire. Echoes the same `User <id>` shape as the default handler.
+const captureShowMany = (): URLSearchParams[] => {
+  const seen: URLSearchParams[] = [];
+  mswServer.use(
+    http.get('https://testsubdomain.zendesk.com/api/v2/users/show_many', ({ request }) => {
+      const query = new URL(request.url).searchParams;
+      seen.push(query);
+      const ids = (query.get('ids') ?? '').split(',').filter(Boolean).map(Number);
+      return HttpResponse.json({
+        users: ids.map((id) => ({ ...MOCK_USER, id, name: `User ${id}` })),
+      });
+    }),
+  );
+  return seen;
 };
 
 const getAllText = (result: { content: Array<{ type: string; text?: string }> }): string =>
@@ -43,6 +64,63 @@ describe('ticket tools', () => {
       const result = await tool.handler({ ticket_id: 1, include_comments: false });
       expect(result.content[0]?.text).toContain('Ticket #1');
       expect(result.content[0]?.text).toContain('Test ticket');
+    });
+
+    it('lists the followers and email CCs of a ticket resolved to names', async () => {
+      mswServer.use(ticketWithSubscribersHandler);
+      const tool = findTool('get_ticket');
+      const result = await tool.handler({ ticket_id: 1, include_comments: false });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('### Subscribers');
+      expect(text).toContain('- **Followers**: User 501 (501), User 502 (502)');
+      expect(text).toContain('- **Email CCs**: User 601 (601)');
+    });
+
+    it('says none when the ticket reports empty follower and CC lists', async () => {
+      mswServer.use(ticketWithNoSubscribersHandler);
+      const tool = findTool('get_ticket');
+      const result = await tool.handler({ ticket_id: 1, include_comments: false });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('- **Followers**: none');
+      expect(text).toContain('- **Email CCs**: none');
+    });
+
+    it('omits the block and makes no user look-up when the ticket reports no subscriber fields', async () => {
+      const seen = captureShowMany();
+      const tool = findTool('get_ticket');
+      const result = await tool.handler({ ticket_id: 1, include_comments: false });
+      expect(result.content[0]?.text ?? '').not.toContain('### Subscribers');
+      expect(seen).toHaveLength(0);
+    });
+
+    it('resolves subscribers in a single batched look-up', async () => {
+      const seen = captureShowMany();
+      mswServer.use(ticketWithSubscribersHandler);
+      const tool = findTool('get_ticket');
+      await tool.handler({ ticket_id: 1, include_comments: false });
+      expect(seen).toHaveLength(1);
+      expect(seen[0]?.get('ids')).toBe('501,502,601');
+    });
+
+    it('keeps the bare id when the user look-up returns nothing', async () => {
+      mswServer.use(
+        ticketWithSubscribersHandler,
+        http.get('https://testsubdomain.zendesk.com/api/v2/users/show_many', () =>
+          HttpResponse.json({ users: [] }),
+        ),
+      );
+      const tool = findTool('get_ticket');
+      const result = await tool.handler({ ticket_id: 1, include_comments: false });
+      expect(result.content[0]?.text ?? '').toContain('- **Followers**: 501, 502');
+    });
+
+    it('appends the subscribers block after the SLA block', async () => {
+      mswServer.use(ticketWithSubscribersHandler);
+      const tool = findTool('get_ticket');
+      const result = await tool.handler({ ticket_id: 1, include_comments: false });
+      const text = result.content[0]?.text ?? '';
+      expect(text.indexOf('### SLA')).toBeGreaterThan(-1);
+      expect(text.indexOf('### SLA')).toBeLessThan(text.indexOf('### Subscribers'));
     });
 
     it('surfaces live SLA state resolved via the scoped search fallback', async () => {
