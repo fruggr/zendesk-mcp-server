@@ -567,12 +567,6 @@ const toSubscriberActions = (edit: SubscriberEdit | undefined): SubscriberAction
   return actions.length > 0 ? actions : undefined;
 };
 
-// Zendesk never errors on a subscriber write: an id it does not know is ignored,
-// and both lists are ignored wholesale when the account's "CCs and followers"
-// setting is off. The two cases come back identical, so this detects without
-// diagnosing. An entry counts as applied only when the response proves it, and
-// the message names both causes rather than picking one. '' when all confirmed:
-// the rendered block is then the proof.
 // The entries the response does not positively account for: an `add` whose id is
 // absent, a `remove` whose id is still there, and everything when Zendesk sent no
 // list at all.
