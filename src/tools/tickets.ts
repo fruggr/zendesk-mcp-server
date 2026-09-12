@@ -535,6 +535,75 @@ const collectAuditIds = (audits: ZendeskAudit[]): { userIds: number[]; groupIds:
   return { userIds: [...userIds], groupIds: [...groupIds] };
 };
 
+interface SubscriberEdit {
+  add?: number[];
+  remove?: number[];
+}
+interface SubscriberAction {
+  user_id: number;
+  action: 'put' | 'delete';
+}
+type SubscriberParam = 'followers' | 'email_ccs';
+type SubscriberActions = Partial<Record<SubscriberParam, SubscriberAction[]>>;
+
+// The ticket field carrying what Zendesk actually applied, per write parameter.
+const SUBSCRIBER_PARAMS = [
+  { param: 'followers', field: 'follower_ids' },
+  { param: 'email_ccs', field: 'email_cc_ids' },
+] as const satisfies ReadonlyArray<{ param: SubscriberParam; field: keyof ZendeskTicket }>;
+
+// Zendesk takes followers and email CCs as action objects; the tool exposes
+// `{ add, remove }` instead, like manage_tags, because an LLM should not have to
+// know that "put" means add. A user named in both loses the add, matching
+// manage_tags, which adds then deletes over a Set. `undefined` when nothing maps,
+// so the key never reaches the payload.
+const toSubscriberActions = (edit: SubscriberEdit | undefined): SubscriberAction[] | undefined => {
+  if (!edit) return undefined;
+  const removed = new Set(edit.remove);
+  const actions: SubscriberAction[] = [...new Set(edit.add)]
+    .filter((id) => !removed.has(id))
+    .map((id) => ({ user_id: id, action: 'put' }));
+  for (const id of removed) actions.push({ user_id: id, action: 'delete' });
+  return actions.length > 0 ? actions : undefined;
+};
+
+// Zendesk never errors on a subscriber write: an id it does not know is ignored,
+// and both lists are ignored wholesale when the account's "CCs and followers"
+// setting is off. The two cases come back identical, so this detects without
+// diagnosing. An entry counts as applied only when the response proves it, and
+// the message names both causes rather than picking one. '' when all confirmed:
+// the rendered block is then the proof.
+// The entries the response does not positively account for: an `add` whose id is
+// absent, a `remove` whose id is still there, and everything when Zendesk sent no
+// list at all.
+const unappliedActions = (
+  actions: SubscriberAction[],
+  ids: number[] | undefined,
+): SubscriberAction[] => {
+  const present = Array.isArray(ids) ? new Set(ids) : undefined;
+  return actions.filter(({ user_id, action }) =>
+    action === 'put' ? !present?.has(user_id) : present === undefined || present.has(user_id),
+  );
+};
+
+// Zendesk never errors on a subscriber write: an id it does not know is ignored,
+// and both lists are ignored wholesale when the account's "CCs and followers"
+// setting is off. The two cases come back identical, so this detects without
+// diagnosing, and the message names both causes rather than picking one. '' when
+// everything is confirmed: the rendered block is then the proof.
+const formatSubscriberOutcome = (
+  sent: SubscriberActions,
+  after: Pick<ZendeskTicket, 'follower_ids' | 'email_cc_ids'>,
+): string => {
+  const unconfirmed = SUBSCRIBER_PARAMS.flatMap(({ param, field }) =>
+    unappliedActions(sent[param] ?? [], after[field]).map(
+      ({ user_id, action }) => `${param} ${action === 'put' ? 'add' : 'remove'} ${user_id}`,
+    ),
+  );
+  if (unconfirmed.length === 0) return '';
+  return `\n\nUnconfirmed: ${unconfirmed.join(', ')}. Zendesk applies followers and email CCs silently: an id it does not know is ignored, and both are ignored entirely when the account's "CCs and followers" setting is off. Check the ids with get_user and the setting with a Zendesk admin.`;
+};
+
 // Resolve one entity kind to an id->name map via batched show_many look-ups
 // (chunked to the 100-id endpoint cap). Best-effort: a failed batch leaves those
 // ids unresolved (rendered as bare ids) rather than failing the whole response —
@@ -826,7 +895,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: true,
       title: 'Get Zendesk Ticket',
       description:
-        'Retrieve a Zendesk ticket by ID, including its live SLA state (per-metric stage and breach countdown) when an SLA policy applies, plus its comments if requested. Returns ticket details (subject, status, priority, assignee, tags, description) and optionally all comments/internal notes. The per-ticket Show endpoint exposes no SLA, so the SLA block is resolved via a scoped search and may be absent for a very high-volume requester or a just-updated ticket; SLA targets and policy conditions live in list_sla_policies. This returns the ticket as it stands now; for the history of changes behind that state (who changed what, and when), use get_ticket_history. The comment thread is appended in one block — the first page of comments Zendesk returns, cut past the response character limit — so on a long ticket read it with list_ticket_comments, which pages the comments and returns the newest first.',
+        'Retrieve a Zendesk ticket by ID, including its live SLA state (per-metric stage and breach countdown) when an SLA policy applies, plus its comments if requested. Returns ticket details (subject, status, priority, assignee, tags, description) and optionally all comments/internal notes. It also lists the followers and email CCs on the ticket, resolved to names, which is how you tell who an update or an internal note will notify: being the requester does not make someone a follower. Both lists come back empty on an account where the "CCs and followers" setting is not enabled in Zendesk. The per-ticket Show endpoint exposes no SLA, so the SLA block is resolved via a scoped search and may be absent for a very high-volume requester or a just-updated ticket; SLA targets and policy conditions live in list_sla_policies. This returns the ticket as it stands now; for the history of changes behind that state (who changed what, and when), use get_ticket_history. The comment thread is appended in one block — the first page of comments Zendesk returns, cut past the response character limit — so on a long ticket read it with list_ticket_comments, which pages the comments and returns the newest first.',
       inputSchema: z.object({
         ticket_id: z
           .number()
@@ -1291,7 +1360,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: false,
       title: 'Update Zendesk Ticket',
       description:
-        'Update an existing ticket (status, priority, type, assignee, group, subject, tags, custom fields). Only the fields you pass are changed, and the updated ticket is returned. Setting tags here replaces the whole tag set — use manage_tags to add or remove individual tags without overwriting the rest. This tool does not post replies: use add_public_comment or add_private_note for that. Find the ticket id via search_tickets or list_tickets.',
+        'Update an existing ticket (status, priority, type, assignee, group, subject, tags, custom fields, followers, email CCs). Only the fields you pass are changed, and the updated ticket is returned. Followers and email CCs are incremental instead of replacing: pass { add, remove } lists of user ids, and the response reports who is subscribed afterwards. Zendesk applies those two silently, so a requested change it did not apply comes back listed as unconfirmed rather than raised as an error. Setting tags here replaces the whole tag set — use manage_tags to add or remove individual tags without overwriting the rest. This tool does not post replies: use add_public_comment or add_private_note for that. Find the ticket id via search_tickets or list_tickets.',
       inputSchema: z.object({
         ticket_id: z
           .number()
@@ -1333,6 +1402,39 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           .describe(
             'Custom field values as { id, value } pairs (field ids come from your Zendesk admin settings). Call list_ticket_fields first to discover the numeric field ids and, for dropdown/multiselect fields, the exact option values Zendesk accepts.',
           ),
+        followers: z
+          .object({
+            add: z
+              .array(z.number().int().positive())
+              .optional()
+              .describe('User ids to start following the ticket. Omit to only remove.'),
+            remove: z
+              .array(z.number().int().positive())
+              .optional()
+              .describe('User ids to stop following the ticket. Omit to only add.'),
+          })
+          .strict()
+          .optional()
+          .describe(
+            "Agents to add to or remove from the ticket's follower list, as numeric user ids: { add: [123], remove: [456] }. Followers are notified of ticket updates, internal notes included, so this controls who hears about the ticket. Numeric ids only, no email addresses: resolve the person with search_users first and confirm the match before writing, because a name query can return several users and removing the wrong id succeeds silently. Adding someone already following, or removing someone who is not, is a no-op. An id listed in both add and remove is removed. Omit to leave followers untouched.",
+          ),
+        email_ccs: z
+          .object({
+            add: z
+              .array(z.number().int().positive())
+              .max(48)
+              .optional()
+              .describe('User ids to CC on the ticket, at most 48. Omit to only remove.'),
+            remove: z
+              .array(z.number().int().positive())
+              .optional()
+              .describe('User ids to drop from the CC list. Omit to only add.'),
+          })
+          .strict()
+          .optional()
+          .describe(
+            "End users or agents to add to or remove from the ticket's email CC list, as numeric user ids: { add: [123], remove: [456] }. CCs receive the ticket's public correspondence, subject to your account's triggers. Numeric ids only, no email addresses: resolve the person with search_users first and confirm the match, because a name query can return several users. Zendesk caps a ticket at 48 email CCs and this tool cannot know how many are already set, so going over shows up as an unconfirmed entry in the response rather than a validation error. An id listed in both add and remove is removed. Omit to leave CCs untouched.",
+          ),
       }),
       annotations: {
         readOnlyHint: false,
@@ -1341,19 +1443,37 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         openWorldHint: true,
       },
       handler: async (params) => {
-        const { ticket_id, ...updates } = params as { ticket_id: number } & Record<string, unknown>;
+        // `followers` and `email_ccs` are pulled out of the spread on purpose:
+        // every other key goes to Zendesk verbatim, so leaving the add/remove
+        // wrapper in would send a shape Zendesk quietly ignores.
+        const { ticket_id, followers, email_ccs, ...updates } = params as {
+          ticket_id: number;
+          followers?: SubscriberEdit;
+          email_ccs?: SubscriberEdit;
+        } & Record<string, unknown>;
         const token = await getToken();
+        const sent: SubscriberActions = {};
+        const followerActions = toSubscriberActions(followers);
+        const ccActions = toSubscriberActions(email_ccs);
+        if (followerActions) sent.followers = followerActions;
+        if (ccActions) sent.email_ccs = ccActions;
         const { ticket } = await zendeskPut<{ ticket: ZendeskTicket }>(
           subdomain,
           token,
           `/tickets/${ticket_id}`,
-          { ticket: updates },
+          { ticket: { ...updates, ...sent } },
         );
-        return {
-          content: [
-            { type: 'text', text: `Ticket #${ticket.id} updated.\n\n${formatTicket(ticket)}` },
-          ],
-        };
+        let text = `Ticket #${ticket.id} updated.\n\n${formatTicket(ticket)}`;
+        // Only a call that touched subscribers pays the look-up and reports the
+        // block; a plain status change keeps the output it always had.
+        if (followerActions || ccActions) {
+          const ids = [
+            ...new Set([...(ticket.follower_ids ?? []), ...(ticket.email_cc_ids ?? [])]),
+          ].filter((id) => id > 0);
+          const names = await resolveUserNames(subdomain, token, ids);
+          text += formatSubscribersBlock(ticket, names) + formatSubscriberOutcome(sent, ticket);
+        }
+        return { content: [{ type: 'text', text }] };
       },
     },
     {

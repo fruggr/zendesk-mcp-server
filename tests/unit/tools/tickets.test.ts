@@ -1312,10 +1312,173 @@ describe('ticket tools', () => {
   });
 
   describe('update_ticket', () => {
+    const PUT_URL = 'https://testsubdomain.zendesk.com/api/v2/tickets/:id';
+
+    // The mapping from the tool's add/remove wrapper to Zendesk's action objects
+    // is invisible in the rendered output, so it is asserted on the wire.
+    const capturePut = (): Record<string, unknown>[] => {
+      const seen: Record<string, unknown>[] = [];
+      mswServer.use(
+        http.put(PUT_URL, async ({ request, params }) => {
+          const body = (await request.json()) as { ticket: Record<string, unknown> };
+          seen.push(body.ticket);
+          return HttpResponse.json({ ticket: { ...MOCK_TICKET, id: Number(params['id']) } });
+        }),
+      );
+      return seen;
+    };
+
+    const parseParams = (params: unknown) =>
+      findTool('update_ticket').inputSchema.safeParse(params);
+
     it('updates and returns ticket', async () => {
       const tool = findTool('update_ticket');
       const result = await tool.handler({ ticket_id: 1, status: 'solved' });
       expect(result.content[0]?.text).toContain('updated');
+    });
+
+    it('maps followers add and remove to Zendesk action objects', async () => {
+      const seen = capturePut();
+      const tool = findTool('update_ticket');
+      await tool.handler({ ticket_id: 1, followers: { add: [501], remove: [502] } });
+      expect(seen[0]?.['followers']).toEqual([
+        { user_id: 501, action: 'put' },
+        { user_id: 502, action: 'delete' },
+      ]);
+      // The wrapper itself must never reach Zendesk: the handler spreads every
+      // other schema key verbatim, so forgetting to map would send `{add: [...]}`
+      // and Zendesk would ignore it without complaining.
+      expect(JSON.stringify(seen[0])).not.toContain('"add"');
+    });
+
+    it('maps email_ccs the same way', async () => {
+      const seen = capturePut();
+      const tool = findTool('update_ticket');
+      await tool.handler({ ticket_id: 1, email_ccs: { add: [601], remove: [602] } });
+      expect(seen[0]?.['email_ccs']).toEqual([
+        { user_id: 601, action: 'put' },
+        { user_id: 602, action: 'delete' },
+      ]);
+    });
+
+    it('lets remove win when the same user is in add and remove', async () => {
+      const seen = capturePut();
+      const tool = findTool('update_ticket');
+      await tool.handler({ ticket_id: 1, followers: { add: [501], remove: [501] } });
+      expect(seen[0]?.['followers']).toEqual([{ user_id: 501, action: 'delete' }]);
+    });
+
+    it('collapses a duplicate id listed twice in add', async () => {
+      const seen = capturePut();
+      const tool = findTool('update_ticket');
+      await tool.handler({ ticket_id: 1, followers: { add: [501, 501] } });
+      expect(seen[0]?.['followers']).toEqual([{ user_id: 501, action: 'put' }]);
+    });
+
+    it('sends no key and resolves no name when the edit is empty', async () => {
+      const lookups = captureShowMany();
+      const seen = capturePut();
+      const tool = findTool('update_ticket');
+      const result = await tool.handler({ ticket_id: 1, status: 'open', followers: {} });
+      expect(seen[0]).not.toHaveProperty('followers');
+      expect(seen[0]?.['status']).toBe('open');
+      expect(lookups).toHaveLength(0);
+      expect(result.content[0]?.text ?? '').not.toContain('### Subscribers');
+    });
+
+    it('leaves the payload untouched when neither followers nor email_ccs is given', async () => {
+      const seen = capturePut();
+      const tool = findTool('update_ticket');
+      await tool.handler({ ticket_id: 1, status: 'pending' });
+      expect(seen[0]).toEqual({ status: 'pending' });
+    });
+
+    it('reports who is subscribed after a subscriber change, in one look-up', async () => {
+      const lookups = captureShowMany();
+      const tool = findTool('update_ticket');
+      const result = await tool.handler({ ticket_id: 1, followers: { add: [501] } });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('### Subscribers');
+      expect(text).toContain('- **Followers**: User 501 (501)');
+      expect(lookups).toHaveLength(1);
+    });
+
+    it('names a requested follower Zendesk did not apply', async () => {
+      mswServer.use(
+        http.put(PUT_URL, ({ params }) =>
+          HttpResponse.json({
+            ticket: {
+              ...MOCK_TICKET,
+              id: Number(params['id']),
+              follower_ids: [],
+              email_cc_ids: [],
+            },
+          }),
+        ),
+      );
+      const tool = findTool('update_ticket');
+      const result = await tool.handler({ ticket_id: 1, followers: { add: [777] } });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('Unconfirmed: followers add 777');
+      expect(text).toContain('CCs and followers');
+    });
+
+    it('treats a removal as applied only when the id is gone from the response', async () => {
+      mswServer.use(
+        http.put(PUT_URL, ({ params }) =>
+          HttpResponse.json({
+            ticket: { ...MOCK_TICKET, id: Number(params['id']), follower_ids: [777] },
+          }),
+        ),
+      );
+      const tool = findTool('update_ticket');
+      const result = await tool.handler({ ticket_id: 1, followers: { remove: [777] } });
+      expect(result.content[0]?.text ?? '').toContain('Unconfirmed: followers remove 777');
+    });
+
+    it('reports every requested change as unconfirmed when the response carries no subscriber fields', async () => {
+      mswServer.use(
+        http.put(PUT_URL, ({ params }) =>
+          HttpResponse.json({ ticket: { ...MOCK_TICKET, id: Number(params['id']) } }),
+        ),
+      );
+      const tool = findTool('update_ticket');
+      const result = await tool.handler({
+        ticket_id: 1,
+        followers: { add: [501] },
+        email_ccs: { remove: [601] },
+      });
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('followers add 501');
+      expect(text).toContain('email_ccs remove 601');
+    });
+
+    it('says nothing extra when every requested change is reflected', async () => {
+      const tool = findTool('update_ticket');
+      const result = await tool.handler({ ticket_id: 1, followers: { add: [501] } });
+      expect(result.content[0]?.text ?? '').not.toContain('Unconfirmed');
+    });
+
+    it('rejects more than 48 email CC additions, naming the cap', async () => {
+      const result = parseParams({
+        ticket_id: 1,
+        email_ccs: { add: Array.from({ length: 49 }, (_, i) => i + 1) },
+      });
+      expect(result.success).toBe(false);
+      expect(JSON.stringify(result.error?.issues)).toContain('48');
+    });
+
+    // `createStrictParamsParser` only applies `.strict()` at the root, so without
+    // it on the nested object a mistyped key would be silently dropped and the
+    // call would look like a no-op success. That is the #100 failure mode.
+    it('rejects a mistyped nested key instead of dropping it', async () => {
+      expect(parseParams({ ticket_id: 1, followers: { added: [501] } }).success).toBe(false);
+    });
+
+    it('rejects a non-numeric subscriber id', async () => {
+      expect(parseParams({ ticket_id: 1, followers: { add: ['bob@example.com'] } }).success).toBe(
+        false,
+      );
     });
   });
 
