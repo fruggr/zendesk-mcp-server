@@ -212,6 +212,26 @@ const withName = (id: unknown, names: Map<number, string>): string => {
   return name ? `${name} (${id})` : String(id);
 };
 
+// Who a ticket update notifies, appended by the single-ticket read. Same
+// contract as `formatSlaBlock`: '' when Zendesk reported nothing, so the caller
+// concatenates unconditionally. A key present but empty renders `none` on
+// purpose: before posting an internal note, "nobody is subscribed" is the answer
+// the caller needs, and it has to be stated rather than inferred from a block
+// that is not there. `none` is the same empty marker `formatTicket` uses for tags.
+export const formatSubscribersBlock = (
+  ticket: Pick<ZendeskTicket, 'follower_ids' | 'email_cc_ids'>,
+  names: Map<number, string>,
+): string => {
+  const line = (label: string, ids: number[]): string =>
+    `- **${label}**: ${ids.length > 0 ? ids.map((id) => withName(id, names)).join(', ') : 'none'}`;
+  const rows = [
+    Array.isArray(ticket.follower_ids) ? line('Followers', ticket.follower_ids) : '',
+    Array.isArray(ticket.email_cc_ids) ? line('Email CCs', ticket.email_cc_ids) : '',
+  ].filter(Boolean);
+  if (rows.length === 0) return '';
+  return `\n\n${['### Subscribers', ...rows].join('\n')}`;
+};
+
 // `authors` is the id -> name map the caller resolved (side-load or batched
 // look-up); an id it does not carry renders as the bare id rather than failing
 // the whole thread. The comment id is rendered because it is the only read path
