@@ -352,6 +352,23 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         expect(textOf(result)).toContain('with 1 attachment(s)');
       });
 
+      it('adds a ticket follower and reports who is subscribed afterwards', async () => {
+        connected = await harness.connect(makeConfig({ mode: 'all' }));
+        const result = await connected.client.callTool({
+          name: 'update_ticket',
+          arguments: { ticket_id: 1, followers: { add: [501] } },
+        });
+
+        expect(result.isError).toBeFalsy();
+        const text = textOf(result);
+        // Proves the whole chain over the wire: the nested add/remove object
+        // survives schema validation, the handler maps it to Zendesk's action
+        // shape, and the response reports the resulting subscriber list.
+        expect(text).toContain('### Subscribers');
+        expect(text).toContain('- **Followers**: User 501 (501)');
+        expect(text).not.toContain('Unconfirmed');
+      });
+
       it('dispatches through the single proxy at runtime', async () => {
         connected = await harness.connect(makeConfig({ mode: 'single' }));
         const result = await connected.client.callTool({
