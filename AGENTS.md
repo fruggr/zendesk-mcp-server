@@ -30,6 +30,13 @@ as a draft early. Link the issue in the PR **description** with a closing keywor
 auto-closes on squash-merge to `main`. Need a follow-up on already-shipped work?
 Open a *new* issue for the delta. Fuller checklist in `CONTRIBUTING.md`.
 
+**Branch name**: `<issue>-<kebab-slug>`, the issue number first and no type
+prefix (`278-ticket-followers-ccs`, not `feat/278-...`). No issue number only
+when there is genuinely no issue, which the claim rule above makes rare. Keep the
+slug short, lowercase, hyphen-separated (never underscores) and about the change,
+not the file it touches. Branches named `claude/*` come from Claude Code on the
+web, which generates them: leave those alone, don't imitate the shape by hand.
+
 ## Architecture
 
 Transports: stdio (SDK `StdioServerTransport`) plus a thin `node:http` HTTP
