@@ -51,6 +51,7 @@ import {
   formatPagination,
   formatSlaBlock,
   formatSlaPolicy,
+  formatSubscribersBlock,
   formatTagDiff,
   formatTicket,
   formatTicketField,
@@ -605,11 +606,12 @@ const resolveCommentAuthors = async (
   token: string,
   comments: ZendeskComment[],
   sideloaded: ZendeskUser[] = [],
+  extraIds: number[] = [],
 ): Promise<Map<number, string>> => {
   const authors = new Map(sideloaded.map((user) => [user.id, user.name]));
-  const missing = [...new Set(comments.map((comment) => comment.author_id))].filter(
-    (id) => id > 0 && !authors.has(id),
-  );
+  const missing = [
+    ...new Set([...comments.map((comment) => comment.author_id), ...extraIds]),
+  ].filter((id) => id > 0 && !authors.has(id));
   if (missing.length === 0) return authors;
   for (const [id, name] of await resolveUserNames(subdomain, token, missing)) {
     authors.set(id, name);
@@ -856,9 +858,18 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           token,
           `/tickets/${ticket_id}`,
         );
+        // Followers and CCs are the ids Zendesk notifies; both keys are absent
+        // on an account without the "CCs and followers" setting, hence the
+        // guards. Resolved in the same batch as the comment authors when the
+        // thread is requested, so the whole response still costs one show_many.
+        const subscriberIds = [
+          ...new Set([...(ticket.follower_ids ?? []), ...(ticket.email_cc_ids ?? [])]),
+        ].filter((id) => id > 0);
         // Show Ticket exposes no SLA (#92); resolve it via a scoped Search.
         let text =
           formatTicket(ticket) + formatSlaBlock(await fetchTicketSla(subdomain, token, ticket));
+        let names: Map<number, string>;
+        let commentsBlock = '';
         if (include_comments) {
           const { comments, users } = await zendeskGet<TicketCommentsResponse>(
             subdomain,
@@ -866,11 +877,20 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
             `/tickets/${ticket_id}/comments`,
             { include: 'users', include_inline_images: 'true' },
           );
-          const authors = await resolveCommentAuthors(subdomain, token, comments ?? [], users);
-          text += `\n\n---\n# Comments\n\n${(comments ?? [])
-            .map((comment) => formatComment(comment, authors))
+          names = await resolveCommentAuthors(
+            subdomain,
+            token,
+            comments ?? [],
+            users,
+            subscriberIds,
+          );
+          commentsBlock = `\n\n---\n# Comments\n\n${(comments ?? [])
+            .map((comment) => formatComment(comment, names))
             .join('\n\n')}`;
+        } else {
+          names = await resolveUserNames(subdomain, token, subscriberIds);
         }
+        text += formatSubscribersBlock(ticket, names) + commentsBlock;
         // This tool takes no page or filter, so the default truncation advice
         // would send the caller in circles (#265). Name the tool that does.
         const advice = include_comments
