@@ -214,10 +214,12 @@ const withName = (id: unknown, names: Map<number, string>): string => {
 
 // Who a ticket update notifies, appended by the single-ticket read. Same
 // contract as `formatSlaBlock`: '' when Zendesk reported nothing, so the caller
-// concatenates unconditionally. A key present but empty renders `none` on
-// purpose: before posting an internal note, "nobody is subscribed" is the answer
-// the caller needs, and it has to be stated rather than inferred from a block
-// that is not there. `none` is the same empty marker `formatTicket` uses for tags.
+// concatenates unconditionally. The two lines are not interchangeable: followers
+// are notified of updates including internal notes, email CCs take part in the
+// public correspondence. A key present but empty renders `none` on purpose,
+// because "nobody is subscribed" is the answer the caller needs before writing,
+// and it has to be stated rather than inferred from a block that is not there.
+// `none` is the same empty marker `formatTicket` uses for tags.
 export const formatSubscribersBlock = (
   ticket: Pick<ZendeskTicket, 'follower_ids' | 'email_cc_ids'>,
   names: Map<number, string>,
