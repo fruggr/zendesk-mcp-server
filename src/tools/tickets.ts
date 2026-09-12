@@ -595,7 +595,7 @@ const formatSubscriberOutcome = (
     ),
   );
   if (unconfirmed.length === 0) return '';
-  return `\n\nUnconfirmed: ${unconfirmed.join(', ')}. Zendesk applies followers and email CCs silently: an id it does not know is ignored, and both are ignored entirely when the account's "CCs and followers" setting is off. Check the ids with get_user and the setting with a Zendesk admin.`;
+  return `\n\nUnconfirmed: ${unconfirmed.join(', ')}. Zendesk applies followers and email CCs silently: an id it does not know is ignored, and both are ignored entirely when the account's "CCs and followers" setting is off. Check that each id exists with get_user, and the account setting with a Zendesk admin.`;
 };
 
 // Resolve one entity kind to an id->name map via batched show_many look-ups
