@@ -1484,6 +1484,23 @@ describe('ticket tools', () => {
         false,
       );
     });
+
+    // The four id lists share one `z.number().int().positive()` through
+    // `subscriberIdList`, so a single edit there disarms all four at once, and
+    // nothing else would notice: `src/tools/**` sits outside the Stryker scope,
+    // and the string case above fails on `z.number()` alone. One case per
+    // constraint, on two different lists.
+    it('rejects the system actor id, which is negative', async () => {
+      expect(parseParams({ ticket_id: 1, followers: { add: [-1] } }).success).toBe(false);
+    });
+
+    it('rejects zero, which positive() excludes and a negative case does not reach', async () => {
+      expect(parseParams({ ticket_id: 1, followers: { remove: [0] } }).success).toBe(false);
+    });
+
+    it('rejects a fractional id', async () => {
+      expect(parseParams({ ticket_id: 1, email_ccs: { add: [1.5] } }).success).toBe(false);
+    });
   });
 
   // #205 inbound: `attachments` takes a list, so several files add up inside one
