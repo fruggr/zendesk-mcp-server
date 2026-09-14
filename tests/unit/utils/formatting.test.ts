@@ -16,6 +16,7 @@ import {
   formatSection,
   formatSlaBlock,
   formatSlaPolicy,
+  formatSubscribersBlock,
   formatTagDiff,
   formatTicket,
   formatTicketField,
@@ -124,6 +125,72 @@ describe('formatTicket', () => {
       - **Requester**: 200 | **Assignee**: unassigned
       - **Tags**: none
       - **Created**: 2026-01-01T00:00:00Z | **Updated**: 2026-01-02T00:00:00Z"
+    `);
+  });
+});
+
+describe('formatSubscribersBlock', () => {
+  const NAMES = new Map([
+    [501, 'Alice Agent'],
+    [502, 'Bob Agent'],
+    [601, 'Carol Customer'],
+    [602, 'Dan Customer'],
+  ]);
+
+  // Both keys missing is Zendesk saying nothing, which is not the same answer as
+  // "nobody is subscribed": that one is reported, see the next test.
+  it('returns an empty string when the ticket reports no subscriber fields at all', () => {
+    expect(formatSubscribersBlock({}, NAMES)).toBe('');
+  });
+
+  it('says none when Zendesk reports both lists empty', () => {
+    expect(
+      formatSubscribersBlock({ follower_ids: [], email_cc_ids: [] }, NAMES),
+    ).toMatchInlineSnapshot(`
+      "
+
+      ### Subscribers
+      - **Followers**: none
+      - **Email CCs**: none"
+    `);
+  });
+
+  it('renders followers with resolved names and omits the CC line when the field is absent', () => {
+    expect(formatSubscribersBlock({ follower_ids: [501] }, NAMES)).toMatchInlineSnapshot(`
+      "
+
+      ### Subscribers
+      - **Followers**: Alice Agent (501)"
+    `);
+  });
+
+  it('renders the email CC line alone when only CCs are reported', () => {
+    expect(formatSubscribersBlock({ email_cc_ids: [601] }, NAMES)).toMatchInlineSnapshot(`
+      "
+
+      ### Subscribers
+      - **Email CCs**: Carol Customer (601)"
+    `);
+  });
+
+  it('renders followers and email CCs together, each id with its name', () => {
+    expect(
+      formatSubscribersBlock({ follower_ids: [501, 502], email_cc_ids: [601, 602] }, NAMES),
+    ).toMatchInlineSnapshot(`
+      "
+
+      ### Subscribers
+      - **Followers**: Alice Agent (501), Bob Agent (502)
+      - **Email CCs**: Carol Customer (601), Dan Customer (602)"
+    `);
+  });
+
+  it('falls back to the bare id for a subscriber the look-up did not resolve', () => {
+    expect(formatSubscribersBlock({ follower_ids: [501, 999] }, NAMES)).toMatchInlineSnapshot(`
+      "
+
+      ### Subscribers
+      - **Followers**: Alice Agent (501), 999"
     `);
   });
 });
