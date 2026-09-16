@@ -1,20 +1,21 @@
-# pnpm 12 on Android: pinned for the native CLI, provisioned outside Corepack
+# pnpm 12 on Android: pinned for the native CLI
 
 > **Build documentation, not user documentation.** This records why the
-> `packageManager` pin moved to a pnpm line whose Android support is still
-> incomplete upstream, and what that costs on the one device it affects. Nothing
-> here changes how the MCP server behaves for a client.
+> `packageManager` pin moved to pnpm 12, why it names that exact version, and what
+> the affected device needed along the way. Nothing here changes how the MCP
+> server behaves for a client.
 
 | | |
 | --- | --- |
 | **Status** | Decided and applied |
-| **Date** | 2026-09-10 |
+| **Date** | 2026-09-10, revised 2026-09-16 |
 | **Applied in** | [#281](https://github.com/fruggr/zendesk-mcp-server/pull/281) |
-| **Question** | pnpm 12 rewrites the CLI in Rust and ships it as a native binary per host. 12.4.0 is the first release to publish an Android one. Worth pinning, when three of its Android paths are broken upstream? |
-| **Answer** | **Yes.** Start-up drops from ~4 s to ~0.2 s on the affected device, and all three gaps have a local answer that costs the other platforms nothing. |
+| **Question** | pnpm 12 rewrites the CLI in Rust and ships it as a native binary per host, including Android since 12.4.0. Worth pinning? |
+| **Answer** | **Yes.** Start-up drops from 4.1 s to under 0.1 s on the affected device, and no platform needs an install route of its own. |
 
 Measured on the affected device (Termux, `android-arm64`, 6 cores), pnpm 11.25.0
-through Corepack against pnpm 12.4.0 native, on this repo's own manifest.
+through Corepack against pnpm 12.4.1 native, on this repo's own manifest. The pinned
+12.4.2 starts in the same time.
 
 ## What actually changed
 
@@ -23,81 +24,70 @@ runs it. pnpm 12 publishes `@pnpm/exe.<target>` packages as optional dependencie
 of `pnpm`, and the `pnpm` bin is the host's native executable — no Node start-up
 per call. 12.4.0 added `android-arm64` and `android-x64` to that matrix
 ([pnpm/pnpm#14660](https://github.com/pnpm/pnpm/pull/14660)), which is what makes
-this device eligible at all. 12.3.4, still npm's `latest` when this landed, ships
-no Android binary and cannot be installed here by any route.
+this device eligible at all.
 
-| | pnpm 11.25.0 | pnpm 12.4.0 |
+| | pnpm 11.25.0 | pnpm 12.4.1 |
 | --- | --- | --- |
-| `pnpm --version`, warm | 4.1 s | 0.2 s |
-| `install --lockfile-only`, 873 entries | 24.8 s | 6.3 s |
-| the same, re-run | — | 0.16 s |
+| `pnpm --version`, warm | 4.1 s | 0.1 s |
+| `install --lockfile-only`, 873 entries | 24.8 s | 7.7 s |
+| `install --frozen-lockfile`, warm | — | 1.3 s |
 
-Both versions verify the lockfile against the supply-chain policies on every
-install, and on a slow connection that check dominates the total (20.7 s of the
-24.8 s above, 6 s of the 6.3 s, and 55 s on a cold run). It is network-bound, so
-read the start-up row rather than the totals for what the rewrite itself buys.
+Both versions verify the lockfile against the supply-chain policies, and on a slow
+connection that check dominates a cold run (20.7 s of the 24.8 s above, and 55 s
+once here). It is network-bound and cached afterwards, so the start-up row is what
+measures the rewrite.
 
-## The three Android gaps
+## Why the pin names 12.4.2 exactly
 
-**A fresh install cannot materialise `node_modules`.** No hard link can be created
-anywhere on this device: `link()` returns `EPERM` in `$HOME`, in `$PREFIX/tmp`, in
-the pnpm store and inside the worktrees alike, and every store file sits at
-`nlink 1`. pnpm 11 coped, because `packageImportMethod: auto` falls back to
-copying; pnpm 12 stops at the refused link and fails with `failed to import …
-Permission denied (os error 13)`, for `pnpm add`, `pnpm install` and `pnpm dlx`
-alike ([pnpm/pnpm#14782](https://github.com/pnpm/pnpm/issues/14782)). Naming the
-method explicitly is the answer, and it belongs in the machine's own config rather
-than in this repo, because it describes the filesystem and not the project:
-`pnpm config set packageImportMethod copy --global`. With that in place a cold
-install of the 766 packages here takes 21 s against a cold store and 6.4 s against
-a warm one.
+Each earlier version fails here in its own way, which is worth knowing before
+anyone moves the pin to a rounder number.
 
-This gap hides easily, so it is worth knowing how to see it: an install that finds
-`node_modules` already materialised skips the import step and passes whatever the
-method. It only surfaces on a fresh checkout, which is exactly what the
-`post-switch` hook in `.config/wt.toml` produces on every new worktree.
+- **12.3.4 and older** publish no Android binary at all. No route installs them
+  on this device.
+- **12.4.0** publishes the binary but cannot use it: every registry request
+  crashed, because pnpm asked the Android platform verifier for a system trust
+  store it cannot reach without a JVM
+  ([pnpm/pnpm#14777](https://github.com/pnpm/pnpm/issues/14777)), and imports
+  failed with `Permission denied (os error 13)` on a filesystem that refuses hard
+  links, since `packageImportMethod: auto` had stopped falling back to copying
+  ([pnpm/pnpm#14780](https://github.com/pnpm/pnpm/issues/14780)). No hard link can
+  be created anywhere on this device, so that second one broke every fresh
+  install.
+- **12.4.1** fixes both: bundled CA roots on Android, and the copy fallback
+  restored. A cold install and a `pnpm dlx` both work with no environment
+  variables and no import-method setting, but the version has to come from npm,
+  because Corepack still refuses the platform.
+- **12.4.2** vendors the fixed downloader, so Corepack installs it here too.
 
-**Corepack cannot provision the binary.** The wrapper's Corepack entry
-(`bin/pnpm.mjs`) downloads the executable through the `get-pnpm` copy it vendors,
-and 12.4.0 vendors `get-pnpm@0.0.3`, which refuses any platform outside
-`darwin`/`linux`/`win32` — so Corepack reports `Sorry! pnpm does not provide a
-pre-built binary for android` even though the package exists on npm
-([pnpm/pnpm#14679](https://github.com/pnpm/pnpm/issues/14679)).
-[pnpm/get.pnpm.io#59](https://github.com/pnpm/get.pnpm.io/pull/59) fixed that, and
-`get-pnpm@0.0.4` carries the fix, so what is left is a pnpm release vendoring the
-newer copy. The way in meanwhile is npm, naming the version `packageManager` pins:
-`npm i -g --prefix ~/.local/share/pnpm pnpm@VERSION`. npm resolves the optional
-dependency for the host, and the package's own install script links the binary
-over the placeholder bin.
+## Corepack
 
-Installing into pnpm's own home (`~/.local/share/pnpm`, whose `bin/` pnpm asks you
-to keep first on `PATH`) rather than over `$PREFIX/bin/pnpm` is deliberate: npm
-puts the binary at `<prefix>/bin/pnpm` and leaves Corepack's shim in place, so
-deleting `~/.local/share/pnpm/bin/pnpm*` is the whole rollback. Note that the
-shadowing is machine-wide, so a checkout still pinned to pnpm 11 fails with
-`ERR_PNPM_PNPM_ENGINE_NO_NATIVE_BINARY`, because pnpm 12 honours the pin itself
-and no pnpm 11 binary can exist here. `pmOnFail: ignore` skips that switch, and it
-does not need the project's own config: `--pm-on-fail=ignore` on the command and
-`PNPM_CONFIG_PM_ON_FAIL=ignore` in the environment both work, for `pnpm exec` and
-`pnpm install` alike, and an install run that way writes the lockfile in the
-pinned major's shape rather than pnpm 12's. Treat it as a bridge while the pin
-spreads rather than a destination: with it set, the pin no longer decides which
-pnpm runs.
+The wrapper's Corepack entry (`bin/pnpm.mjs`) downloads the executable through the
+`get-pnpm` copy it vendors. Up to 12.4.1 that copy was `get-pnpm@0.0.3`, which
+refuses any platform outside `darwin`/`linux`/`win32`, so Corepack answered
+`Sorry! pnpm does not provide a pre-built binary for android` even though the
+package exists on npm
+([pnpm/pnpm#14679](https://github.com/pnpm/pnpm/issues/14679)). 12.4.2 vendors
+`get-pnpm@0.0.4`, which carries the fix from
+[pnpm/get.pnpm.io#59](https://github.com/pnpm/get.pnpm.io/pull/59) and accepts
+`android-arm64` and `android-x64` for major 12 and up. Both `pnpm` and `pnpx` run
+from the Corepack shims here again, with no environment variables and no
+import-method setting; the upstream issue stayed open, the fix travelled with the
+vendored copy.
 
-**Every registry request panics.** The Rust CLI delegates TLS verification to
-`rustls-platform-verifier`, whose Android backend needs a JNI initialisation
-Termux has no JVM for, and it aborts the process on the first request:
-`Expect rustls-platform-verifier to be initialized` (`android.rs:90`). The panic
-precedes the empty-trust-store fallback added in
-[pnpm/pnpm#13593](https://github.com/pnpm/pnpm/pull/13593), so that fallback never
-runs. Pointing `NODE_EXTRA_CA_CERTS` at a CA bundle switches pnpm to its own root
-store and avoids the verifier entirely; `SSL_CERT_FILE`, `cafile` and
-`strict-ssl=false` do not, and a path that does not resolve falls back to the
-panic. Reported as
-[pnpm/pnpm#14777](https://github.com/pnpm/pnpm/issues/14777), and fixed by
-[pnpm/pnpm#14783](https://github.com/pnpm/pnpm/pull/14783), which switches Android
-to the bundled roots. That fix is merged but unreleased as of 12.4.0, so the
-pinned version still needs the variable.
+npm installs the same binary, and remains a way to have pnpm outside any checkout:
+`npm i -g --prefix ~/.local/share/pnpm pnpm@VERSION` resolves the optional
+dependency for the host, and the package's own install script links the binary over
+the placeholder bin. Installing into pnpm's own home (whose `bin/` pnpm asks you to
+keep first on `PATH`) rather than over `$PREFIX/bin/pnpm` leaves Corepack's shim in
+place, so deleting `~/.local/share/pnpm/bin/pnpm*` is the whole rollback. The
+version it names matters little, since a 12.4.x binary honours a project's pin and
+fetches the pinned version itself. A checkout pinned to pnpm 11 is the exception and
+fails with `ERR_PNPM_PNPM_ENGINE_NO_NATIVE_BINARY`, because no pnpm 11 binary can
+exist here; `pmOnFail: ignore` skips that switch, through `--pm-on-fail=ignore` on
+the command or `PNPM_CONFIG_PM_ON_FAIL=ignore` in the environment, and an install
+run that way writes the lockfile in the pinned major's shape rather than pnpm 12's.
+Treat it as a bridge rather than a destination: with it set, the pin no longer
+decides which pnpm runs.
 
 ## What the pin bump implies for the repo
 
@@ -124,18 +114,3 @@ pinned version still needs the variable.
   `pnpm-workspace.yaml` whitelists what needs building. A throwaway `pnpm dlx`
   has no such file, so a package with a build script needs
   `--allow-build=<pkg>` there (`pnpm dlx --allow-build=esbuild tsx …`).
-
-## When to retire the workarounds
-
-Two of the three are already fixed upstream and waiting on a release, so the next
-pnpm bump is the moment to re-test all three rather than carry them forward
-blindly. `NODE_EXTRA_CA_CERTS` goes with the first release carrying
-[pnpm/pnpm#14783](https://github.com/pnpm/pnpm/pull/14783), which stops asking the
-Android platform verifier for a trust store it cannot reach. The `npm i -g` route
-goes with the first release vendoring `get-pnpm@0.0.4` or later; the test is
-whether `pnpm` and `pnpx` work from Corepack again.
-`packageImportMethod: copy` waits on
-[pnpm/pnpm#14782](https://github.com/pnpm/pnpm/issues/14782) and is harmless to
-keep either way, on a filesystem that has no hard links to offer. None of the
-three is worth a line of code here: they live in the contributor's shell and
-machine config, and the repo only documents them.

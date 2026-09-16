@@ -42,19 +42,10 @@ test the project. The **published package** still runs on Node 20+ (see
 `engines.node`); a dedicated CI job installs the packed tarball on Node 20
 and runs the smoke test to keep that promise honest.
 
-Native Termux (`android-arm64`) needs three things no other platform does, all of
-them upstream gaps that
-[`docs/decisions/pnpm-12-native.md`](docs/decisions/pnpm-12-native.md) details:
-
-- Hard links are refused device-wide and pnpm 12 no longer falls back to copying,
-  so a fresh install dies at the import step. Set the method once per machine:
-  `pnpm config set packageImportMethod copy --global`.
-- Corepack cannot install pnpm 12 there, because the downloader it vendors refuses
-  the platform. Provision the version `packageManager` pins with npm instead, into
-  a prefix whose `bin/` comes first on `PATH`:
-  `npm i -g --prefix ~/.local/share/pnpm pnpm@VERSION`.
-- `NODE_EXTRA_CA_CERTS` has to point at a CA bundle (`$PREFIX/etc/tls/cert.pem`),
-  or every registry request aborts on a panic.
+The pnpm pin names one exact patch version, and
+[`docs/decisions/pnpm-12-native.md`](docs/decisions/pnpm-12-native.md) says why:
+pnpm 12 ships a native binary per host, and the ones Corepack can install there
+differ from one patch release to the next.
 
 ```bash
 # Clone, install, build
