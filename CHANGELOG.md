@@ -1,3 +1,17 @@
+## [2.21.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.20.2...v2.21.0) (2026-09-11)
+
+### Features
+
+* **auth:** request the read scope alone under --read-only ([#285](https://github.com/fruggr/zendesk-mcp-server/issues/285)) ([485c38e](https://github.com/fruggr/zendesk-mcp-server/commit/485c38eb18550c6cb2b933f76c20410a9b69470d))
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Chores
+
+* **deps:** lock file maintenance ([#286](https://github.com/fruggr/zendesk-mcp-server/issues/286)) ([9107c02](https://github.com/fruggr/zendesk-mcp-server/commit/9107c02111f76f74ba1e635badf7400755977770))
+</details>
+
 ## [2.20.2](https://github.com/fruggr/zendesk-mcp-server/compare/v2.20.1...v2.20.2) (2026-09-10)
 
 ### Bug Fixes

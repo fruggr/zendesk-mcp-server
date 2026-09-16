@@ -54,6 +54,12 @@ curl -s http://localhost:3000/.well-known/oauth-authorization-server
 curl -s -i http://localhost:3000/healthz   # → 200 OK
 ```
 
+Both documents carry `scopes_supported`, and both follow `--read-only`:
+`["read", "write"]` normally, `["read"]` on a read-only server. It is advice to
+the client, not a control — the server never inspects the grant behind the
+bearer it is presented, so a bearer minted with `read` alone will simply get
+`403` from Zendesk on any write.
+
 ## MCP client wiring
 
 Every major MCP client supports remote servers over Streamable HTTP and handles the OAuth 2.1 PKCE discovery flow natively: paste the URL, sign in once, you're connected. Replace `https://mcp.example.com` below with your deployed origin.

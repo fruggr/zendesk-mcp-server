@@ -137,6 +137,20 @@ describe('buildOAuthMetadata', () => {
     expect(meta.authorizationServer.code_challenge_methods_supported).toEqual(['S256']);
     expect(meta.authorizationServer.token_endpoint_auth_methods_supported).toEqual(['none']);
   });
+
+  // Both documents are built separately, so both are asserted: a client that
+  // reads only one of them must not be told a different story.
+  it('advertises read and write by default', () => {
+    const meta = buildOAuthMetadata(baseConfig);
+    expect(meta.protectedResource.scopes_supported).toEqual(['read', 'write']);
+    expect(meta.authorizationServer.scopes_supported).toEqual(['read', 'write']);
+  });
+
+  it('advertises the read scope only under --read-only', () => {
+    const meta = buildOAuthMetadata({ ...baseConfig, readOnly: true });
+    expect(meta.protectedResource.scopes_supported).toEqual(['read']);
+    expect(meta.authorizationServer.scopes_supported).toEqual(['read']);
+  });
 });
 
 describe('startHttpTransport (HTTP roundtrip)', () => {
@@ -157,6 +171,13 @@ describe('startHttpTransport (HTTP roundtrip)', () => {
     };
     expect(body.authorization_servers).toContain('https://testsubdomain.zendesk.com');
     expect(body.resource).toBe('https://mcp.example.com');
+  });
+
+  it('serves the narrowed scopes_supported of a read-only server', async () => {
+    handle = await startHttpTransport({ ...baseConfig, readOnly: true });
+    const res = await fetch(`http://127.0.0.1:${handle.port}/.well-known/oauth-protected-resource`);
+    const body = (await res.json()) as { scopes_supported: string[] };
+    expect(body.scopes_supported).toEqual(['read']);
   });
 
   it('serves /.well-known/oauth-authorization-server (RFC 8414) with PKCE S256', async () => {
