@@ -85,6 +85,5 @@ export const uploadAttachments = async (
   return uploadToken as string;
 };
 
-/** ` with N attachment(s)` for a confirmation message, or '' when there are none. */
 export const formatAttachmentSuffix = (count?: number): string =>
   count ? ` with ${count} attachment(s)` : '';

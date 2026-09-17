@@ -2,11 +2,9 @@ import type { Config } from '../config';
 import type { ToolDefinition } from '../tools/definitions';
 import { filterTools, groupByNamespace, NAMESPACE_LABELS } from './registry';
 
-/** `name (write)` for a write tool, bare `name` for a read one. */
 const toolLine = (tool: ToolDefinition, indent: string): string =>
   `${indent}${tool.name}${tool.readOnly ? '' : ' (write)'}`;
 
-/** The knobs in force, on one line, so the listing below is self-explaining. */
 const renderHeader = (config: Config): string =>
   [
     `Mode: ${config.mode}`,
