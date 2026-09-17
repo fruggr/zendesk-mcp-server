@@ -991,11 +991,10 @@ describe('help center tools', () => {
   });
 
   describe('reorder_article', () => {
-    // Stateful section mock: GET returns the articles in effective order, PUT
-    // mutates positions and records the write sequence, so the tool's post-write
-    // verification observes what a real manual section would produce. fixedOrder
-    // simulates an auto-sorted section; foreignSections places a looked-up article
-    // elsewhere.
+    // Stateful, so the tool's post-write verification sees the effect a real
+    // manual section would produce. The options cover the other two cases
+    // reorder_article has to handle: a section that ignores positions because it
+    // is auto-sorted, and a reference article living in another section.
     const seedSection = (
       sectionId: number,
       articles: Array<{ id: number; position: number }>,
