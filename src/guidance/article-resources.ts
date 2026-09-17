@@ -115,15 +115,13 @@ export interface ArticleResourcesProvider {
 }
 
 /**
- * Build an article-resources provider. `listPromoted` holds a memoized-promise
- * cache (TTL `ARTICLE_RESOURCES_TTL_MS`) to coalesce the repeated `resources/list`
- * calls a client makes; `readArticle` is a one-shot fetch (not cached). As with
+ * Build an article-resources provider. `listPromoted` memoizes its promise (TTL
+ * `ARTICLE_RESOURCES_TTL_MS`) to coalesce the repeated `resources/list` calls a
+ * client makes; `readArticle` is a one-shot fetch. As with
  * `createTopologyProvider`, the cache is PER SESSION and must NOT be hoisted to
- * module scope — in HTTP mode this provider is instantiated per session, so a
- * shared cache would leak one caller's data to another. `getToken` is resolved
- * lazily at call time (never at construction) so connecting never triggers the
- * OAuth/PKCE flow. A 401 notifies `onUnauthorized` (stdio OAuth) to drop the
- * stale token, mirroring the topology provider and the tool dispatch path.
+ * module scope — in HTTP mode a shared one would leak a caller's data to
+ * another. `getToken` resolves lazily, so connecting never triggers the OAuth
+ * flow, and a 401 notifies `onUnauthorized` to drop the stale token.
  */
 export const createArticleResourcesProvider = (
   getToken: () => string | Promise<string>,

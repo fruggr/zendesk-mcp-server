@@ -7,13 +7,11 @@ import { describe, expect, it } from 'vitest';
  * `import 'zod/compile'` installs a global post-processor that compiles each schema on its
  * first parse. It only reaches schemas built by modules that evaluate *after* it, so its
  * position is load-bearing: demote it below any other import in the entrypoint and every
- * schema constructed by the imported module graph silently keeps the runtime parser.
+ * schema from the imported graph silently keeps the runtime parser.
  *
- * Nothing else would catch that. The server keeps working, `tools/list` is unchanged, every
- * test still passes — the compilation just stops happening, several files away from the
- * symptom. `src/index.ts` is out of both the coverage scope (`vitest.config.ts`) and the
- * mutation scope (`stryker.config.mjs`), so this file is the only gate looking at it.
- * Background: `docs/decisions/zod-compile.md`.
+ * Nothing else would catch that — the server keeps working and every test still passes.
+ * And `src/index.ts` is out of both the coverage and mutation scopes, so this file is the
+ * only gate looking at it. Background: `docs/decisions/zod-compile.md`.
  */
 
 // A trailing `//` comment on the import line is tolerated: the stripper below only removes

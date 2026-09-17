@@ -157,8 +157,9 @@ test: if a running server behaves no differently for a client, it's tooling.
   for what the code cannot say — the *why*: a constraint, a trade-off, a
   non-obvious API behaviour, a pointer to `docs/decisions/`. A comment that
   paraphrases the line below it is noise: delete it, or rename the identifier so
-  it isn't needed. Cap one comment at ~50 words; past that it's a decision doc
-  with a one-line pointer here.
+  it isn't needed. Cap an implementation comment at ~50 words; a `/** */` block
+  documenting an exported symbol's contract has its own, wider cap of ~100. Past
+  either, it's a decision doc with a one-line pointer here.
 - Functional: pure functions, immutable data, no classes (except `ZendeskApiError`).
 - Tool handlers are standalone functions in `ToolDefinition[]` arrays.
 - ASCII-only error messages on auth paths — `node:http` rejects non-ASCII bytes

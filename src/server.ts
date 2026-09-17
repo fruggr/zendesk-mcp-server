@@ -26,17 +26,15 @@ import { createStrictParamsParser } from './utils/validation';
 
 /**
  * Invoke a tool handler, notifying `onUnauthorized` when Zendesk rejects the
- * token (401). This lets the OAuth store drop the dead token so the next call
- * refreshes/re-authenticates instead of replaying a revoked token. The callback
- * is omitted only where there is nothing to invalidate (e.g. HTTP per-session
- * bearer, owned by the client).
+ * token (401), so the OAuth store drops the dead token instead of replaying it.
+ * The callback is omitted only where there is nothing to invalidate (the HTTP
+ * per-session bearer, owned by the client).
  *
- * Client-visible behaviour on an in-flight revocation: the 401 is a *backstop*,
- * not a transparent retry. The current call still surfaces the error; recovery
- * happens on the *next* call, whose `getToken` sees the invalidated token and
- * silently refreshes (or falls back to browser re-auth if the refresh token is
- * also dead). Proactive refresh keeps this path rare — it only fires when a
- * token is revoked between the pre-call refresh check and the request.
+ * The 401 is a *backstop*, not a transparent retry: the current call still
+ * surfaces the error, and recovery happens on the *next* one, whose `getToken`
+ * refreshes silently (or falls back to browser re-auth). Proactive refresh keeps
+ * this rare — it fires only for a token revoked between the pre-call check and
+ * the request.
  */
 const runHandler = async (
   def: ToolDefinition,

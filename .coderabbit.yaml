@@ -34,7 +34,8 @@ reviews:
         from", "used to be", "was moved") — git history holds that. Keep the
         ones carrying a "why": constraint, trade-off, non-obvious Zendesk or
         SDK behaviour, pointer to docs/decisions/.
-        Flag any single comment running past ~50 words: it should shrink to the
+        Flag an implementation comment running past ~50 words, and a `/** */`
+        block documenting an exported symbol past ~100: it should shrink to the
         why, or move to docs/decisions/ with a one-line pointer from the code.
         Ignore license headers and tool pragmas (Stryker, Biome, ts-expect-error
         justifications).
