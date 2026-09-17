@@ -58,23 +58,17 @@ const renderBody = (config: Config, tools: ToolDefinition[]): string[] => {
 
 /**
  * Render the tool surface `config` resolves to, as `registerToolset` would
- * expose it, without starting a server or issuing a single request.
+ * expose it, without starting a server or issuing a request -- the combination
+ * of `--namespace`/`--tool`, `--mode` and `--read-only` is easier read than
+ * predicted.
  *
- * The surface is shaped by three independent knobs — `--namespace` / `--tool`
- * pick the inventory, `--mode` packages it, `--read-only` narrows it — and their
- * combination is far easier to read off a listing than to predict. This is what
- * `--print-tools` prints.
+ * It mirrors `registerToolset`'s `switch (config.mode)` rather than calling it,
+ * which would need a live `McpServer`; tests pin this output against the names
+ * the integration harness sees over the wire.
  *
- * It mirrors the `switch (config.mode)` in `registerToolset` rather than
- * calling it: registration needs a live `McpServer`, and building one here
- * would drag in a transport. The duplication is three branches wide and is
- * pinned by tests asserting this output against the names the integration
- * harness sees over the wire.
- *
- * Every name printed is a name a client would actually see. Read-only mode is
- * stated in the header rather than as a `[RO]` prefix on the names: the server
- * puts that marker in a proxy's *description*, never in its name, and printing
- * `[RO] zendesk_tickets` here would name a tool that does not exist.
+ * Read-only is stated in the header, not as a `[RO]` name prefix: the server
+ * puts that marker in a proxy's description, so `[RO] zendesk_tickets` would
+ * name a tool no client sees.
  */
 export const renderToolSurface = (config: Config, tools: ToolDefinition[]): string => {
   // Same call `registerToolset` makes, flag for flag: the point of this output

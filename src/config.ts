@@ -13,20 +13,12 @@ export type Namespace = z.infer<typeof Namespace>;
 /**
  * Namespaces exposed when the operator passes no `--namespace` flag.
  *
- * Deliberately NOT every member of the enum: `requests` is the end-user
- * surface (issue #48) and is opt-in. Two reasons, in order of weight.
- *
- * 1. Under an agent token, part of that surface silently misbehaves rather
- *    than failing: `PUT /requests/{id}` with `solved: true` returns 200 and
- *    changes nothing, and Zendesk does not apply a form's `required_in_portal`
- *    validation to agents. Registering those tools for every agent install
- *    would ship an operation that reports success on a no-op.
- * 2. An agent install keeps its tool list and context budget unchanged.
- *
- * A deployment serving customers opts in with `--namespace requests`
- * (typically alongside `--namespace help_center`, so they can read the
- * knowledge base before opening a ticket). `--print-tools` shows the resulting
- * surface without starting a server.
+ * Deliberately NOT every member of the enum: the end-user `requests` surface
+ * is opt-in, because under an agent token part of it silently misbehaves
+ * rather than failing -- `solved: true` returns 200 and changes nothing, and
+ * `required_in_portal` validation is not applied to agents. Registering it for
+ * every agent install would ship an operation that reports success on a no-op.
+ * Secondarily, an agent's tool list and context budget stay unchanged.
  */
 export const DEFAULT_NAMESPACES: readonly Namespace[] = ['tickets', 'help_center', 'users'];
 
@@ -40,20 +32,15 @@ export const ConfigSchema = z.object({
   mode: ToolMode,
   readOnly: z.boolean(),
   /**
-   * Active namespaces. Defaults to DEFAULT_NAMESPACES (which excludes the
-   * opt-in `requests` surface) rather than to "everything".
+   * Active namespaces, defaulting to DEFAULT_NAMESPACES rather than everything.
    *
-   * The default lives HERE and not in `loadConfig` on purpose: the integration
-   * harness builds its Config through `ConfigSchema.parse` and never calls
-   * `loadConfig`, so a default applied there would not reach the tests — the
-   * `requests` tools would be visible to every integration scenario while
+   * The default lives HERE, not in `loadConfig`: the integration harness builds
+   * its Config through `ConfigSchema.parse` and never calls `loadConfig`, so a
+   * default applied there would leave `requests` visible to every scenario and
    * absent in production.
    *
-   * `.min(1)` rejects an explicit empty array. `filterTools` treats `[]` as
-   * "no filter at all" (it guards on `?.length`), so an empty list would quietly
-   * expose every namespace including the opt-in one. `parseArgs` cannot produce
-   * `[]` — a repeatable flag left out is `undefined` — so refusing it costs
-   * nothing and keeps the invariant explicit.
+   * `.min(1)` rejects an explicit `[]`, which `filterTools` reads as no filter
+   * at all (it guards on `?.length`) and would expose the opt-in namespace.
    */
   namespaces: z
     .array(Namespace)
@@ -374,13 +361,10 @@ export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
 
   const mode = cli.tools?.length ? 'all' : (cli.mode ?? 'namespace');
 
-  // `--tool` is an inventory picker in its own right: before the namespace
-  // default existed it could name ANY tool, because no namespace filter was
-  // applied. `filterTools` ANDs the two filters, so leaving the default in
-  // place would make `--tool list_requests` resolve to nothing at all -- the
-  // tool exists, but its namespace is not in the default set. So an explicit
-  // `--tool` without an explicit `--namespace` opens the namespace filter to
-  // everything and lets `--tool` do the narrowing.
+  // `filterTools` ANDs the namespace and tool filters, so keeping the default
+  // set here would make `--tool list_requests` resolve to nothing: the tool
+  // exists, its namespace is not in the default. An explicit `--tool` without
+  // `--namespace` therefore opens the namespace filter and narrows by tool.
   const namespaces = cli.namespaces ?? (cli.tools?.length ? [...Namespace.options] : undefined);
 
   const callbackPort =

@@ -2,26 +2,14 @@
 /**
  * READ-ONLY ground-truth capture for the end-user Requests surface (issue #48).
  *
- * Why this exists. `src/types.ts` declares `ZendeskTicketForm`,
- * `ZendeskFormCondition` and `ZendeskRequestCommentAuthor` from a written API
- * probe report rather than from payloads the implementer saw. The MCP tools
- * cannot close that gap: they return *rendered* text, never the raw upstream
- * JSON, so a field we named wrongly would render as a silently missing line
- * rather than as an error. This prints the raw keys so the types can be
- * checked against reality.
+ * `src/types.ts` declares `ZendeskTicketForm`, `ZendeskFormCondition` and
+ * `ZendeskRequestCommentAuthor` from a written probe report, not from payloads
+ * anyone saw. The MCP tools cannot close that gap -- they return rendered text,
+ * so a field named wrongly renders as a missing line rather than an error.
  *
- * It is strictly read-only: three GETs, no writes, no ticket created. It reuses
- * the token the running server already uses -- either ZENDESK_OAUTH_TOKEN, or
- * the cached token file for the subdomain.
- *
- * Usage:
- *   pnpm tsx scripts/probe-request-shapes.ts
- *
- * Output is deliberately keys-and-types, not values: no subject, no body, no
- * name, no email is printed, so it is safe to paste into a public PR comment.
- * The one exception is `end_user_conditions`, printed in full because its shape
- * is what we are least sure of and it contains only field ids and option
- * values.
+ * Three GETs, no writes. Prints keys and types, never values, so the output is
+ * safe to paste into a public PR comment. How to run it and what to check in
+ * the result: `docs/live-testing.md`.
  */
 import { readFileSync } from 'node:fs';
 import { resolveTokenPath } from '../src/auth/token-persistence';

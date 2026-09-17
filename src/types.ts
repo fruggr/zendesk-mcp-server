@@ -72,19 +72,11 @@ export interface ZendeskFieldOption {
   value: string;
 }
 
-// A ticket field definition (system or custom) from the Ticket Fields API. The
-// `id` is what create_ticket / update_ticket custom_fields expect; `type`
-// determines whether `custom_field_options` (dropdown/multiselect) or
-// `system_field_options` (system fields like priority) carry the valid values.
-//
-// The `*_in_portal` trio describes the field as an END USER sees it on a
-// request form, and is a different axis from `active`/`required`, which are the
-// agent-side flags. A field can be `required: false` (an agent may solve a
-// ticket without it) yet `required_in_portal: true` (a customer cannot submit
-// without it) -- so the end-user tools read the portal flags and never the
-// agent ones. Present on every object the endpoint returns, for both roles, but
-// declared optional because `GET /ticket_fields` is also the agent-facing
-// listing and nothing should start depending on them there.
+// A ticket field definition. `type` decides whether `custom_field_options` or
+// `system_field_options` carries the valid values. The `*_in_portal` trio is a
+// different axis from `active`/`required` -- a field can be `required: false`
+// yet `required_in_portal: true` -- so the end-user tools read those and never
+// the agent flags.
 export interface ZendeskTicketField {
   id: number;
   type: string;
@@ -105,19 +97,10 @@ export interface ZendeskTicketField {
   title_in_portal?: string;
 }
 
-// GET /api/v2/ticket_forms — a request form: the named set of fields a customer
-// picks between on the Help Center ("Bug", "Feature request", ...). Readable by
-// end users, who receive only the forms marked `end_user_visible`; Zendesk does
-// NOT filter out inactive ones, so `active` still has to be honoured.
-//
-// `ticket_field_ids` is a SUPERSET of what any one submitter sees:
-// `end_user_conditions` can hide a field, or make it required, depending on
-// another field's value. We surface those conditions as data rather than
-// evaluating them (see the end-user tool descriptions).
-//
-// `display_name` is the customer-facing name and `name` the internal one; the
-// `raw_*` variants may hold an unresolved dynamic-content placeholder
-// (`{{dc.some_key}}`), so the resolved fields are the ones to render.
+// GET /api/v2/ticket_forms — the field sets a customer picks between. End users
+// receive only `end_user_visible` forms, but Zendesk does NOT filter out
+// inactive ones. `ticket_field_ids` is a SUPERSET of what one submitter sees,
+// and the `raw_*` variants may hold an unresolved `{{dc.some_key}}`.
 export interface ZendeskTicketForm {
   id: number;
   name: string;
@@ -130,18 +113,10 @@ export interface ZendeskTicketForm {
   end_user_conditions?: ZendeskFormCondition[];
 }
 
-// One condition set inside a form's `end_user_conditions`: when
-// `parent_field_id` holds `value`, the listed `child_fields` become visible,
-// each with its own `is_required` override. Rendered for the model to reason
-// about rather than evaluated -- whether the Requests API enforces these
-// server-side is unverified (no form on the probed instance carried any).
-//
-// `required_on_statuses` narrows `is_required` to particular ticket statuses,
-// and Zendesk documents it as applying to end-user forms, not only agent ones
-// (https://support.zendesk.com/hc/en-us/articles/4408846008218). It is what
-// makes `is_required` alone insufficient for a submission-time tool: a field
-// required only "when open" is NOT required of the customer submitting a new
-// request. Optional because a form without status-scoped requirements omits it.
+// One condition set inside a form's `end_user_conditions`. Rendered rather than
+// evaluated -- whether the API enforces these server-side is unverified.
+// `required_on_statuses` narrows `is_required` to particular statuses, so a
+// field required only "when open" is NOT required of a new request.
 export interface ZendeskFormConditionChild {
   id: number;
   is_required?: boolean;
@@ -284,15 +259,10 @@ export interface ZendeskComment {
   attachments?: ZendeskTicketAttachment[];
 }
 
-// GET/POST/PUT /api/v2/requests — a ticket as its REQUESTER sees it. Not a
-// trimmed ZendeskTicket: there is no `tags`, `assignee_id` is only present when
-// the form exposes it to end users, and `can_be_solved_by_me` exists nowhere
-// else. Hence a dedicated interface and a dedicated formatter.
-//
-// `can_be_solved_by_me` is read-only and tracks ASSIGNMENT, not status: false
-// while the ticket is unassigned, true once an agent owns it and the type is
-// not `problem`. Writing `solved: true` when it is false returns 200 and
-// changes nothing, so it has to be checked before offering the operation.
+// GET/POST/PUT /api/v2/requests — a ticket as its REQUESTER sees it, not a
+// trimmed ZendeskTicket: no `tags`, and `can_be_solved_by_me` exists nowhere
+// else. That flag tracks ASSIGNMENT, not status, and writing `solved: true`
+// while it is false returns 200 and changes nothing -- so it is checked first.
 export interface ZendeskRequest {
   id: number;
   subject: string;

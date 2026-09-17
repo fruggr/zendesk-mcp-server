@@ -115,11 +115,10 @@ export const MOCK_TICKET_FIELD_CUSTOM = {
   ],
 };
 
-// The system subject and description fields. EVERY real Zendesk form carries
-// these and marks them required in the portal, and their absence from the
-// fixtures is what hid a blocking bug: treating them as custom fields made
-// create_request demand "Subject (field id 1)" in `custom_fields`, which no
-// caller can satisfy. They belong in the form fixture for that reason.
+// The system subject and description fields. EVERY real form carries these and
+// marks them portal-required, and their absence from the fixtures is what hid a
+// blocking bug: treating them as custom fields made create_request demand
+// "Subject (field id 1)", which no caller can satisfy.
 export const MOCK_TICKET_FIELD_SUBJECT = {
   id: 1,
   type: 'subject',
@@ -158,13 +157,9 @@ export const MOCK_TICKET_FIELD_PORTAL_OPTIONAL = {
   editable_in_portal: true,
 };
 
-// GET /ticket_forms — the forms an end user picks between. `display_name` is
-// deliberately different from `name` (customer-facing vs internal), which is
-// what list_request_forms has to surface.
-// The parent field of a conditional rule. Portal-visible and portal-OPTIONAL on
-// purpose: a condition gates on an answer the submitter gives freely, and
-// keeping it optional leaves MOCK_TICKET_FORM_FEATURE as the form with no
-// required custom field.
+// The parent field of a conditional rule. Portal-OPTIONAL on purpose: a
+// condition gates on an answer the submitter gives freely, which leaves
+// MOCK_TICKET_FORM_FEATURE as the form with no required custom field.
 export const MOCK_TICKET_FIELD_CONDITION_PARENT = {
   id: 360000000003,
   type: 'tagger',
@@ -182,6 +177,9 @@ export const MOCK_TICKET_FIELD_CONDITION_PARENT = {
   ],
 };
 
+// GET /ticket_forms — the forms an end user picks between. `display_name`
+// differs from `name` (customer-facing vs internal), which is what
+// list_request_forms has to surface.
 export const MOCK_TICKET_FORM_BUG = {
   id: 900,
   name: 'Bug report (internal)',
@@ -204,11 +202,10 @@ export const MOCK_TICKET_FORM_FEATURE = {
   end_user_visible: true,
   default: false,
   position: 2,
-  // The condition's parent field is ON the form: a real Zendesk form cannot gate
-  // on a field a submitter has no way to answer, and leaving it out made the
-  // rendered rule name a field absent from the same output. It is deliberately
-  // the OPTIONAL parent, so this form keeps being the one whose only
-  // portal-required fields are the system ones.
+  // The condition's parent field is ON the form: a real form cannot gate on a
+  // field the submitter has no way to answer, and leaving it out made the
+  // rendered rule name a field absent from the same output. The OPTIONAL parent,
+  // so this form's only portal-required fields stay the system ones.
   ticket_field_ids: [1, 2, 360000000003, 360000000002],
   end_user_conditions: [
     {

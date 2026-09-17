@@ -36,14 +36,10 @@ import {
 } from './attachments';
 import type { ToolContext, ToolDefinition } from './definitions';
 
-// Zendesk reserves `/api/v2/requests` for requesters; the agent paths
-// (`/tickets`, `/search`) answer 403 for an end user, and vice versa some of
-// these behave differently under an agent token. This message is thrown in
-// place of the generic "Permission denied" so the caller learns which surface
-// they are on rather than which HTTP code came back.
-//
-// ASCII only, same as the other rewritten auth messages: these can travel
-// through header-adjacent paths that reject non-ASCII bytes.
+// Zendesk reserves `/api/v2/requests` for requesters and answers 403 on the
+// agent paths for an end user, so this replaces the generic "Permission denied"
+// to say which surface the caller is on. ASCII only, like the other rewritten
+// auth messages: these travel through paths that reject non-ASCII bytes.
 const forbidden = (tool: string, endpoint: string, error: ZendeskApiError, hint?: string): Error =>
   new Error(
     `${tool} reads the end-user Requests surface (${endpoint}), which Zendesk serves to a ` +
@@ -55,12 +51,9 @@ const forbidden = (tool: string, endpoint: string, error: ZendeskApiError, hint?
     { cause: error },
   );
 
-// Every path scoped to a single request id has a cause the generic message
-// does not: the id may simply belong to somebody else. Zendesk answers 403
-// there, and telling the caller their Help Center is closed or their token is
-// not Help-Center-enabled sends them to fix something that is not broken. Named
-// only on these paths -- on `/ticket_forms` it would be a wrong diagnosis in
-// turn, and that path has its own hint.
+// A path scoped to one request id has a cause the generic message does not: the
+// id may belong to someone else, which Zendesk also answers 403. Named only
+// here -- on `/ticket_forms` it would be the wrong diagnosis in turn.
 const OTHER_USERS_REQUEST_HINT =
   'A request id that belongs to another user is refused the same way, so check the id is one of your own.';
 
@@ -81,11 +74,10 @@ const withForbiddenGuidance = async <T>(
   }
 };
 
-// The forms a customer may actually pick from. `active=true` is load-bearing:
-// Zendesk already hides forms that are not `end_user_visible` from an end-user
-// token, but it does NOT hide inactive ones. `fallback_to_default=true` returns
-// the default form when nothing else matches, so an account with a single form
-// degrades to that form rather than to an empty list.
+// `active=true` is load-bearing: Zendesk hides forms that are not
+// `end_user_visible` from an end-user token, but not inactive ones.
+// `fallback_to_default=true` returns the default when nothing matches, so an
+// account degrades to one form rather than an empty list.
 const END_USER_FORM_PARAMS = {
   active: 'true',
   end_user_visible: 'true',
@@ -169,11 +161,10 @@ const fetchAllPages = async <T, R extends PagedResponse = ZendeskListResponse<T>
   }
 };
 
-// Paginated for the same reason the field listing is: an account with more
-// forms than fit one page would otherwise have some of them invisible to
-// `list_request_forms`, and `resolveForm` would reject their ids with "no
-// request form with id X is available to you" -- a confident refusal of a form
-// that does exist.
+// Paginated for the same reason the field listing is: a form past the first
+// page would be invisible to `list_request_forms`, and `resolveForm` would
+// reject its id with "no request form with id X is available to you" -- a
+// confident refusal of a form that exists.
 const fetchEndUserForms = async (
   subdomain: string,
   token: string,
@@ -226,18 +217,11 @@ const fetchVisibleTicketFields = async (
 };
 
 /**
- * Every public comment on a request, paged through the same walker the form and
- * field listings use.
- *
- * `get_request` promises the whole conversation, so it must page -- one GET
- * stops at Zendesk's page size and a long-running ticket would lose its oldest
- * exchanges. Sharing the walker is what makes it *fail* rather than truncate at
- * the cap: a second loop here had the opposite semantics, silently returning a
- * partial thread on the one tool that promises a complete one.
- *
- * The `users` sideload accumulates across pages via `onPage` -- it is what
- * attributes each comment, and a later page's authors need not appear in the
- * first page's.
+ * Every public comment on a request, through the walker the form and field
+ * listings use. `get_request` promises the whole conversation, and sharing that
+ * walker is what makes a capped scan *fail* rather than silently return a
+ * partial thread. The `users` sideload accumulates across pages via `onPage`: a
+ * later page's authors need not appear in the first page's.
  */
 // `users` is omitted before being re-declared: `ZendeskListResponse<T>` types
 // every sideload key as `T[]`, so a plain intersection would make each author a
@@ -275,17 +259,10 @@ const fetchAllRequestComments = async (
   return { comments, authors };
 };
 
-// Zendesk field `type` values for the built-in fields every form carries. They
-// are NOT things a submitter sends in `custom_fields`: `subject` and
-// `description` are this tool's own `subject`/`body` parameters, and the rest
-// are agent-side (status, priority, type, group, assignee, tags) and dropped
-// outright when an end user sets them.
-//
-// This matters more than it looks. A real form's `ticket_field_ids` includes
-// the system subject and description, and both are marked required in the
-// portal -- so treating every id in that list as a custom field to collect
-// would make `create_request` demand "Subject (field id 1)" in `custom_fields`
-// and refuse every submission, which no caller could satisfy.
+// Built-in field types, none of which a submitter sends in `custom_fields`. A
+// real form's `ticket_field_ids` includes the system subject and description,
+// both portal-required, so treating every id there as a custom field would make
+// `create_request` demand "Subject (field id 1)" and refuse every submission.
 const SYSTEM_FIELD_TYPES: ReadonlySet<string> = new Set([
   'subject',
   'description',
@@ -327,17 +304,10 @@ const fieldSpec = (field: ZendeskTicketField): string => {
     .join('\n');
 };
 
-// Conditions are surfaced as data, not evaluated. Which fields a submitter
-// actually sees can depend on answers already given, and whether the Requests
-// API enforces that server-side is unverified -- so the model is told the rule
-// and left to conduct the conversation, rather than being handed a field list
-// that is wrong for half the answers.
-//
-// Named by label, not by bare id: a rule reading "when field 360000000001 is
-// severity_1" asks the model to conduct a conversation about a field the
-// customer has no name for. The id is kept alongside so the rule still joins
-// onto the Fields section below, and is the only thing left when the field is
-// not among those the caller can see.
+// Conditions are surfaced as data, not evaluated: which fields a submitter sees
+// depends on answers already given, and whether the API enforces that is
+// unverified. Named by label, not bare id -- "when field 360000000001 is
+// severity_1" asks for a conversation about a field the customer cannot name.
 const fieldRef = (id: number, byId: Map<number, ZendeskTicketField>): string => {
   const field = byId.get(id);
   return field ? `${field.title_in_portal || field.title} (field id ${id})` : `field ${id}`;
@@ -347,14 +317,11 @@ const fieldRef = (id: number, byId: Map<number, ZendeskTicketField>): string => 
  * Whether a conditional child field is required *of a submitter*, in words.
  *
  * `is_required` alone is not the answer: `required_on_statuses` narrows it to
- * particular ticket statuses, and a field required only "when open" is not
- * required of a customer submitting a new request. Saying "then required" there
- * would send the assistant hunting for an answer Zendesk will not ask for.
- *
- * A new request starts at `new`, so that is the status this reads for -- with
- * the caveat Zendesk documents, that a trigger can move a ticket off `new`
- * immediately, which is why the wording says when the field becomes required
- * rather than that it never will.
+ * particular statuses, and saying "then required" for a field required only
+ * "when open" sends the assistant hunting for an answer Zendesk will not ask
+ * for. A new request starts at `new`, so that is the status read for -- but a
+ * trigger can move it off `new` at once, hence wording that says when the field
+ * becomes required rather than that it never will.
  */
 const childRequirement = (child: ZendeskFormConditionChild): string => {
   if (!child.is_required) return '';
@@ -423,18 +390,16 @@ const renderFormSpec = (form: ZendeskTicketForm, fields: ZendeskTicketField[]): 
     .join('\n');
 };
 
-// What a customer sending nothing looks like on the wire: an unanswered field
-// arrives as null or an empty string, and an unticked multiselect as an empty
-// array. Zendesk stores all three as no answer, so a required field carrying
-// one is missing rather than provided -- otherwise sending `[]` would satisfy
-// the check below while the request lands without the answer.
+// Zendesk stores null, '' and an unticked multiselect's `[]` alike as no
+// answer, so a required field carrying one is missing rather than provided.
+// Otherwise `[]` would satisfy the check below and the request would land
+// without the answer.
 const isEmptyAnswer = (value: unknown): boolean =>
   value === null || value === '' || (Array.isArray(value) && value.length === 0);
 
 // The values a dropdown or multiselect accepts, or null when the field is not
-// option-backed. This is the same list `get_request_form` renders as "Accepted
-// values", so validating against it refuses exactly what that tool said not to
-// send -- no second source of truth, and no extra API call: `resolveForm` has
+// option-backed. Same list `get_request_form` renders as "Accepted values", so
+// there is no second source of truth and no extra call -- `resolveForm` has
 // already fetched these definitions.
 const optionValues = (field: ZendeskTicketField): Set<string> | null =>
   field.custom_field_options?.length
@@ -442,21 +407,16 @@ const optionValues = (field: ZendeskTicketField): Set<string> | null =>
     : null;
 
 /**
- * Refuse a submission the API would accept and quietly mangle.
+ * Refuse a submission the API would accept and quietly mangle. Three ways it
+ * does: an unknown `ticket_form_id` gets 201 on the DEFAULT form; a missing
+ * `required_in_portal` field is enforced against end users only, so an agent
+ * token gets 201 with an empty subject; and an option value the form does not
+ * offer is dropped, leaving 201 and an empty field while the tool reports the
+ * request submitted.
  *
- * Three silent failures are guarded here. An unknown `ticket_form_id` makes
- * Zendesk answer 201 having substituted the account's DEFAULT form, so the
- * request lands on the wrong form with no error at all. A missing
- * `required_in_portal` field is enforced only against end users -- an agent
- * token gets 201 with an empty subject -- so an agent-side check would pass
- * where a customer's submission fails. And a value a dropdown does not offer is
- * DROPPED on the way in: 201, the field empty, nothing said. That last one is
- * the worst of the three, because the tool would report a request submitted
- * while the answer the form required never arrived.
- *
- * Only UNCONDITIONALLY required fields are enforced. A field required through
- * `end_user_conditions` depends on answers we may not have, and blocking on it
- * would refuse valid submissions; Zendesk's own 422 is the backstop there.
+ * Only UNCONDITIONALLY required fields are enforced -- a field required through
+ * `end_user_conditions` depends on answers we may not have, and Zendesk's 422
+ * is the backstop there.
  */
 const validateSubmission = (
   form: ZendeskTicketForm,
@@ -537,12 +497,10 @@ export const createRequestTools = (ctx: ToolContext): ToolDefinition[] => {
           'ticket with create_ticket (namespace: tickets).',
       );
     }
-    // With no id given, the account default is the right answer -- but a single
-    // visible form that is NOT the default is a real shape (the default form can
-    // be hidden from end users, and `fallback_to_default` only fires when
-    // NOTHING matched), and refusing it would break the promise that an account
-    // with one form gets that one. With several forms and no default, there is
-    // nothing to guess from and the refusal below stands.
+    // One visible form that is NOT the default is a real shape -- the default
+    // can be hidden from end users, and `fallback_to_default` fires only when
+    // nothing matched -- so it is taken rather than refused. With several forms
+    // and no default there is nothing to guess from.
     const form =
       formId === undefined
         ? (forms.find((f) => f.default) ?? (forms.length === 1 ? forms[0] : undefined))

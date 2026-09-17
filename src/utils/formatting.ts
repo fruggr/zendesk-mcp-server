@@ -229,10 +229,9 @@ export const formatComment = (comment: ZendeskComment, authors?: Map<number, str
 };
 
 // A request as its requester sees it. Deliberately NOT formatTicket: that one
-// dereferences `ticket.tags.length` unguarded and a Request carries no `tags`,
-// so reusing it would throw; it also renders `assignee_id`, which end users are
-// not shown, and omits `can_be_solved_by_me`, which is the field that decides
-// whether the "mark solved" operation is even offered.
+// dereferences `ticket.tags.length` unguarded and a Request has no `tags`, so
+// reusing it would throw. It also renders `assignee_id`, which end users are not
+// shown, and omits `can_be_solved_by_me`.
 export const formatRequest = (request: ZendeskRequest): string =>
   [
     `## Request #${request.id}: ${request.subject}`,
@@ -251,12 +250,10 @@ export const formatRequest = (request: ZendeskRequest): string =>
     .filter(Boolean)
     .join('\n');
 
-// A comment on one's own request. formatComment is wrong here twice over: it
-// labels a non-public comment "Internal note", which cannot reach this path at
-// all (Zendesk filters agent notes out of /requests/{id}/comments), and it
-// prints a bare `author_id` where the endpoint hands us a `users` sideload with
-// a name and an `agent` flag -- which is exactly what tells an agent's reply
-// from the customer's own comment.
+// A comment on one's own request. formatComment is wrong here twice: it labels
+// a non-public comment "Internal note", which cannot reach this path, and it
+// prints a bare `author_id` where the endpoint gives a `users` sideload with the
+// `agent` flag that tells a reply from the customer's own comment.
 export const formatRequestComment = (
   comment: ZendeskComment,
   authors: Map<number, ZendeskRequestCommentAuthor>,
@@ -266,11 +263,10 @@ export const formatRequestComment = (
     ? `${author.name}${author.agent ? ' (support agent)' : ''}`
     : `user ${comment.author_id}`;
   const lines = [`### Comment by ${who}`, `*${comment.created_at}*`];
-  // The download URL is part of the line, not a detail: the end-user surface has
-  // no attachment-fetching operation of its own, and the agent-side
-  // get_ticket_attachments is out of reach of the requests proxy -- so without
-  // `content_url` a customer can see that their agent attached a file and has no
-  // way to open it. Zendesk's content_url carries its own access token.
+  // The URL is load-bearing: the end-user surface has no attachment-fetching
+  // operation, and get_ticket_attachments is out of the requests proxy's reach,
+  // so without it a customer can see a file was attached and not open it.
+  // `content_url` carries its own access token.
   if (comment.attachments?.length) {
     const summary = comment.attachments
       .map((a) => `${a.file_name} (#${a.id}, ${a.content_type}) — ${a.content_url}`)

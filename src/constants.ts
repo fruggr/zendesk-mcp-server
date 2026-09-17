@@ -110,11 +110,10 @@ export const MAX_BASE64_INPUT_MB = Number.parseFloat(
 // Overridable via ZENDESK_MAX_COMMENT_PAGES for tickets with many comments.
 export const MAX_COMMENT_PAGES = positiveIntEnv('ZENDESK_MAX_COMMENT_PAGES', 10);
 
-// Max /ticket_fields pages scanned when resolving a request form's fields. That
-// endpoint cannot be trusted to say when it is done: its `count` is the
-// UNFILTERED total (measured 27 while returning 8 rows with `next_page: null`),
-// and in cursor mode `page[size]` applies before the visibility filter, so a
-// short page is not the last one. We follow `next_page` alone and bound it here.
+// Max /ticket_fields pages scanned when resolving a form's fields. That endpoint
+// cannot say when it is done: `count` is the UNFILTERED total (measured 27 while
+// returning 8 rows with `next_page: null`). We follow `next_page` alone, bounded
+// here.
 export const TICKET_FIELD_SCAN_MAX_PAGES = positiveIntEnv(
   'ZENDESK_TICKET_FIELD_SCAN_MAX_PAGES',
   10,
