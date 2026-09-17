@@ -1,17 +1,11 @@
 import { describe, it } from 'vitest';
 import { createAllTools, type ToolContext } from '../../../src/tools';
 
-// Deterministic "tool definition quality" gate — the machine-checkable floor of
-// the Glama Tool Definition Quality rubric (docs/mcp-metadata.md). It does NOT
-// judge whether prose is *good* (that is CodeRabbit's job, see .coderabbit.yaml);
-// it guarantees no tool ships grossly under-documented. This matters because the
-// server score is `60% mean + 40% MIN` across tools, so a single thin tool drags
-// the whole surface down — the MIN term is exactly what a floor protects.
-//
-// Failure messages are written to TEACH the fixer (LLM or human) the intent, not
-// just to flag a red. They cite the offending text, the Glama dimension at stake,
-// and an exemplar tool to imitate — deliberately WITHOUT naming the mechanical
-// pass condition, so the fix is a real improvement rather than gaming the check.
+// Deterministic floor of the Glama Tool Definition Quality rubric
+// (docs/mcp-metadata.md): not whether prose is *good* — CodeRabbit judges that —
+// but that no tool ships grossly under-documented, the server score being
+// `60% mean + 40% MIN`. Failure messages teach the fixer the intent and never
+// name the mechanical pass condition.
 
 const ctx: ToolContext = { subdomain: 'testsubdomain', getToken: () => 'test-token' };
 const tools = createAllTools(ctx);
@@ -66,13 +60,10 @@ const novelTokenCount = (name: string, description: string): number => {
   return novel.size;
 };
 
-// A write tool must disclose its OUTCOME — what it returns or the concrete
-// resulting state — not merely restate its action. A bare action verb (a tool
-// named create_article_attachment described as "Upload an attachment…") passes
-// RULE B and looks fine, yet says nothing an annotation/name doesn't already
-// imply, which is exactly what Glama scores 2/5 on Behavioral Transparency. So
-// the backstop requires a result/return marker, not any verb. Intentionally NOT
-// surfaced in the failure message (teach the goal, not the trick).
+// A write tool must disclose its OUTCOME — what it returns, or the resulting
+// state — not merely restate its action. A bare action verb passes RULE B while
+// saying nothing the name and annotations don't imply, which Glama scores 2/5 on
+// Behavioral Transparency. Hence a result marker.
 const OUTCOME =
   /\b(?:returns?|returned|replaces?|replaced|overwrites?|appends?|appended|emails?|no-op|idempotent|the (?:created|updated|new|resulting))\b/i;
 

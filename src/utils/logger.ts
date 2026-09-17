@@ -53,12 +53,10 @@ const REDACTED_KEYS = new Set([
 const isSensitive = (key: string): boolean =>
   REDACTED_KEYS.has(key.toLowerCase().replace(/[_-]/g, ''));
 
-// Recursively redact: a sensitive *key* anywhere in the tree has its value
-// replaced, so `{ oauth: { token } }` can't leak. `path` is the current branch
-// only (add/delete around the descent), so a back-reference to an ancestor
-// becomes `[circular]` while a value shared between siblings is still walked.
-// Functions are dropped: an own enumerable `toJSON` copied into the output
-// would be invoked by `JSON.stringify` and hand back the unredacted original.
+// A sensitive *key* anywhere in the tree has its value replaced. `path` covers
+// the current branch only, so an ancestor back-reference becomes `[circular]`
+// while a value shared between siblings is still walked. Functions are dropped: a
+// copied `toJSON` would be invoked by `JSON.stringify` and hand back the original.
 const redactValue = (value: unknown, path: WeakSet<object> = new WeakSet()): unknown => {
   if (typeof value === 'function') return '[function]';
   if (!value || typeof value !== 'object') return value;

@@ -7,10 +7,10 @@ const MAX_ATTEMPTS = 3;
 const BASE_DELAY_MS = 250;
 const MAX_DELAY_MS = 4_000;
 
-// Undici gives `fetch` no overall deadline — its headersTimeout/bodyTimeout
-// default to 300 s — so a stalled socket would hold a tool call open long past
-// the retry budget, which cannot fire while an attempt is pending. Transfers get
-// a longer one: a large attachment on a slow link legitimately takes a while.
+// Undici gives `fetch` no overall deadline — headersTimeout/bodyTimeout default
+// to 300 s — so a stalled socket would hold a tool call open long past the retry
+// budget, which cannot fire while an attempt is pending. Transfers get longer: a
+// large attachment legitimately takes a while.
 export const REQUEST_TIMEOUT_MS = 30_000;
 export const TRANSFER_TIMEOUT_MS = 120_000;
 
@@ -31,12 +31,10 @@ interface RetryPolicy {
   readonly serverErrors: boolean;
 }
 
-// The client sits below the tool layer, so the method is all it has to judge
-// idempotency by — and `PUT /tickets/{id}` with a `comment` *appends* one, so PUT
-// counts as a create too. Everything that is not a GET therefore only replays
-// what provably did not apply: a 429 (Zendesk refused the request) or a
-// connection that never opened. A 5xx may have applied — replaying a DELETE
-// there would turn a completed delete into a misleading 404.
+// The method is all this layer has to judge idempotency by, and `PUT
+// /tickets/{id}` with a `comment` *appends* one, so PUT counts as a create.
+// Anything but GET therefore replays only what provably did not apply: a 429, or
+// a connection that never opened. A 5xx may have applied.
 const POLICIES: Record<HttpMethod, RetryPolicy> = {
   GET: { network: 'any', serverErrors: true },
   DELETE: { network: 'pre-send', serverErrors: false },

@@ -1,12 +1,9 @@
 // Pure ordering logic for reorder_article (see src/tools/help-center.ts).
 //
-// Zendesk exposes no bulk-reorder endpoint and no "sort mode" field: the only
-// lever is each article's integer `position` (>= 0), and several articles
-// routinely share position 0, so ties resolve in an undefined display order.
-// These helpers turn a "move article X relative to the section" request into the
-// MINIMAL set of absolute position writes that realises it deterministically,
-// leaving unrelated articles untouched. All functions are pure so the tricky
-// numeric transform can be unit-tested without any network.
+// Zendesk has no bulk-reorder endpoint and no "sort mode": the only lever is each
+// article's integer `position`, and several routinely share 0, so ties display in
+// an undefined order. These helpers derive the minimal absolute writes that fix
+// that, leaving unrelated articles untouched.
 
 export type ReorderTarget = 'top' | 'bottom' | 'before' | 'after';
 
@@ -22,11 +19,10 @@ export interface ReorderWrite {
   position: number;
 }
 
-// A section is manually sorted iff its effective display order is non-decreasing
-// in `position`. A STRICT decrease means the display ignores `position` (the
-// section is auto-sorted by date/alphabetical), so any position write would be
-// silently ignored. Ties (equal positions) are NOT an inversion — they are the
-// undefined-order bug this tool fixes, not evidence of auto-sort.
+// A section is manually sorted iff its display order is non-decreasing in
+// `position`. A STRICT decrease means the display ignores `position` (auto-sorted
+// by date or alphabetically), so a write would be silently dropped. Ties are not
+// an inversion — they are the undefined-order bug this tool fixes.
 export const hasPositionInversion = (order: readonly OrderedArticle[]): boolean => {
   for (let i = 0; i < order.length - 1; i += 1) {
     const here = order[i];
@@ -36,11 +32,10 @@ export const hasPositionInversion = (order: readonly OrderedArticle[]): boolean 
   return false;
 };
 
-// Rearrange `effective` (the current display order) into the desired final order
-// by moving `movedId` to the slot implied by target/referenceId. Returns the new
-// ordering as ids-with-current-positions; callers pass it to computePositionWrites.
-// Assumes the moved article (and, for before/after, the reference) are present —
-// the handler validates presence first to produce friendly error messages.
+// Moves `movedId` to the slot implied by target/referenceId; the result feeds
+// computePositionWrites. Assumes the moved article (and, for before/after, the
+// reference) is present — the handler validates that first, to produce friendly
+// error messages.
 export const arrangeDesiredOrder = (
   effective: readonly OrderedArticle[],
   movedId: number,
@@ -64,20 +59,10 @@ export const arrangeDesiredOrder = (
   return [...rest.slice(0, slot), moved, ...rest.slice(slot)];
 };
 
-// Given the desired final order, return the minimal set of position writes that
-// realises it as a strictly-increasing sequence.
-//
-// normalize=true: renumber the whole section contiguously 0..N-1 (tidy positions,
-//   up to N writes — guarded by the confirm threshold in the handler).
-// normalize=false (default, gap-aware):
-//   - bottom (moved is last): one write, position = max(section) + 1.
-//   - otherwise: a right-cascade starting at the moved article — place it just
-//     above its left neighbour, then bump only the following articles that would
-//     otherwise tie/precede it, stopping at the first one already clear of the
-//     running maximum. On a section with integer slack this is a single write;
-//     with pervasive ties (all at 0) it degrades to renumbering the affected run,
-//     which is the genuine lower bound for that case.
-// Only articles whose position actually changes are returned.
+// Minimal writes realising `desired`. normalize renumbers the section 0..N-1 (up
+// to N writes, hence the handler's confirm threshold); the default cascade bumps
+// only what would otherwise tie or precede the moved article — one write where
+// positions have slack, renumbering the affected run when they all sit at 0.
 export const computePositionWrites = (
   desired: readonly OrderedArticle[],
   movedId: number,
@@ -124,16 +109,12 @@ export const computePositionWrites = (
   return writes;
 };
 
-// After the writes, re-read the effective order and confirm the article landed at
-// the requested spot. A failure here (writes accepted but order unchanged) means
-// the section is auto-sorted and `position` is being ignored.
+// Writes accepted but order unchanged means the section is auto-sorted and
+// `position` is ignored.
 //
-// before/after are checked by SIDE (moved comes before/after the reference), not
-// strict index adjacency: when the reference shares a position with another
-// article (the tie case this tool exists to fix), Zendesk breaks the display tie
-// arbitrarily, so an adjacent placement can legitimately show a co-tied sibling
-// between the two. Side ordering is the property we actually control and is
-// enough to tell a manual section (writes honoured) from an auto-sorted one.
+// before/after are checked by SIDE, not index adjacency: Zendesk breaks a display
+// tie arbitrarily, so a co-tied sibling can legitimately land between the two.
+// Side ordering is the property we control.
 export const isPlacedAsRequested = (
   effectiveAfter: readonly OrderedArticle[],
   movedId: number,

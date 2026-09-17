@@ -4,21 +4,17 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { generateNotes } from '../../scripts/release-notes-collapsed.js';
 
 /**
- * End-to-end guard for the release-notes pipeline.
- *
- * Unlike `release-notes-collapsed.test.ts` (which feeds hand-written markdown to
- * the pure `collapseInternalSections` helper), this test drives the REAL
- * `conventional-changelog-conventionalcommits` preset through
- * `@semantic-release/release-notes-generator` with the exact `presetConfig` that
+ * End-to-end guard for the release-notes pipeline. Unlike
+ * `release-notes-collapsed.test.ts`, which feeds hand-written markdown to the pure
+ * helper, this drives the REAL `conventional-changelog-conventionalcommits` preset
+ * through `@semantic-release/release-notes-generator` with the `presetConfig` that
  * ships in `.releaserc.json`, then through our collapsing wrapper.
  *
- * It is a deliberate compatibility canary: the preset renders only under a
- * `conventional-changelog-writer` major that understands its `writerOpts`, and that
- * pairing currently holds only because `pnpm-workspace.yaml` overrides the writer
- * to `^9`. Drop the override, or outgrow it, and generation degrades silently to
- * just the version header — these assertions fail loudly instead of shipping an
- * empty changelog. Full mechanism and removal condition:
- * `docs/release-automation.md` ("Preset / writer version coupling").
+ * A deliberate compatibility canary: the preset renders only under a
+ * `conventional-changelog-writer` major that understands its `writerOpts`, which
+ * holds only because `pnpm-workspace.yaml` pins the writer to `^9`. Drop that and
+ * generation degrades silently to just the version header. Mechanism and removal
+ * condition: `docs/release-automation.md` ("Preset / writer version coupling").
  */
 
 // The collapsing plugin is the 2nd `.releaserc.json` plugin entry: [path, options].

@@ -75,8 +75,7 @@ const buildUrl = (base: string, path: string, params?: Record<string, string>): 
 // Every request in this module goes through here: each attempt gets its own
 // deadline, transient failures are retried per the method's policy (`retry.ts`),
 // and a failure with no response at all is wrapped with the method and path
-// instead of surfacing a bare `fetch failed`. The signal is built inside the
-// thunk so every attempt starts its deadline fresh.
+// rather than surfacing a bare `fetch failed`.
 const performFetch = (
   method: HttpMethod,
   url: string,

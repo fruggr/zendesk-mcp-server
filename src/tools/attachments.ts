@@ -17,10 +17,9 @@ export const attachmentSchema = z.object({
     .string()
     .min(1)
     // `abort` is what makes the ordering pay: zod respects declaration order but
-    // does not stop on its own, so without it the base64 regex still scans
-    // megabytes already disqualified by their length (measured 1.67ms -> 0.33ms).
-    // In-range inputs are unaffected, the published schema is unchanged, and the
-    // error becomes "too large" alone instead of "too large AND malformed".
+    // does not stop on its own, so the base64 regex would still scan megabytes
+    // already disqualified by length (measured 1.67ms -> 0.33ms). In-range inputs
+    // and the published schema are unaffected.
     .max(MAX_BASE64_INPUT_CHARS, {
       abort: true,
       error: (issue) =>
@@ -63,11 +62,8 @@ export const attachmentsParam = (description: string) =>
 /**
  * Upload each file via the Zendesk Uploads API, aggregating them under a single
  * upload token (the token from the first upload is passed to the next), and
- * return that token for use in a comment's `uploads` array.
- *
- * Sequential on purpose: the aggregation is what makes one token carry several
- * files, and it requires the previous token as input, so the calls cannot be
- * parallelized.
+ * return that token for use in a comment's `uploads` array. Sequential of
+ * necessity: each call needs the previous token.
  */
 export const uploadAttachments = async (
   subdomain: string,

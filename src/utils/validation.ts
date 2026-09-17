@@ -2,19 +2,16 @@ import type * as z from 'zod/v4';
 
 /**
  * Build a strict params parser for a tool's input schema, computing the strict
- * schema and the valid-key list once (at proxy-dispatch construction) rather
- * than per call.
+ * schema and the valid-key list once at construction rather than per call.
  *
  * Zod objects default to `strip`, which silently drops unknown keys. That hid
  * #100: a caller passing `per_page` to list_tickets (whose parameter is
- * `page_size`) had the key dropped, so `page_size` fell back to its default and
- * a large unpaginated page came back. The returned parser rejects unknown keys
- * and rewrites the raw Zod error into a message that names the offending keys
- * and lists the valid parameters so a mistyped/misremembered name fails loudly.
+ * `page_size`) had the key dropped, so a large unpaginated page came back. The
+ * parser rejects unknown keys and names both the offending ones and the valid
+ * parameters, so a misremembered name fails loudly.
  *
- * Used on the proxy dispatch path (namespace/single modes), where this code
- * owns the parse. In `all` mode the SDK validates against the strict schema we
- * register and produces its own (also explicit) "Unrecognized key" message.
+ * Used on the proxy dispatch path (namespace/single modes); in `all` mode the
+ * SDK validates against the strict schema we register.
  */
 export const createStrictParamsParser = (
   schema: z.ZodObject,
