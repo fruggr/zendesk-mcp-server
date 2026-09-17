@@ -63,10 +63,29 @@ browser PKCE via `token-store.ts`. HTTP: per-session bearer captured from
 credential — insufficiently secure, doesn't scale to multi-user/remote); the
 rationale lives in `README.md` ("What this server does *not* do").
 
-Local setup and auth flows live in `README.md`; CLI flags and env vars in
+Local setup and auth flows live in `README.md`; the customer-facing walkthrough
+in `docs/end-user-onboarding.md`; CLI flags and env vars in
 `docs/configuration.md`; remote HTTP deployment in `docs/http-deployment.md`;
 troubleshooting in `docs/troubleshooting.md`; manual tool testing in
 `docs/live-testing.md`.
+
+## Two audiences
+
+Agents and end users are different products sharing a codebase: the agent
+surface speaks `/api/v2/tickets`, the end-user one `/api/v2/requests`. The
+`requests` namespace is excluded from `DEFAULT_NAMESPACES` (`config.ts`), so it
+ships opt-in.
+
+Changing the agent ticket surface? Ask whether the end-user side needs the
+equivalent, and when it doesn't, say why in the PR. They are not mirrors.
+
+Never check an end-user tool with an agent token: several operations behave
+differently for the two roles, so that check passes where a customer's real call
+fails. Which ones, why opt-in, and the rejected `--profile` alternative:
+`docs/decisions/end-user-namespace.md`.
+
+Opt-in is not a lower quality bar: Glama scores the flat surface, so a thin
+definition behind a flag drags the score down like any other.
 
 ## Design principle — usage-first, not API-shaped
 

@@ -13,6 +13,8 @@ import type {
   ZendeskMacroAction,
   ZendeskOrganization,
   ZendeskPermissionGroup,
+  ZendeskRequest,
+  ZendeskRequestCommentAuthor,
   ZendeskSection,
   ZendeskSlaLiveMetric,
   ZendeskSlaPolicy,
@@ -220,6 +222,55 @@ export const formatComment = (comment: ZendeskComment, authors?: Map<number, str
   ];
   if (comment.attachments?.length) {
     const summary = comment.attachments.map((a) => `#${a.id} (${a.content_type})`).join(', ');
+    lines.push(`Attachments: ${summary}`);
+  }
+  lines.push('', comment.body);
+  return lines.join('\n');
+};
+
+// A request as its requester sees it. Deliberately NOT formatTicket: that one
+// dereferences `ticket.tags.length` unguarded and a Request has no `tags`, so
+// reusing it would throw. It also renders `assignee_id`, which end users are not
+// shown, and omits `can_be_solved_by_me`.
+export const formatRequest = (request: ZendeskRequest): string =>
+  [
+    `## Request #${request.id}: ${request.subject}`,
+    `- **Status**: ${request.status}${request.type ? ` | **Type**: ${request.type}` : ''}${
+      request.priority ? ` | **Priority**: ${request.priority}` : ''
+    }`,
+    request.ticket_form_id ? `- **Form**: ${request.ticket_form_id}` : '',
+    // Stated in both directions on purpose: "no" is the answer to "can I close
+    // this?", and leaving it implicit invites a pointless attempt that Zendesk
+    // would accept with a 200 and silently ignore.
+    `- **Can you mark it solved**: ${request.can_be_solved_by_me ? 'yes' : 'no'}`,
+    request.via?.channel ? `- **Submitted via**: ${request.via.channel}` : '',
+    `- **Created**: ${request.created_at} | **Updated**: ${request.updated_at}`,
+    request.description ? `\n${request.description}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+// A comment on one's own request. formatComment is wrong here twice: it labels
+// a non-public comment "Internal note", which cannot reach this path, and it
+// prints a bare `author_id` where the endpoint gives a `users` sideload with the
+// `agent` flag that tells a reply from the customer's own comment.
+export const formatRequestComment = (
+  comment: ZendeskComment,
+  authors: Map<number, ZendeskRequestCommentAuthor>,
+): string => {
+  const author = authors.get(comment.author_id);
+  const who = author
+    ? `${author.name}${author.agent ? ' (support agent)' : ''}`
+    : `user ${comment.author_id}`;
+  const lines = [`### Comment by ${who}`, `*${comment.created_at}*`];
+  // The URL is load-bearing: the end-user surface has no attachment-fetching
+  // operation, and get_ticket_attachments is out of the requests proxy's reach,
+  // so without it a customer can see a file was attached and not open it.
+  // `content_url` carries its own access token.
+  if (comment.attachments?.length) {
+    const summary = comment.attachments
+      .map((a) => `${a.file_name} (#${a.id}, ${a.content_type}) — ${a.content_url}`)
+      .join(', ');
     lines.push(`Attachments: ${summary}`);
   }
   lines.push('', comment.body);

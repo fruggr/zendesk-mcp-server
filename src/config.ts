@@ -7,8 +7,20 @@ export type ToolMode = z.infer<typeof ToolMode>;
 export const LogLevel = z.enum(['debug', 'info', 'warn', 'error']);
 export type LogLevel = z.infer<typeof LogLevel>;
 
-export const Namespace = z.enum(['tickets', 'help_center', 'users']);
+export const Namespace = z.enum(['tickets', 'help_center', 'users', 'requests']);
 export type Namespace = z.infer<typeof Namespace>;
+
+/**
+ * Namespaces exposed when the operator passes no `--namespace` flag.
+ *
+ * Deliberately NOT every member of the enum: the end-user `requests` surface
+ * is opt-in, because under an agent token part of it silently misbehaves
+ * rather than failing -- `solved: true` returns 200 and changes nothing, and
+ * `required_in_portal` validation is not applied to agents. Registering it for
+ * every agent install would ship an operation that reports success on a no-op.
+ * Secondarily, an agent's tool list and context budget stay unchanged.
+ */
+export const DEFAULT_NAMESPACES: readonly Namespace[] = ['tickets', 'help_center', 'users'];
 
 export const Transport = z.enum(['stdio', 'http']);
 export type Transport = z.infer<typeof Transport>;
@@ -19,7 +31,21 @@ export const ConfigSchema = z.object({
   logLevel: LogLevel,
   mode: ToolMode,
   readOnly: z.boolean(),
-  namespaces: z.array(Namespace).optional(),
+  /**
+   * Active namespaces, defaulting to DEFAULT_NAMESPACES rather than everything.
+   *
+   * The default lives HERE, not in `loadConfig`: the integration harness builds
+   * its Config through `ConfigSchema.parse` and never calls `loadConfig`, so a
+   * default applied there would leave `requests` visible to every scenario and
+   * absent in production.
+   *
+   * `.min(1)` rejects an explicit `[]`, which `filterTools` reads as no filter
+   * at all (it guards on `?.length`) and would expose the opt-in namespace.
+   */
+  namespaces: z
+    .array(Namespace)
+    .min(1)
+    .default([...DEFAULT_NAMESPACES]),
   tools: z.array(z.string()).optional(),
   /**
    * Whether to expose the Help Center structural context (the `instructions`
@@ -87,6 +113,14 @@ export const ConfigSchema = z.object({
    * the "Dev mode" section of docs/configuration.md.
    */
   dev: z.boolean().default(false),
+  /**
+   * Print the tool surface the current flags resolve to, then exit without
+   * starting a server or touching the network. `--print-tools` exists because
+   * the surface is shaped by three independent knobs (`--namespace` / `--tool`
+   * pick the inventory, `--mode` packages it, `--read-only` narrows it) and
+   * their combination is easier to read off a listing than to predict.
+   */
+  printTools: z.boolean().default(false),
   transport: Transport,
   host: z.string().min(1),
   port: z.number().int().min(0).max(65535),
@@ -131,6 +165,7 @@ interface CliResult {
   promotedArticles?: boolean;
   hcResourceScheme?: string;
   dev?: boolean;
+  printTools?: boolean;
   logLevel?: string;
   transport?: string;
   host?: string;
@@ -189,6 +224,7 @@ const CLI_OPTIONS = {
   'no-topology': { type: 'boolean' },
   'no-promoted-articles': { type: 'boolean' },
   dev: { type: 'boolean' },
+  'print-tools': { type: 'boolean' },
 } as const satisfies ParseArgsConfig['options'];
 
 // The value-taking subset, spelled as they appear on the command line. Exported
@@ -222,6 +258,7 @@ const STANDALONE_EFFECTS = new Map<string, Partial<CliResult>>([
   ['no-topology', { topology: false }],
   ['no-promoted-articles', { promotedArticles: false }],
   ['dev', { dev: true }],
+  ['print-tools', { printTools: true }],
 ]);
 
 const parseCliArgs = (args: string[]): CliResult => {
@@ -324,6 +361,12 @@ export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
 
   const mode = cli.tools?.length ? 'all' : (cli.mode ?? 'namespace');
 
+  // `filterTools` ANDs the namespace and tool filters, so keeping the default
+  // set here would make `--tool list_requests` resolve to nothing: the tool
+  // exists, its namespace is not in the default. An explicit `--tool` without
+  // `--namespace` therefore opens the namespace filter and narrows by tool.
+  const namespaces = cli.namespaces ?? (cli.tools?.length ? [...Namespace.options] : undefined);
+
   const callbackPort =
     cli.callbackPort ??
     parsePortEnv(requireNonEmptyEnv('ZENDESK_OAUTH_CALLBACK_PORT'), 'ZENDESK_OAUTH_CALLBACK_PORT');
@@ -338,12 +381,13 @@ export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
     logLevel: cli.logLevel ?? requireNonEmptyEnv('LOG_LEVEL') ?? 'info',
     mode,
     readOnly: cli.readOnly ?? false,
-    namespaces: cli.namespaces,
+    namespaces,
     tools: cli.tools,
     topology: cli.topology ?? true,
     promotedArticles: cli.promotedArticles ?? true,
     hcResourceScheme,
     dev: cli.dev ?? false,
+    printTools: cli.printTools ?? false,
     callbackPort,
     ...resolveTransportSettings(cli),
   });

@@ -72,10 +72,11 @@ export interface ZendeskFieldOption {
   value: string;
 }
 
-// A ticket field definition (system or custom) from the Ticket Fields API. The
-// `id` is what create_ticket / update_ticket custom_fields expect; `type`
-// determines whether `custom_field_options` (dropdown/multiselect) or
-// `system_field_options` (system fields like priority) carry the valid values.
+// A ticket field definition. `type` decides whether `custom_field_options` or
+// `system_field_options` carries the valid values. The `*_in_portal` trio is a
+// different axis from `active`/`required` -- a field can be `required: false`
+// yet `required_in_portal: true` -- so the end-user tools read those and never
+// the agent flags.
 export interface ZendeskTicketField {
   id: number;
   type: string;
@@ -86,6 +87,50 @@ export interface ZendeskTicketField {
   tag?: string | null;
   custom_field_options?: ZendeskFieldOption[];
   system_field_options?: ZendeskFieldOption[];
+  /** Whether the field is shown to end users on a request form. */
+  visible_in_portal?: boolean;
+  /** Whether an end user must fill it to submit. Independent of `required`. */
+  required_in_portal?: boolean;
+  /** Whether an end user may change it after submitting. */
+  editable_in_portal?: boolean;
+  /** The label shown to end users; may differ from the agent-side `title`. */
+  title_in_portal?: string;
+}
+
+// GET /api/v2/ticket_forms — the field sets a customer picks between. End users
+// receive only `end_user_visible` forms, but Zendesk does NOT filter out
+// inactive ones. `ticket_field_ids` is a SUPERSET of what one submitter sees,
+// and the `raw_*` variants may hold an unresolved `{{dc.some_key}}`.
+export interface ZendeskTicketForm {
+  id: number;
+  name: string;
+  display_name: string;
+  active: boolean;
+  end_user_visible: boolean;
+  default: boolean;
+  position?: number;
+  ticket_field_ids: number[];
+  end_user_conditions?: ZendeskFormCondition[];
+}
+
+// One condition set inside a form's `end_user_conditions`. Rendered rather than
+// evaluated -- whether the API enforces these server-side is unverified.
+// `required_on_statuses` narrows `is_required` to particular statuses, so a
+// field required only "when open" is NOT required of a new request.
+export interface ZendeskFormConditionChild {
+  id: number;
+  is_required?: boolean;
+  required_on_statuses?: {
+    /** ALL_STATUSES ignores `statuses`; NO_STATUSES means required nowhere. */
+    type?: 'ALL_STATUSES' | 'SOME_STATUSES' | 'NO_STATUSES';
+    statuses?: string[];
+  };
+}
+
+export interface ZendeskFormCondition {
+  parent_field_id: number;
+  value: unknown;
+  child_fields?: ZendeskFormConditionChild[];
 }
 
 // GET /api/v2/views — a Zendesk view: a saved, per-agent ticket queue
@@ -212,6 +257,38 @@ export interface ZendeskComment {
   public: boolean;
   created_at: string;
   attachments?: ZendeskTicketAttachment[];
+}
+
+// GET/POST/PUT /api/v2/requests — a ticket as its REQUESTER sees it, not a
+// trimmed ZendeskTicket: no `tags`, and `can_be_solved_by_me` exists nowhere
+// else. That flag tracks ASSIGNMENT, not status, and writing `solved: true`
+// while it is false returns 200 and changes nothing -- so it is checked first.
+export interface ZendeskRequest {
+  id: number;
+  subject: string;
+  description: string;
+  status: string;
+  priority?: string | null;
+  type?: string | null;
+  requester_id: number;
+  organization_id?: number | null;
+  ticket_form_id?: number | null;
+  can_be_solved_by_me?: boolean;
+  due_at?: string | null;
+  custom_fields?: Array<{ id: number; value: unknown }>;
+  via?: { channel?: string };
+  created_at: string;
+  updated_at: string;
+}
+
+// The `users` sideload that `GET /requests/{id}/comments` returns by default.
+// Five keys only -- no email, no role -- so it is safe to render to the
+// requester, and `agent` is what tells an agent's reply from the customer's own
+// comment without guessing from ids.
+export interface ZendeskRequestCommentAuthor {
+  id: number;
+  name: string;
+  agent: boolean;
 }
 
 // GET /api/v2/tickets/{id}/audits — the immutable record of every update. Each
@@ -414,6 +491,8 @@ export interface ZendeskListResponse<T> {
   permission_groups?: T[];
   sla_policies?: T[];
   ticket_fields?: T[];
+  ticket_forms?: T[];
+  requests?: T[];
   macros?: T[];
   meta?: {
     has_more: boolean;

@@ -3,10 +3,7 @@ import * as z from 'zod/v4';
 import { ZendeskApiError } from './client/zendesk-api';
 import type { Config } from './config';
 import { ARTICLE_RESOURCES_SCAN_MAX_PAGES } from './constants';
-import {
-  createArticleResourcesProvider,
-  LIST_PROMOTED_ARTICLES_TOOL,
-} from './guidance/article-resources';
+import { createArticleResourcesProvider } from './guidance/article-resources';
 import {
   articleResourceEnabled,
   articleResourceUri,
@@ -17,7 +14,7 @@ import {
   topologyResourceUri,
 } from './guidance/instructions';
 import { createTopologyProvider } from './guidance/topology';
-import { filterTools, groupByNamespace } from './routing/registry';
+import { filterTools, groupByNamespace, NAMESPACE_LABELS } from './routing/registry';
 import type { ToolAnnotations, ToolResult } from './tools/definitions';
 import { createAllTools, type ToolDefinition } from './tools/index';
 import { type Logger, silentLogger } from './utils/logger';
@@ -49,12 +46,6 @@ const runHandler = async (
     }
     throw err;
   }
-};
-
-const NAMESPACE_LABELS: Record<string, { toolName: string; title: string }> = {
-  tickets: { toolName: 'zendesk_tickets', title: 'Zendesk Tickets' },
-  help_center: { toolName: 'zendesk_help_center', title: 'Zendesk Help Center' },
-  users: { toolName: 'zendesk_users', title: 'Zendesk Users' },
 };
 
 // Keep proxy descriptions compact: a proxy tool concatenates one line per
@@ -231,17 +222,15 @@ export const registerToolset = (
     for (const handle of registered) handle.remove();
   };
 
-  // Apply filters (--read-only, --namespace, --tool)
+  // Apply filters (--read-only, --namespace, --tool, --no-promoted-articles).
+  // All of them live in filterTools so `--print-tools` renders exactly this set;
+  // a filter applied only here would make that diagnostic lie.
   const filteredTools = filterTools(tools, {
     readOnly: config.readOnly,
     namespaces: config.namespaces,
     tools: config.tools,
-  })
-    // Disabling the pre-listing has to drop the companion tool too: gating only
-    // the resource `list` callback (below) would leave it callable, and its
-    // promoted-article scan would still hit the API. Read-by-id stays registered.
-    // `!== false` so an unset flag (hand-built configs) keeps default-on.
-    .filter((t) => config.promotedArticles !== false || t.name !== LIST_PROMOTED_ARTICLES_TOOL);
+    promotedArticles: config.promotedArticles,
+  });
 
   // Registration is atomic: if any registerTool/registerResource throws partway
   // (e.g. a hot-reloaded module introduced a duplicate tool name), roll back the
@@ -272,6 +261,9 @@ export const registerToolset = (
       case 'namespace': {
         const grouped = groupByNamespace(filteredTools);
         for (const [namespace, nsTools] of grouped) {
+          // Total by construction: NAMESPACE_LABELS is typed Record<Namespace, ...>,
+          // so a namespace without a label is a compile error, not a silent skip.
+          // The guard is only here for noUncheckedIndexedAccess.
           const label = NAMESPACE_LABELS[namespace];
           if (label) {
             registered.push(
