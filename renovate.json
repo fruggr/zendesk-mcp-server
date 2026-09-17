@@ -79,11 +79,6 @@
       "automerge": true
     },
     {
-      "matchDepTypes": ["pnpm.overrides"],
-      "matchUpdateTypes": ["patch", "minor"],
-      "automerge": true
-    },
-    {
       "matchManagers": ["github-actions"],
       "automerge": false
     },
