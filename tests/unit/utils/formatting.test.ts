@@ -1310,7 +1310,7 @@ describe('formatRequestComment', () => {
     expect(formatRequestComment(comment, authors)).toMatchInlineSnapshot(`
       "### Comment by Sam Support (support agent)
       *2026-01-06T11:30:00Z*
-      Attachments: diagnostic.txt (#4242, text/plain)
+      Attachments: diagnostic.txt (#4242, text/plain) — https://testsubdomain.zendesk.com/attachments/4242/diagnostic.txt
 
       Thanks for the report — which browser are you on?"
     `);
@@ -1338,7 +1338,9 @@ describe('formatRequestComment', () => {
       authors,
     );
     expect(text).toContain(
-      'Attachments: diagnostic.txt (#4242, text/plain), screenshot.png (#4243, image/png)',
+      'Attachments: diagnostic.txt (#4242, text/plain) — ' +
+        'https://testsubdomain.zendesk.com/attachments/4242/diagnostic.txt, ' +
+        'screenshot.png (#4243, image/png) — https://example.test/screenshot.png',
     );
   });
 

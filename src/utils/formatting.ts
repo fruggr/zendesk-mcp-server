@@ -269,9 +269,14 @@ export const formatRequestComment = (
     ? `${author.name}${author.agent ? ' (support agent)' : ''}`
     : `user ${comment.author_id}`;
   const lines = [`### Comment by ${who}`, `*${comment.created_at}*`];
+  // The download URL is part of the line, not a detail: the end-user surface has
+  // no attachment-fetching operation of its own, and the agent-side
+  // get_ticket_attachments is out of reach of the requests proxy -- so without
+  // `content_url` a customer can see that their agent attached a file and has no
+  // way to open it. Zendesk's content_url carries its own access token.
   if (comment.attachments?.length) {
     const summary = comment.attachments
-      .map((a) => `${a.file_name} (#${a.id}, ${a.content_type})`)
+      .map((a) => `${a.file_name} (#${a.id}, ${a.content_type}) — ${a.content_url}`)
       .join(', ');
     lines.push(`Attachments: ${summary}`);
   }
