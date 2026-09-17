@@ -659,6 +659,63 @@ describe('create_request', () => {
     ).rejects.toThrow(/requires values the submission does not carry/);
   });
 
+  // An unticked multiselect arrives as `[]`. Zendesk stores that as no answer,
+  // so a required field carrying it is missing -- not provided-but-empty.
+  it('treats an empty array as absent for a required field', async () => {
+    await expect(
+      textOf('create_request', {
+        subject: 'S',
+        body: 'B',
+        form_id: 900,
+        custom_fields: [{ id: 360000000001, value: [] }],
+      }),
+    ).rejects.toThrow(/requires values the submission does not carry/);
+  });
+
+  // The silent failure this guards: Zendesk answers 201 and drops a value the
+  // dropdown does not offer, so the request lands without the answer the form
+  // required while the tool reports it submitted.
+  it('refuses a dropdown value the form does not offer, naming what it accepts', async () => {
+    await expect(
+      textOf('create_request', {
+        subject: 'S',
+        body: 'B',
+        form_id: 900,
+        custom_fields: [{ id: 360000000001, value: 'sev1' }],
+      }),
+    ).rejects.toThrow(
+      /does not offer those answers: How severe is it\? \(field id 360000000001\) got sev1, accepts severity_1, severity_2/,
+    );
+  });
+
+  // A multiselect sends an array: every member is checked, and the error names
+  // only the members that are wrong.
+  it('refuses the unknown members of an array answer and no others', async () => {
+    await expect(
+      textOf('create_request', {
+        subject: 'S',
+        body: 'B',
+        form_id: 900,
+        custom_fields: [{ id: 360000000001, value: ['severity_1', 'severity_9'] }],
+      }),
+    ).rejects.toThrow(/got severity_9, accepts/);
+  });
+
+  // Only option-backed fields are value-checked. A free-text field has no
+  // options, so anything is acceptable and the check must not invent a refusal.
+  it('does not value-check a field that offers no options', async () => {
+    const text = await textOf('create_request', {
+      subject: 'S',
+      body: 'B',
+      form_id: 900,
+      custom_fields: [
+        { id: 360000000001, value: 'severity_1' },
+        { id: 360000000002, value: 'anything at all' },
+      ],
+    });
+    expect(text).toContain('submitted');
+  });
+
   // Conditional requirements depend on answers we may not have; blocking on
   // them would refuse valid submissions.
   it('does not block on a field required only through a condition', async () => {

@@ -423,15 +423,36 @@ const renderFormSpec = (form: ZendeskTicketForm, fields: ZendeskTicketField[]): 
     .join('\n');
 };
 
+// What a customer sending nothing looks like on the wire: an unanswered field
+// arrives as null or an empty string, and an unticked multiselect as an empty
+// array. Zendesk stores all three as no answer, so a required field carrying
+// one is missing rather than provided -- otherwise sending `[]` would satisfy
+// the check below while the request lands without the answer.
+const isEmptyAnswer = (value: unknown): boolean =>
+  value === null || value === '' || (Array.isArray(value) && value.length === 0);
+
+// The values a dropdown or multiselect accepts, or null when the field is not
+// option-backed. This is the same list `get_request_form` renders as "Accepted
+// values", so validating against it refuses exactly what that tool said not to
+// send -- no second source of truth, and no extra API call: `resolveForm` has
+// already fetched these definitions.
+const optionValues = (field: ZendeskTicketField): Set<string> | null =>
+  field.custom_field_options?.length
+    ? new Set(field.custom_field_options.map((option) => option.value))
+    : null;
+
 /**
  * Refuse a submission the API would accept and quietly mangle.
  *
- * Two silent failures are guarded here. An unknown `ticket_form_id` makes
+ * Three silent failures are guarded here. An unknown `ticket_form_id` makes
  * Zendesk answer 201 having substituted the account's DEFAULT form, so the
- * request lands on the wrong form with no error at all. And a missing
+ * request lands on the wrong form with no error at all. A missing
  * `required_in_portal` field is enforced only against end users -- an agent
  * token gets 201 with an empty subject -- so an agent-side check would pass
- * where a customer's submission fails.
+ * where a customer's submission fails. And a value a dropdown does not offer is
+ * DROPPED on the way in: 201, the field empty, nothing said. That last one is
+ * the worst of the three, because the tool would report a request submitted
+ * while the answer the form required never arrived.
  *
  * Only UNCONDITIONALLY required fields are enforced. A field required through
  * `end_user_conditions` depends on answers we may not have, and blocking on it
@@ -443,9 +464,8 @@ const validateSubmission = (
   provided: Array<{ id: number; value: unknown }>,
 ): void => {
   const byId = new Map(fields.map((field) => [field.id, field]));
-  const providedIds = new Set(
-    provided.filter((entry) => entry.value !== null && entry.value !== '').map((e) => e.id),
-  );
+  const answered = provided.filter((entry) => !isEmptyAnswer(entry.value));
+  const providedIds = new Set(answered.map((e) => e.id));
   const missing = form.ticket_field_ids
     .map((id) => byId.get(id))
     .filter((field): field is ZendeskTicketField => field?.required_in_portal === true)
@@ -463,6 +483,33 @@ const validateSubmission = (
     throw new Error(
       `This form requires values the submission does not carry: ${list}. Ask for them, then ` +
         'resend with those ids in custom_fields. Call get_request_form for their accepted values.',
+    );
+  }
+
+  // Option-backed answers are checked by VALUE, not merely by presence. A
+  // multiselect sends an array, a dropdown a single value; both are compared as
+  // strings because the API's option values are strings even when they read as
+  // numbers.
+  const rejected = answered.flatMap((entry) => {
+    const field = byId.get(entry.id);
+    const accepted = field && optionValues(field);
+    if (!field || !accepted) return [];
+    const unknown = (Array.isArray(entry.value) ? entry.value : [entry.value])
+      .map(String)
+      .filter((value) => !accepted.has(value));
+    return unknown.length > 0
+      ? [
+          `${field.title_in_portal || field.title} (field id ${field.id}) got ${unknown.join(', ')}, ` +
+            `accepts ${[...accepted].join(', ')}`,
+        ]
+      : [];
+  });
+
+  if (rejected.length > 0) {
+    throw new Error(
+      `This form does not offer those answers: ${rejected.join('; ')}. Zendesk would accept the ` +
+        'submission and drop them, leaving the request without the answers it asked for, so this ' +
+        'is refused instead. Call get_request_form for the exact values to send.',
     );
   }
 };
@@ -608,7 +655,7 @@ export const createRequestTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: false,
       title: 'Submit a Request',
       description:
-        'Submit a new support request as the signed-in user — the MCP equivalent of the Help Center\'s "Submit a request" form. Returns the created request with its number, which the user can then follow with list_requests and get_request. Required fields are checked before sending: an unknown form id, or a missing field the form marks required, is refused here rather than sent, because Zendesk would answer 201 having silently substituted the default form or accepted an empty subject. Call get_request_form first to learn which fields to gather. Priority and type cannot be set by an end user — Zendesk drops them — so triage is left to the agents. This posts as the authenticated user; an agent opening a ticket on someone else\'s behalf wants create_ticket instead.',
+        'Submit a new support request as the signed-in user — the MCP equivalent of the Help Center\'s "Submit a request" form. Returns the created request with its number, which the user can then follow with list_requests and get_request. The submission is checked before sending: an unknown form id, a missing field the form marks required, or a dropdown answer the form does not offer is refused here rather than sent, because Zendesk would answer 201 having silently substituted the default form, accepted an empty subject or dropped the unrecognised value. Call get_request_form first to learn which fields to gather. Priority and type cannot be set by an end user — Zendesk drops them — so triage is left to the agents. This posts as the authenticated user; an agent opening a ticket on someone else\'s behalf wants create_ticket instead.',
       inputSchema: z.object({
         subject: z
           .string()
@@ -633,7 +680,7 @@ export const createRequestTools = (ctx: ToolContext): ToolDefinition[] => {
           .array(z.object({ id: z.number().int(), value: z.unknown() }))
           .optional()
           .describe(
-            "Answers to the form's own questions, as { id, value } pairs. Take both the ids and the accepted values from get_request_form; a value Zendesk does not recognise is dropped without an error.",
+            "Answers to the form's own questions, as { id, value } pairs. Take both the ids and the accepted values from get_request_form; a value a dropdown does not offer is refused here, because Zendesk would drop it without an error.",
           ),
         attachments: attachmentsParam(
           'Files to attach to the request, such as a screenshot or a log, with their content base64-encoded.',
