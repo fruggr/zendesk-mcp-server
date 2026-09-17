@@ -16,7 +16,7 @@ Both boot the same `createMcpServer` the production entry point uses
 The committed `.mcp.json` passes `--mode all` **and** lists all four namespaces
 explicitly. That is not redundant: `requests` (the end-user surface) is excluded
 from the default namespace set, so a bare `--mode all` would expose everything
-*except* those seven tools and live-testing them would be impossible. Listing
+*except* the end-user tools, and live-testing them would be impossible. Listing
 the namespaces makes the rig show the whole surface.
 
 Add a namespace here when you add one to the enum, or it will be invisible to

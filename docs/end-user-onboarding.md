@@ -115,7 +115,7 @@ npx -y @fruggr/zendesk-mcp-server acme --print-tools \
   --namespace requests --namespace help_center
 ```
 
-You should see `zendesk_requests` listed with seven operations under it.
+You should see `zendesk_requests` listed, with the request operations under it.
 
 ---
 

@@ -233,11 +233,8 @@ operations that survive.
 
 There's one way to pick the inventory (`--namespace` / `--tool`), `--mode`
 packages it, and `--read-only` narrows it. When the combination isn't obvious,
-don't guess — ask the server, which needs no credentials to answer:
-
-```bash
-zendesk-mcp-server mycompany --print-tools --namespace requests --mode single
-```
+don't guess — `--print-tools` has the server answer what it would expose, with
+no credentials needed.
 
 Every tool with its description and its `read`/`write` mode:
 **[docs/mcp-tools-reference.md](docs/mcp-tools-reference.md)**. The flags and
@@ -261,25 +258,15 @@ own Help Center account, and never see anything that isn't theirs.
 
 ### Turning it on
 
-The end-user tools live in the `requests` namespace, which is **opt-in**:
+The end-user tools live in the `requests` namespace, and it is **opt-in**: an
+agent install shouldn't inherit tools built for someone else, and one of them
+(marking a request solved) doesn't work under an agent token at all — Zendesk
+accepts it and silently does nothing. `help_center` is worth serving alongside
+it, since a customer who can search the knowledge base often doesn't need to
+open a ticket in the first place.
 
-```bash
-zendesk-mcp-server mycompany --namespace requests --namespace help_center
-```
-
-`help_center` is worth adding — a customer who can search the knowledge base
-often doesn't need to open a ticket at all.
-
-Two things to know about the shape of that command. `--namespace` **replaces**
-the default set rather than adding to it, so this exposes the end-user surface
-only, not the agent tools as well. And `requests` is deliberately absent from
-the default: an agent install shouldn't inherit tools built for someone else,
-and one of them (marking a request solved) doesn't work under an agent token —
-Zendesk accepts it and silently does nothing. `--print-tools` shows you exactly
-what any combination of flags produces.
-
-`--read-only` composes with it, if you want customers to follow their tickets
-without opening new ones.
+The flags, and how to have the server print what a combination exposes:
+**[docs/configuration.md](docs/configuration.md)**.
 
 ### The journey it supports
 
@@ -293,20 +280,17 @@ without opening new ones.
   (each reply attributed, and support agents marked as such), reply back, and
   mark it solved when it is.
 
-### Zendesk prerequisites
+### What it asks of the Zendesk account
 
-- An **OAuth client** on the Zendesk account, with the local callback URL
-  registered. Same client the agent side uses; nothing extra.
-- The customer needs a **Help Center account** they can sign into. Signing in
-  with a Google account is enough where the Help Center allows it — Zendesk
-  provisions the user on first sign-in, with no admin action.
-- At least one ticket form **visible to end users**. Accounts with several get
-  a real choice; accounts with one get that one.
+Nothing the agent side doesn't already need, plus one thing: at least one
+ticket form marked visible to end users, because that is what a customer picks
+between. Sign-in is interactive, through a browser, by design — there is no
+scripted or headless path to an end-user token, which is the same protection
+that stops anyone else signing in as your customer.
 
-Sign-in is interactive, through a browser, by design — there's no scripted or
-headless path to an end-user token. The step-by-step walkthrough, written for
-someone who doesn't work in a terminal:
-**[docs/end-user-onboarding.md](docs/end-user-onboarding.md)**.
+The prerequisites in full: **[docs/configuration.md](docs/configuration.md)**.
+The step-by-step walkthrough, written for someone who doesn't work in a
+terminal: **[docs/end-user-onboarding.md](docs/end-user-onboarding.md)**.
 
 ### What a customer can't do — and shouldn't
 

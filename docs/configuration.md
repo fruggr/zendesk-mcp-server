@@ -60,6 +60,20 @@ Passing `--namespace` **replaces** the default set rather than adding to it, so
 `--namespace requests` exposes the end-user surface *only*. To serve customers
 the knowledge base as well, name both: `--namespace requests --namespace help_center`.
 
+`--read-only` composes with either, if customers should follow their tickets
+without opening new ones.
+
+#### What the end-user surface needs on the Zendesk account
+
+- An **OAuth client**, with the local callback URL registered. The same client
+  the agent side uses; nothing extra.
+- A **Help Center account** the customer can sign into. Where the Help Center
+  allows it, signing in with a Google account is enough -- Zendesk provisions
+  the user on first sign-in, with no admin action.
+- At least one ticket form **visible to end users**. Accounts with several give
+  the customer a real choice; accounts with one give them that one. With none,
+  the tools refuse rather than guess.
+
 There is one way to pick the inventory (`--namespace` / `--tool`), `--mode`
 packages it, and `--read-only` narrows it. When the combination is hard to
 predict, don't guess — ask the server:

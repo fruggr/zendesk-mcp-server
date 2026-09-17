@@ -73,7 +73,7 @@ So shipping these tools to every agent install would ship an operation that
 reports success on a no-op. Secondarily, an agent install keeps its tool list
 and context budget unchanged.
 
-Note what this does **not** buy: Glama scores the flat surface, so the seven
+Note what this does **not** buy: Glama scores the flat surface, so the
 end-user tools are evaluated like any other, and the server score's `40% min`
 term means one thin definition drags everything down whether or not it sits
 behind a flag. Opt-in is a correctness decision, not a quality exemption.
