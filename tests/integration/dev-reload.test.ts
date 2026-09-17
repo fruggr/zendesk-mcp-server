@@ -2,6 +2,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { ToolListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
 import { describe, expect, it } from 'vitest';
+import { Namespace } from '../../src/config';
 import { createReloadableServer, registerReloadTool } from '../../src/dev/reload';
 import { createServerShell, registerToolset } from '../../src/server';
 import { createAllTools } from '../../src/tools/index';
@@ -83,6 +84,23 @@ describe('dev-mode tool reload', () => {
     // generation), so it can be called again.
     expect(after).toContain('reload_tools');
     expect(listChanged()).toBeGreaterThan(changesAfterConnect);
+  });
+
+  // The surface-preserving test above runs on the DEFAULT namespaces, where
+  // `requests` is filtered out of both generations and a module missing from
+  // the reload list cannot show. Exposing every namespace is what makes the
+  // reload path's module list observable at all.
+  it('re-imports every module createAllTools composes, opt-in namespaces included', async () => {
+    const config = makeConfig({ mode: 'all', namespaces: [...Namespace.options] });
+    const { server, reload } = createReloadableServer(config, getToken);
+
+    const { names } = await connect(server);
+    const before = await names();
+    expect(before).toContain('create_request');
+
+    await reload();
+
+    expect(await names()).toEqual(before);
   });
 
   it('reports a reload failure as a tool error without crashing', async () => {
