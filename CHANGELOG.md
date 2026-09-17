@@ -1,3 +1,25 @@
+## [2.22.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.21.0...v2.22.0) (2026-09-17)
+
+### Features
+
+* **requests:** serve end users their own tickets ([#264](https://github.com/fruggr/zendesk-mcp-server/issues/264)) ([23b3a5f](https://github.com/fruggr/zendesk-mcp-server/commit/23b3a5f2f7c8c7791ba9262a6a6fd539708fdd2c))
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Documentation
+
+* cap comment volume, and bring existing comments under it ([#287](https://github.com/fruggr/zendesk-mcp-server/issues/287)) ([00340bf](https://github.com/fruggr/zendesk-mcp-server/commit/00340bfc759240e802daab2e713b5a552579bed7))
+
+### Chores
+
+* **deps:** lock file maintenance ([#291](https://github.com/fruggr/zendesk-mcp-server/issues/291)) ([81627c3](https://github.com/fruggr/zendesk-mcp-server/commit/81627c3bd3aaa0573be501433d6523f01aaafaa0))
+* **deps:** update dependency open to v11.0.2 ([#290](https://github.com/fruggr/zendesk-mcp-server/issues/290)) ([bbb586f](https://github.com/fruggr/zendesk-mcp-server/commit/bbb586f97b5885173d0325ab231a5d38dcdba8a6))
+* **deps:** update dependency zod to v4.6.2 ([#263](https://github.com/fruggr/zendesk-mcp-server/issues/263)) ([2560320](https://github.com/fruggr/zendesk-mcp-server/commit/2560320d22bbac0c30927d0a1586d6c3b09b1231))
+* **deps:** update pnpm to 12.4.2 ([#281](https://github.com/fruggr/zendesk-mcp-server/issues/281)) ([bf16a7b](https://github.com/fruggr/zendesk-mcp-server/commit/bf16a7bda3d6b4a3083f93cd36d778efebc1feaf))
+* **deps:** update pnpm to v11.26.0 ([#288](https://github.com/fruggr/zendesk-mcp-server/issues/288)) ([94a17e5](https://github.com/fruggr/zendesk-mcp-server/commit/94a17e52e818415885b31b070e5e4fe8de75b536))
+</details>
+
 ## [2.21.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.20.2...v2.21.0) (2026-09-11)
 
 ### Features
