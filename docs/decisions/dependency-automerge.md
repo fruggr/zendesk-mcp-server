@@ -138,6 +138,12 @@ setting `minimumReleaseAgeStrict: false` — pnpm would then quietly resolve an 
 version, and the PR would go green *without applying the fix*, which is the one
 outcome worse than red.
 
+pnpm 12 adds two more ways round the same gate, and neither belongs here.
+`minimumReleaseAgeExclude` waives the age for named packages, which is the
+per-package form of the same mistake. And an interactive install can approve a
+too-young pick at the prompt: unreachable in CI, but it reaches `main` through any
+lockfile committed after saying yes.
+
 One asymmetry remains, and it is a default rather than a choice:
 `dependencyDashboardApproval: false` is forced by the same block, so a **major**
 update carrying an advisory opens a PR directly instead of waiting on the Dependency
