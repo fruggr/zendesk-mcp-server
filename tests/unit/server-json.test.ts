@@ -1,12 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-// server.json is a version-controlled file at the repo root (committed, not a
-// build artifact). scripts/build-server-json.mjs seeds/validates it from
-// package.json; at release only its `version` is synced. These tests read the
-// committed manifest, assert it stays consistent with package.json (the single
-// source of truth) and the registry schema constraints, and guard against any
-// drift between the committed file and what the generator would seed.
+// server.json is version-controlled, not a build artifact: the generator seeds and
+// validates it from package.json, and release syncs only its `version`. These
+// tests read the committed manifest and assert it stays consistent with
+// package.json, the registry schema, and what the generator would seed.
 import { buildServerJson } from '../../scripts/build-server-json.mjs';
 
 const pkg = JSON.parse(

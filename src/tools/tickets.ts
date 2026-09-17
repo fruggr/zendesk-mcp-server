@@ -77,10 +77,8 @@ const MAX_RESPONSE_MB = Number.parseFloat((MAX_RESPONSE_BYTES / (1024 * 1024)).t
 
 // Bytes a block adds to the response once serialized. A JSON array weighs the sum
 // of its elements plus one separator each, so accumulating this is exact rather
-// than approximate: no assumption about file names, URLs or MIME types. An image
-// is measured without its payload and the base64 length added back, which yields
-// the identical number (base64 holds no character JSON escapes or that UTF-8
-// widens) while avoiding a multi-megabyte throwaway copy per image.
+// than approximate. An image is measured without its payload and the base64
+// length added back: identical, without a multi-megabyte throwaway copy.
 const blockCost = (block: ToolTextContent | ToolImageContent): number =>
   block.type === 'image'
     ? Buffer.byteLength(JSON.stringify({ ...block, data: '' }), 'utf8') + block.data.length + 1
@@ -156,13 +154,10 @@ const fetchAllTicketComments = async (
   return all;
 };
 
-// The pagination fields of a comments page, narrowed out of the response: the
-// whole object cannot be passed as ZendeskListResponse<ZendeskComment>, whose
-// `users?: T[]` would clash with the side-load (see TicketCommentsResponse).
-// `next_page` is deliberately NOT forwarded: extractPaginationMeta would raise
-// `has_more` from it while leaving `after_cursor` null, and the footer would
-// then offer "More available (cursor: null)" — a continuation this cursor-only
-// tool cannot follow. offsetPageNote reports that case in words instead.
+// Narrowed rather than passed whole: `users?: T[]` on
+// ZendeskListResponse<ZendeskComment> clashes with the side-load. `next_page` is
+// dropped on purpose — forwarding it raises `has_more` with a null cursor, an
+// offer this cursor-only tool cannot honour. offsetPageNote says so in words.
 const commentPageMeta = (response: TicketCommentsResponse, itemCount: number): PaginationMeta =>
   extractPaginationMeta<ZendeskComment>(
     {
@@ -172,25 +167,19 @@ const commentPageMeta = (response: TicketCommentsResponse, itemCount: number): P
     itemCount,
   );
 
-// Zendesk documents cursor pagination on this endpoint, so this is a defensive
-// path. If it ever answered offset-style, `next_page` says more comments exist
-// while no cursor comes with them — and this tool sends and accepts only a
-// cursor. Nothing it exposes reaches those comments: `page_size` goes out as
-// `page[size]`, which an offset response has already ignored, and
-// get_ticket(include_comments=true) sends no paging at all, so it lands on the
-// same default page. Naming either would be advice that cannot work — the defect
-// this whole change is about (#265) — so the note says plainly that the
-// continuation is out of reach here and points at the one place that is not.
+// Defensive: Zendesk documents cursor pagination here. Were it ever to answer
+// offset-style, `next_page` would report more comments with no cursor to reach
+// them, and no parameter this tool accepts gets there. The note says the
+// continuation is out of reach rather than give advice that cannot work (#265).
 const offsetPageNote = (response: TicketCommentsResponse): string =>
   response.meta?.after_cursor == null && response.next_page != null
     ? '\n\n> ⚠ Zendesk paginated this response by offset rather than by cursor, so more comments exist beyond this page and no cursor leads to them. This tool pages by cursor only, and no parameter it accepts reaches the rest: read the remaining comments in Zendesk directly.'
     : '';
 
-// How the page actually came back, read off the data rather than off what was
-// asked for — a header that describes the wrong end is worse than none, and the
-// truncation cut always lands on the trailing end (#265). Equal timestamps say
-// nothing about the order (a one-comment page, or several posted within the same
-// second), so those fall back to what was requested rather than guessing.
+// Read off the data rather than off what was asked for: a header describing the
+// wrong end is worse than none, and the truncation cut always lands on the
+// trailing end (#265). Equal timestamps say nothing about order, so those fall
+// back to what was requested.
 const commentPageOrder = (
   comments: ZendeskComment[],
   sortOrder: 'asc' | 'desc',
@@ -331,18 +320,10 @@ const collectAttachmentBlocks = async (
   return blocks;
 };
 
-// Correlate a top-level `slas` sideload back to a single ticket. Prefers an
-// explicit ticket_id match; falls back to a lone entry without a ticket_id
-// (the get_ticket case, where the sideload describes the one fetched ticket).
-// get_ticket has no direct SLA source — Zendesk silently ignores the `slas`
-// sideload on both Show Ticket and Show Many (#92). The only endpoint that
-// returns live SLA is Search, so resolve a single ticket's SLA via a tightly
-// scoped Search — its own requester, within a +/-1 day window around its
-// creation day (the window absorbs account-timezone skew in search dates) — and
-// correlate the result back by exact id. Best-effort by design: returns
-// undefined (never mis-attributed data) when the ticket falls outside the
-// result window (very high-volume requester) or Search is briefly unavailable
-// / not yet indexed.
+// Zendesk silently ignores the `slas` sideload on Show Ticket and Show Many
+// (#92), and Search is the only endpoint returning live SLA — hence the scoped
+// search: same requester, +/-1 day around creation (the window absorbs
+// account-timezone skew). Best-effort, returning undefined over mis-attribution.
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 const fetchTicketSla = async (
@@ -410,12 +391,10 @@ const fetchViewCounts = async (
   return counts;
 };
 
-// Resolve a view reference to an id. A numeric reference is used as-is; a string
-// is always treated as a title (even an all-digits one — the numeric-id path is
-// `typeof view === 'number'` only) and matched case-insensitively against the
-// agent's active views. The active-views list is cursor-paginated to completion
-// so a title on a later page still resolves; on no match the full set of
-// available titles is returned so the caller can self-correct.
+// A string reference is always a title, even an all-digits one, matched
+// case-insensitively. The active-views list is paginated to completion so a title
+// on a later page still resolves; on no match the available titles come back, for
+// the caller to self-correct.
 const resolveViewId = async (
   subdomain: string,
   token: string,
@@ -499,11 +478,9 @@ const hydrateViewTickets = async (
   return ids.map((id) => byId.get(id)).filter((t): t is ZendeskTicket => t !== undefined);
 };
 
-// Collect the user and group ids referenced across a page of audits so their
-// names can be resolved in one batched call each: users = every audit author plus
-// assignee/requester/submitter change values; groups = group_id change values.
-// Audit values arrive as unknown (string or number depending on the field), and
-// 0 / null / "" all mean "unset". Only real positive ids are worth resolving.
+// Audit change values arrive as unknown — string or number depending on the
+// field — and 0 / null / "" all mean "unset". Only real positive ids are worth
+// the batched name lookup.
 const addPositiveId = (set: Set<number>, raw: unknown): void => {
   const n = Number(raw);
   if (Number.isInteger(n) && n > 0) set.add(n);
@@ -595,11 +572,10 @@ interface TicketCommentsResponse {
   next_page?: string | null;
 }
 
-// Resolve the authors of a comment page to display names. The `include=users`
-// side-load is documented for email CCs, so it is treated as an optimisation
-// rather than the mechanism: whatever it returns is used as-is, and the author
-// ids it left out cost one batched show_many. The system actor (-1) has no user
-// record and is labelled by the formatter, so it is never looked up.
+// The `include=users` side-load is documented for email CCs, so it is an
+// optimisation rather than the mechanism: whatever it returns is used, and the
+// author ids it left out cost one batched show_many. The system actor (-1) has no
+// user record, so it is never looked up.
 const resolveCommentAuthors = async (
   subdomain: string,
   token: string,
@@ -617,14 +593,12 @@ const resolveCommentAuthors = async (
   return authors;
 };
 
-// Keys the generic field diff must not emit. Two reasons, both in this set:
-//   - `comment`/`fields`/`custom_fields` are routed to their own render paths, so
-//     the scalar loop skips them regardless of whether they changed.
+// Keys the generic field diff must not emit:
+//   - `comment`/`fields`/`custom_fields` have their own render paths.
 //   - `updated_at`/`generated_timestamp`/`encoded_id` are server-recomputed, so a
-//     no-op preview can bump them and they'd surface as spurious changes.
-// `id`/`url`/`created_at` are byte-identical across the two fetches and already
-// drop out via the diff; they're listed as belt-and-suspenders. Erring toward
-// over-suppression is the safe direction for a preview that precedes a real write.
+//     no-op preview bumps them and they'd read as changes.
+//   - `id`/`url`/`created_at` already drop out; listed as belt-and-braces, since
+//     over-suppression is the safe direction before a real write.
 const DIFF_SKIP_KEYS = new Set([
   'comment',
   'fields',
@@ -649,10 +623,9 @@ const shownValue = (v: unknown): string => {
   return s === '' ? '(empty)' : s;
 };
 
-// A single `label: before → after` change line, or null when the two sides
-// render identically. The null case also drops a field the apply response
-// returns as `null` where the current ticket omits the key: both render as
-// "(empty)", so it is a no-op and must not appear as a change.
+// Null when the two sides render identically. That also drops a field the apply
+// response returns as `null` where the current ticket omits the key: both render
+// "(empty)", so it is a no-op, not a change.
 const diffLine = (label: string, before: unknown, after: unknown): string | null => {
   const b = shownValue(before);
   const a = shownValue(after);
@@ -707,12 +680,10 @@ const diffCustomFields = (
   return changes;
 };
 
-// Preview a macro's effect on a ticket as a real before → after diff. The apply
-// endpoint returns the WHOLE resulting ticket (not just the macro's changes), so
-// diffing it against the ticket's current state is what isolates the macro's
-// actual effect; everything unchanged (identity fields, untouched custom fields)
-// drops out. The apply endpoint mutates nothing, so the text ends by pointing at
-// the write tools that persist the change — the deliberate two-step from #120.
+// The apply endpoint returns the WHOLE resulting ticket, not just the macro's
+// changes, so diffing it against the ticket's current state is what isolates the
+// macro's effect. It mutates nothing, hence the closing pointer at the write
+// tools that persist the change — the deliberate two-step from #120.
 const formatMacroPreviewDiff = (
   ticketId: number,
   macroId: number,
@@ -758,10 +729,9 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       .string()
       .min(1)
       // `abort` is what makes the ordering pay: zod respects declaration order but
-      // does not stop on its own, so without it the base64 regex still scans
-      // megabytes already disqualified by their length (measured 1.67ms -> 0.33ms).
-      // In-range inputs are unaffected, the published schema is unchanged, and the
-      // error becomes "too large" alone instead of "too large AND malformed".
+      // does not stop on its own, so the base64 regex would still scan megabytes
+      // already disqualified by length (measured 1.67ms -> 0.33ms). In-range inputs
+      // and the published schema are unaffected.
       .max(MAX_BASE64_INPUT_CHARS, {
         abort: true,
         error: (issue) =>
@@ -1042,13 +1012,10 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         }
         const authors = await resolveCommentAuthors(subdomain, token, comments, response.users);
         const body = comments.map((comment) => formatComment(comment, authors)).join('\n\n');
-        // Assembled and truncated in one go: the title has to be inside the
-        // character budget, or the response overshoots the limit and the notice
-        // misreports its own size. The cursor is no way back to what the cut
-        // dropped — it points past this whole page — so the advice names the
-        // only recovery there is. At page_size 1 there is no smaller page to
-        // ask for: the cut is inside one over-long comment, and recommending
-        // "smaller than 1" would itself be advice the schema rejects (#265).
+        // The title has to sit inside the character budget, or the response
+        // overshoots and the notice misreports its own size. The cursor points past
+        // this page, so it is no way back to what the cut dropped; at page_size 1
+        // there is no smaller page to ask for either (#265).
         const text = `${[
           `# Comments on ticket #${ticket_id} (${commentPageOrder(comments, sort_order)})`,
           formatPagination(meta),

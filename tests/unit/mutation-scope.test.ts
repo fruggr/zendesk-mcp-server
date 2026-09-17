@@ -142,13 +142,10 @@ describe('escapedMutants', () => {
   });
 
   it('spares a mutant that straddles the range boundary', () => {
-    // Starts before the range, ends inside it. Stryker's own `--mutate` filter
-    // only instruments mutants *contained* in the range (`locationIncluded`), so
-    // this one was never run: under `--incremental` it is replayed out of the
-    // baseline with a verdict about main's code. Judging it would fail a PR that
-    // touched one line of a 40-line expression on a survivor it did not create.
-    // Measured: asking for a single line inside a 20-line expression in
-    // `formatting.ts` instruments 0 mutants.
+    // Starts before the range, ends inside it. Stryker only instruments mutants
+    // *contained* in the range, so this one never ran: under `--incremental` it is
+    // replayed from the baseline with main's verdict, and judging it would fail a
+    // PR on a survivor it did not create.
     const report = { files: { 'src/utils/logger.ts': { mutants: [mutant(50, 'Survived', 57)] } } };
     expect(escapedMutants(ranges, report)).toEqual({ judged: 0, escaped: [] });
   });
@@ -219,20 +216,16 @@ describe('scopeMatcher', () => {
 });
 
 describe('the mutation baseline cache key', () => {
-  // The one list in the setup that has to be maintained by hand, and the one
-  // whose failure is silent: Stryker's incremental mode diffs the test files it
-  // *discovers*, so shared scaffolding under `tests/` is invisible to it, and a
-  // file missing from the hash means every later PR restores verdicts replayed
-  // against fixtures that no longer exist. Nothing about that fails loudly —
-  // hence this test rather than a line in a document asking people to remember.
+  // Maintained by hand, and its failure is silent: Stryker's incremental mode
+  // diffs the test files it *discovers*, so shared scaffolding under `tests/` is
+  // invisible to it, and a file missing from the hash has later PRs replay
+  // verdicts against fixtures that no longer exist. Hence a test, not a document.
   const repoRoot = fileURLToPath(new URL('../../', import.meta.url));
 
-  // `tests/functional/` is exempt *by path, deliberately*: it is the inter-LLM
-  // harness driven by hand through `/functional-testing`, and `vitest.config.ts`
-  // loads only `tests/**/*.test.ts`, so nothing in it can change a mutation
-  // verdict. It also has to stay out — the harness writes a report per scenario
-  // run, and hashing those would discard the baseline (a ~1h cold run) every
-  // time someone records one, buying nothing.
+  // `tests/functional/` is exempt by path: `vitest.config.ts` loads only
+  // `tests/**/*.test.ts`, so nothing in that harness can change a verdict. It also
+  // writes a report per scenario run, and hashing those would discard the baseline
+  // (a ~1h cold run) every time someone records one.
   const EXEMPT = 'tests/functional';
 
   // Every remaining file, whatever its extension — not just `.ts`. Filtering by

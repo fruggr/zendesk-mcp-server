@@ -37,13 +37,11 @@ export interface ShutdownOptions {
    * Behind `npx`, the `npm exec` / `sh -c` chain does not relay signals, so EOF
    * on stdin is the only sign the client is gone.
    *
-   * HTTP passes `false`. Not because the listener would misfire today — `end`
-   * only fires once something reads stdin, and in HTTP mode nothing does, so a
-   * paused stream never reaches EOF even on `/dev/null` — but because relying
-   * on that would be a trap: the day anything in the process starts reading
-   * stdin, a server with this on would begin exiting the moment its supervisor
-   * handed it `/dev/null`. Required rather than defaulted so the choice is
-   * made at each call site.
+   * HTTP passes `false` — not because the listener would misfire today (nothing
+   * reads stdin there, so a paused stream never reaches EOF) but because relying
+   * on that is a trap: the day anything starts reading stdin, such a server
+   * would exit the moment its supervisor handed it `/dev/null`. Required rather
+   * than defaulted, so the choice is made at each call site.
    */
   watchStdin: boolean;
   graceMs?: number;
@@ -86,16 +84,15 @@ const defaultRuntime: ShutdownRuntime = createRuntime(process);
 /**
  * Install the process's one shutdown path and return its trigger.
  *
- * Registering a `SIGTERM` handler *removes* Node's default terminate, which
- * makes the exit our responsibility: a cleanup that stalls on an in-flight
- * request would otherwise leave a process SIGTERM cannot kill — the very
- * symptom this exists to remove. Hence the watchdog, which is load-bearing
- * rather than defensive, and the unconditional `exit` on every path.
+ * Registering a `SIGTERM` handler *removes* Node's default terminate, making
+ * the exit our responsibility: a cleanup stalled on an in-flight request would
+ * leave a process SIGTERM cannot kill — the symptom this exists to remove.
+ * Hence the watchdog and the unconditional `exit` on every path.
  *
  * The exit is explicit rather than a drained event loop because the OAuth
  * callback server (`auth/browser-oauth.ts`) is a listening socket that is not
- * `unref()`'d: letting the loop drain would keep a disconnected session alive
- * for up to the 5-minute auth timeout.
+ * `unref()`'d: draining would keep a disconnected session alive for the
+ * 5-minute auth timeout.
  */
 export const installShutdown = (options: ShutdownOptions): ((reason: string) => Promise<void>) => {
   const { cleanup, logger, watchStdin, graceMs = SHUTDOWN_GRACE_MS } = options;

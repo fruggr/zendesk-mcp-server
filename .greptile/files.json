@@ -1,0 +1,27 @@
+{
+  "files": [
+    {
+      "path": "AGENTS.md",
+      "description": "Working guide for AI agents: architecture, testing rules, code style and the comment policy this repo enforces. Read it before judging a comment, a test or a tool change — it is the source of truth these reviews are graded against."
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "description": "Submission quality bar and code standards, identical for human and AI authors."
+    },
+    {
+      "path": "docs/mcp-metadata.md",
+      "description": "Tool-definition quality criteria (Glama TDQS) and the rules on changing the published JSON Schema: never drop a field, loosen a type, or lose what a description said.",
+      "scope": ["src/tools/**"]
+    },
+    {
+      "path": "docs/decisions/client-retry.md",
+      "description": "Why the retry loop is ours rather than a library's, and the policy table a new client method must pick a row in.",
+      "scope": ["src/client/**"]
+    },
+    {
+      "path": "docs/decisions/mutation-testing.md",
+      "description": "Why the mutation gate exists and what a surviving mutant means: an assertion is missing or too loose, never a reason to weaken one.",
+      "scope": ["tests/**"]
+    }
+  ]
+}

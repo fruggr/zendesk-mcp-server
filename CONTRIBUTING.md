@@ -16,12 +16,18 @@ assistance (Claude Code) to write code. **AI-assisted contributions are
 welcome and explicitly accepted**, on one condition: every submitted change
 has been read line by line and is owned by a human author who can defend it.
 
-Every PR goes through at least two automated review passes:
+Every PR goes through at least three automated review passes:
 
 1. **Author-side review**, run locally before push. The author runs Claude
    Code on the diff and addresses anything found.
 2. **CodeRabbit** in CI, which posts a high-level summary and inline review
    comments on the PR.
+3. **Greptile**, which posts a confidence score and prioritised findings.
+
+Both bots are pointed at the repository's own rules rather than generic ones:
+CodeRabbit auto-detects `AGENTS.md` as a code guideline, Greptile is handed it
+through `.greptile/files.json`. Review emphasis that neither would infer lives
+in `.coderabbit.yaml` and `.greptile/config.json`.
 
 Final responsibility for merging belongs to the human author. Tooling catches
 the mechanical issues; understanding the change is non-negotiable.
@@ -164,6 +170,11 @@ The same checklist appears on the
   strings are what an MCP agent reads back, so re-baselining a snapshot changes
   the server's output. Re-read the diff the update produced and say in the PR why
   the new wording is right, exactly as for any other behaviour change.
+- **Comments are optional, and explain the *why*, not the *how*.** The code is
+  the first explanation; a comment that paraphrases it is noise. Keep an
+  implementation comment under ~50 words, a `/** */` contract block under ~100 —
+  longer rationale belongs in `docs/decisions/` with a one-line pointer from the
+  code.
 - Functional style: pure functions, immutable data, no classes (except
   `ZendeskApiError`). See `AGENTS.md` for the full architecture and
   conventions.
@@ -222,7 +233,7 @@ assumption that everything below has already been done.
    mutation gate on the lines your diff changed (`Changed lines` in
    `.github/workflows/mutation.yml`). The gate skips itself when the diff touches
    nothing it mutates, so a docs-only PR is unaffected.
-2. CodeRabbit posts a high-level summary and review comments on the diff.
+2. CodeRabbit and Greptile post their summaries and review comments on the diff.
 3. The maintainer reviews everything.
 4. You address review findings.
 5. Merge.

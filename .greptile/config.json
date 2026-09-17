@@ -1,0 +1,29 @@
+{
+  "instructions": "MCP server exposing Zendesk to LLM agents. TypeScript strict, Biome, functional style (pure functions, immutable data, no classes but ZendeskApiError), per-user OAuth 2.1 PKCE only. Repository-wide rules live in AGENTS.md, handed to you through .greptile/files.json — prefer them over general conventions when the two disagree. The rules below are only the ones a reviewer most often gets wrong here.",
+  "rules": [
+    {
+      "id": "comment-why-not-how",
+      "rule": "Comments are optional and the code is the first explanation. Flag a comment that paraphrases the code under it, restates an identifier, or narrates a past change ('renamed from', 'used to be') — git history holds that. Keep what carries a why: a constraint, a trade-off, non-obvious Zendesk or SDK behaviour, a pointer to docs/decisions/. Word caps: ~50 for an implementation comment, ~100 for a /** */ block documenting an exported symbol's contract. License headers and tool pragmas (Stryker, Biome, ts-expect-error) are exempt.",
+      "scope": ["**/*.ts"],
+      "severity": "low"
+    },
+    {
+      "id": "tool-definition-quality",
+      "rule": "These files define MCP tools an LLM reads. Check that the Zod schema validates every input and matches the handler, that the first sentence of the description stands alone (proxy modes surface only that sentence), and that each .describe() adds something over the field name and type. Flag a description that contradicts its annotations (readOnlyHint, destructiveHint, idempotentHint), a write tool that does not state its effect, and any factual claim about Zendesk behaviour that looks unverified.",
+      "scope": ["src/tools/**"],
+      "severity": "medium"
+    },
+    {
+      "id": "tests-use-msw",
+      "rule": "Zendesk API calls in tests go through the MSW handlers in tests/msw-handlers.ts. Flag any test that would hit the real network. Flag an empty toMatchInlineSnapshot(): it is auto-filled on the next run, so it asserts nothing.",
+      "scope": ["tests/**"],
+      "severity": "high"
+    },
+    {
+      "id": "actions-major-tags-are-deliberate",
+      "rule": "First-party actions (actions/*, pnpm/action-setup) are pinned to floating major tags (@vN) by design, decided in issue #32 with Renovate opening a PR on each new major. Do not raise unpinned-uses or 'pin to a commit SHA' findings on them.",
+      "scope": [".github/workflows/**"],
+      "severity": "low"
+    }
+  ]
+}

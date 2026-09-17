@@ -104,8 +104,7 @@ const listTranslations = (
 // localized *name* and `body` the localized *description*. The tools speak
 // name/description (what list_sections/list_categories return) and map here.
 //
-// The two levels are ISO: anything done to one must be done to the other. Tests
-// enforce it over both from one table (NODE_LEVELS).
+// The two levels are ISO: anything done to one must be done to the other.
 type TreeNodeKind = 'sections' | 'categories';
 
 const NODE_LABEL: Record<TreeNodeKind, string> = {
@@ -210,17 +209,11 @@ const nodeTranslationWriteText = (
 
 // --- find_translation_gaps.
 //
-// A gap is no translation at all, or a draft one — different fixes, and
-// `list_sections?locale=…` shows neither. Measured with an admin token (#225): a
-// missing translation is absent there, a DRAFT one is still listed under its
-// draft name. So absence is ambiguous and presence is not "published", and the
-// draft flag itself is what decides.
-//
-// That flag rides on the listing: `include=translations` sideloads every locale
-// of every node, `draft` included, agreeing field for field with
-// `GET /{kind}/{id}/translations` on a live tenant, drafts included (#226). Two
-// listings answer for the whole tree, where the per-node read cost one request
-// each and had to stop at a cap.
+// A gap is no translation, or a draft one — different fixes, and
+// `list_sections?locale=…` shows neither: missing is absent, draft is listed
+// under its draft name (#225). The draft flag decides, and it rides on
+// `include=translations` (#226): two listings cover the tree, against one request
+// per node.
 const TRANSLATIONS_SIDELOAD = 'translations';
 
 type GapReason = 'missing' | 'draft';
@@ -347,11 +340,10 @@ const renderGapVerdict = (report: GapReport, gapCount: number, unclassified: num
     : allClear;
 };
 
-// find_translation_gaps takes no pagination parameter, so a truncated report has
-// to name a lever that exists. Which one depends on the scope: an unscoped audit
-// narrows with category_id; a scoped one that saw every section is simply done;
-// a scoped one whose section listing spilled past a page is neither, and saying
-// "re-run it" there would hide the sections the scan never reached (#265).
+// No pagination parameter exists, so a truncated report must name a lever that
+// does: an unscoped audit narrows with category_id; a scoped one that saw every
+// section is done; one whose listing spilled past a page is neither, and "re-run
+// it" would hide the sections never reached (#265).
 const gapAdvice = (report: GapReport): string => {
   if (!report.categoryScoped) {
     return 'find_translation_gaps takes no pagination parameter; narrow the audit to one branch of the tree with category_id instead.';
@@ -414,11 +406,10 @@ const largeArticleHint = (body: string, sectionCount: number): string | null => 
   ].join('\n');
 };
 
-// Message returned when a reorder's position writes are (or would be) silently
-// ignored because the section is sorted automatically rather than manually. There
-// is no API field exposing the sort mode, so we name the section and the exact UI
-// steps rather than fabricate an admin deep-link (none is stable across Guide
-// versions). `applied` is set only after writes were attempted (post-verify path).
+// Returned when a reorder's position writes are (or would be) silently ignored
+// because the section is sorted automatically. No API field exposes the sort
+// mode, so we name the section and the UI steps rather than fabricate an admin
+// deep-link, none being stable across Guide versions.
 const autoSortNotice = (sectionId: number, applied?: number): string =>
   [
     applied === undefined
@@ -431,11 +422,10 @@ const autoSortNotice = (sectionId: number, applied?: number): string =>
 // handler already fetched, kept out of it so the handler reads as the sequence
 // of signals it produces rather than the arithmetic behind each one.
 
-// Primary staleness signal, derived from the edit timestamps. If the source was
-// edited after the target, the translation is very likely behind. Always
-// available and, for API/external translation workflows, far more useful than
-// Zendesk's `outdated` flag (see below). updated_at values are ISO-8601 UTC, so
-// a lexical compare is order-correct; parse for the day delta.
+// Primary staleness signal: a source edited after the target is very likely
+// ahead of it. Always available and, for API or external translation workflows,
+// far more useful than Zendesk's `outdated` flag (below). updated_at is ISO-8601
+// UTC, so a lexical compare is order-correct.
 const renderFreshnessLine = (
   sourceUpdatedAt: string,
   targetUpdatedAt: string,
@@ -456,13 +446,11 @@ const renderFreshnessLine = (
   return `${label}: source was edited ${gap} after this translation → likely behind, review recommended.`;
 };
 
-// Secondary signal: Zendesk's own per-translation `outdated` flag for the target
-// locale. It is only set through Guide's native "mark translations out of date"
-// workflow, NOT by API edits — so for API/external workflows it usually stays
-// false regardless of real staleness. Surfaced as an overlay to the freshness
-// signal, never as the sole verdict. Matched case-insensitively: Zendesk accepts
-// a mixed-case locale in the request URL but the list endpoint reports it
-// canonically lowercased, so an exact match would spuriously report "unknown".
+// Secondary signal: Zendesk's `outdated` flag, set only through Guide's native
+// "mark translations out of date" workflow and NOT by API edits, so it usually
+// stays false whatever the real staleness — an overlay on the freshness signal,
+// never the verdict. Matched case-insensitively, as the list endpoint reports
+// locales lowercased.
 const renderOutdatedLine = (translations: ZendeskTranslation[], targetLocale: string): string => {
   const targetLocaleKey = targetLocale.toLowerCase();
   const entry = translations.find((t) => t.locale.toLowerCase() === targetLocaleKey);
@@ -573,16 +561,12 @@ const assertReorderParamsCoherent = (
 export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
   const { subdomain, getToken } = ctx;
 
-  // Fetch a section's articles in their EFFECTIVE display order (no sort_by), the
-  // order an end user sees. Fully paginated so reorder decisions and verification
-  // see every article, not just the first page. Used by reorder_article.
+  // A section's articles in the EFFECTIVE display order an end user sees (no
+  // sort_by), paginated to completion so reorder and its verification see all.
   //
-  // The listing MUST be locale-scoped: without sort_by the endpoint falls back to
-  // the section's configured "Order articles by", and a locale-dependent mode
-  // (title / recent activity / edited_at) makes the non-locale endpoint reject the
-  // request with HTTP 400 ("must specify a locale in order to sort by title…").
-  // Scoping by the article's locale both satisfies that requirement and still
-  // surfaces the auto-sorted order so the inversion probe can detect it.
+  // MUST be locale-scoped: without sort_by the endpoint falls back to the
+  // section's "Order articles by", and a locale-dependent mode makes the
+  // non-locale endpoint answer HTTP 400.
   const fetchSectionOrder = async (
     sectionId: number,
     locale: string,
@@ -1820,11 +1804,10 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           };
         }
 
-        // A strict inversion in the effective order is definitive proof the
-        // section ignores `position` (it is auto-sorted). Short-circuit before any
-        // write, at any size — writing would be silently ignored regardless. The
-        // post-write verification below still backstops the cases an inversion
-        // cannot reveal up front (e.g. an auto order that happens to be ascending).
+        // A strict inversion proves the section ignores `position`. Short-circuit
+        // before any write, at any size — writing would be ignored regardless. The
+        // post-write verification backstops what an inversion cannot reveal up
+        // front, such as an auto order that happens to ascend.
         if (hasPositionInversion(effective)) {
           return { content: [{ type: 'text', text: autoSortNotice(sectionId) }] };
         }

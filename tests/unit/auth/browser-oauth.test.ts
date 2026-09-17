@@ -10,19 +10,10 @@ vi.mock('open', () => ({
   default: (url: string) => openMock(url),
 }));
 
-// Every callback server the flow creates, in order. The teardown assertions below
-// need the instance itself: `listening` is the only honest way to check the server
-// was actually stopped (a closed port is indistinguishable from a slow one over
-// loopback), and emitting `error` on it is the only way to reach the post-`listen`
-// error handler, which nothing external can provoke. Everything else is delegated
-// to the real module, so MSW's interception is untouched.
-//
-// Reading this array inside the factory is safe despite `vi.mock` being hoisted
-// above the declaration: the reference lives in the returned closure and is only
-// evaluated when the flow calls `createServer`, long after this module finished
-// initialising. Pushing the array's *use* into the closure is what makes that
-// true — dereferencing it in the factory body would be a temporal-dead-zone
-// crash at load.
+// Every callback server the flow creates, in order. The teardown assertions need
+// the instance itself: `listening` is the only honest check that a server was
+// stopped (a closed port is indistinguishable from a slow one), and emitting
+// `error` on it is the only way to reach the post-`listen` handler.
 const callbackServers: Server[] = [];
 
 vi.mock('node:http', async () => {
@@ -32,6 +23,9 @@ vi.mock('node:http', async () => {
     default: actual,
     createServer: (...args: Parameters<typeof actual.createServer>) => {
       const server = actual.createServer(...args);
+      // Safe despite `vi.mock` hoisting above the declaration: the reference is
+      // evaluated here, long after this module initialised. Dereferencing the
+      // array in the factory body would be a temporal-dead-zone crash at load.
       callbackServers.push(server);
       return server;
     },
