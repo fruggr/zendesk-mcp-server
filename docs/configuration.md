@@ -63,7 +63,7 @@ the knowledge base as well, name both: `--namespace requests --namespace help_ce
 `--read-only` composes with either, if customers should follow their tickets
 without opening new ones.
 
-#### What the end-user surface needs on the Zendesk account
+### What the end-user surface needs on the Zendesk account
 
 - An **OAuth client**, with the local callback URL registered. The same client
   the agent side uses; nothing extra.

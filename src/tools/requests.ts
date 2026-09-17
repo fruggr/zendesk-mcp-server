@@ -423,6 +423,25 @@ const validateSubmission = (
   provided: Array<{ id: number; value: unknown }>,
 ): void => {
   const byId = new Map(fields.map((field) => [field.id, field]));
+
+  // An id this form does not carry is dropped like an unknown option value:
+  // 201, the answer gone. Checked first, or the refusal below would report an
+  // answer the caller did send as absent. `byId` holds portal-visible fields
+  // only, so an agent-only one fails here too.
+  const formFieldIds = new Set(form.ticket_field_ids);
+  const offForm = provided.filter((entry) => {
+    const field = byId.get(entry.id);
+    return !formFieldIds.has(entry.id) || !field || !isCustomField(field);
+  });
+  if (offForm.length > 0) {
+    throw new Error(
+      `This form does not take those fields: ${offForm.map((entry) => entry.id).join(', ')}. ` +
+        'Zendesk would accept the submission and drop them. Call get_request_form for the ids ' +
+        "it does take; the subject and the description are this tool's own parameters, not " +
+        'custom_fields entries.',
+    );
+  }
+
   const answered = provided.filter((entry) => !isEmptyAnswer(entry.value));
   const providedIds = new Set(answered.map((e) => e.id));
   const missing = form.ticket_field_ids
@@ -445,21 +464,22 @@ const validateSubmission = (
     );
   }
 
-  // Option-backed answers are checked by VALUE, not merely by presence. A
-  // multiselect sends an array, a dropdown a single value; both are compared as
-  // strings because the API's option values are strings even when they read as
-  // numbers.
+  // Option-backed answers are checked by VALUE, and a non-string fails whatever
+  // it spells: Zendesk's option tags are strings, so the number 1 sent against
+  // the tag "1" would pass a coerced comparison and then be dropped on the way
+  // in. A multiselect sends an array, a dropdown a single value.
   const rejected = answered.flatMap((entry) => {
     const field = byId.get(entry.id);
     const accepted = field && optionValues(field);
     if (!field || !accepted) return [];
-    const unknown = (Array.isArray(entry.value) ? entry.value : [entry.value])
-      .map(String)
-      .filter((value) => !accepted.has(value));
+    const unknown = (Array.isArray(entry.value) ? entry.value : [entry.value]).filter(
+      (value) => typeof value !== 'string' || !accepted.has(value),
+    );
     return unknown.length > 0
       ? [
-          `${field.title_in_portal || field.title} (field id ${field.id}) got ${unknown.join(', ')}, ` +
-            `accepts ${[...accepted].join(', ')}`,
+          `${field.title_in_portal || field.title} (field id ${field.id}) got ` +
+            `${unknown.map((value) => JSON.stringify(value)).join(', ')}, accepts ` +
+            `${[...accepted].map((value) => JSON.stringify(value)).join(', ')}`,
         ]
       : [];
   });
@@ -637,7 +657,7 @@ export const createRequestTools = (ctx: ToolContext): ToolDefinition[] => {
           .array(z.object({ id: z.number().int(), value: z.unknown() }))
           .optional()
           .describe(
-            "Answers to the form's own questions, as { id, value } pairs. Take both the ids and the accepted values from get_request_form; a value a dropdown does not offer is refused here, because Zendesk would drop it without an error.",
+            "Answers to the form's own questions, as { id, value } pairs. Take both the ids and the accepted values from get_request_form; an id this form does not carry, or a value a dropdown does not offer, is refused here because Zendesk would drop it without an error. Option values are the tag strings, never numbers.",
           ),
         attachments: attachmentsParam(
           'Files to attach to the request, such as a screenshot or a log, with their content base64-encoded.',

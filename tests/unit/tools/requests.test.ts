@@ -684,7 +684,7 @@ describe('create_request', () => {
         custom_fields: [{ id: 360000000001, value: 'sev1' }],
       }),
     ).rejects.toThrow(
-      /does not offer those answers: How severe is it\? \(field id 360000000001\) got sev1, accepts severity_1, severity_2/,
+      /does not offer those answers: How severe is it\? \(field id 360000000001\) got "sev1", accepts "severity_1", "severity_2"/,
     );
   });
 
@@ -698,7 +698,84 @@ describe('create_request', () => {
         form_id: 900,
         custom_fields: [{ id: 360000000001, value: ['severity_1', 'severity_9'] }],
       }),
-    ).rejects.toThrow(/got severity_9, accepts/);
+    ).rejects.toThrow(/got "severity_9", accepts/);
+  });
+
+  // An id the form does not carry is dropped by Zendesk exactly like an unknown
+  // option value, so it is refused rather than sent.
+  it('refuses a field id the form does not carry', async () => {
+    await expect(
+      textOf('create_request', {
+        subject: 'S',
+        body: 'B',
+        form_id: 900,
+        custom_fields: [
+          { id: 360000000001, value: 'severity_1' },
+          { id: 999999, value: 'x' },
+        ],
+      }),
+    ).rejects.toThrow(/does not take those fields: 999999/);
+  });
+
+  // Field 10 (priority) IS on form 900 but is agent-side: a customer cannot set
+  // it, so membership in ticket_field_ids is not enough on its own.
+  it("refuses a field on the form that is not a customer's to set", async () => {
+    await expect(
+      textOf('create_request', {
+        subject: 'S',
+        body: 'B',
+        form_id: 900,
+        custom_fields: [
+          { id: 360000000001, value: 'severity_1' },
+          { id: 10, value: 'urgent' },
+        ],
+      }),
+    ).rejects.toThrow(/does not take those fields: 10/);
+  });
+
+  // The system subject arrives as this tool's own parameter. Sent as a custom
+  // field it would be dropped, so it is refused with the same message.
+  it('refuses the system subject sent as a custom field', async () => {
+    await expect(
+      textOf('create_request', {
+        subject: 'S',
+        body: 'B',
+        form_id: 900,
+        custom_fields: [
+          { id: 360000000001, value: 'severity_1' },
+          { id: 1, value: 'Subject via custom_fields' },
+        ],
+      }),
+    ).rejects.toThrow(/does not take those fields: 1\./);
+  });
+
+  // The coercion trap: Zendesk's option tags are strings, so the number 1 sent
+  // against the tag "1" would pass a String()-based comparison and then be
+  // dropped on the way in. The refusal quotes both so they are tellable apart.
+  it('refuses a number that only matches an option tag once stringified', async () => {
+    mswServer.use(
+      http.get(`${BASE}/ticket_fields`, () =>
+        HttpResponse.json({
+          ticket_fields: [
+            MOCK_TICKET_FIELD_SUBJECT,
+            MOCK_TICKET_FIELD_DESCRIPTION,
+            {
+              ...MOCK_TICKET_FIELD_CUSTOM,
+              custom_field_options: [{ name: 'One', value: '1' }],
+            },
+          ],
+          next_page: null,
+        }),
+      ),
+    );
+    await expect(
+      textOf('create_request', {
+        subject: 'S',
+        body: 'B',
+        form_id: 900,
+        custom_fields: [{ id: 360000000001, value: 1 }],
+      }),
+    ).rejects.toThrow(/got 1, accepts "1"/);
   });
 
   // Only option-backed fields are value-checked. A free-text field has no
@@ -1068,9 +1145,9 @@ describe('the form fixture', () => {
   });
 });
 
-// The cap that reached the ticket tools in #205 is not audience-specific: an
-// end user's screenshot rides in the same message and bursts the same buffer,
-// so both write tools here take the shared capped `attachments` parameter.
+// The cap is not audience-specific: an end user's screenshot rides in the same
+// message and bursts the same buffer as an agent's, so both write tools here
+// take the shared capped `attachments` parameter.
 describe('attachment input caps', () => {
   const b64 = (chars: number) => 'a'.repeat(chars);
 

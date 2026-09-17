@@ -115,10 +115,10 @@ export const MOCK_TICKET_FIELD_CUSTOM = {
   ],
 };
 
-// The system subject and description fields. EVERY real form carries these and
-// marks them portal-required, and their absence from the fixtures is what hid a
-// blocking bug: treating them as custom fields made create_request demand
-// "Subject (field id 1)", which no caller can satisfy.
+// The system subject and description fields, portal-required as every real form
+// marks them. They belong in the fixtures because treating them as custom fields
+// makes create_request demand "Subject (field id 1)", which no caller can
+// satisfy.
 export const MOCK_TICKET_FIELD_SUBJECT = {
   id: 1,
   type: 'subject',
@@ -202,10 +202,9 @@ export const MOCK_TICKET_FORM_FEATURE = {
   end_user_visible: true,
   default: false,
   position: 2,
-  // The condition's parent field is ON the form: a real form cannot gate on a
-  // field the submitter cannot answer, and leaving it out made the rendered rule
-  // name a field absent from the same output. The OPTIONAL parent, so this
-  // form's required fields stay the system ones.
+  // The condition's parent field is ON the form, as a real form must be: it
+  // cannot gate on a field the submitter has no way to answer. The OPTIONAL
+  // parent, so this form's required fields stay the system ones.
   ticket_field_ids: [1, 2, 360000000003, 360000000002],
   end_user_conditions: [
     {
