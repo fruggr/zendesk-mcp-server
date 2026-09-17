@@ -23,8 +23,7 @@ if (!subdomain) {
 
 // `accessToken`, not `access_token`: the key is the one `PersistedToken` in
 // src/auth/token-persistence.ts writes, not the one Zendesk's OAuth response
-// uses. Reading the wrong one made this script claim "No token found" on a
-// machine that had signed in, and send whoever ran it hunting for a token.
+// uses.
 const readCachedToken = (): string | undefined => {
   try {
     const raw = readFileSync(resolveTokenPath(subdomain), 'utf8');

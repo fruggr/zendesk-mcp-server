@@ -411,12 +411,11 @@ const optionValues = (field: ZendeskTicketField): Set<string> | null =>
  * does: an unknown `ticket_form_id` gets 201 on the DEFAULT form; a missing
  * `required_in_portal` field is enforced against end users only, so an agent
  * token gets 201 with an empty subject; and an option value the form does not
- * offer is dropped, leaving 201 and an empty field while the tool reports the
- * request submitted.
+ * offer is dropped, leaving 201 and an empty field.
  *
- * Only UNCONDITIONALLY required fields are enforced -- a field required through
+ * Only UNCONDITIONALLY required fields are enforced -- one required through
  * `end_user_conditions` depends on answers we may not have, and Zendesk's 422
- * is the backstop there.
+ * is the backstop.
  */
 const validateSubmission = (
   form: ZendeskTicketForm,

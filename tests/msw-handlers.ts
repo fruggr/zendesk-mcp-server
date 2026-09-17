@@ -203,9 +203,9 @@ export const MOCK_TICKET_FORM_FEATURE = {
   default: false,
   position: 2,
   // The condition's parent field is ON the form: a real form cannot gate on a
-  // field the submitter has no way to answer, and leaving it out made the
-  // rendered rule name a field absent from the same output. The OPTIONAL parent,
-  // so this form's only portal-required fields stay the system ones.
+  // field the submitter cannot answer, and leaving it out made the rendered rule
+  // name a field absent from the same output. The OPTIONAL parent, so this
+  // form's required fields stay the system ones.
   ticket_field_ids: [1, 2, 360000000003, 360000000002],
   end_user_conditions: [
     {
