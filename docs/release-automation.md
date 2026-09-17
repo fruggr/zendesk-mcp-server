@@ -196,7 +196,7 @@ Concrete examples:
 - Patch update of `zod` → joins the prod batch like any other patch.
 - Minor update of `vitest` (devDep) → joins `chore(deps): update dev dependencies` → auto-merge → no release.
 - Major update of `vitest` (devDep) → entry in the dashboard, manual approval required.
-- Patch or minor bump of `pnpm` (via `packageManager` field) → PR `chore(deps): update pnpm to X`, on its own → auto-merge → no release. The corepack hash in `packageManager` is updated automatically by Renovate when the format is `pnpm@VERSION+sha512.HASH`.
+- Patch or minor bump of `pnpm` (via `packageManager` field) → PR `chore(deps): update pnpm to X`, on its own → auto-merge → no release. The corepack hash in `packageManager` is updated automatically by Renovate when the format is `pnpm@VERSION+sha512.HASH`. Since pnpm 12 records itself in `pnpm-lock.yaml` under `packageManagerDependencies`, such a PR also has to refresh the lockfile, or CI fails at `pnpm install --frozen-lockfile` with `ERR_PNPM_FROZEN_LOCKFILE_WITH_OUTDATED_LOCKFILE`. Whether Renovate does that for a bare `packageManager` bump is unverified, and it fails closed either way: the PR goes red at install and auto-merge cannot fire, the same shape as a security PR waiting out the age gate.
 - GitHub Action digest bump → PR `chore(deps): update actions/X` → manual review → no release.
 - Lockfile maintenance, Tuesday and Friday before 8am (Europe/Paris) → PR `chore(deps): lock file maintenance` → auto-merge → no release. Picks up transitive updates whose parent ranges already allow the new version (e.g. a `^3.0.1`-ranged transitive moving from 3.1.0 to 3.1.2).
 

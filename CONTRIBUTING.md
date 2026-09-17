@@ -35,12 +35,17 @@ External contributions follow the same standard.
 | Tool | Version | Source of truth |
 | ---- | ------- | ---------------- |
 | Node | 24 | [`.nvmrc`](.nvmrc), read by `nvm`, `fnm`, `mise`, `asdf`, `volta` |
-| pnpm | 11 | [`package.json#packageManager`](package.json) (pinned with a corepack integrity hash) |
+| pnpm | 12 | [`package.json#packageManager`](package.json) (pinned with a corepack integrity hash) |
 
-The toolchain (Node 24 + pnpm 11) is used to build, lint, type-check and
+The toolchain (Node 24 + pnpm 12) is used to build, lint, type-check and
 test the project. The **published package** still runs on Node 20+ (see
 `engines.node`); a dedicated CI job installs the packed tarball on Node 20
 and runs the smoke test to keep that promise honest.
+
+The pnpm pin names one exact patch version, and
+[`docs/decisions/pnpm-12-native.md`](docs/decisions/pnpm-12-native.md) says why:
+pnpm 12 ships a native binary per host, and the ones Corepack can install there
+differ from one patch release to the next.
 
 ```bash
 # Clone, install, build
