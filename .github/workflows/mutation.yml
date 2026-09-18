@@ -35,6 +35,16 @@ jobs:
 
       - uses: ./.github/actions/mutation-baseline
 
+      # Before the gate, and unconditionally. A dependency-only PR changes no
+      # mutated line, so the gate below finds nothing to judge and reports a
+      # vacuous pass — which is exactly how #292 switched the gate off without a
+      # single red check. The canary mutates a two-line fixture whose verdicts
+      # are fixed by construction, so it is the one signal such a PR gets. ~3 s.
+      # `shell: bash` for `-eo pipefail`, same reason as the gate step below.
+      - name: Canary — is the mutation gate still measuring anything?
+        shell: bash
+        run: pnpm test:mutation:canary | tee -a "$GITHUB_STEP_SUMMARY"
+
       # Two things here are load-bearing and look removable. `shell: bash` gives
       # `-eo pipefail`; the default `bash -e` has none, so `tee` would swallow the
       # gate's exit 1 and every failure would report green (measured). `HEAD`, not
@@ -80,6 +90,12 @@ jobs:
 
       - uses: ./.github/actions/mutation-baseline
         id: cache
+
+      # Same canary as the PR job. On `main` it is what keeps a merged bump from
+      # leaving a whole baseline of replayed, meaningless verdicts behind.
+      - name: Canary — is the mutation gate still measuring anything?
+        shell: bash
+        run: pnpm test:mutation:canary | tee -a "$GITHUB_STEP_SUMMARY"
 
       # Reports, never `break`s. No `--`: pnpm forwards the separator itself.
       # Step-scoped secret, so only the baseline can publish — same rule as the cache.

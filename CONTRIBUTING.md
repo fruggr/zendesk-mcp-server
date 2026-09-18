@@ -232,7 +232,9 @@ assumption that everything below has already been done.
    test (single `build-and-test` job in `.github/workflows/ci.yml`), plus the
    mutation gate on the lines your diff changed (`Changed lines` in
    `.github/workflows/mutation.yml`). The gate skips itself when the diff touches
-   nothing it mutates, so a docs-only PR is unaffected.
+   nothing it mutates, so a docs-only PR is unaffected — the canary step in the
+   same job does not skip, because a PR the gate cannot judge is exactly what it
+   is there for.
 2. CodeRabbit and Greptile post their summaries and review comments on the diff.
 3. The maintainer reviews everything.
 4. You address review findings.

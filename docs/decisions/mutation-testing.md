@@ -655,6 +655,163 @@ which the flow never hands out. `tests/unit/auth/browser-oauth.test.ts` now wrap
 closed?" probe, since `server.listening` is observable where a refused connection
 over loopback is indistinguishable from a slow one.
 
+## 9. The canary, and why vitest is held at 4.x
+
+Recorded because [#297](https://github.com/fruggr/zendesk-mcp-server/issues/297)
+is the failure this setup was least equipped to notice: a regression **of the
+tooling**, where every signal kept saying fine.
+
+`@stryker-mutator/vitest-runner@10.0.0` declares `vitest: ">=2.0.0"`, so
+[#292](https://github.com/fruggr/zendesk-mcp-server/pull/292)'s bump to vitest 5
+installed clean and warned about nothing. Same tree, same 44 mutants, nothing
+changed but the runner's vitest:
+
+| vitest | result |
+| --- | --- |
+| 4.1.11 | `Killed: 44. Escaped: 0.` |
+| 5.0.0 | `Killed: 7. Escaped: 37.` |
+
+### Root cause
+
+Not a reporting failure — a **test-filter** failure, which is why it was
+survivors rather than errors.
+
+Stryker runs a mutant against its covering tests only. `VitestTestRunner.run()`
+builds `project.config.testNamePattern` from a regex over those tests' names,
+where a name comes from the runner's own `collectTestName()`: suite names and
+the test name joined with a **single space**. Vitest 4 matched that pattern
+against `getTaskFullName(task)`, built the same way (`@vitest/runner`,
+`interpretTaskModes`). Vitest 5 matches it against the new precomputed
+`task.fullTestName`, and `createTaskName()` joins the parts with **`" > "`**.
+Nothing matches, every test in the file is set to `skip`, Stryker observes zero
+results, and a mutant no test ran is reported `Survived`.
+
+Confirmed against the sandbox of a real run (`src/utils/formatting.ts:167`,
+`ArithmeticOperator`), driving the vitest 5 node API exactly as the runner does:
+
+| `testNamePattern` | tests observed | file state |
+| --- | ---: | --- |
+| none | 12 → 1 failed | `fail` |
+| `formatSlaBlock states the exact number of minutes remaining` (what the runner builds) | **0** | `skip` |
+| `states the exact number of minutes remaining` | 1 → failed | `fail` |
+| `formatSlaBlock > states the exact number of minutes remaining` | 1 → failed | `fail` |
+
+That also explains the *shape* of the numbers rather than just their direction.
+A mutant planned with no test filter — static, or one Stryker has no coverage
+for — still runs the whole suite and is killed normally: the `Killed: 7`. Every
+mutant that gets a per-test filter escapes. Mutant activation, `provide`/`inject`,
+the setup-file injection and the `suite.meta` coverage round-trip are all intact
+on vitest 5; only the filter is broken.
+
+Upstream has it as
+[stryker-js#6210](https://github.com/stryker-mutator/stryker-js/issues/6210),
+with [#6214](https://github.com/stryker-mutator/stryker-js/pull/6214) proposing
+the fix — open and unmerged when this was written, which is what sets the hold
+below. Our diagnosis was reached independently and matches it;
+[`stryker-vitest5-upstream-report.md`](./stryker-vitest5-upstream-report.md)
+keeps the reproduction and the evidence.
+
+### Why nothing caught it
+
+`pnpm test` was green on vitest 5 (1199 passing) and coverage held above its
+thresholds — neither can see this, because the suite itself is unaffected.
+#292's own `Changed lines` job was green too, and that is the part worth sitting
+with: the gate is diff-scoped, a dependency-only change touches no mutated source
+line, so the gate correctly reported that there was nothing to judge. **A
+tool whose entire job is to prove the assertions are load-bearing was switched
+off, and the gate that depends on it could not be the one to say so.**
+
+The gate cannot distinguish "no mutant escaped because the tests are strong"
+from "no mutant was ever really tested". Both are green, and we believe the
+first.
+
+### The canary
+
+`pnpm test:mutation:canary` closes that. It mutates one fixture whose verdicts
+are fixed by construction and fails when the report disagrees:
+
+| Fixture function | Covered by | Required verdict |
+| --- | --- | --- |
+| `killedByItsTest` | an exact assertion in `scripts/mutation-canary/subject.test.ts` | `Killed` |
+| `reachedByNoTest` | nothing | `NoCoverage` |
+
+Four design points, each load-bearing:
+
+- **Two-sided.** A one-sided "it was killed" check would pass against a runner
+  that reported everything killed, which tells us just as little. The uncovered
+  half has to come back `NoCoverage`.
+- **The fixture's test is nested two `describe`s deep.** The filter regex joins
+  suite names to the test name, so a top-level `it` exercises a filter with no
+  separator in it — the one shape that kept working under #297. Without the
+  nesting the canary would have been green through the whole incident.
+- **Exhaustive in both directions.** A missing mutant, an unexpected one and a
+  wrong verdict are each a finding, because a report with *no* mutants is
+  precisely what a collapsed run produces and "nothing escaped" would wave it
+  through. `judgeCanary` is pinned in `tests/unit/mutation-canary.test.ts`.
+- **Its own vitest project and its own report path.** No setup file, no MSW, no
+  coverage thresholds, nothing that lets a canary failure have a second possible
+  cause — and nothing that writes over the gate's report or its baseline.
+
+It runs in **both** `mutation.yml` jobs, before the gate and before the baseline,
+and unconditionally: a dependency-only PR is exactly the case where the gate has
+nothing to judge, so the canary is the only signal it gets. Cost is ~3 s (2.4 s
+locally, against 19 s for the smallest useful run over real scope), which is what
+makes running it on every PR uncontroversial.
+
+Verified to work in the direction that matters — on this tree, on *unpatched*
+vitest 5 and with `pnpm test` green, the canary fails in 2 seconds with:
+
+```text
+  `a - b`: expected Killed, reported Survived.
+```
+
+which is also what makes it the acceptance test for the patch below, and for
+whatever release eventually replaces it.
+
+### The fix, carried as a patch rather than as a rollback
+
+Two ways out: pin vitest back to 4.x until upstream releases, or carry
+stryker-js#6214 ourselves. **The patch was chosen**, so the repo keeps vitest 5
+and the gate works today rather than at upstream's pace.
+
+`patches/@stryker-mutator__vitest-runner@10.0.0.patch`, applied through
+`patchedDependencies` in `pnpm-workspace.yaml`, is #6214 transposed onto the
+published `dist/src/` — the same four files as upstream's `src/`
+(`test-helpers`, `stryker-setup`, `vitest-helpers`, `vitest-test-runner`), with
+its shape kept so re-reading it against the PR is a diff, not an exercise:
+
+- the separator is a value (`' > '` for vitest ≥ 5, `' '` below), chosen once
+  from `vitestWrapper.version`;
+- it is `provide`d to the setup file, because `ns.currentTestId` — the key
+  coverage is recorded under — has to be built with the same separator the
+  filter regex is built from. Fixing only the filter would move the mismatch
+  rather than remove it.
+
+Three things make the patch safe to carry, and they are the reason this is not
+just a faster rollback:
+
+- **It cannot go stale silently.** The key pins the exact version
+  (`@stryker-mutator/vitest-runner@10.0.0`), so a runner bump leaves the patch
+  unapplied instead of applying it to code it was not written for — and the
+  canary is red on that PR before anyone reads it.
+- **It cannot go stale invisibly in the baseline either.** `pnpm-lock.yaml`
+  records the patch's content hash, and the hash is already part of the
+  mutation baseline cache key ([section 4](#how-ci-enforces-that-without-anyone-having-to-remember)),
+  so editing the patch discards the baseline the same way a dependency bump
+  does. That is by construction, not by anyone remembering.
+- **It is verified rather than assumed.** On vitest 5 with the patch:
+  `src/utils/pagination.ts` is 43 killed / 0 escaped, the 100 % this ADR already
+  records for that file, and the four lines of `formatting.ts` in the
+  reproduction below are 3 killed / 0 escaped where unpatched vitest 5 gives
+  0 / 3.
+
+**Drop the patch** once a `@stryker-mutator/vitest-runner` release carries
+#6214: delete the file and the `patchedDependencies` entry, then let
+`pnpm test:mutation:canary` — not the release notes — say whether the release
+really fixed it. That is two seconds, and the thing it checks is exactly the
+thing such a release claims to fix. `renovate.json` keeps runner updates off
+automerge so that decision reaches a person.
+
 ## Appendix — reproducing
 
 ```sh
@@ -668,6 +825,9 @@ pnpm test:mutation --incremental --force          # rebuild the baseline from sc
 # What the PR gate runs: derive the changed lines, mutate them, judge the report.
 pnpm test:mutation:diff origin/main HEAD
 pnpm test:mutation:summary                        # score of the last report, as Markdown
+
+# Is the gate still measuring anything at all? ~3 s, see section 9.
+pnpm test:mutation:canary
 ```
 
 The HTML report lands in `reports/mutation/index.html`; the incremental baseline
