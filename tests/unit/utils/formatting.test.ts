@@ -356,6 +356,44 @@ describe('formatSlaBlock', () => {
     `);
   });
 
+  it("quotes the winning metric's own timestamp rather than a re-serialized one", () => {
+    // Zendesk sends no milliseconds. Rendering the header through `toISOString()`
+    // spelled the same instant differently from the line below it, so a caller
+    // correlating the two by value could not tell which metric was breaching (#296).
+    expect(
+      formatSlaBlock(
+        entry([{ metric: 'first_reply_time', stage: 'active', breach_at: '2026-06-01T13:30:00Z' }]),
+      ),
+    ).toMatchInlineSnapshot(`
+      "
+
+      ### SLA
+      - **Next breach**: 2026-06-01T13:30:00Z
+      - **first_reply_time** — active; due 2026-06-01T13:30:00Z — 90 min remaining"
+    `);
+  });
+
+  it('keeps the first metric when two deadlines fall on the same instant', () => {
+    // Two spellings of one instant: since the header now quotes a line verbatim,
+    // which of the tied metrics it speaks for has to be pinned rather than left to
+    // the slack in a comparison.
+    expect(
+      formatSlaBlock(
+        entry([
+          { metric: 'first_reply_time', stage: 'active', breach_at: '2026-06-01T13:00:00Z' },
+          { metric: 'total_resolution_time', stage: 'active', breach_at: at(60) },
+        ]),
+      ),
+    ).toMatchInlineSnapshot(`
+      "
+
+      ### SLA
+      - **Next breach**: 2026-06-01T13:00:00Z
+      - **first_reply_time** — active; due 2026-06-01T13:00:00Z — 60 min remaining
+      - **total_resolution_time** — active; due 2026-06-01T13:00:00.000Z — 60 min remaining"
+    `);
+  });
+
   it('treats a stage it does not recognise as running', () => {
     // Failing *open* is the safe direction for a triage signal: a stage Zendesk adds
     // later must keep feeding the header, not silently drop out of it. Guards against

@@ -162,9 +162,9 @@ export const formatMacro = (macro: ZendeskMacro): string => {
     .join('\n');
 };
 
-const minutesUntil = (iso: string): number | null => {
+const minutesUntil = (iso: string, now: number): number | null => {
   const t = Date.parse(iso);
-  return Number.isNaN(t) ? null : Math.round((t - Date.now()) / 60_000);
+  return Number.isNaN(t) ? null : Math.round((t - now) / 60_000);
 };
 
 // Stages carrying no live obligation: the metric is parked (`paused`) or already
@@ -182,12 +182,18 @@ const STAGES_WITHOUT_LIVE_DEADLINE: ReadonlySet<string | undefined> = new Set([
 const hasRunningStage = (m: ZendeskSlaLiveMetric): boolean =>
   !STAGES_WITHOUT_LIVE_DEADLINE.has(m.stage);
 
-const formatSlaMetric = (m: ZendeskSlaLiveMetric): string => {
+// A deadline still running, parsed once: `at` orders it, `due` is rendered.
+interface SlaDeadline {
+  due: string;
+  at: number;
+}
+
+const formatSlaMetric = (m: ZendeskSlaLiveMetric, now: number): string => {
   const stage = m.stage ?? 'unknown';
   const due = m.breach_at ?? null;
   const parts = [`- **${m.metric}** — ${stage}`];
   if (due) {
-    const remaining = minutesUntil(due);
+    const remaining = minutesUntil(due, now);
     if (!hasRunningStage(m) || remaining == null) {
       parts.push(`due ${due}`);
     } else if (remaining < 0) {
@@ -206,16 +212,21 @@ const formatSlaMetric = (m: ZendeskSlaLiveMetric): string => {
 // metrics that are running (#260).
 export const formatSlaBlock = (entry: ZendeskSlaSideloadEntry | undefined): string => {
   if (!entry?.policy_metrics || entry.policy_metrics.length === 0) return '';
+  const now = Date.now();
   const lines = ['### SLA'];
-  const futureBreaches = entry.policy_metrics
+  const pending = entry.policy_metrics
     .filter(hasRunningStage)
-    .map((m) => m.breach_at)
-    .map((d) => (d ? Date.parse(d) : Number.NaN))
-    .filter((t) => !Number.isNaN(t) && t > Date.now());
-  if (futureBreaches.length > 0) {
-    lines.push(`- **Next breach**: ${new Date(Math.min(...futureBreaches)).toISOString()}`);
-  }
-  for (const m of entry.policy_metrics) lines.push(formatSlaMetric(m));
+    .flatMap((m) => (m.breach_at ? [{ due: m.breach_at, at: Date.parse(m.breach_at) }] : []))
+    .filter((d) => !Number.isNaN(d.at) && d.at > now);
+  // Quote the winning metric's own `breach_at` instead of re-serializing the instant:
+  // Zendesk sends no milliseconds, so a normalized header never string-matched the
+  // line it points at, and a caller could not tell which metric was breaching (#296).
+  const soonest = pending.reduce<SlaDeadline | undefined>(
+    (best, d) => (best && best.at <= d.at ? best : d),
+    undefined,
+  );
+  if (soonest) lines.push(`- **Next breach**: ${soonest.due}`);
+  for (const m of entry.policy_metrics) lines.push(formatSlaMetric(m, now));
   return `\n\n${lines.join('\n')}`;
 };
 
