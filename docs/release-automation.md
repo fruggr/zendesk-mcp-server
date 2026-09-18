@@ -144,7 +144,7 @@ security fix arrives in one of two weekly batches.
 | **minor**, any other `package.json` dependency                      | manual review\*          | auto-merge, weekly batch         |
 | **major**, any dependency (prod and dev)                            | manual review\*\*         | dashboard approval               |
 | **patch / minor** on `pnpm` (`packageManager`)                      | auto-merge               | auto-merge, own PR               |
-| **patch / minor** on a `pnpm-workspace.yaml` `overrides` entry       | auto-merge, own PR       | never proposed\*\*\*            |
+| **patch / minor** on a `pnpm-workspace.yaml` `overrides` entry       | never proposed\*\*\*     | never proposed\*\*\*            |
 | `lockFileMaintenance` (Tuesday and Friday before 8am, Europe/Paris) | auto-merge               | auto-merge                       |
 | GitHub Actions (`uses: org/action@…`)                               | manual review            | manual review                    |
 
@@ -152,7 +152,7 @@ security fix arrives in one of two weekly batches.
 
 \*\* A major carrying an advisory does **not** wait on the dashboard: the `vulnerabilityAlerts` defaults force `dependencyDashboardApproval: false`, which beats the `matchUpdateTypes: ["major"]` rule. The PR is opened, labelled `needs-review`, and merged by hand.
 
-\*\*\* The three overrides are caret ranges and `rangeStrategy` is `replace`, so Renovate proposes nothing while the new version still satisfies the range. See **The overrides** below.
+\*\*\* Both columns read that way for the same reason: the three overrides are caret ranges. Pin one to an exact version and it behaves like any other dependency. See **The overrides** below.
 
 **The weekly batches.** Everything auto-merged and non-security is grouped into two PRs,
 `chore(deps): update prod dependencies` and `chore(deps): update dev dependencies`, opened
@@ -179,9 +179,18 @@ outside it, and update nothing otherwise" — so an in-range release never opens
 major does, and it lands on the dashboard under the **major** row above. That is the intent,
 not a gap: an override is a *floor*, and the floor is meant to stay put until a removal
 condition retires it or a new advisory raises it. The version actually resolved behind the
-floor still moves, through `lockFileMaintenance`. The security column differs because
-`vulnerabilityAlerts` defaults `rangeStrategy` to `update-lockfile`: an advisory against an
-override entry does get its own PR, in range or not.
+floor still moves, through `lockFileMaintenance`.
+
+An advisory against one of those entries gets no PR either, for a second and independent
+reason. Renovate reads a dependency's version as `lockedVersion ?? currentVersion ??
+currentValue` and skips the vulnerability lookup when the result is not a concrete version
+(`lib/workers/repository/process/vulnerabilities.ts`). An override entry never has a locked
+version: the pnpm lockfile lookup is keyed on the importer's `dependencies` /
+`devDependencies` / `optionalDependencies` sections, and `pnpm-workspace.overrides` is none
+of them. What is left is the caret range, which is not a version, so the entry is skipped.
+That is the same remediation path `renovate.json` already describes under
+`vulnerabilityAlerts` — `lockFileMaintenance`, or raising the floor by hand. Pin an override
+to an exact version and both paths come back, the ordinary one and the security one.
 
 **Security updates are never batched.** `vulnerabilityAlerts` pins `groupName` to `null` on
 purpose: a security update swept into a batch would inherit its `chore(deps)` title and stop
@@ -214,6 +223,7 @@ Concrete examples:
 - Patch or minor bump of `pnpm` (via `packageManager` field) → PR `chore(deps): update pnpm to X`, on its own → auto-merge → no release. The corepack hash in `packageManager` is updated automatically by Renovate when the format is `pnpm@VERSION+sha512.HASH`. Since pnpm 12 records itself in `pnpm-lock.yaml` under `packageManagerDependencies`, such a PR also has to refresh the lockfile, or CI fails at `pnpm install --frozen-lockfile` with `ERR_PNPM_FROZEN_LOCKFILE_WITH_OUTDATED_LOCKFILE`. Whether Renovate does that for a bare `packageManager` bump is unverified, and it fails closed either way: the PR goes red at install and auto-merge cannot fire, the same shape as a security PR waiting out the age gate.
 - GitHub Action digest bump → PR `chore(deps): update actions/X` → manual review → no release.
 - Non-vuln patch of `qs` behind the `^6.15.3` override → **no PR**; the range still holds, so the resolved version moves with the next lockfile maintenance run.
+- Advisory against `qs` behind that same override → **no PR either**; a caret range is not a version, so the entry is skipped. Remediation is the next lockfile maintenance run, or raising the floor by hand.
 - Major of `qs` (out of the override range) → entry in the dashboard, manual approval required.
 - Lockfile maintenance, Tuesday and Friday before 8am (Europe/Paris) → PR `chore(deps): lock file maintenance` → auto-merge → no release. Picks up transitive updates whose parent ranges already allow the new version (e.g. a `^3.0.1`-ranged transitive moving from 3.1.0 to 3.1.2).
 
