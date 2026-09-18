@@ -1,6 +1,14 @@
-[[post-switch]]
-sync = "{% if upstream %}git pull --ff-only{% endif %}"
-deps = "pnpm install"
+# post-* hooks detach, and keys sharing a block run concurrently, so an install
+# there races the pull and reads a lockfile still being rewritten. pre-switch
+# blocks, and one key per block sequences the two. It runs in the source
+# worktree, hence -C; on --create the destination doesn't exist yet, so
+# pre-start installs instead.
+
+[[pre-switch]]
+sync = "{% if upstream %}if [ -d {{ worktree_path }} ]; then git -C {{ worktree_path }} pull --ff-only || true; fi{% endif %}"
+
+[[pre-switch]]
+deps = "if [ -d {{ worktree_path }} ]; then pnpm -C {{ worktree_path }} install; fi"
 
 [[pre-start]]
 deps = "pnpm install"
