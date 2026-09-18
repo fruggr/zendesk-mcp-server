@@ -22,14 +22,13 @@
 // editable.
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 const CONFIG_FILE = 'scripts/mutation-canary/stryker.config.mjs';
-const REPORT_FILE = 'reports/mutation-canary/mutation.json';
 const SUBJECT = 'scripts/mutation-canary/subject.ts';
 
 /**
@@ -67,7 +66,7 @@ export const judgeCanary = (report, expected = EXPECTED_VERDICTS) => {
         continue;
       }
       seen.set(replacement, mutant.status);
-      if (!(replacement in expected)) {
+      if (!Object.hasOwn(expected, replacement)) {
         findings.push(
           `${file}:${mutant.location.start.line} produced an unexpected mutant ` +
             `\`${replacement}\` (${mutant.status}) — the fixture or the set of mutators ` +
@@ -104,16 +103,37 @@ const versionsOf = (...packages) =>
     })
     .join(', ');
 
-const run = () => {
+/**
+ * Where the canary's JSON report lands, read from the canary config rather than
+ * restated — same rule as the gate's `loadConfig`. A hardcoded copy that fell
+ * out of sync would leave this judging whatever report was there before, and
+ * "Mutation canary passed" off a stale file is the one output this script must
+ * never produce.
+ */
+const reportPathFromConfig = async () => {
+  const { default: config } = await import(pathToFileURL(join(repoRoot, CONFIG_FILE)));
+  const reportPath = config.jsonReporter?.fileName;
+  if (!reportPath) {
+    throw new Error(`${CONFIG_FILE} must set \`jsonReporter.fileName\` — the canary reads it.`);
+  }
+  return reportPath;
+};
+
+const run = async () => {
+  const reportFile = await reportPathFromConfig();
+  const absolute = join(repoRoot, reportFile);
+  // Belt to the braces above: judging a report this run did not write is the
+  // same false green by another route (a crashed run, an interrupted one).
+  rmSync(absolute, { force: true });
+
   console.log(`Mutating ${SUBJECT} (${versionsOf('vitest', '@stryker-mutator/vitest-runner')})\n`);
   execFileSync('pnpm', ['exec', 'stryker', 'run', CONFIG_FILE], {
     cwd: repoRoot,
     stdio: 'inherit',
   });
 
-  const absolute = join(repoRoot, REPORT_FILE);
   if (!existsSync(absolute)) {
-    throw new Error(`${REPORT_FILE} not found — Stryker did not produce a JSON report.`);
+    throw new Error(`${reportFile} not found — Stryker did not produce a JSON report.`);
   }
   const findings = judgeCanary(JSON.parse(readFileSync(absolute, 'utf8')));
 
@@ -144,4 +164,4 @@ const run = () => {
 };
 
 // Only dispatch when run as a program — `judgeCanary` above is unit-tested.
-if (process.argv[1] === fileURLToPath(import.meta.url)) run();
+if (process.argv[1] === fileURLToPath(import.meta.url)) await run();

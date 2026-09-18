@@ -85,6 +85,20 @@ describe('judgeCanary', () => {
     ]);
   });
 
+  it('does not take an inherited property name for an expected mutant', () => {
+    // `'constructor' in expected` is true of any object literal, so an `in`
+    // check would treat this mutant as expected and then never judge it — a
+    // hole in the exhaustiveness the canary's whole claim rests on.
+    expect(
+      judgeCanary(report(mutant('constructor', 'Survived')), { 'a - b': 'Killed' }),
+    ).toMatchInlineSnapshot(`
+        [
+          "scripts/mutation-canary/subject.ts:14 produced an unexpected mutant \`constructor\` (Survived) — the fixture or the set of mutators applied to it has changed. Check the verdict is the right one, then say so in EXPECTED_VERDICTS.",
+          "no mutant replaced anything with \`a - b\` — expected one, reported Killed.",
+        ]
+      `);
+  });
+
   it('states both verdicts the fixture guarantees', () => {
     // Pinned because the pair is the whole design: one killed, one unreached.
     expect(EXPECTED_VERDICTS).toEqual({ 'a - b': 'Killed', 'a / b': 'NoCoverage' });
