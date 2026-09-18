@@ -66,11 +66,13 @@ export const MOCK_SLA_POLICY = {
 
 // Live per-ticket SLA, nested on each Search result (`include=tickets(slas)`).
 // Mirrors the real shape (see #92): only live metrics — no ticket_id, no policy
-// identity, no target. One achieved metric and one active metric whose breach is
-// far in the future so "remaining" stays positive.
+// identity, no target. One achieved metric and one active metric, both breaching
+// far in the future so "remaining" stays positive — and the *achieved* one is the
+// earlier of the two, so the tool-level output shows the `Next breach` header
+// picking the running metric rather than the soonest date (#260).
 export const MOCK_SLA_SIDELOAD = {
   policy_metrics: [
-    { metric: 'first_reply_time', stage: 'achieved', breach_at: '2026-01-01T07:00:00Z' },
+    { metric: 'first_reply_time', stage: 'achieved', breach_at: '2099-03-01T09:00:00Z' },
     { metric: 'requester_wait_time', stage: 'active', breach_at: '2099-06-18T21:37:00Z', days: 12 },
   ],
 };

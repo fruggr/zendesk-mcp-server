@@ -356,6 +356,23 @@ describe('formatSlaBlock', () => {
     `);
   });
 
+  it('treats a stage it does not recognise as running', () => {
+    // Failing *open* is the safe direction for a triage signal: a stage Zendesk adds
+    // later must keep feeding the header, not silently drop out of it. Guards against
+    // turning the filter into a whitelist of the stages we happen to know today.
+    expect(
+      formatSlaBlock(
+        entry([{ metric: 'first_reply_time', stage: 'some_future_stage', breach_at: at(45) }]),
+      ),
+    ).toMatchInlineSnapshot(`
+      "
+
+      ### SLA
+      - **Next breach**: 2026-06-01T12:45:00.000Z
+      - **first_reply_time** — some_future_stage; due 2026-06-01T12:45:00.000Z — 45 min remaining"
+    `);
+  });
+
   it('tolerates an unparseable timestamp without crashing or counting down', () => {
     expect(
       formatSlaBlock(

@@ -52,6 +52,9 @@ describe('ticket tools', () => {
       expect(text).toContain('### SLA');
       expect(text).toContain('requester_wait_time');
       expect(text).toContain('remaining');
+      // The achieved metric breaches *earlier* than the active one, so a stage-blind
+      // header would report its date here (#260).
+      expect(text).toContain('- **Next breach**: 2099-06-18T21:37:00.000Z');
     });
 
     it('omits the SLA block when the ticket is not in the fallback search window', async () => {
@@ -1149,6 +1152,7 @@ describe('ticket tools', () => {
       const text = result.content[0]?.text ?? '';
       expect(text).toContain('### SLA');
       expect(text).toContain('requester_wait_time');
+      expect(text).toContain('- **Next breach**: 2099-06-18T21:37:00.000Z');
     });
   });
 
