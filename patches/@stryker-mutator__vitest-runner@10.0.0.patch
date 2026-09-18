@@ -1,0 +1,142 @@
+diff --git a/dist/src/stryker-setup.js b/dist/src/stryker-setup.js
+index aecfacbe47b285c272c47e54b3d66a716adfdc41..57b0f9897c29d8fd0303082945362893c4f1e622 100644
+--- a/dist/src/stryker-setup.js
++++ b/dist/src/stryker-setup.js
+@@ -7,6 +7,8 @@ const mode = inject('mode');
+ const ns = globalThis[globalNamespace] || (globalThis[globalNamespace] = {});
+ ns.hitLimit = inject('hitLimit');
+ const isGreaterThanVitest4Point1 = inject('isGreaterThanVitest4Point1');
++// Must match the separator the runner filters with; see test-helpers.js
++const testNameSeparator = inject('testNameSeparator');
+ if (mode === 'mutant') {
+     beforeAll(() => {
+         ns.hitCount = 0;
+@@ -36,7 +38,7 @@ if (mode === 'mutant') {
+ else {
+     ns.activeMutant = undefined;
+     beforeEach(({ task }) => {
+-        ns.currentTestId = toRawTestId(task);
++        ns.currentTestId = toRawTestId(task, testNameSeparator);
+     });
+     afterEach(() => {
+         ns.currentTestId = undefined;
+@@ -56,16 +58,16 @@ else {
+     }
+ }
+ // Stryker disable all: this file is copied to the sandbox dir
+-function collectTestName({ name, suite, }) {
++function collectTestName({ name, suite, }, separator) {
+     const nameParts = [name];
+     let currentSuite = suite;
+     while (currentSuite) {
+         nameParts.unshift(currentSuite.name);
+         currentSuite = currentSuite.suite;
+     }
+-    return nameParts.join(' ').trim();
++    return nameParts.join(separator).trim();
+ }
+-function toRawTestId(test) {
+-    return `${test.file?.filepath ?? 'unknown.js'}#${collectTestName(test)}`;
++function toRawTestId(test, separator) {
++    return `${test.file?.filepath ?? 'unknown.js'}#${collectTestName(test, separator)}`;
+ }
+ //# sourceMappingURL=stryker-setup.js.map
+\ No newline at end of file
+diff --git a/dist/src/test-helpers.js b/dist/src/test-helpers.js
+index 56cc786f30c524ae18ce87eef1a67fdf26b703c5..c092fd48943edeb3d91e2693a0ff62075245add5 100644
+--- a/dist/src/test-helpers.js
++++ b/dist/src/test-helpers.js
+@@ -1,16 +1,23 @@
+ // Don't merge this file into 'vitest-helpers.ts'!
+ // This file is used from the testing environment (via stryker-setup.js) and thus could be loaded into the browser (when using vitest with browser mode).
+ // Thus we should avoid unnecessary dependencies in this file.
+-export function collectTestName({ name, suite, }) {
++/**
++ * The separator Vitest itself uses between the suite chain and the test name.
++ * Vitest 5 matches `testNamePattern` against the full chain joined with ' > ';
++ * before that it was a plain space.
++ */
++export const VITEST_5_TEST_NAME_SEPARATOR = ' > ';
++export const LEGACY_TEST_NAME_SEPARATOR = ' ';
++export function collectTestName({ name, suite, }, separator = LEGACY_TEST_NAME_SEPARATOR) {
+     const nameParts = [name];
+     let currentSuite = suite;
+     while (currentSuite) {
+         nameParts.unshift(currentSuite.name);
+         currentSuite = currentSuite.suite;
+     }
+-    return nameParts.join(' ').trim();
++    return nameParts.join(separator).trim();
+ }
+-export function toRawTestId(test) {
+-    return `${test.file?.filepath ?? 'unknown.js'}#${collectTestName(test)}`;
++export function toRawTestId(test, separator = LEGACY_TEST_NAME_SEPARATOR) {
++    return `${test.file?.filepath ?? 'unknown.js'}#${collectTestName(test, separator)}`;
+ }
+ //# sourceMappingURL=test-helpers.js.map
+\ No newline at end of file
+diff --git a/dist/src/vitest-helpers.js b/dist/src/vitest-helpers.js
+index fa4f8138ab3b2aba64f4e715be2d8126da6ccf8b..14349c6e0e51b20369a3e10a5b91f0c8b671aa28 100644
+--- a/dist/src/vitest-helpers.js
++++ b/dist/src/vitest-helpers.js
+@@ -17,11 +17,11 @@ function convertTaskStateToTestStatus(taskState, testMode) {
+     }
+     return TestStatus.Failed;
+ }
+-export function convertTestToTestResult(test) {
++export function convertTestToTestResult(test, separator) {
+     const status = convertTaskStateToTestStatus(test.result?.state, test.mode);
+     const baseTestResult = {
+-        id: normalizeTestId(toRawTestId(test)),
+-        name: collectTestName(test),
++        id: normalizeTestId(toRawTestId(test, separator)),
++        name: collectTestName(test, separator),
+         timeSpentMs: test.result?.duration ?? 0,
+         fileName: test.file?.filepath && path.resolve(test.file.filepath),
+     };
+diff --git a/dist/src/vitest-test-runner.js b/dist/src/vitest-test-runner.js
+index 84f1ca026503b8e92b7adc952ec6c6a401943656..75d5cceb77d662f72ee497d9a108adbb6a616faf 100644
+--- a/dist/src/vitest-test-runner.js
++++ b/dist/src/vitest-test-runner.js
+@@ -8,6 +8,7 @@ import { DryRunStatus, toMutantRunResult, determineHitLimitReached, TestStatus,
+ import { errorToString, escapeRegExp, normalizeFileName, notEmpty, testFilesProvided, } from '@stryker-mutator/util';
+ import { vitestWrapper } from './vitest-wrapper.js';
+ import { convertTestToTestResult, fromTestId, collectTestsFromSuite, normalizeCoverage, isErrorCodeError, VITEST_ERROR_CODES, } from './vitest-helpers.js';
++import { LEGACY_TEST_NAME_SEPARATOR, VITEST_5_TEST_NAME_SEPARATOR, } from './test-helpers.js';
+ const STRYKER_SETUP = fileURLToPath(new URL('./stryker-setup.js', import.meta.url));
+ export class VitestTestRunner {
+     log;
+@@ -25,6 +26,16 @@ export class VitestTestRunner {
+         this.globalNamespace = globalNamespace;
+         this.options = options;
+     }
++    /**
++     * Vitest 5 matches `testNamePattern` against the suite chain joined with
++     * ' > ' rather than a space, so a filter built from space-joined names
++     * matches nothing and every covered mutant runs zero tests.
++     */
++    get #testNameSeparator() {
++        return semver.satisfies(vitestWrapper.version, '>=5.0.0')
++            ? VITEST_5_TEST_NAME_SEPARATOR
++            : LEGACY_TEST_NAME_SEPARATOR;
++    }
+     capabilities() {
+         return { reloadEnvironment: true };
+     }
+@@ -83,6 +94,7 @@ export class VitestTestRunner {
+         });
+         this.ctx.provide('globalNamespace', this.globalNamespace);
+         this.ctx.provide('isGreaterThanVitest4Point1', semver.satisfies(vitestWrapper.version, '>=4.1.0'));
++        this.ctx.provide('testNameSeparator', this.#testNameSeparator);
+         this.ctx.config.browser.screenshotFailures = false;
+         this.ctx.projects.forEach((project) => {
+             project.config.setupFiles = [
+@@ -173,7 +185,7 @@ export class VitestTestRunner {
+             .filter((test) => test.result); // if no result: it was skipped because of bail
+         let failure = false;
+         const testResults = tests.map((test) => {
+-            const testResult = convertTestToTestResult(test);
++            const testResult = convertTestToTestResult(test, this.#testNameSeparator);
+             failure ||= testResult.status === TestStatus.Failed;
+             return testResult;
+         });

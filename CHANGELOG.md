@@ -1,3 +1,19 @@
+## [2.22.1](https://github.com/fruggr/zendesk-mcp-server/compare/v2.22.0...v2.22.1) (2026-09-18)
+
+### Bug Fixes
+
+* **mutation:** patch the vitest 5 incompatibility and add a canary that notices when the gate stops measuring ([#298](https://github.com/fruggr/zendesk-mcp-server/issues/298)) ([aedfdc9](https://github.com/fruggr/zendesk-mcp-server/commit/aedfdc986f5d360b7053e4443f122b04ece47f8f))
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Chores
+
+* **deps:** lock file maintenance ([#294](https://github.com/fruggr/zendesk-mcp-server/issues/294)) ([3f3facc](https://github.com/fruggr/zendesk-mcp-server/commit/3f3facc64309014583df9d4e8e41476a6cfaa0c0))
+* **deps:** update vitest monorepo to v5 ([#292](https://github.com/fruggr/zendesk-mcp-server/issues/292)) ([79759d0](https://github.com/fruggr/zendesk-mcp-server/commit/79759d0e7a76ab4fdef4b0df5d29592876672c8d))
+* **renovate:** drop the dead pnpm.overrides rule and correct what it documented ([#293](https://github.com/fruggr/zendesk-mcp-server/issues/293)) ([729ff03](https://github.com/fruggr/zendesk-mcp-server/commit/729ff035976934a93a825bf28448d5cf3e161a06))
+</details>
+
 ## [2.22.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.21.0...v2.22.0) (2026-09-17)
 
 ### Features

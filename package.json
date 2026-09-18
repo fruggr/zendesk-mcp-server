@@ -1,6 +1,6 @@
 {
   "name": "@fruggr/zendesk-mcp-server",
-  "version": "2.22.0",
+  "version": "2.22.1",
   "mcpName": "io.github.fruggr/zendesk-mcp-server",
   "description": "Deep Zendesk MCP server for your AI assistant: search, draft, update and translate Help Center articles and manage Support tickets end to end — comments, triage and image attachments.",
   "type": "module",
@@ -26,6 +26,7 @@
     "test:watch": "vitest watch",
     "test:coverage": "vitest run --coverage",
     "test:mutation": "stryker run",
+    "test:mutation:canary": "node scripts/mutation-canary.mjs",
     "test:mutation:diff": "node scripts/mutation-scope.mjs diff",
     "test:mutation:summary": "node scripts/mutation-scope.mjs summary",
     "test:smoke": "pnpm build && node scripts/smoke-test.mjs",
