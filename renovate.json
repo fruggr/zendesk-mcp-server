@@ -88,6 +88,11 @@
       "enabled": false
     },
     {
+      "description": "Hold vitest and its coverage provider on the 4.x line until @stryker-mutator/vitest-runner supports vitest 5. Under vitest 5 the runner's per-test filter matches nothing - vitest 5 tests testNamePattern against the new fullTestName, whose parts are joined with ' > ', while the runner builds its regex from names joined with a single space - so Stryker runs zero tests for every mutant it scopes to a test filter and reports each one as Survived. The mutation gate then measures nothing while pnpm test stays green, which is how it went unnoticed through #292: the runner's peer range is 'vitest: >=2.0.0', so vitest 5 installs clean and nothing warns. #297 carries the diagnosis and the A/B. This rule is the only thing holding the line - a caret range alone would let a 5.x through. Remove it, and the pins it protects, once a @stryker-mutator/vitest-runner release supports vitest 5; 'pnpm test:mutation:canary' is the check that says whether it really does.",
+      "matchPackageNames": ["vitest", "@vitest/coverage-v8"],
+      "allowedVersions": "<5.0.0"
+    },
+    {
       "description": "typescript-legacy is an npm alias for TypeScript 6 (npm:typescript@6.0.3), the JS-compiler fallback used by scripts/typecheck.mjs on PRoot/Termux environments where TS 7's native tsgo is broken. Keep it on the 6.x line: Renovate still proposes 6.x patch/minor updates (and security fixes), but never 7.x — npm considers TS 7 the same package, and bumping the alias to it would remove the fallback. For npm aliases Renovate's depName is the package.json key, so this rule matches only the alias and leaves the real `typescript` dependency managed as usual. Remove this rule together with the alias and the typecheck shim once tsgo works under PRoot (see scripts/typecheck.mjs header).",
       "matchDepNames": ["typescript-legacy"],
       "allowedVersions": "<7.0.0"

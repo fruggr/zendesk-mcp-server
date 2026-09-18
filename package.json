@@ -26,6 +26,7 @@
     "test:watch": "vitest watch",
     "test:coverage": "vitest run --coverage",
     "test:mutation": "stryker run",
+    "test:mutation:canary": "node scripts/mutation-canary.mjs",
     "test:mutation:diff": "node scripts/mutation-scope.mjs diff",
     "test:mutation:summary": "node scripts/mutation-scope.mjs summary",
     "test:smoke": "pnpm build && node scripts/smoke-test.mjs",
@@ -101,7 +102,7 @@
     "@tsconfig/strictest": "^2.0.8",
     "@types/hast": "^3.0.4",
     "@types/node": "^22.15.0",
-    "@vitest/coverage-v8": "^5.0.0",
+    "@vitest/coverage-v8": "^4.1.11",
     "conventional-changelog-conventionalcommits": "^10.2.1",
     "lefthook": "^2.1.10",
     "msw": "^2.12.13",
@@ -111,6 +112,6 @@
     "tsx": "^4.21.0",
     "typescript": "^7.0.0",
     "typescript-legacy": "npm:typescript@6.0.3",
-    "vitest": "^5.0.0"
+    "vitest": "^4.1.11"
   }
 }
