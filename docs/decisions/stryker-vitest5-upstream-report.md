@@ -1,18 +1,35 @@
-# StrykerJS + vitest 5: the report handed upstream
+# StrykerJS + vitest 5: the diagnosis, and where it stands upstream
 
 > **Build documentation, not user documentation.** This is the diagnosis behind
 > the vitest hold recorded in
-> [`mutation-testing.md` section 9](./mutation-testing.md#9-the-canary-and-why-vitest-is-held-at-4x),
-> written to be postable as-is to
-> [stryker-mutator/stryker-js](https://github.com/stryker-mutator/stryker-js/issues).
+> [`mutation-testing.md` section 9](./mutation-testing.md#9-the-canary-and-why-vitest-is-held-at-4x).
 > Nothing here affects how the MCP server behaves for a client.
 
-Everything below was measured on this repository. Reproduce with the commands in
-the last section.
+**Upstream already has it.**
+[stryker-js#6210](https://github.com/stryker-mutator/stryker-js/issues/6210)
+(opened 2026-09-04) names the same cause, and
+[stryker-js#6214](https://github.com/stryker-mutator/stryker-js/pull/6214)
+proposes the fix — parametrise the separator in `collectTestName` /
+`toRawTestId` and pick `' > '` for vitest 5+. **Open, unmerged** when this was
+written, so the hold stands until a release ships it; no new issue was filed,
+because a duplicate report helps nobody.
+
+This file is kept anyway, and not as a courtesy to itself: it is the evidence
+that our reading of the failure is our own rather than a repeat of the upstream
+issue's, and it is what the next person needs when they decide whether a runner
+release really lifts the hold. Everything below was measured on this repository —
+reproduce it with the commands in the last section. Upstream's own evidence is
+larger in scale and identical in shape (a project score of 47.36 → 2.96, with
+1398 of 1651 survivors carrying `testsCompleted: 0` against a populated
+`coveredBy`), which is worth one line here because two independent measurements
+of the same mechanism is the strongest statement available about the cause.
 
 ---
 
 ## Summary
+
+*(What follows is the report as it was written before finding #6210 — kept
+because it is the reproduction, not a proposal.)*
 
 With `vitest@5`, `@stryker-mutator/vitest-runner` runs **zero tests** for every
 mutant it scopes to a test filter, and reports each of those mutants as
@@ -139,6 +156,11 @@ whose name the filter is built from.
    installing vitest 5 warns instead of silently producing wrong reports. This is
    the part that turned a compatibility gap into a silent one.
 
+#6214 takes route 1, extended to `toRawTestId` so the names used for coverage
+recording and for filtering stay the same string. Route 3 is not covered by it,
+and is the one that would have made this loud rather than silent — worth raising
+on the issue if it stays unaddressed once the fix lands.
+
 ## Reproducing
 
 Anything with a `describe` around the mutated code's test reproduces it. In this
@@ -149,5 +171,5 @@ pnpm test:mutation --mutate 'src/utils/formatting.ts:165-168'
 # vitest 4.1.11 → Killed 3, Survived 0
 # vitest 5.0.0  → Killed 0, Survived 3
 
-pnpm test:mutation:canary   # two-line fixture, ~3 s, same verdict either way
+pnpm test:mutation:canary   # two-line fixture, ~3 s: passes on 4.1.11, fails on 5.0.0
 ```

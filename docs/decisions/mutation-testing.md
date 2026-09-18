@@ -701,8 +701,15 @@ A mutant planned with no test filter — static, or one Stryker has no coverage
 for — still runs the whole suite and is killed normally: the `Killed: 7`. Every
 mutant that gets a per-test filter escapes. Mutant activation, `provide`/`inject`,
 the setup-file injection and the `suite.meta` coverage round-trip are all intact
-on vitest 5; only the filter is broken. Reported upstream; the write-up handed
-over is [`docs/decisions/stryker-vitest5-upstream-report.md`](./stryker-vitest5-upstream-report.md).
+on vitest 5; only the filter is broken.
+
+Upstream has it as
+[stryker-js#6210](https://github.com/stryker-mutator/stryker-js/issues/6210),
+with [#6214](https://github.com/stryker-mutator/stryker-js/pull/6214) proposing
+the fix — open and unmerged when this was written, which is what sets the hold
+below. Our diagnosis was reached independently and matches it;
+[`stryker-vitest5-upstream-report.md`](./stryker-vitest5-upstream-report.md)
+keeps the reproduction and the evidence.
 
 ### Why nothing caught it
 
@@ -768,9 +775,10 @@ on, and the upgrade's benefit here is smaller than what it silently disabled.
 
 `vitest@5.0.1` carries the same `interpretTaskModes` (checked against the
 published `dist/task-utils.js`), so the hold is on the major, not on a specific
-release. Lift it when a `@stryker-mutator/vitest-runner` release supports
-vitest 5 — and let `pnpm test:mutation:canary` be what says whether it really
-does.
+release. Lift it once a `@stryker-mutator/vitest-runner` release carries
+stryker-js#6214 — and let `pnpm test:mutation:canary`, not the release notes, be
+what says whether it really works: the canary is two seconds, and the thing it
+checks is exactly the thing that release claims to fix.
 
 ## Appendix — reproducing
 
