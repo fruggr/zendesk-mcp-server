@@ -170,15 +170,13 @@ const minutesUntil = (iso: string, now: number): number | null => {
 // Stages carrying no live obligation: the metric is parked (`paused`) or already
 // settled (`achieved`, `fulfilled`), so its `breach_at` is a record, not a deadline
 // anyone is running against. One list, read by both the per-metric countdown and
-// the `Next breach` header (#260). An unrecognised stage counts as running.
+// the `Next breach` header (#260).
 const STAGES_WITHOUT_LIVE_DEADLINE: ReadonlySet<string | undefined> = new Set([
   'paused',
   'achieved',
   'fulfilled',
 ]);
 
-// Names what it checks: the stage alone. A running metric may still carry no
-// `breach_at`, so callers keep their own deadline guard.
 const hasRunningStage = (m: ZendeskSlaLiveMetric): boolean =>
   !STAGES_WITHOUT_LIVE_DEADLINE.has(m.stage);
 
@@ -191,7 +189,6 @@ const hasPendingDeadline = (
   // dropped by the guard below either way, so forcing it true changes no output.
   typeof m.breach_at === 'string';
 
-// A deadline still running, parsed once: `at` orders it, `due` is rendered.
 interface SlaDeadline {
   due: string;
   at: number;
