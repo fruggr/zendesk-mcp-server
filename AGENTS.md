@@ -127,8 +127,10 @@ quality bar still hold — the freedom is from Zendesk's shape, not from craft.)
   observing results, so `pnpm test:mutation:canary` (~3 s, runs in both
   `mutation.yml` jobs) asserts a fixed verdict on a fixture. A canary failure is
   never about the code under review — read it as the toolchain, starting with
-  the vitest and StrykerJS versions. vitest is held at 4.x for this reason
-  (`renovate.json`); don't lift that without the canary passing. §9 of the ADR.
+  the vitest and StrykerJS versions. `@stryker-mutator/vitest-runner` carries
+  stryker-js#6214 as a pnpm patch for the same reason (`patches/`, pinned to an
+  exact version in `pnpm-workspace.yaml`): drop it when a runner release ships
+  that fix, with the canary — not the release notes — as the check. §9 of the ADR.
 
 ## Planning
 

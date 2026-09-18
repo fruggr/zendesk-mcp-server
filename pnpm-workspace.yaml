@@ -22,3 +22,6 @@ overrides:
   # the advisory stays open indefinitely. express already resolves 6.15.3 in this
   # tree, so the override also deduplicates qs to a single version.
   qs: ^6.15.3
+
+patchedDependencies:
+  '@stryker-mutator/vitest-runner@10.0.0': patches/@stryker-mutator__vitest-runner@10.0.0.patch

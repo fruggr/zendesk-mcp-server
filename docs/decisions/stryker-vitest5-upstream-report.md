@@ -11,18 +11,21 @@
 [stryker-js#6214](https://github.com/stryker-mutator/stryker-js/pull/6214)
 proposes the fix — parametrise the separator in `collectTestName` /
 `toRawTestId` and pick `' > '` for vitest 5+. **Open, unmerged** when this was
-written, so the hold stands until a release ships it; no new issue was filed,
-because a duplicate report helps nobody.
+written. No new issue was filed, because a duplicate report helps nobody; what
+this repo does instead is carry #6214 as a pnpm patch
+(`patches/@stryker-mutator__vitest-runner@10.0.0.patch`) until a release ships
+it, which keeps vitest 5 *and* a working gate.
 
 This file is kept anyway, and not as a courtesy to itself: it is the evidence
 that our reading of the failure is our own rather than a repeat of the upstream
-issue's, and it is what the next person needs when they decide whether a runner
-release really lifts the hold. Everything below was measured on this repository —
-reproduce it with the commands in the last section. Upstream's own evidence is
-larger in scale and identical in shape (a project score of 47.36 → 2.96, with
-1398 of 1651 survivors carrying `testsCompleted: 0` against a populated
-`coveredBy`), which is worth one line here because two independent measurements
-of the same mechanism is the strongest statement available about the cause.
+issue's, and it is what the next person needs when they judge whether a runner
+release makes the patch droppable. Everything below was measured on this
+repository — reproduce it with the commands in the last section. Upstream's own
+evidence is larger in scale and identical in shape (a project score of
+47.36 → 2.96, with 1398 of 1651 survivors carrying `testsCompleted: 0` against a
+populated `coveredBy`), which is worth one line here because two independent
+measurements of the same mechanism is the strongest statement available about
+the cause.
 
 ---
 
@@ -168,8 +171,12 @@ repository:
 
 ```sh
 pnpm test:mutation --mutate 'src/utils/formatting.ts:165-168'
-# vitest 4.1.11 → Killed 3, Survived 0
-# vitest 5.0.0  → Killed 0, Survived 3
+# vitest 4.1.11            → Killed 3, Survived 0
+# vitest 5.0.0, unpatched  → Killed 0, Survived 3
+# vitest 5.0.0, patched    → Killed 3, Survived 0
 
-pnpm test:mutation:canary   # two-line fixture, ~3 s: passes on 4.1.11, fails on 5.0.0
+pnpm test:mutation:canary   # two-line fixture, ~3 s; fails on unpatched vitest 5
 ```
+
+To see the failure again once the patch is in place, remove the
+`patchedDependencies` entry in `pnpm-workspace.yaml` and re-install.

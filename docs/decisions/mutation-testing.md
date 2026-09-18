@@ -758,27 +758,59 @@ nothing to judge, so the canary is the only signal it gets. Cost is ~3 s (2.4 s
 locally, against 19 s for the smallest useful run over real scope), which is what
 makes running it on every PR uncontroversial.
 
-Verified to work in the direction that matters — on this tree, with vitest 5
-installed and `pnpm test` green, the canary fails in 2 seconds with:
+Verified to work in the direction that matters — on this tree, on *unpatched*
+vitest 5 and with `pnpm test` green, the canary fails in 2 seconds with:
 
 ```text
   `a - b`: expected Killed, reported Survived.
 ```
 
-### The hold on vitest 5
+which is also what makes it the acceptance test for the patch below, and for
+whatever release eventually replaces it.
 
-vitest and `@vitest/coverage-v8` are pinned to the 4.x line, held there by a
-`renovate.json` rule (`allowedVersions: "<5.0.0"`) — a caret range alone would
-let a 5.x back in. The alternative was keeping the upgrade and documenting a
-non-functioning gate; option one restores a guarantee the repo actually relies
-on, and the upgrade's benefit here is smaller than what it silently disabled.
+### The fix, carried as a patch rather than as a rollback
 
-`vitest@5.0.1` carries the same `interpretTaskModes` (checked against the
-published `dist/task-utils.js`), so the hold is on the major, not on a specific
-release. Lift it once a `@stryker-mutator/vitest-runner` release carries
-stryker-js#6214 — and let `pnpm test:mutation:canary`, not the release notes, be
-what says whether it really works: the canary is two seconds, and the thing it
-checks is exactly the thing that release claims to fix.
+Two ways out: pin vitest back to 4.x until upstream releases, or carry
+stryker-js#6214 ourselves. **The patch was chosen**, so the repo keeps vitest 5
+and the gate works today rather than at upstream's pace.
+
+`patches/@stryker-mutator__vitest-runner@10.0.0.patch`, applied through
+`patchedDependencies` in `pnpm-workspace.yaml`, is #6214 transposed onto the
+published `dist/src/` — the same four files as upstream's `src/`
+(`test-helpers`, `stryker-setup`, `vitest-helpers`, `vitest-test-runner`), with
+its shape kept so re-reading it against the PR is a diff, not an exercise:
+
+- the separator is a value (`' > '` for vitest ≥ 5, `' '` below), chosen once
+  from `vitestWrapper.version`;
+- it is `provide`d to the setup file, because `ns.currentTestId` — the key
+  coverage is recorded under — has to be built with the same separator the
+  filter regex is built from. Fixing only the filter would move the mismatch
+  rather than remove it.
+
+Three things make the patch safe to carry, and they are the reason this is not
+just a faster rollback:
+
+- **It cannot go stale silently.** The key pins the exact version
+  (`@stryker-mutator/vitest-runner@10.0.0`), so a runner bump leaves the patch
+  unapplied instead of applying it to code it was not written for — and the
+  canary is red on that PR before anyone reads it.
+- **It cannot go stale invisibly in the baseline either.** `pnpm-lock.yaml`
+  records the patch's content hash, and the hash is already part of the
+  mutation baseline cache key ([section 4](#how-ci-enforces-that-without-anyone-having-to-remember)),
+  so editing the patch discards the baseline the same way a dependency bump
+  does. That is by construction, not by anyone remembering.
+- **It is verified rather than assumed.** On vitest 5 with the patch:
+  `src/utils/pagination.ts` is 43 killed / 0 escaped, the 100 % this ADR already
+  records for that file, and the four lines of `formatting.ts` in the
+  reproduction below are 3 killed / 0 escaped where unpatched vitest 5 gives
+  0 / 3.
+
+**Drop the patch** once a `@stryker-mutator/vitest-runner` release carries
+#6214: delete the file and the `patchedDependencies` entry, then let
+`pnpm test:mutation:canary` — not the release notes — say whether the release
+really fixed it. That is two seconds, and the thing it checks is exactly the
+thing such a release claims to fix. `renovate.json` keeps runner updates off
+automerge so that decision reaches a person.
 
 ## Appendix — reproducing
 

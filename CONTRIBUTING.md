@@ -219,7 +219,9 @@ assumption that everything below has already been done.
    touches `vitest`, `@stryker-mutator/*` or `@vitest/coverage-v8`, run
    `pnpm test:mutation:canary` (~3 s) as well — a dependency-only PR changes no
    mutated line, so the gate above has nothing to judge and cannot notice a bump
-   that switches it off. Background:
+   that switches it off. A `@stryker-mutator/vitest-runner` bump also needs the
+   patch in `patches/` re-checked: if the release carries stryker-js#6214, delete
+   it instead of carrying it. Background:
    [`docs/decisions/mutation-testing.md`](docs/decisions/mutation-testing.md).
 6. **Scope discipline.** Don't bundle unrelated cleanups into a feature PR. If
    you spot something worth fixing along the way, note it and open a separate PR.
