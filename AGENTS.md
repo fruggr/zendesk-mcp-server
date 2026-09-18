@@ -123,11 +123,6 @@ quality bar still hold — the freedom is from Zendesk's shape, not from craft.)
   for a genuinely equivalent mutant say why with
   `// Stryker disable next-line <mutator>: <reason>`. Rationale, scope and costs:
   `docs/decisions/mutation-testing.md`.
-- `pnpm test:mutation:canary` (~3 s) asserts that gate still observes results at
-  all. A canary failure is never about the code under review — read it as the
-  toolchain. `@stryker-mutator/vitest-runner` carries a pnpm patch for the same
-  reason: drop it when a release ships stryker-js#6214, with the canary as the
-  check. §9 of the ADR.
 
 ## Planning
 

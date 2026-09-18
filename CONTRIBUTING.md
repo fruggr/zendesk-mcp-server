@@ -215,13 +215,7 @@ assumption that everything below has already been done.
    `pnpm build`. A green CI on a non-green local run means a flaky check, not a
    free pass. If your PR changes anything under `src/`, also run the mutation
    gate on your diff, because CI does and it fails on a surviving mutant in a
-   line you changed: `pnpm test:mutation:diff origin/main HEAD`. If your PR
-   touches `vitest`, `@stryker-mutator/*` or `@vitest/coverage-v8`, run
-   `pnpm test:mutation:canary` (~3 s) as well — a dependency-only PR changes no
-   mutated line, so the gate above has nothing to judge and cannot notice a bump
-   that switches it off. A `@stryker-mutator/vitest-runner` bump also needs the
-   patch in `patches/` re-checked: if the release carries stryker-js#6214, delete
-   it instead of carrying it. Background:
+   line you changed: `pnpm test:mutation:diff origin/main HEAD`. Background:
    [`docs/decisions/mutation-testing.md`](docs/decisions/mutation-testing.md).
 6. **Scope discipline.** Don't bundle unrelated cleanups into a feature PR. If
    you spot something worth fixing along the way, note it and open a separate PR.
