@@ -182,6 +182,11 @@ const STAGES_WITHOUT_LIVE_DEADLINE: ReadonlySet<string | undefined> = new Set([
 const hasRunningStage = (m: ZendeskSlaLiveMetric): boolean =>
   !STAGES_WITHOUT_LIVE_DEADLINE.has(m.stage);
 
+const hasPendingDeadline = (
+  m: ZendeskSlaLiveMetric,
+): m is ZendeskSlaLiveMetric & { breach_at: string } =>
+  hasRunningStage(m) && typeof m.breach_at === 'string';
+
 // A deadline still running, parsed once: `at` orders it, `due` is rendered.
 interface SlaDeadline {
   due: string;
@@ -215,8 +220,8 @@ export const formatSlaBlock = (entry: ZendeskSlaSideloadEntry | undefined): stri
   const now = Date.now();
   const lines = ['### SLA'];
   const pending = entry.policy_metrics
-    .filter(hasRunningStage)
-    .flatMap((m) => (m.breach_at ? [{ due: m.breach_at, at: Date.parse(m.breach_at) }] : []))
+    .filter(hasPendingDeadline)
+    .map((m) => ({ due: m.breach_at, at: Date.parse(m.breach_at) }))
     .filter((d) => !Number.isNaN(d.at) && d.at > now);
   // Quote the winning metric's own `breach_at` instead of re-serializing the instant:
   // Zendesk sends no milliseconds, so a normalized header never string-matched the
