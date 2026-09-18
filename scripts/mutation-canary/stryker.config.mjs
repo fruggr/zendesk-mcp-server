@@ -1,15 +1,11 @@
 import base from '../../stryker.config.mjs';
 
-// Stryker config for the mutation canary. Extends the repo's own config rather
-// than restating it, so the TypeScript 7 `tsconfigFile` sentinel and the
-// explicit `plugins` entry — both load-bearing workarounds documented in
-// `docs/decisions/mutation-testing.md` — cannot drift out of sync here.
-//
-// Everything overridden below is overridden to keep the canary's failure
-// unambiguous: its own tiny vitest project, its own report path (the gate reads
-// the repo's), and `json` alone as the reporter — so a canary run never
-// publishes to the dashboard, and the inherited `htmlReporter` path pointing
-// into `reports/mutation/` is never written to.
+// Stryker config for the mutation canary. Extends the repo's own config so the
+// TypeScript 7 `tsconfigFile` sentinel and the explicit `plugins` entry cannot
+// drift out of sync here. The overrides keep a canary failure unambiguous — its
+// own tiny vitest project — and keep its output off the gate's report, its
+// baseline and the dashboard.
+// Background: docs/decisions/mutation-testing.md (§9).
 
 /** @type {import('@stryker-mutator/api/core').PartialStrykerOptions} */
 export default {
@@ -17,13 +13,10 @@ export default {
   mutate: ['scripts/mutation-canary/subject.ts'],
   vitest: { configFile: 'scripts/mutation-canary/vitest.config.ts' },
 
-  // `ArrowFunction` empties a whole arrow body, which the fixture's two
-  // one-line arrows both yield as the same `() => undefined` text — two mutants
-  // the canary could not tell apart, one of them static (so Stryker runs it
-  // without a test filter, the one path #297 left working, which makes its
-  // verdict silent about the failure this exists to catch). Excluding it leaves
-  // exactly one `ArithmeticOperator` mutant per function, each identifiable by
-  // its replacement alone.
+  // `ArrowFunction` empties both one-line arrows to the same `() => undefined`
+  // text — two mutants the canary cannot tell apart, one of them static, which
+  // Stryker runs without a test filter: the one path #297 left working, so its
+  // verdict says nothing about the failure this exists to catch.
   mutator: { ...base.mutator, excludedMutations: ['ArrowFunction'] },
   reporters: ['json'],
   jsonReporter: { fileName: 'reports/mutation-canary/mutation.json' },

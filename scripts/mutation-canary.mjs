@@ -1,25 +1,10 @@
 #!/usr/bin/env node
 // The mutation canary: proof that StrykerJS is still observing the test run.
-//
-// Run it with `pnpm test:mutation:canary`. It mutates one fixture
-// (`scripts/mutation-canary/subject.ts`) whose sibling test provably kills its
-// mutant, and fails when the report says otherwise.
-//
-// Why this exists, from #297: a mutation gate cannot tell "no mutant escaped
-// because the assertions are strong" from "no mutant was ever really tested".
-// Both are green, and we believe the first. When vitest 5 broke
-// `@stryker-mutator/vitest-runner`'s test filter, every mutant Stryker ran with
-// a per-test filter came back `Survived` although the suite killed it by hand —
-// `pnpm test` stayed green, coverage stayed above its thresholds, and the only
-// signal was the *next* author's PR failing the gate for assertions that were
-// doing their job. The canary turns that into a failure that names its own
-// cause, on the PR that introduces it.
-//
-// Two mutants, two different expected verdicts. A one-sided "it was killed"
-// check would pass against a runner that reported everything killed, which
-// tells us just as little — so the uncovered half must come back `NoCoverage`.
-// Keying on the replacement text rather than a line number keeps the fixture
-// editable.
+// Mutates `scripts/mutation-canary/subject.ts`, whose verdicts are fixed by
+// construction, and fails when the report disagrees — so a runner that stopped
+// measuring names itself here rather than failing the next author's diff.
+// Why it exists and what each design point buys:
+// docs/decisions/mutation-testing.md (§9).
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, rmSync } from 'node:fs';

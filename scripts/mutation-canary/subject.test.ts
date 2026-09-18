@@ -1,12 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { killedByItsTest } from './subject.js';
 
-// The nesting is load-bearing, not decoration. Stryker filters a mutant's run
-// down to its covering tests with a regex over *qualified* test names (suite
-// names joined to the test name), so a top-level `it` would exercise a filter
-// with no separator in it at all — exactly the case that kept working when
-// #297 broke everything else. Two levels of `describe` put a real separator on
-// both sides of the join.
+// The nesting is load-bearing. Stryker filters a mutant's run with a regex over
+// *qualified* test names, so a top-level `it` exercises a filter with no
+// separator in it — the one shape that kept working when #297 broke everything
+// else. Two levels of `describe` put a real separator on both sides of the join.
 describe('the mutation canary subject', () => {
   describe('killedByItsTest', () => {
     it('returns the sum of its two arguments', () => {

@@ -3,10 +3,9 @@ import { describe, expect, it } from 'vitest';
 // script tests in this directory).
 import { EXPECTED_VERDICTS, judgeCanary } from '../../scripts/mutation-canary.mjs';
 
-// The canary decides whether the mutation gate is measuring anything at all, so
-// its verdict-reading is pinned here: a judge that waves a broken report
-// through is exactly as silent as the failure it exists to catch (#297), and
-// nothing downstream would notice. The reports below are real
+// The canary decides whether the mutation gate measures anything, so its
+// verdict-reading is pinned here: a judge that waves a broken report through is
+// as silent as the failure it exists to catch (#297). The reports below are real
 // `mutation-testing-report-schema` shapes, trimmed to the fields read.
 
 const SUBJECT = 'scripts/mutation-canary/subject.ts';
