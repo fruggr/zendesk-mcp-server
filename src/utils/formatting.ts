@@ -167,13 +167,26 @@ const minutesUntil = (iso: string): number | null => {
   return Number.isNaN(t) ? null : Math.round((t - Date.now()) / 60_000);
 };
 
+// Stages carrying no live obligation: the metric is parked (`paused`) or already
+// settled (`achieved`, `fulfilled`), so its `breach_at` is a record, not a deadline
+// anyone is running against. Read by both the per-metric countdown and the `Next
+// breach` header — each kept its own reading of this and they disagreed (#260).
+const STAGES_WITHOUT_LIVE_DEADLINE: ReadonlySet<string | undefined> = new Set([
+  'paused',
+  'achieved',
+  'fulfilled',
+]);
+
+const hasLiveDeadline = (m: ZendeskSlaLiveMetric): boolean =>
+  !STAGES_WITHOUT_LIVE_DEADLINE.has(m.stage);
+
 const formatSlaMetric = (m: ZendeskSlaLiveMetric): string => {
   const stage = m.stage ?? 'unknown';
   const due = m.breach_at ?? null;
   const parts = [`- **${m.metric}** — ${stage}`];
   if (due) {
     const remaining = minutesUntil(due);
-    if (stage === 'paused' || stage === 'achieved' || stage === 'fulfilled' || remaining == null) {
+    if (!hasLiveDeadline(m) || remaining == null) {
       parts.push(`due ${due}`);
     } else if (remaining < 0) {
       parts.push(`due ${due} — breached (${Math.abs(remaining)} min overdue)`);
@@ -187,11 +200,14 @@ const formatSlaMetric = (m: ZendeskSlaLiveMetric): string => {
 // Live SLA block appended after a formatted ticket. Renders only what the Search
 // `slas` sideload carries (per-metric stage + breach countdown) — targets and
 // policy identity are not on the wire (see `list_sla_policies`). Returns '' when
-// no policy applies, so concatenating is always safe.
+// no policy applies, so concatenating is always safe. `Next breach` answers "what is
+// at risk now", so it speaks only for running metrics; a settled or paused deadline
+// is left to its own line.
 export const formatSlaBlock = (entry: ZendeskSlaSideloadEntry | undefined): string => {
   if (!entry?.policy_metrics || entry.policy_metrics.length === 0) return '';
   const lines = ['### SLA'];
   const futureBreaches = entry.policy_metrics
+    .filter(hasLiveDeadline)
     .map((m) => m.breach_at)
     .map((d) => (d ? Date.parse(d) : Number.NaN))
     .filter((t) => !Number.isNaN(t) && t > Date.now());

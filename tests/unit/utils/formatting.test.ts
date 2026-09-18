@@ -276,11 +276,10 @@ describe('formatSlaBlock', () => {
     `);
   });
 
-  it('omits the countdown for paused, achieved and fulfilled stages', () => {
-    // The `Next breach` line here is today's output, not endorsed behaviour: the
-    // header counts every future `breach_at` whatever the stage, so it announces a
-    // breach for metrics this test shows carry no live countdown. Pinned so the
-    // disagreement stays visible; #260 owns the fix.
+  it('omits the countdown, and the next-breach line, when no metric is running', () => {
+    // `paused`, `achieved` and `fulfilled` carry no live obligation, so nothing here
+    // is at risk: the per-metric lines state the deadline without counting down, and
+    // the header — which speaks for what is running — has nothing to report.
     expect(
       formatSlaBlock(
         entry([
@@ -293,10 +292,67 @@ describe('formatSlaBlock', () => {
       "
 
       ### SLA
-      - **Next breach**: 2026-06-01T13:00:00.000Z
       - **agent_work_time** — paused; due 2026-06-01T13:00:00.000Z
       - **first_reply_time** — achieved; due 2026-06-01T13:00:00.000Z
       - **total_resolution_time** — fulfilled; due 2026-06-01T13:00:00.000Z"
+    `);
+  });
+
+  // One case per suppressed stage, each pairing it with a *later* running deadline:
+  // asserting the header reports the running one is a stronger claim than asserting
+  // it is absent — it pins which metric won, so dropping that single stage from the
+  // filter changes the reported date (#260).
+  it('reports the running deadline, not a sooner paused one', () => {
+    expect(
+      formatSlaBlock(
+        entry([
+          { metric: 'agent_work_time', stage: 'paused', breach_at: at(30) },
+          { metric: 'first_reply_time', stage: 'active', breach_at: at(90) },
+        ]),
+      ),
+    ).toMatchInlineSnapshot(`
+      "
+
+      ### SLA
+      - **Next breach**: 2026-06-01T13:30:00.000Z
+      - **agent_work_time** — paused; due 2026-06-01T12:30:00.000Z
+      - **first_reply_time** — active; due 2026-06-01T13:30:00.000Z — 90 min remaining"
+    `);
+  });
+
+  it('reports the running deadline, not a sooner achieved one', () => {
+    expect(
+      formatSlaBlock(
+        entry([
+          { metric: 'first_reply_time', stage: 'achieved', breach_at: at(30) },
+          { metric: 'total_resolution_time', stage: 'active', breach_at: at(90) },
+        ]),
+      ),
+    ).toMatchInlineSnapshot(`
+      "
+
+      ### SLA
+      - **Next breach**: 2026-06-01T13:30:00.000Z
+      - **first_reply_time** — achieved; due 2026-06-01T12:30:00.000Z
+      - **total_resolution_time** — active; due 2026-06-01T13:30:00.000Z — 90 min remaining"
+    `);
+  });
+
+  it('reports the running deadline, not a sooner fulfilled one', () => {
+    expect(
+      formatSlaBlock(
+        entry([
+          { metric: 'total_resolution_time', stage: 'fulfilled', breach_at: at(30) },
+          { metric: 'first_reply_time', stage: 'active', breach_at: at(90) },
+        ]),
+      ),
+    ).toMatchInlineSnapshot(`
+      "
+
+      ### SLA
+      - **Next breach**: 2026-06-01T13:30:00.000Z
+      - **total_resolution_time** — fulfilled; due 2026-06-01T12:30:00.000Z
+      - **first_reply_time** — active; due 2026-06-01T13:30:00.000Z — 90 min remaining"
     `);
   });
 
