@@ -185,7 +185,11 @@ const hasRunningStage = (m: ZendeskSlaLiveMetric): boolean =>
 const hasPendingDeadline = (
   m: ZendeskSlaLiveMetric,
 ): m is ZendeskSlaLiveMetric & { breach_at: string } =>
-  hasRunningStage(m) && typeof m.breach_at === 'string';
+  hasRunningStage(m) &&
+  // Stryker disable next-line ConditionalExpression: this half narrows the type for
+  // the compiler, nothing more. At runtime a missing `breach_at` parses to NaN and is
+  // dropped by the guard below either way, so forcing it true changes no output.
+  typeof m.breach_at === 'string';
 
 // A deadline still running, parsed once: `at` orders it, `due` is rendered.
 interface SlaDeadline {
