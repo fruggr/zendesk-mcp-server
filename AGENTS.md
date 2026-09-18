@@ -123,6 +123,12 @@ quality bar still hold — the freedom is from Zendesk's shape, not from craft.)
   for a genuinely equivalent mutant say why with
   `// Stryker disable next-line <mutator>: <reason>`. Rationale, scope and costs:
   `docs/decisions/mutation-testing.md`.
+- That gate cannot tell a strong suite from a mutation runner that stopped
+  observing results, so `pnpm test:mutation:canary` (~3 s, runs in both
+  `mutation.yml` jobs) asserts a fixed verdict on a fixture. A canary failure is
+  never about the code under review — read it as the toolchain, starting with
+  the vitest and StrykerJS versions. vitest is held at 4.x for this reason
+  (`renovate.json`); don't lift that without the canary passing. §9 of the ADR.
 
 ## Planning
 
