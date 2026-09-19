@@ -66,6 +66,15 @@ file, which is the collision the digest exists to rule out.
 The name itself is never parsed back, so a client id containing the `--` joiner
 is harmless.
 
+SHA-256 is right here, and a slow KDF would be wrong. A scanner reads
+`oauthClientId` as a password on the name alone — it carries "auth" — and asks
+for one. It is not a password: an OAuth client id is public by construction,
+travelling in the authorize URL on every sign-in; nothing is ever verified
+against this digest, which only disambiguates a filename; and the same id
+already sits in clear in the very name the digest completes. Stretching it would
+buy nothing against any of that, and would cost a stretch on every process
+start. The alert is dismissed as a false positive rather than designed around.
+
 ## Why no migration from the old layout
 
 No existing file matches the new key, so everyone signs in once more. A

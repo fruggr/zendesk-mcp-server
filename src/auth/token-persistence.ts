@@ -53,9 +53,9 @@ const configDir = (): string => {
  * differing on any of these hold tokens that cannot substitute for each other.
  */
 export interface TokenKey {
-  subdomain: string;
-  oauthClientId: string;
-  scope: string;
+  readonly subdomain: string;
+  readonly oauthClientId: string;
+  readonly scope: string;
 }
 
 // Key parts are attacker-shaped at worst (a crafted subdomain); sanitize so
@@ -67,13 +67,9 @@ const safeName = (part: string): string => part.replace(/[^a-z0-9-]/gi, '_');
 const READABLE_BUDGET = 120;
 
 // The readable name above is lossy three ways over, so this digest is what
-// actually keeps two keys off one file: `docs/decisions/token-file-keying.md`.
-// JSON, not a delimiter, because nothing bounds what a key part may contain;
-// hex, because a case-insensitive filesystem folds a base64url digest.
-// Not a password hash, whatever a scanner's name heuristic makes of
-// `oauthClientId`: the id is public by construction (it travels in the
-// authorize URL), nothing is verified against this digest, and the same id is
-// already in clear in the filename it completes. A slow KDF would buy nothing.
+// actually keeps two keys off one file. Why JSON rather than a delimiter, why
+// hex, and why this is no password hash despite what the name suggests:
+// `docs/decisions/token-file-keying.md`.
 const keyDigest = (key: TokenKey): string =>
   createHash('sha256')
     .update(JSON.stringify([key.subdomain, key.oauthClientId, key.scope]))
