@@ -40,7 +40,6 @@ vi.mock('../../../src/auth/browser-oauth', () => ({
 const loadTokenMock = vi.fn<() => unknown>();
 const saveTokenMock = vi.fn();
 const clearTokenMock = vi.fn();
-const removeLegacyTokenMock = vi.fn();
 
 // Mirrors the real keying closely enough to prove the store addresses a file
 // per credential; the derivation itself is token-persistence.test.ts's job.
@@ -50,7 +49,6 @@ vi.mock('../../../src/auth/token-persistence', () => ({
   loadToken: (...args: unknown[]) => loadTokenMock(...(args as [])),
   saveToken: (...args: unknown[]) => saveTokenMock(...args),
   clearToken: (...args: unknown[]) => clearTokenMock(...args),
-  removeLegacyToken: (...args: unknown[]) => removeLegacyTokenMock(...args),
 }));
 
 // Imported after vi.mock so the mocked deps are bound.
@@ -93,13 +91,6 @@ describe('createTokenStore', () => {
     loadTokenMock.mockReturnValue(undefined);
     saveTokenMock.mockReset();
     clearTokenMock.mockReset();
-    removeLegacyTokenMock.mockReset();
-  });
-
-  it('sweeps the pre-#300 record away once per store, for its own subdomain', async () => {
-    createTokenStore(CONFIG);
-
-    expect(removeLegacyTokenMock.mock.calls).toEqual([['testsubdomain', expect.anything()]]);
   });
 
   it('returns a token set via setToken without triggering the browser flow', async () => {

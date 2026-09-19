@@ -113,31 +113,16 @@ If you still re-authenticate every time, check that the file is writable
 ([`ZENDESK_TOKEN_FILE`](configuration.md#zendesk_token_file) to relocate it) and
 look for `token_persist_failed` in the logs.
 
-One more cause, while you are part-way through an upgrade: an instance still on
-a version older than the one that renamed these files, running beside an
-upgraded one on the same subdomain. The upgraded server clears the old file at
-startup (below), and the older instance re-creates it, so each keeps undoing the
-other. Upgrade both, or give the older one its own
-[`ZENDESK_TOKEN_FILE`](configuration.md#zendesk_token_file) until you do.
+## I signed in again after upgrading, and there is an old `<subdomain>.json`
 
-## I signed in again after upgrading
+Both expected, once. Token files used to be named after the subdomain alone,
+which is what made two servers fight over one record; the name now carries the
+OAuth client and scope too, so no existing file matches and everyone signs in
+once more.
 
-Expected, once. Token files used to be named after the subdomain alone, which is
-what made two servers fight over one record; the name now carries the OAuth
-client and scope too, so no existing file matches and everyone signs in once
-more.
-
-You do not need to clean up the old `<subdomain>.json`: the server deletes it
-the next time it starts, and logs `oauth_legacy_token_removed` when it does. Two
-exceptions, both cases where deleting it could be wrong. It skips the cleanup
-entirely when [`ZENDESK_TOKEN_FILE`](configuration.md#zendesk_token_file) is set
-— that variable can name the old file, making it your live record — so delete
-the old file yourself if you use it. And it never touches a file whose contents
-no longer look like a token record at all.
-
-Deleting a refresh token is not revoking it, though: the grant stands until
-Zendesk expires it. On a shared machine, revoke it as well (Admin Center → Apps
-and integrations → OAuth clients).
+The old file is left where it is — nothing reads it any more, but it still holds
+a working refresh token, so **delete it**. Revoke the token in Zendesk too
+(Admin Center → Apps and integrations → OAuth clients) if the machine is shared.
 
 ## Two instances of the server interfere with each other
 

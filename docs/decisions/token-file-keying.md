@@ -83,51 +83,11 @@ instances converge on the same refresh token for the length of the transition �
 replaying the rotation race one last time — in exchange for a transitional code
 path to remove later.
 
-The cost is not only the sign-in: the old file would stay on disk holding a live
-refresh token that nothing reads and nothing rotates. Leaving that to the user,
-on the strength of a troubleshooting entry they have no reason to open, is not
-good enough for a credential — so the server deletes it on startup
-(`removeLegacyToken`), under two guards:
-
-- **never when `ZENDESK_TOKEN_FILE` is set.** An override may name the legacy
-  file, which makes it the *live* record — deleting it would cost a sign-in on
-  every start. Comparing it against the active path was tried first and is not
-  enough: the same file can be named relatively, through `..`, through a
-  symlink, or in another case on a case-insensitive filesystem, and no string
-  match catches all of those. Skipping the sweep entirely whenever an override
-  is in play has no such gap, and costs nothing — without an override the active
-  name always ends in `--<digest>.json`, so it can never *be* the legacy name.
-- **never a file that no longer parses as a token record.** This one is a shape
-  check, not proof of ownership — `loadToken` would accept any JSON carrying an
-  `accessToken` string. What makes deleting safe is the *location*: the file
-  sits in our own vendor-namespaced config dir, which nothing else writes to.
-  Someone deliberately keeping a file of their own there reaches it through
-  `ZENDESK_TOKEN_FILE`, and the first guard has already stood the sweep down.
-
-The price is that an install pinned to a `ZENDESK_TOKEN_FILE` keeps its orphan.
-That is the right trade: whoever set that variable chose where the file lives,
-and `docs/troubleshooting.md` tells them what to do with the old one.
-
-One more case is accepted rather than solved: a server still on a pre-#301
-version, running beside an upgraded one on the same subdomain, with no override
-on either. The sweep deletes the file that older process persists to — and it
-can do so repeatedly. The old process rewrites the file on its next refresh, the
-next start of the upgraded server sweeps it again, and every restart of the old
-process that lands while the file is gone costs another sign-in. Where an MCP
-client respawns stdio servers per session, that is once a session, not once.
-
-Avoiding it would mean knowing, from inside one process, whether another version
-is running elsewhere. Nothing in the process does, and every approximation — an
-mtime threshold, a lock, a marker file — is permanent machinery bought for a
-transient case, in code that exists to be deleted. The exposure ends when every
-instance on the machine is upgraded, which is also when the sweep stops having
-anything to find.
-
-This is the one thing that keeps the old layout alive in the code, so it is
-migration-only and tracked for removal (#305) rather than left to become
-permanent. Note what it does *not* do: deleting a refresh token is not revoking
-it. The grant stands until Zendesk expires it, which is why
-`docs/troubleshooting.md` still points a user on a shared machine at revocation.
+The cost is not only the sign-in: the old file stays on disk holding a live
+refresh token that nothing will ever rotate or expire from our side. Deleting it
+for the user was rejected too — a token file is not ours to remove, and the
+read-through we just ruled out is the only way to know it was ours to begin
+with. `docs/troubleshooting.md` tells the user to delete and revoke it instead.
 
 ## Why the port is the mutex, and there is no lockfile
 
