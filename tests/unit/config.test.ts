@@ -1,10 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ConfigSchema, DEFAULT_NAMESPACES, loadConfig, VALUE_FLAG_NAMES } from '../../src/config';
 
-// Every variable loadConfig consults. Cleared as one list rather than per
-// describe: a suite that clears a subset passes only while the describe before it
-// happens to leave the rest clean, and fails later for a reason unrelated to what
-// it asserts.
+// Cleared as one list: a suite that clears a subset only passes while the one before
+// it leaves the rest clean.
 const LOAD_CONFIG_ENV = [
   'ZENDESK_SUBDOMAIN',
   'ZENDESK_OAUTH_CLIENT_ID',
@@ -671,16 +669,15 @@ describe('ConfigSchema defaults reached only by a direct parse', () => {
     expect(parse().printTools).toBe(false);
   });
 
-  // Same path, same reason, and the stakes are the opposite of printTools':
-  // `reload_tools` re-imports tool modules from source on a live session, so a
-  // default of true would expose it on every deployed server.
+  // `reload_tools` re-imports tool modules on a live session, so a default of true
+  // would expose it on every deployed server.
   it('defaults dev to false when the field is absent', () => {
     expect(parse().dev).toBe(false);
   });
 
   it('defaults corsOrigins to an empty list when the field is absent', () => {
-    // The HTTP transport's own allowlist is the floor; this field only ever adds
-    // to it, so a default carrying an entry would widen CORS for everyone.
+    // This field only adds to the transport's own allowlist, so a non-empty default
+    // would widen CORS for everyone.
     expect(parse().corsOrigins).toEqual([]);
   });
 
@@ -705,10 +702,8 @@ describe('ConfigSchema defaults reached only by a direct parse', () => {
   });
 });
 
-// The flags an operator never passes: their whole contract is the value you get
-// when nothing is said. A flipped default ships a read-only server that can
-// write, or a dev-only tool on a deployed one, and every other test still
-// passes because they all set the flag they care about.
+// The flags an operator never passes: their whole contract is the value you get when
+// nothing is said, and every other test sets the flag it cares about.
 describe('what the flags resolve to when none is passed', () => {
   beforeEach(clearLoadConfigEnv);
   afterEach(clearLoadConfigEnv);
@@ -733,8 +728,7 @@ describe('what the flags resolve to when none is passed', () => {
   });
 
   it('flips each one, and only it, when the flag is passed', () => {
-    // The whole state per invocation, not just the field under test: a flag that
-    // also set a second one -- `--dev` turning on `readOnly`, say -- would pass a
+    // The whole state per invocation: a flag that also set a second one would pass a
     // single-field assertion, and "only it" is half of what this pins.
     const standalone = (...argv: string[]) => {
       const config = loadConfig(['mycompany', ...argv]);
@@ -765,10 +759,8 @@ describe('what the flags resolve to when none is passed', () => {
   });
 
   it('reads the subdomain from argv when loadConfig is called with no arguments', () => {
-    // The `process.argv.slice(2)` default parameter has no other caller: every
-    // test passes an explicit array, and so does src/index.ts in every path a
-    // test drives. Dropping the `.slice(2)` would feed it the node binary and
-    // the script path as two extra positionals.
+    // Nothing else exercises the default parameter, and dropping the `.slice(2)` would
+    // feed it the node binary and the script path as two extra positionals.
     const argv = process.argv;
     try {
       process.argv = [argv[0] as string, 'server.js', 'from-argv'];
@@ -783,11 +775,9 @@ describe('numeric and scheme validation, at the anchors', () => {
   beforeEach(clearLoadConfigEnv);
   afterEach(clearLoadConfigEnv);
 
-  // The trailing-garbage half ('51000abc') is covered above. This is the leading
-  // half: without the `^`, `/\d+$/` matches the digits at the end of 'abc8080',
-  // parsePort hands back NaN, and the failure moves to a ZodError that names
-  // neither the flag nor the expected range. Pinned on the message for that
-  // reason, not just on "it throws".
+  // Without the `^`, `/\d+$/` matches the digits at the end of 'abc8080' and the
+  // failure becomes a ZodError naming neither the flag nor the range -- hence pinning
+  // the message rather than just "it throws".
   it('rejects a port with leading garbage, with parsePort own message', () => {
     expect(() => loadConfig(['mycompany', '--port', 'abc8080'])).toThrow(
       'Invalid --port value. Expected an integer 0-65535.',
@@ -807,9 +797,8 @@ describe('numeric and scheme validation, at the anchors', () => {
     );
   });
 
-  // Without the `$`, the pattern matches the 'wiki' prefix of 'wiki!' and the
-  // value reaches the WHATWG refinement instead, which rejects it with the other
-  // message. Both are "throws", so only the wording tells the two apart.
+  // Without the `$`, 'wiki' matches as a prefix and the value reaches the WHATWG
+  // refinement, which rejects it with the other message.
   it('rejects a scheme with a trailing invalid character, on the format rule', () => {
     expect(() => loadConfig(['mycompany', '--hc-resource-scheme', 'wiki!'])).toThrow(
       /Expected a bare RFC 3986 scheme/,
@@ -817,8 +806,7 @@ describe('numeric and scheme validation, at the anchors', () => {
   });
 
   it('accepts every LogLevel the enum declares, and refuses one it does not', () => {
-    // Each member is a StringLiteral in the enum, and the level gates every
-    // stderr line the server writes, so an emptied member silently drops a
+    // The level gates every stderr line, so an emptied enum member silently drops a
     // whole severity.
     for (const level of ['debug', 'info', 'warn', 'error'] as const) {
       expect(loadConfig(['mycompany', '--log-level', level]).logLevel).toBe(level);
@@ -832,19 +820,16 @@ describe('CORS origin normalization', () => {
   afterEach(clearLoadConfigEnv);
 
   it('rejects a URL whose origin is opaque, naming what it wanted instead', () => {
-    // `data:`, `file:` and `javascript:` all pass `.url()` and all serialize to
-    // the literal origin "null", which would then be compared by strict equality
-    // against a browser's `Origin: null` and match. The refinement is the only
-    // thing standing between that and an allowlisted opaque origin.
+    // `data:`, `file:` and `javascript:` all pass `.url()` and serialize to the literal
+    // origin "null", which the allowlist would then match against a browser's.
     expect(() => loadConfig(['mycompany', '--cors-origin', 'data:text/plain,hi'])).toThrow(
       'CORS origin must be an http(s) URL with a host',
     );
   });
 
   it('drops a blank entry left by a trailing comma in CORS_ORIGIN', () => {
-    // `FOO=a,` and `FOO=a, ` are what a hand-edited compose file produces. Without
-    // the trim the blank survives the length filter and fails URL validation, so
-    // one stray comma would stop the server booting.
+    // `FOO=a, ` is what a hand-edited compose file produces; without the trim the blank
+    // fails URL validation and one stray comma stops the server booting.
     process.env['CORS_ORIGIN'] = 'https://a.example.com, ';
     expect(loadConfig(['mycompany']).corsOrigins).toEqual(['https://a.example.com']);
   });

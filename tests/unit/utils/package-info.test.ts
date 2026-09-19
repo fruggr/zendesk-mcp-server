@@ -38,30 +38,29 @@ const unmockModules = (): void => {
 };
 
 /**
- * Stub `node:fs` and `node:path` so the walk's two terminators can be told apart:
- * `'endless'` never reaches a fixed point, leaving the depth bound as the only way
- * out, `'shallow'` reaches one after two steps. With the real `dirname` the module's
- * own depth on disk decides which fires first, so no call count would be stable.
+ * Load a fresh `package-info` over a made-up directory tree: every read fails, and
+ * `dirname` is whatever the caller says. The real one would make the count depend on how
+ * deep the module happens to sit, which differs inside Stryker's sandbox.
  */
-const loadWithWalk = async (walk: 'endless' | 'shallow') => {
+const loadWithWalk = async (parentOf: (path: string) => string) => {
   vi.resetModules();
   const readFileSyncMock = vi.fn((): string => {
     throw ENOENT;
   });
   vi.doMock('node:fs', () => ({ readFileSync: readFileSyncMock }));
   vi.doMock('node:path', () => ({
-    // Both are independent of where the module actually sits on disk -- under
-    // Stryker the sandbox adds two levels, which is enough to change a count.
-    // 'shallow' collapses any starting point onto the two-step chain /dir -> /.
-    dirname: (path: string) => {
-      if (walk === 'endless') return `${path}/up`;
-      return path === '/dir' || path === '/' ? '/' : '/dir';
-    },
+    dirname: parentOf,
     join: (...parts: string[]) => parts.join('/'),
   }));
   const { readPackageInfo } = await import('../../../src/utils/package-info');
   return { readPackageInfo, readFileSyncMock };
 };
+
+/** Every directory has a parent, so the walk never reaches a root. */
+const NEVER_REACHES_ROOT = (dir: string) => `${dir}/up`;
+
+/** Every directory's parent is the root, so the walk gets there at once. */
+const ROOT_IS_THE_PARENT = () => '/';
 
 describe('readPackageInfo', () => {
   afterEach(unmockModules);
@@ -133,35 +132,18 @@ describe('readPackageInfo', () => {
 describe('the walk terminates, and on whichever limit comes first', () => {
   afterEach(unmockModules);
 
-  it('gives up after eight levels when the walk never reaches a root', async () => {
-    // A bundled install can sit arbitrarily deep, and a symlink or a container
-    // mount can make `dirname` climb forever. The depth bound is what keeps a
-    // server start from turning into an unbounded scan, and counting down
-    // instead of up removes it entirely.
-    const { readPackageInfo, readFileSyncMock } = await loadWithWalk('endless');
+  it('gives up after eight levels rather than scanning the filesystem', async () => {
+    // A symlink or a container mount can make `dirname` climb forever.
+    const { readPackageInfo, readFileSyncMock } = await loadWithWalk(NEVER_REACHES_ROOT);
 
     expect(readPackageInfo()).toEqual({ name: '@fruggr/zendesk-mcp-server', version: '0.0.0' });
     expect(readFileSyncMock).toHaveBeenCalledTimes(8);
   });
 
-  it('stops at the filesystem root, well before the depth bound', async () => {
-    // The other terminator, and the one that fires in a normal install.
-    const { readPackageInfo, readFileSyncMock } = await loadWithWalk('shallow');
+  it('stops at the root instead of re-reading it to the depth bound', async () => {
+    const { readPackageInfo, readFileSyncMock } = await loadWithWalk(ROOT_IS_THE_PARENT);
 
     expect(readPackageInfo()).toEqual({ name: '@fruggr/zendesk-mcp-server', version: '0.0.0' });
-    // Two reads -- one directory, then the root -- and then the break. Without
-    // it the walk keeps re-reading `/package.json` up to the depth bound.
-    expect(readFileSyncMock).toHaveBeenCalledTimes(2);
-    expect(readFileSyncMock.mock.calls.at(-1)?.[0]).toBe('//package.json');
-  });
-
-  it('reads package.json as UTF-8, not as a Buffer', async () => {
-    // `readFileSync` without an encoding hands back a Buffer, and `JSON.parse`
-    // on one works by coercion -- so nothing downstream notices until a
-    // multi-byte character in the name comes back mangled.
-    const { readPackageInfo, readFileSyncMock } = await loadWithWalk('shallow');
-    readPackageInfo();
-
-    expect(readFileSyncMock).toHaveBeenCalledWith(expect.any(String), 'utf8');
+    expect(readFileSyncMock.mock.calls).toEqual([['//package.json', 'utf8']]);
   });
 });

@@ -118,10 +118,14 @@ quality bar still hold — the freedom is from Zendesk's shape, not from craft.)
   `tests/functional/README.md`.
 - Mutation testing (StrykerJS) runs over the scope in `stryker.config.mjs`, and
   CI fails a PR on a mutant that survived **in a line it changed**
-  (`pnpm test:mutation:diff origin/main HEAD` reproduces it). A survivor means an
-  assertion is missing or too loose — tighten it, never weaken one to go green;
-  for a genuinely equivalent mutant say why with
-  `// Stryker disable next-line <mutator>: <reason>`. Rationale, scope and costs:
+  (`pnpm test:mutation:diff origin/main HEAD` reproduces it). That gate is the whole
+  contract: **the score is not a target and 100 % is not the goal.** A survivor in a line
+  you changed means an assertion is missing or too loose — tighten it, never weaken one to
+  go green. Everywhere else, leave a survivor alone: **waive late, not early**, so an
+  equivalent mutant stays escaped until the gate actually trips on it and the person
+  touching the line writes the one-line
+  `// Stryker disable next-line <mutator>: <reason>`. A reason that needs a paragraph goes
+  in the ADR's waiver table instead. Rationale, scope and costs:
   `docs/decisions/mutation-testing.md`.
 
 ## Planning

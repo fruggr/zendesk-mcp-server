@@ -254,10 +254,9 @@ describe('isPlacedAsRequested', () => {
   });
 });
 
-// `noUncheckedIndexedAccess` makes every element access here possibly-undefined, and
-// the guards that follow have a contract nothing asserted: the cascade stops at a gap
-// rather than reading it. Not a claim that these functions tolerate a gap anywhere --
-// `findIndex` would still dereference one it has to walk past.
+// `noUncheckedIndexedAccess` makes every element access possibly-undefined; these pin
+// that the cascade stops at a gap. Not a claim the functions tolerate one anywhere --
+// `findIndex` would still dereference a gap it has to walk past.
 describe('a section with a gap in it', () => {
   const withGap = [
     { id: 1, position: 0 },
@@ -276,17 +275,15 @@ describe('a section with a gap in it', () => {
 
 describe('computePositionWrites, at the boundaries', () => {
   it('moves a lone article at position 0 to the bottom without a write', () => {
-    // The reduce seeds at -1 precisely so an empty "others" set leaves position 0
-    // strictly above it. Seeding at +1 instead would make this a write to 2 --
-    // a move that changes nothing, on every call.
+    // The reduce seeds at -1 so an empty "others" set leaves position 0 strictly above
+    // it; seeding at +1 would rewrite the article on every call.
     const section = ord([[1, 0]]);
     const desired = arrangeDesiredOrder(section, 1, 'bottom');
     expect(computePositionWrites(desired, 1, false)).toEqual([]);
   });
 
   it('writes when the article sent to the bottom merely ties the one above it', () => {
-    // Strictly last is the requirement: tied-last displays in an undefined order,
-    // which is the bug this tool exists to fix, so `>` and not `>=`.
+    // Tied-last displays in an undefined order -- the bug this tool fixes -- so `>`.
     const section = ord([
       [1, 5],
       [2, 5],
@@ -296,11 +293,8 @@ describe('computePositionWrites, at the boundaries', () => {
   });
 
   it('returns nothing at all when the moved article is not in the desired order', () => {
-    // Callers derive `desired` from the same list, so this is the contract of the
-    // guard rather than a path the handler takes: without it the next line reads
-    // `position` off undefined. The empty section is the case that actually
-    // reaches that read: `findIndex` gives -1, which on an empty list is also
-    // `length - 1`, so the bottom branch is entered and dereferences the miss.
+    // The empty section is what reaches the unguarded read: `findIndex` gives -1, which
+    // on an empty list is also `length - 1`, so the bottom branch dereferences the miss.
     expect(computePositionWrites([], 99, false)).toEqual([]);
     const desired = ord([
       [1, 0],
@@ -310,8 +304,7 @@ describe('computePositionWrites, at the boundaries', () => {
   });
 
   it('normalize leaves an article already sitting at its index alone', () => {
-    // The whole point of normalize emitting a *diff* rather than N writes: the
-    // handler's confirm threshold counts them, and so does the user.
+    // normalize emits a diff, not N writes -- the handler's confirm threshold counts them.
     const desired = ord([
       [1, 0],
       [2, 9],
@@ -330,22 +323,20 @@ describe('isPlacedAsRequested, at the boundaries', () => {
   ]);
 
   it('is false for a before that did not happen', () => {
-    // The `true` branch of the side test needs a negative case of its own: every
-    // other before/after assertion expects true, so a branch stuck on "yes"
-    // reads as correct.
+    // Every other before/after case expects true, so a branch stuck on "yes" reads as
+    // correct without this one.
     expect(isPlacedAsRequested(after, 2, 'before', 1)).toBe(false);
   });
 
   it('is false when the moved article is absent and a reference was given', () => {
-    // -1 sorts before every real index, so without the missing-article guard a
-    // `before` check on an article that is not there reports success.
+    // -1 sorts before every real index, so without the guard a `before` check on an
+    // article that is not there reports success.
     expect(isPlacedAsRequested(after, 99, 'before', 3)).toBe(false);
   });
 
   it('never reports an article as placed relative to itself', () => {
-    // The handler rejects movedId === referenceId before calling, but this
-    // function promises nothing of the sort, and "an article is before itself"
-    // is the one answer it must not give.
+    // The handler rejects this before calling, but the function promises nothing of the
+    // sort, and "an article is before itself" is the one answer it must not give.
     expect(isPlacedAsRequested(after, 1, 'before', 1)).toBe(false);
     expect(isPlacedAsRequested(after, 1, 'after', 1)).toBe(false);
   });

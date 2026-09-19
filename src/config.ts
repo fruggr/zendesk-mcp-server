@@ -305,10 +305,6 @@ const parseCliArgs = (args: string[]): CliResult => {
     }
 
     const field = FIELD_BY_FLAG.get(flag);
-    // Stryker disable next-line ConditionalExpression: only `--port` and
-    // `--callback-port` reach here with no field, and forcing the guard open writes
-    // them to the key `"undefined"`, which nothing in `loadConfig` reads. Closing it
-    // instead IS killed, by the value-flag cases (PR #304).
     if (field) Object.assign(result, { [field]: value });
   }
 
@@ -385,11 +381,7 @@ export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
     readOnly: cli.readOnly ?? false,
     namespaces,
     tools: cli.tools,
-    // Stryker disable next-line LogicalOperator: `&&` is indistinguishable from `??`
-    // for every value this can hold -- `false` passes either unchanged, and
-    // `undefined && true` is `undefined`, which the schema default resolves to `true`.
     topology: cli.topology ?? true,
-    // Stryker disable next-line LogicalOperator: as for `topology` above.
     promotedArticles: cli.promotedArticles ?? true,
     hcResourceScheme,
     dev: cli.dev ?? false,

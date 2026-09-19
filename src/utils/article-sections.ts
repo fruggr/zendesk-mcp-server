@@ -32,13 +32,7 @@ const countWords = (text: string): number => {
 };
 
 const textOf = (html: string): string => {
-  // Stryker disable next-line ConditionalExpression: `html` is a `string`, so this
-  // fires only on `''`, and loading `<div></div>` yields `''` too. Takes the killed
-  // inverse with it (PR #304).
   if (!html) return '';
-  // Stryker disable next-line BooleanLiteral: unreachable, not untested. `textOf`
-  // only ever sees HTML `parseSections` re-serialised from its own fragment parse, so
-  // what a document parse would swallow (`<frameset>`) is already gone (PR #304).
   const $ = cheerio.load(`<div>${html}</div>`, null, false);
   return $('div').first().text();
 };
@@ -59,9 +53,6 @@ export const parseSections = (html: string): Section[] => {
   let current: (typeof sections)[number] | null = null;
 
   for (const node of children) {
-    // Stryker disable next-line StringLiteral: the `''` arm only feeds the lookup
-    // below, which no marker satisfies either, and a non-tag node never reaches the
-    // branch that stores `tagName`. Takes the killed `'tag'` with it (PR #304).
     const tagName = node.type === 'tag' ? node.name.toLowerCase() : '';
 
     if (HEADING_LEVELS.has(tagName)) {
@@ -159,15 +150,11 @@ const mdToHtmlProcessor = unified()
   .use(rehypeStringify);
 
 export const htmlToMarkdown = (html: string): string => {
-  // Stryker disable next-line ConditionalExpression: as in `textOf` -- a `string`
-  // input fires this only on `''`, for which the processor also returns `''`.
   if (!html) return '';
   return String(htmlToMdProcessor.processSync(html));
 };
 
 export const markdownToHtml = (markdown: string): string => {
-  // Stryker disable next-line ConditionalExpression: same as `htmlToMarkdown`,
-  // killed inverse included.
   if (!markdown) return '';
   return String(mdToHtmlProcessor.processSync(markdown));
 };

@@ -563,9 +563,8 @@ describe('what each verb puts on the wire', () => {
     body: string;
   }
 
-  // Registered on every verb the client could plausibly send, not just the
-  // expected one: a mutated method has to arrive *here* and be named by the
-  // assertion, rather than escape to the network and fail as an unrelated error.
+  // Every verb, not just the expected one, so a wrong method is named by the assertion
+  // rather than escaping to the network as an unrelated error.
   const captureAnyVerb = (url: string): SentRequest[] => {
     const seen: SentRequest[] = [];
     const record = async ({ request }: { request: Request }) => {
@@ -604,8 +603,8 @@ describe('what each verb puts on the wire', () => {
 
     await helpCenterGet(SUB, TOKEN, '/articles/5000');
 
-    // The counterpart of the write case: `Content-Type` is set *conditionally*,
-    // so forcing the guard open has to be visible too, not just closing it.
+    // The counterpart of the write case: the guard is conditional, so forcing it open
+    // has to be visible too.
     expect(seen[0]).toStrictEqual({
       method: 'GET',
       accept: 'application/json',
@@ -617,9 +616,8 @@ describe('what each verb puts on the wire', () => {
   it('keeps the body and the content type in step on a falsy body', async () => {
     const seen = captureAnyVerb(`${HC}/articles`);
 
-    // `body` is `unknown`, so a falsy one is a value a caller can pass, and the two
-    // `if (body)` guards must answer it alike: JSON declared with nothing behind it,
-    // or a payload sent undeclared, are both malformed.
+    // `body` is `unknown`, so a falsy one is passable, and the two `if (body)` guards
+    // must answer it alike -- either mismatch is a malformed request.
     await helpCenterPost(SUB, TOKEN, '/articles', '');
 
     expect(seen[0]?.contentType).toBeNull();
@@ -650,8 +648,8 @@ describe('error identity and per-status wording', () => {
 
     const error = await zendeskGet(SUB, TOKEN, '/restricted').catch((e: unknown) => e);
 
-    // Pinned whole: 401 and 403 both mean "no", and telling the agent to
-    // re-authenticate on a 403 sends it through a sign-in that cannot help.
+    // 401 and 403 both mean "no", and a re-authenticate hint on a 403 sends the agent
+    // through a sign-in that cannot help.
     expect((error as ZendeskApiError).message).toBe(
       'Permission denied. Your Zendesk account does not have access to this resource.',
     );
@@ -672,17 +670,14 @@ describe('attachment downloads', () => {
 
     const { data } = await fetchZendeskBinary(SUB, TOKEN, FOREIGN);
 
-    // A `content_url` is whatever Zendesk's response said, so the host guard is what
-    // stops the tenant's OAuth token reaching a third party. The same-host half is
-    // asserted above.
+    // A `content_url` is whatever Zendesk's response said, so this guard is what stops
+    // the tenant's token reaching a third party. The same-host half is asserted above.
     expect(data.toString()).toBe('none');
   });
 
   it('falls back to a generic media type when the response declares none', async () => {
     mswServer.use(
-      // `HttpResponse.arrayBuffer` would label it `application/octet-stream`
-      // itself and never exercise the fallback; the bare constructor sends the
-      // bytes with no Content-Type at all, which is the case it exists for.
+      // `HttpResponse.arrayBuffer` would label it itself and never reach the fallback.
       http.get(
         'https://testsubdomain.zendesk.com/attachments/3.bin',
         () => new HttpResponse(new Uint8Array([1, 2, 3])),

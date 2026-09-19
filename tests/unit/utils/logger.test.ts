@@ -119,10 +119,9 @@ describe('createLogger', () => {
   });
 
   it('redacts every key in the deny list, not just the ones OAuth happens to use', () => {
-    // The list is a security control, and the five entries below were carried by
-    // no test: an emptied entry lets that field's value through to stderr and to
-    // every MCP client subscribed to `notifications/message`. One line, all ten,
-    // so adding a key without a case is not possible.
+    // A security control: an emptied entry lets that field through to stderr and to every
+    // client subscribed to `notifications/message`. All ten on one line, so a key cannot
+    // be added without a case.
     const log = createLogger('debug');
     log.error('leak_check', {
       token: 'a',
@@ -146,10 +145,8 @@ describe('createLogger', () => {
   });
 
   it('renders a non-finite number as itself, not as the null JSON would give', () => {
-    // `String` and `JSON.stringify` agree on every finite number, so only NaN and
-    // the infinities separate the number arm of renderValue's dispatch from the
-    // JSON fallback below it -- and a retry budget or a timeout arriving as NaN
-    // is exactly the diagnostic worth reading back.
+    // `String` and `JSON.stringify` agree on every finite number, so only NaN and the
+    // infinities separate the number arm from the JSON fallback below it.
     const log = createLogger('debug');
     log.warn('budget', { attempts: Number.NaN, deadline: Number.POSITIVE_INFINITY });
 

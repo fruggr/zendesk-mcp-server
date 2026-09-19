@@ -292,9 +292,8 @@ describe('round-trip HTML ↔ Markdown', () => {
 
 describe('parseSections, on the shapes a real article body takes', () => {
   it('counts words from trimmed text, not from the padding around it', () => {
-    // `split(/\s+/)` on untrimmed text yields a leading and a trailing empty
-    // string, so the count comes out two too high on any body that is indented
-    // -- which is every body a Help Center editor produced.
+    // Untrimmed, `split(/\s+/)` yields a leading and a trailing empty string, so the
+    // count comes out two too high on any indented body.
     expect(parseSections('<p>  hello world  </p>')[0]?.wordCount).toBe(2);
   });
 
@@ -305,8 +304,8 @@ describe('parseSections, on the shapes a real article body takes', () => {
   });
 
   it('treats a bare text node at the root as intro content', () => {
-    // An article that opens with unwrapped text: the node has no `name`, so the
-    // tag test is the only thing standing between it and `undefined.toLowerCase()`.
+    // A bare text node has no `name`, so the tag test is all that stands between it and
+    // `undefined.toLowerCase()`.
     const sections = parseSections('lead<h2>T</h2>body');
     expect(sections.map((s) => [s.heading, s.html])).toEqual([
       ['intro', 'lead'],
@@ -315,15 +314,14 @@ describe('parseSections, on the shapes a real article body takes', () => {
   });
 
   it('joins a multi-node intro and a multi-node section without a separator', () => {
-    // The parts are HTML, so anything between them lands inside the rendered
-    // article. A single-node fixture cannot see a separator that is not there.
+    // A single-node fixture cannot see a separator, and one would land inside the
+    // rendered article.
     const sections = parseSections('<p>a</p><p>b</p><h2>T</h2><p>c</p><p>d</p>');
     expect(sections.map((s) => s.html)).toEqual(['<p>a</p><p>b</p>', '<p>c</p><p>d</p>']);
   });
 
   it('returns nothing for a body Zendesk reported as absent', () => {
-    // `body` is typed `string`, but it arrives from the API, and an article
-    // without one is what the optional call guards against.
+    // `body` is typed `string` but arrives from the API, which is what the `?.` guards.
     expect(parseSections(undefined as never)).toEqual([]);
   });
 });
@@ -338,8 +336,7 @@ describe('htmlToMarkdown, on the syntax choices the processor is configured for'
   });
 
   it('writes emphasis with underscores, not the default asterisk', () => {
-    // Asterisks collide with bold and with list bullets when the text is edited
-    // by hand afterwards, which is what an agent round-tripping a section does.
+    // Asterisks collide with bold and with list bullets when the text is edited after.
     expect(htmlToMarkdown('<p>x <em>y</em> z</p>')).toMatchInlineSnapshot(`
       "x _y_ z
       "
@@ -347,10 +344,8 @@ describe('htmlToMarkdown, on the syntax choices the processor is configured for'
   });
 
   it('leaves a <pre> as raw HTML rather than turning it into a code block', () => {
-    // `keepAsHtml` is registered for `pre`, so no markdown code block is ever
-    // produced -- markdown would collapse an inline `<br>` inside it onto one
-    // line. This is why `remarkStringify`'s `fences` option has no reachable
-    // input; see the waiver on it in src/utils/article-sections.ts.
+    // `keepAsHtml` handles `pre`, because markdown would collapse an inline `<br>`
+    // inside it onto one line.
     expect(htmlToMarkdown('<pre><code>x = 1</code></pre>')).toMatchInlineSnapshot(`
       "<pre><code>x = 1</code></pre>
       "
@@ -358,10 +353,8 @@ describe('htmlToMarkdown, on the syntax choices the processor is configured for'
   });
 
   it('parses the input as a fragment, so a stray table row keeps its cells', () => {
-    // An article body is a fragment, never a document. Parsed as a document, the
-    // HTML parser drops a `<tr>` that has no `<table>` around it and the cells
-    // collapse into loose text -- silent content loss on a section extracted
-    // mid-table.
+    // Parsed as a document, the HTML parser drops a `<tr>` with no `<table>` around it
+    // and the cells collapse into loose text -- silent loss on a section cut mid-table.
     expect(htmlToMarkdown('<tr><td>c</td></tr>')).toMatchInlineSnapshot(`
       "| c |
       "
