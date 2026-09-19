@@ -1,3 +1,9 @@
+## [2.22.3](https://github.com/fruggr/zendesk-mcp-server/compare/v2.22.2...v2.22.3) (2026-09-19)
+
+### Bug Fixes
+
+* **auth:** key the persisted token by OAuth client and scope ([#301](https://github.com/fruggr/zendesk-mcp-server/issues/301)) ([8eb660f](https://github.com/fruggr/zendesk-mcp-server/commit/8eb660fc45fc8a2c57c63af3fe47849630735843))
+
 ## [2.22.2](https://github.com/fruggr/zendesk-mcp-server/compare/v2.22.1...v2.22.2) (2026-09-19)
 
 ### Bug Fixes
