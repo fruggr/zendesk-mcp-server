@@ -5,6 +5,7 @@ import {
   clearToken as clearPersistedToken,
   loadToken,
   type PersistedToken,
+  removeLegacyToken,
   resolveTokenPath,
   saveToken,
 } from './token-persistence';
@@ -64,6 +65,7 @@ export const createTokenStore = (
     oauthClientId: config.oauthClientId,
     scope: requested,
   });
+  removeLegacyToken(config.subdomain, tokenPath, logger);
   // Seed the in-memory cache from disk so a restart (notably the Cowork-on-Windows
   // process churn) reuses the existing token instead of re-prompting.
   let token: StoredToken | undefined = loadToken(tokenPath);

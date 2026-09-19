@@ -83,11 +83,22 @@ instances converge on the same refresh token for the length of the transition �
 replaying the rotation race one last time — in exchange for a transitional code
 path to remove later.
 
-The cost is not only the sign-in: the old file stays on disk holding a live
-refresh token that nothing will ever rotate or expire from our side. Deleting it
-for the user was rejected too — a token file is not ours to remove, and the
-read-through we just ruled out is the only way to know it was ours to begin
-with. `docs/troubleshooting.md` tells the user to delete and revoke it instead.
+The cost is not only the sign-in: the old file would stay on disk holding a live
+refresh token that nothing reads and nothing rotates. Leaving that to the user,
+on the strength of a troubleshooting entry they have no reason to open, is not
+good enough for a credential — so the server deletes it on startup
+(`removeLegacyToken`), under two guards:
+
+- **never the active path.** A `ZENDESK_TOKEN_FILE` aimed at the old name makes
+  it the live record; deleting it would cost a sign-in on every start.
+- **never a file we cannot read as ours.** The record has to parse as a
+  `PersistedToken`, so a same-named file written by something else survives.
+
+This is the one thing that keeps the old layout alive in the code, so it is
+migration-only and tracked for removal (#305) rather than left to become
+permanent. Note what it does *not* do: deleting a refresh token is not revoking
+it. The grant stands until Zendesk expires it, which is why
+`docs/troubleshooting.md` still points a user on a shared machine at revocation.
 
 ## Why the port is the mutex, and there is no lockfile
 

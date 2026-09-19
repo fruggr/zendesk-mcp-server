@@ -153,3 +153,30 @@ export const clearToken = (path: string, logger: Logger = silentLogger): void =>
     });
   }
 };
+
+/**
+ * Delete the pre-#300 record for this subdomain, which was named after the
+ * subdomain alone. Nothing reads it any more, but it still holds a working
+ * refresh token, so it is cleaned up instead of left for the user to find.
+ *
+ * Deleting it does not revoke it: the grant lives until Zendesk expires it, and
+ * `docs/troubleshooting.md` still tells a user on a shared machine to revoke.
+ *
+ * Migration-only, and the one reason this file knows the old layout at all.
+ * Remove it, its tests and its caller once installs have rolled over (#305).
+ */
+export const removeLegacyToken = (
+  subdomain: string,
+  activePath: string,
+  logger: Logger = silentLogger,
+): void => {
+  const legacy = join(configDir(), `${safeName(subdomain)}.json`);
+  // A `ZENDESK_TOKEN_FILE` aimed at that exact name makes it the live record,
+  // and deleting it would cost a sign-in on every start.
+  if (legacy === activePath) return;
+  // Only remove what we can still read as one of ours, so a same-named file we
+  // did not write survives.
+  if (loadToken(legacy) === undefined) return;
+  clearToken(legacy, logger);
+  logger.info('oauth_legacy_token_removed');
+};

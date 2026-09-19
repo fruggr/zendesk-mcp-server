@@ -217,6 +217,93 @@ describe('token-persistence', () => {
     expect(path).toMatch(/acme--acme_zendesk--read_write--[0-9a-f]{8}\.json$/);
   });
 
+  describe('removeLegacyToken', () => {
+    const LEGACY = '/home/u/.config/fruggr/zendesk-mcp-server/acme.json';
+
+    const linuxConfig = async () => {
+      setPlatform('linux');
+      process.env['XDG_CONFIG_HOME'] = '/home/u/.config';
+      return importFresh();
+    };
+
+    it('removes the pre-#300 record named after the subdomain alone', async () => {
+      const { removeLegacyToken, resolveTokenPath } = await linuxConfig();
+      files.set(LEGACY, JSON.stringify({ accessToken: 'stale', refreshToken: 'still-live' }));
+      const active = resolveTokenPath(KEY);
+      files.set(active, JSON.stringify({ accessToken: 'current' }));
+
+      removeLegacyToken('acme', active);
+
+      expect(files.has(LEGACY)).toBe(false);
+      // Only the legacy name goes; the record this process actually uses stays.
+      expect(files.get(active)).toContain('current');
+    });
+
+    it('logs the removal', async () => {
+      const { removeLegacyToken } = await linuxConfig();
+      files.set(LEGACY, JSON.stringify({ accessToken: 'stale' }));
+      const logger = {
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        attachServer: vi.fn(),
+      };
+
+      removeLegacyToken('acme', '/elsewhere/token.json', logger);
+
+      expect(logger.info).toHaveBeenCalledWith('oauth_legacy_token_removed');
+    });
+
+    it('keeps the file when ZENDESK_TOKEN_FILE points at that very path', async () => {
+      const { removeLegacyToken } = await linuxConfig();
+      files.set(LEGACY, JSON.stringify({ accessToken: 'current' }));
+
+      // The override makes the old name the *live* record. Deleting it here
+      // would wipe a working token on every start.
+      removeLegacyToken('acme', LEGACY);
+
+      expect(files.get(LEGACY)).toContain('current');
+    });
+
+    it('keeps a file it cannot recognise as one of ours', async () => {
+      const { removeLegacyToken } = await linuxConfig();
+      files.set(LEGACY, '{"something":"else"}');
+
+      removeLegacyToken('acme', '/elsewhere/token.json');
+
+      expect(files.has(LEGACY)).toBe(true);
+    });
+
+    it('does nothing, and says nothing, when there is no legacy file', async () => {
+      const { removeLegacyToken } = await linuxConfig();
+      const logger = {
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        attachServer: vi.fn(),
+      };
+
+      removeLegacyToken('acme', '/elsewhere/token.json', logger);
+
+      expect(files.size).toBe(0);
+      expect(logger.info).not.toHaveBeenCalled();
+    });
+
+    it('only targets the subdomain it was given', async () => {
+      const { removeLegacyToken } = await linuxConfig();
+      const other = '/home/u/.config/fruggr/zendesk-mcp-server/other.json';
+      files.set(LEGACY, JSON.stringify({ accessToken: 'a' }));
+      files.set(other, JSON.stringify({ accessToken: 'b' }));
+
+      removeLegacyToken('acme', '/elsewhere/token.json');
+
+      expect(files.has(LEGACY)).toBe(false);
+      expect(files.has(other)).toBe(true);
+    });
+  });
+
   it('saves then loads a single token record, writing atomically with 0600 perms', async () => {
     setPlatform('linux');
     const path = '/cfg/acme.json';
