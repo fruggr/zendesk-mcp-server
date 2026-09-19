@@ -58,10 +58,14 @@ present (no secrets, tokens, or env values are ever logged).
 
 The sign-in flow runs a short-lived local server on port `27439` to receive the
 callback. If that port is taken, the first tool call fails with a message saying
-so (and logs `oauth_callback_listen_failed`). Pick a free port with
-`ZENDESK_OAUTH_CALLBACK_PORT=<port>` (or `--callback-port <port>`), and register
-the matching `http://localhost:<port>/callback` redirect URL in your Zendesk
-OAuth client.
+so (and logs `oauth_callback_listen_failed`).
+
+Usually another instance of this server is signing in right now: the port is
+what keeps the two flows from overlapping. Finish that browser window, then
+retry the call — the port frees and the second flow starts. If an unrelated
+program holds the port, pick a free one with `ZENDESK_OAUTH_CALLBACK_PORT=<port>`
+(or `--callback-port <port>`), and register the matching
+`http://localhost:<port>/callback` redirect URL in your Zendesk OAuth client.
 
 ## Sign-in fails with `invalid_scope`
 
@@ -71,22 +75,26 @@ for one it does not permit. Without `--read-only` the server requests
 and mints no token at all. Either allow `write` on the client, or run the server
 with [`--read-only`](configuration.md), which requests `read` alone.
 
-## I am asked to sign in again after dropping `--read-only`
+## I am asked to sign in again after adding or dropping `--read-only`
 
-Expected, once. The cached token was granted the `read` scope, the server now
-needs `write`, and OAuth cannot widen an existing grant — a refresh only ever
-returns what was already granted. Sign in once and the new, broader token is
-cached in its place. The reverse direction costs nothing: adding `--read-only`
-keeps using a `read write` token you already have.
+Expected, once per surface. Each token is stored against the scope it was
+granted for, so the read-only and read-write surfaces hold separate
+credentials — toggling the flag reaches for the other one, which does not exist
+yet. Sign in once and both are cached side by side; switching back and forth
+afterwards costs nothing.
+
+Keeping them apart is the point: it is what stops a read-only server from
+picking up a write-capable token, and what lets two servers run side by side
+(see below).
 
 ## I have to re-authenticate every time
 
 The OAuth token is persisted to an owner-only (`0600`) file in your OS config
-dir, one per subdomain, and reused across restarts, so this shouldn't happen:
+dir and reused across restarts, so this shouldn't happen. Files are named
+`<subdomain>--<oauth-client>--<scope>--<digest>.json`, one per credential:
 
-- `%APPDATA%\fruggr\zendesk-mcp-server\<subdomain>.json` on Windows;
-- `${XDG_CONFIG_HOME:-$HOME/.config}/fruggr/zendesk-mcp-server/<subdomain>.json`
-  elsewhere.
+- `%APPDATA%\fruggr\zendesk-mcp-server\` on Windows;
+- `${XDG_CONFIG_HOME:-$HOME/.config}/fruggr/zendesk-mcp-server/` elsewhere.
 
 If the Zendesk OAuth client has token expiration enabled, the stored refresh
 token renews access silently, in two ways. It refreshes **proactively**, before
@@ -99,6 +107,22 @@ sign-in.
 If you still re-authenticate every time, check that the file is writable
 ([`ZENDESK_TOKEN_FILE`](configuration.md#zendesk_token_file) to relocate it) and
 look for `token_persist_failed` in the logs.
+
+## Two instances of the server interfere with each other
+
+They shouldn't. Instances that differ in subdomain, OAuth client or requested
+scope — a read-write one beside a `--read-only` one, say — each store their
+token in their own file, so neither can inherit the other's authority or delete
+its record. Nothing to configure.
+
+Two instances that differ in *none* of those still share one credential, which
+is usually what you want. If they must not — two Zendesk accounts on the same
+subdomain and client — give each one its own
+[`ZENDESK_TOKEN_FILE`](configuration.md#zendesk_token_file).
+
+They can keep the same callback port, and should: one registered redirect URL
+serves every instance, and a separate Zendesk OAuth client can register the same
+one. The port only ever holds up two sign-ins racing each other (above).
 
 ## My HTTP session disappears after a pause, even though the stream stayed up
 

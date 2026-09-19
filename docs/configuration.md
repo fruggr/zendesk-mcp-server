@@ -205,9 +205,9 @@ OAuth client identifier.
 Local port for the OAuth browser callback (also `--callback-port`). Must match the redirect URL registered in Zendesk. **stdio only.**
 
 ### `ZENDESK_TOKEN_FILE`
-**Required:** no · **Default:** OS config dir
+**Required:** no · **Default:** OS config dir, one file per subdomain + OAuth client + scope
 
-Path to the persisted OAuth token file (`0600`).
+Path to the persisted OAuth token file (`0600`). Overriding it pins one explicit file, which is how two Zendesk accounts sharing a subdomain, client and scope are kept apart — instances differing in any of those three are already separate by default ([troubleshooting](troubleshooting.md#two-instances-of-the-server-interfere-with-each-other)).
 
 ### `TRANSPORT`
 **Required:** no · **Default:** `stdio`

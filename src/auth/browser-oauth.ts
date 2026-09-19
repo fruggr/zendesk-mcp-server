@@ -42,17 +42,24 @@ interface TokenResult {
 
 /**
  * Build an actionable error for a callback port that's already taken. The raw
- * Node `EADDRINUSE` is opaque to both the user and the LLM; this spells out the
- * fix (set a free port + register the matching redirect URL in Zendesk). The
+ * Node `EADDRINUSE` is opaque to both the user and the LLM.
+ *
+ * The port doubles as the mutex between instances: several servers share one
+ * registered redirect URL, so only one can hold a sign-in at a time. Retrying
+ * the call once the other finishes is therefore the fix, and the caller's own
+ * retry is what performs it — hence "retry" first, and the free-port escape
+ * hatch second, for an unrelated program squatting the port. The
  * `(EADDRINUSE)` marker and `code` are kept for diagnostics/tests.
  */
 const callbackPortInUseError = (port: number, cause: Error): Error =>
   Object.assign(
     new Error(
-      `Cannot start the Zendesk OAuth sign-in: local callback port ${port} is already in use ` +
-        `by another process. Set ZENDESK_OAUTH_CALLBACK_PORT (or --callback-port) to a free port, ` +
-        `then register http://localhost:<port>/callback as a redirect URL in your Zendesk OAuth ` +
-        `client. (EADDRINUSE)`,
+      `Cannot start the Zendesk OAuth sign-in: local callback port ${port} is already in use. ` +
+        `Another instance of this server is most likely signing in right now: finish that ` +
+        `browser window, then retry. If an unrelated program holds the port, set ` +
+        `ZENDESK_OAUTH_CALLBACK_PORT (or --callback-port) to a free port, then register ` +
+        `http://localhost:<port>/callback as a redirect URL in your Zendesk OAuth client. ` +
+        `(EADDRINUSE)`,
     ),
     { code: 'EADDRINUSE', cause },
   );

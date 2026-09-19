@@ -44,9 +44,9 @@ export const supportedScopes = (readOnly: boolean): string[] =>
 
 /**
  * Whether a grant still covers what this process needs: a flat subset test.
- * Coverage, not equality, so a broader token stays usable and two servers
- * sharing a token file converge. A non-string `granted` is a pre-#283 record,
- * i.e. `read write`. No scope hierarchy: granular scopes (#284) replace this.
+ * Coverage, not equality, so a token Zendesk granted wider than requested stays
+ * usable. A non-string `granted` is a pre-#283 record, i.e. `read write`. No
+ * scope hierarchy: granular scopes (#284) replace this.
  */
 export const grantCovers = (granted: string | undefined, requested: string): boolean => {
   if (typeof granted !== 'string') return true;
