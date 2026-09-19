@@ -23,8 +23,6 @@ export const createStrictParamsParser = (
     const result = strict.safeParse(params);
     if (result.success) return result.data as Record<string, unknown>;
 
-    // One narrowing flatMap rather than filter-then-map: Zod's issue union discriminates
-    // on `code`, so `keys` is typed here and needs neither a cast nor a fallback.
     const unknownKeys = result.error.issues.flatMap((issue) =>
       issue.code === 'unrecognized_keys' ? issue.keys : [],
     );
