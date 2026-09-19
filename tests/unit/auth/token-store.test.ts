@@ -205,11 +205,12 @@ describe('createTokenStore', () => {
     await expect(store.getToken()).rejects.toThrow('authentication required');
 
     // The other half of #300: the loser of a rotation race used to delete the
-    // shared file, taking its sibling's still-valid token with it.
-    expect(clearTokenMock).toHaveBeenCalledWith(
+    // shared file, taking its sibling's still-valid token with it. Assert the
+    // whole call list, not just a matching call -- clearing a sibling *as well*
+    // is the regression, and `toHaveBeenCalledWith` would pass through it.
+    expect(clearTokenMock.mock.calls.map(([path]) => path)).toEqual([
       '/tmp/testsubdomain--test_client--read.json',
-      expect.anything(),
-    );
+    ]);
   });
 
   it('reuses a token loaded from disk without starting a browser flow', async () => {

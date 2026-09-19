@@ -107,8 +107,16 @@ describe('token-persistence', () => {
     process.env['XDG_CONFIG_HOME'] = '/home/u/.config';
     const { resolveTokenPath } = await importFresh();
     expect(resolveTokenPath(KEY)).not.toBe(resolveTokenPath(keyWith({ subdomain: 'other' })));
-    expect(resolveTokenPath(KEY)).toMatch(
-      /^\/home\/u\/\.config\/fruggr\/zendesk-mcp-server\/acme--acme_zendesk--read_write--[0-9a-f]{8}\.json$/,
+
+    // Pinned whole, digest included: the name is a compatibility contract. Any
+    // change to it -- the hash, its encoding, the order of the key parts, the
+    // joiner -- silently strands every installed user's token and costs them a
+    // sign-in, so it must not be possible to make one without this failing.
+    expect(resolveTokenPath(KEY)).toMatchInlineSnapshot(
+      `"/home/u/.config/fruggr/zendesk-mcp-server/acme--acme_zendesk--read_write--813d5849.json"`,
+    );
+    expect(resolveTokenPath(keyWith({ scope: 'read' }))).toMatchInlineSnapshot(
+      `"/home/u/.config/fruggr/zendesk-mcp-server/acme--acme_zendesk--read--ab106f2c.json"`,
     );
   });
 
@@ -154,6 +162,21 @@ describe('token-persistence', () => {
     expect(resolveTokenPath({ subdomain: `${stem}a`, oauthClientId: 'b', scope: 'read' })).not.toBe(
       resolveTokenPath({ subdomain: stem, oauthClientId: 'ab', scope: 'read' }),
     );
+  });
+
+  it('separates keys containing the delimiter the digest encodes with', async () => {
+    setPlatform('linux');
+    process.env['XDG_CONFIG_HOME'] = '/home/u/.config';
+    const { resolveTokenPath } = await importFresh();
+
+    // `config.ts` puts no charset restriction on either value, so a key part can
+    // carry whatever byte the digest uses to separate parts. A raw separator
+    // would make these two land on one file, past a readable name that
+    // truncates to the same 120 characters.
+    const stem = 'x'.repeat(120);
+    expect(
+      resolveTokenPath({ subdomain: `${stem}\nb`, oauthClientId: 'c', scope: 'read' }),
+    ).not.toBe(resolveTokenPath({ subdomain: stem, oauthClientId: 'b\nc', scope: 'read' }));
   });
 
   it('separates keys that differ only in case, which Windows would fold', async () => {

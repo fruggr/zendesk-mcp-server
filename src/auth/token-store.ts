@@ -73,8 +73,8 @@ export const createTokenStore = (
     } else {
       // The file is keyed by requested scope, so this is not a `--read-only`
       // flip: Zendesk granted less than was asked, or the record was hand-
-      // edited. A refresh cannot widen a grant, so the empty cache sends the
-      // first call through a sign-in, which overwrites the record.
+      // edited. A refresh cannot widen a grant, so the first call signs in
+      // again -- and keeps doing so each start while the grant stays narrow.
       logger.warn('oauth_token_scope_insufficient', { requested, granted: token.scope });
       token = undefined;
     }

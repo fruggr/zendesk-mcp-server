@@ -36,7 +36,7 @@ const appDirSegments = (): string[] => {
   return scoped?.[1] && scoped[2] ? [scoped[1], scoped[2]] : [name];
 };
 
-// OS config dir holding the per-subdomain token files: `%APPDATA%` on Windows,
+// OS config dir holding the token files, one per key: `%APPDATA%` on Windows,
 // `$XDG_CONFIG_HOME` (falling back to `~/.config`) elsewhere.
 const configDir = (): string => {
   const segments = appDirSegments();
@@ -66,14 +66,13 @@ const safeName = (part: string): string => part.replace(/[^a-z0-9-]/gi, '_');
 // every mainstream filesystem puts on one path component.
 const READABLE_BUDGET = 120;
 
-// `safeName` folds every unsafe character to `_`, Windows folds case, and the
-// budget above truncates — so the readable name alone is not unique, and two
-// keys landing on one file is the bug this keying exists to remove. A digest
-// over the raw key restores uniqueness. Hex, not base64url: a case-insensitive
-// filesystem must not fold two digests together either.
+// The readable name above is lossy three ways over, so this digest is what
+// actually keeps two keys off one file: `docs/decisions/token-file-keying.md`.
+// JSON, not a delimiter, because nothing bounds what a key part may contain;
+// hex, because a case-insensitive filesystem folds a base64url digest.
 const keyDigest = (key: TokenKey): string =>
   createHash('sha256')
-    .update(`${key.subdomain}\n${key.oauthClientId}\n${key.scope}`)
+    .update(JSON.stringify([key.subdomain, key.oauthClientId, key.scope]))
     .digest('hex')
     .slice(0, 8);
 

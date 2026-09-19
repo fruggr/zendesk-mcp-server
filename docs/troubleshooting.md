@@ -80,12 +80,17 @@ with [`--read-only`](configuration.md), which requests `read` alone.
 Expected, once per surface. Each token is stored against the scope it was
 granted for, so the read-only and read-write surfaces hold separate
 credentials — toggling the flag reaches for the other one, which does not exist
-yet. Sign in once and both are cached side by side; switching back and forth
-afterwards costs nothing.
+yet.
 
 Keeping them apart is the point: it is what stops a read-only server from
 picking up a write-capable token, and what lets two servers run side by side
 (see below).
+
+It does cost something, and only here: the background refresh runs in the
+*running* process, so the surface you are not using is not kept alive. Come back
+to it after a long enough gap — on an OAuth client with token expiration
+enabled — and its refresh token has expired, so you sign in again. Running both
+side by side, which is what this layout is for, keeps both fresh.
 
 ## I have to re-authenticate every time
 
@@ -108,6 +113,17 @@ If you still re-authenticate every time, check that the file is writable
 ([`ZENDESK_TOKEN_FILE`](configuration.md#zendesk_token_file) to relocate it) and
 look for `token_persist_failed` in the logs.
 
+## I signed in again after upgrading, and there is an old `<subdomain>.json`
+
+Both expected, once. Token files used to be named after the subdomain alone,
+which is what made two servers fight over one record; the name now carries the
+OAuth client and scope too, so no existing file matches and everyone signs in
+once more.
+
+The old file is left where it is — nothing reads it any more, but it still holds
+a working refresh token, so **delete it**. Revoke the token in Zendesk too
+(Admin Center → Apps and integrations → OAuth clients) if the machine is shared.
+
 ## Two instances of the server interfere with each other
 
 They shouldn't. Instances that differ in subdomain, OAuth client or requested
@@ -115,10 +131,15 @@ scope — a read-write one beside a `--read-only` one, say — each store their
 token in their own file, so neither can inherit the other's authority or delete
 its record. Nothing to configure.
 
-Two instances that differ in *none* of those still share one credential, which
-is usually what you want. If they must not — two Zendesk accounts on the same
-subdomain and client — give each one its own
-[`ZENDESK_TOKEN_FILE`](configuration.md#zendesk_token_file).
+Two instances alike on all three still share one record, which is usually what
+you want: it is one credential, so one file. Two caveats, both only for that
+case. They can still take each other's token down — Zendesk rotates the refresh
+token on every use, so whichever refreshes second is rejected and drops the
+shared record, costing you one sign-in. And a `--read-only` instance sharing a
+record with a read-write one *will* use the write-capable token in it: what
+bounds a read-only server to reads is having its own file, which pinning both to
+one [`ZENDESK_TOKEN_FILE`](configuration.md#zendesk_token_file) gives up. Give
+them separate files — or separate OAuth clients — if either matters.
 
 They can keep the same callback port, and should: one registered redirect URL
 serves every instance, and a separate Zendesk OAuth client can register the same

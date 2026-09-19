@@ -42,14 +42,11 @@ interface TokenResult {
 
 /**
  * Build an actionable error for a callback port that's already taken. The raw
- * Node `EADDRINUSE` is opaque to both the user and the LLM.
- *
- * The port doubles as the mutex between instances: several servers share one
- * registered redirect URL, so only one can hold a sign-in at a time. Retrying
- * the call once the other finishes is therefore the fix, and the caller's own
- * retry is what performs it — hence "retry" first, and the free-port escape
- * hatch second, for an unrelated program squatting the port. The
- * `(EADDRINUSE)` marker and `code` are kept for diagnostics/tests.
+ * Node `EADDRINUSE` is opaque to both the user and the LLM. The port is also
+ * the mutex between instances, so retrying once the other sign-in ends comes
+ * first and the free-port escape hatch second
+ * (`docs/decisions/token-file-keying.md`). The `(EADDRINUSE)` marker and `code`
+ * are kept for diagnostics/tests.
  */
 const callbackPortInUseError = (port: number, cause: Error): Error =>
   Object.assign(

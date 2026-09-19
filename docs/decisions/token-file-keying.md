@@ -57,8 +57,14 @@ humans and a digest over the raw key is what actually keeps records apart. It is
 hex rather than base64url for the same reason: a case-insensitive filesystem
 must not fold two digests together either.
 
-The name is never parsed back, so a client id containing the `--` separator is
-harmless.
+The digest is taken over a JSON array of the parts, not over the parts joined by
+a separator. Nothing bounds what a subdomain or client id may contain —
+`config.ts` only requires a non-empty string — so a part holding the separator
+byte would let one key's tail impersonate the next key's head and land on its
+file, which is the collision the digest exists to rule out.
+
+The name itself is never parsed back, so a client id containing the `--` joiner
+is harmless.
 
 ## Why no migration from the old layout
 
@@ -67,6 +73,12 @@ read-through fallback to `<subdomain>.json` was rejected: it would have both
 instances converge on the same refresh token for the length of the transition —
 replaying the rotation race one last time — in exchange for a transitional code
 path to remove later.
+
+The cost is not only the sign-in: the old file stays on disk holding a live
+refresh token that nothing will ever rotate or expire from our side. Deleting it
+for the user was rejected too — a token file is not ours to remove, and the
+read-through we just ruled out is the only way to know it was ours to begin
+with. `docs/troubleshooting.md` tells the user to delete and revoke it instead.
 
 ## Why the port is the mutex, and there is no lockfile
 
