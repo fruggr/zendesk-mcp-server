@@ -108,6 +108,14 @@ The price is that an install pinned to a `ZENDESK_TOKEN_FILE` keeps its orphan.
 That is the right trade: whoever set that variable chose where the file lives,
 and `docs/troubleshooting.md` tells them what to do with the old one.
 
+One more case is accepted rather than solved: a server still on a pre-#301
+version, running beside an upgraded one on the same subdomain. The sweep deletes
+the file the older process is using. It costs at most one sign-in, and only in a
+narrow window — the old process keeps its token in memory and rewrites the file
+on its next refresh, so it is disturbed only if it restarts before then.
+Avoiding even that would mean not sweeping while any other version might be
+running, which is not knowable from inside one process.
+
 This is the one thing that keeps the old layout alive in the code, so it is
 migration-only and tracked for removal (#305) rather than left to become
 permanent. Note what it does *not* do: deleting a refresh token is not revoking

@@ -152,9 +152,8 @@ waiting for sign-in, so authenticate in the browser and then retry the request.
 The token is persisted to an owner-only file and reused across restarts, so you
 don't authenticate again every time your MCP client respawns the server (path
 and overrides: [`ZENDESK_TOKEN_FILE`](docs/configuration.md#zendesk_token_file)).
-Each subdomain, OAuth client and scope gets its own file, so you can run several
-instances — a read-write one and a `--read-only` one, say — side by side without
-them trading credentials.
+Several instances can run side by side — a read-write one and a `--read-only`
+one, say — without trading credentials.
 
 ### MCP client wiring
 
