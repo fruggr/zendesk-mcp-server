@@ -162,18 +162,45 @@ export const formatMacro = (macro: ZendeskMacro): string => {
     .join('\n');
 };
 
-const minutesUntil = (iso: string): number | null => {
+const minutesUntil = (iso: string, now: number): number | null => {
   const t = Date.parse(iso);
-  return Number.isNaN(t) ? null : Math.round((t - Date.now()) / 60_000);
+  return Number.isNaN(t) ? null : Math.round((t - now) / 60_000);
 };
 
-const formatSlaMetric = (m: ZendeskSlaLiveMetric): string => {
+// Stages carrying no live obligation: the metric is parked (`paused`) or already
+// settled (`achieved`, `fulfilled`), so its `breach_at` is a record, not a deadline
+// anyone is running against. One list, read by both the per-metric countdown and
+// the `Next breach` header (#260).
+const STAGES_WITHOUT_LIVE_DEADLINE: ReadonlySet<string | undefined> = new Set([
+  'paused',
+  'achieved',
+  'fulfilled',
+]);
+
+const hasRunningStage = (m: ZendeskSlaLiveMetric): boolean =>
+  !STAGES_WITHOUT_LIVE_DEADLINE.has(m.stage);
+
+const hasPendingDeadline = (
+  m: ZendeskSlaLiveMetric,
+): m is ZendeskSlaLiveMetric & { breach_at: string } =>
+  hasRunningStage(m) &&
+  // Stryker disable next-line ConditionalExpression: this half narrows the type for
+  // the compiler, nothing more. At runtime a missing `breach_at` parses to NaN and is
+  // dropped by the guard below either way, so forcing it true changes no output.
+  typeof m.breach_at === 'string';
+
+interface SlaDeadline {
+  due: string;
+  at: number;
+}
+
+const formatSlaMetric = (m: ZendeskSlaLiveMetric, now: number): string => {
   const stage = m.stage ?? 'unknown';
   const due = m.breach_at ?? null;
   const parts = [`- **${m.metric}** — ${stage}`];
   if (due) {
-    const remaining = minutesUntil(due);
-    if (stage === 'paused' || stage === 'achieved' || stage === 'fulfilled' || remaining == null) {
+    const remaining = minutesUntil(due, now);
+    if (!hasRunningStage(m) || remaining == null) {
       parts.push(`due ${due}`);
     } else if (remaining < 0) {
       parts.push(`due ${due} — breached (${Math.abs(remaining)} min overdue)`);
@@ -187,18 +214,25 @@ const formatSlaMetric = (m: ZendeskSlaLiveMetric): string => {
 // Live SLA block appended after a formatted ticket. Renders only what the Search
 // `slas` sideload carries (per-metric stage + breach countdown) — targets and
 // policy identity are not on the wire (see `list_sla_policies`). Returns '' when
-// no policy applies, so concatenating is always safe.
+// no policy applies, so concatenating is always safe. `Next breach` speaks only for
+// metrics that are running (#260).
 export const formatSlaBlock = (entry: ZendeskSlaSideloadEntry | undefined): string => {
   if (!entry?.policy_metrics || entry.policy_metrics.length === 0) return '';
+  const now = Date.now();
   const lines = ['### SLA'];
-  const futureBreaches = entry.policy_metrics
-    .map((m) => m.breach_at)
-    .map((d) => (d ? Date.parse(d) : Number.NaN))
-    .filter((t) => !Number.isNaN(t) && t > Date.now());
-  if (futureBreaches.length > 0) {
-    lines.push(`- **Next breach**: ${new Date(Math.min(...futureBreaches)).toISOString()}`);
-  }
-  for (const m of entry.policy_metrics) lines.push(formatSlaMetric(m));
+  const pending = entry.policy_metrics
+    .filter(hasPendingDeadline)
+    .map((m) => ({ due: m.breach_at, at: Date.parse(m.breach_at) }))
+    .filter((d) => !Number.isNaN(d.at) && d.at > now);
+  // Quote the winning metric's own `breach_at` instead of re-serializing the instant:
+  // Zendesk sends no milliseconds, so a normalized header never string-matched the
+  // line it points at, and a caller could not tell which metric was breaching (#296).
+  const soonest = pending.reduce<SlaDeadline | undefined>(
+    (best, d) => (best && best.at <= d.at ? best : d),
+    undefined,
+  );
+  if (soonest) lines.push(`- **Next breach**: ${soonest.due}`);
+  for (const m of entry.policy_metrics) lines.push(formatSlaMetric(m, now));
   return `\n\n${lines.join('\n')}`;
 };
 

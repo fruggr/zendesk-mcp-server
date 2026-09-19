@@ -276,11 +276,10 @@ describe('formatSlaBlock', () => {
     `);
   });
 
-  it('omits the countdown for paused, achieved and fulfilled stages', () => {
-    // The `Next breach` line here is today's output, not endorsed behaviour: the
-    // header counts every future `breach_at` whatever the stage, so it announces a
-    // breach for metrics this test shows carry no live countdown. Pinned so the
-    // disagreement stays visible; #260 owns the fix.
+  it('omits the countdown, and the next-breach line, when no metric is running', () => {
+    // `paused`, `achieved` and `fulfilled` carry no live obligation, so nothing here
+    // is at risk: the per-metric lines state the deadline without counting down, and
+    // the header — which speaks for what is running — has nothing to report.
     expect(
       formatSlaBlock(
         entry([
@@ -293,10 +292,122 @@ describe('formatSlaBlock', () => {
       "
 
       ### SLA
-      - **Next breach**: 2026-06-01T13:00:00.000Z
       - **agent_work_time** — paused; due 2026-06-01T13:00:00.000Z
       - **first_reply_time** — achieved; due 2026-06-01T13:00:00.000Z
       - **total_resolution_time** — fulfilled; due 2026-06-01T13:00:00.000Z"
+    `);
+  });
+
+  // One case per suppressed stage, each pairing it with a *later* running deadline:
+  // asserting the header reports the running one is a stronger claim than asserting
+  // it is absent — it pins which metric won, so dropping that single stage from the
+  // filter changes the reported date (#260).
+  it('reports the running deadline, not a sooner paused one', () => {
+    expect(
+      formatSlaBlock(
+        entry([
+          { metric: 'agent_work_time', stage: 'paused', breach_at: at(30) },
+          { metric: 'first_reply_time', stage: 'active', breach_at: at(90) },
+        ]),
+      ),
+    ).toMatchInlineSnapshot(`
+      "
+
+      ### SLA
+      - **Next breach**: 2026-06-01T13:30:00.000Z
+      - **agent_work_time** — paused; due 2026-06-01T12:30:00.000Z
+      - **first_reply_time** — active; due 2026-06-01T13:30:00.000Z — 90 min remaining"
+    `);
+  });
+
+  it('reports the running deadline, not a sooner achieved one', () => {
+    expect(
+      formatSlaBlock(
+        entry([
+          { metric: 'first_reply_time', stage: 'achieved', breach_at: at(30) },
+          { metric: 'total_resolution_time', stage: 'active', breach_at: at(90) },
+        ]),
+      ),
+    ).toMatchInlineSnapshot(`
+      "
+
+      ### SLA
+      - **Next breach**: 2026-06-01T13:30:00.000Z
+      - **first_reply_time** — achieved; due 2026-06-01T12:30:00.000Z
+      - **total_resolution_time** — active; due 2026-06-01T13:30:00.000Z — 90 min remaining"
+    `);
+  });
+
+  it('reports the running deadline, not a sooner fulfilled one', () => {
+    expect(
+      formatSlaBlock(
+        entry([
+          { metric: 'total_resolution_time', stage: 'fulfilled', breach_at: at(30) },
+          { metric: 'first_reply_time', stage: 'active', breach_at: at(90) },
+        ]),
+      ),
+    ).toMatchInlineSnapshot(`
+      "
+
+      ### SLA
+      - **Next breach**: 2026-06-01T13:30:00.000Z
+      - **total_resolution_time** — fulfilled; due 2026-06-01T12:30:00.000Z
+      - **first_reply_time** — active; due 2026-06-01T13:30:00.000Z — 90 min remaining"
+    `);
+  });
+
+  it("quotes the winning metric's own timestamp rather than a re-serialized one", () => {
+    // Zendesk sends no milliseconds. Rendering the header through `toISOString()`
+    // spelled the same instant differently from the line below it, so a caller
+    // correlating the two by value could not tell which metric was breaching (#296).
+    expect(
+      formatSlaBlock(
+        entry([{ metric: 'first_reply_time', stage: 'active', breach_at: '2026-06-01T13:30:00Z' }]),
+      ),
+    ).toMatchInlineSnapshot(`
+      "
+
+      ### SLA
+      - **Next breach**: 2026-06-01T13:30:00Z
+      - **first_reply_time** — active; due 2026-06-01T13:30:00Z — 90 min remaining"
+    `);
+  });
+
+  it('keeps the first metric when two deadlines fall on the same instant', () => {
+    // Two spellings of one instant: since the header now quotes a line verbatim,
+    // which of the tied metrics it speaks for has to be pinned rather than left to
+    // the slack in a comparison.
+    expect(
+      formatSlaBlock(
+        entry([
+          { metric: 'first_reply_time', stage: 'active', breach_at: '2026-06-01T13:00:00Z' },
+          { metric: 'total_resolution_time', stage: 'active', breach_at: at(60) },
+        ]),
+      ),
+    ).toMatchInlineSnapshot(`
+      "
+
+      ### SLA
+      - **Next breach**: 2026-06-01T13:00:00Z
+      - **first_reply_time** — active; due 2026-06-01T13:00:00Z — 60 min remaining
+      - **total_resolution_time** — active; due 2026-06-01T13:00:00.000Z — 60 min remaining"
+    `);
+  });
+
+  it('treats a stage it does not recognise as running', () => {
+    // Failing *open* is the safe direction for a triage signal: a stage Zendesk adds
+    // later must keep feeding the header, not silently drop out of it. Guards against
+    // turning the filter into a whitelist of the stages we happen to know today.
+    expect(
+      formatSlaBlock(
+        entry([{ metric: 'first_reply_time', stage: 'some_future_stage', breach_at: at(45) }]),
+      ),
+    ).toMatchInlineSnapshot(`
+      "
+
+      ### SLA
+      - **Next breach**: 2026-06-01T12:45:00.000Z
+      - **first_reply_time** — some_future_stage; due 2026-06-01T12:45:00.000Z — 45 min remaining"
     `);
   });
 
