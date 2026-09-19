@@ -1,3 +1,17 @@
+## [2.22.2](https://github.com/fruggr/zendesk-mcp-server/compare/v2.22.1...v2.22.2) (2026-09-19)
+
+### Bug Fixes
+
+* **formatting:** make the SLA "Next breach" header agree with the lines below it ([#295](https://github.com/fruggr/zendesk-mcp-server/issues/295)) ([133713b](https://github.com/fruggr/zendesk-mcp-server/commit/133713b050aa7f47e5d6e48cc40ae5acd85088b3))
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Chores
+
+* **worktrunk:** sequence the switch hooks and block on them ([#299](https://github.com/fruggr/zendesk-mcp-server/issues/299)) ([c8d9616](https://github.com/fruggr/zendesk-mcp-server/commit/c8d9616ad9ced82279a6d073d95cf1ab796f1b7c))
+</details>
+
 ## [2.22.1](https://github.com/fruggr/zendesk-mcp-server/compare/v2.22.0...v2.22.1) (2026-09-18)
 
 ### Bug Fixes
