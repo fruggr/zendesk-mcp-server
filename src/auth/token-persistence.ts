@@ -173,8 +173,9 @@ export const removeLegacyToken = (subdomain: string, logger: Logger = silentLogg
   // `--<digest>.json`, so it can never be the legacy name anyway.
   if (process.env['ZENDESK_TOKEN_FILE']) return;
   const legacy = join(configDir(), `${safeName(subdomain)}.json`);
-  // Only remove what we can still read as one of ours, so a same-named file we
-  // did not write survives.
+  // A shape check, not proof of ownership: what makes deleting safe is where
+  // the file is, our own vendor-namespaced config dir. This only stops the
+  // sweep from removing a leftover that is no longer a token record at all.
   if (loadToken(legacy) === undefined) return;
   clearToken(legacy, logger);
   logger.info('oauth_legacy_token_removed');

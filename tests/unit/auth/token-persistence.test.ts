@@ -280,7 +280,7 @@ describe('token-persistence', () => {
       expect(files.get(LEGACY)).toContain('current');
     });
 
-    it('keeps a file it cannot recognise as one of ours', async () => {
+    it('keeps a file that no longer parses as a token record', async () => {
       const { removeLegacyToken } = await linuxConfig();
       files.set(LEGACY, '{"something":"else"}');
 

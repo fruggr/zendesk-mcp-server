@@ -97,8 +97,12 @@ good enough for a credential — so the server deletes it on startup
   match catches all of those. Skipping the sweep entirely whenever an override
   is in play has no such gap, and costs nothing — without an override the active
   name always ends in `--<digest>.json`, so it can never *be* the legacy name.
-- **never a file we cannot read as ours.** The record has to parse as a
-  `PersistedToken`, so a same-named file written by something else survives.
+- **never a file that no longer parses as a token record.** This one is a shape
+  check, not proof of ownership — `loadToken` would accept any JSON carrying an
+  `accessToken` string. What makes deleting safe is the *location*: the file
+  sits in our own vendor-namespaced config dir, which nothing else writes to.
+  Someone deliberately keeping a file of their own there reaches it through
+  `ZENDESK_TOKEN_FILE`, and the first guard has already stood the sweep down.
 
 The price is that an install pinned to a `ZENDESK_TOKEN_FILE` keeps its orphan.
 That is the right trade: whoever set that variable chose where the file lives,
