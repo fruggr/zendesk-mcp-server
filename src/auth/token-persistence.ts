@@ -70,8 +70,13 @@ const READABLE_BUDGET = 120;
 // actually keeps two keys off one file: `docs/decisions/token-file-keying.md`.
 // JSON, not a delimiter, because nothing bounds what a key part may contain;
 // hex, because a case-insensitive filesystem folds a base64url digest.
+// `js/insufficient-password-hash` reads `oauthClientId` as a password because
+// the name carries "auth", and asks for a slow KDF. It is not one: an OAuth
+// client id is public by construction (it travels in the authorize URL), it is
+// never verified against this value, and it is already in this same filename in
+// clear. A KDF here would buy nothing and cost a stretch on every start.
 const keyDigest = (key: TokenKey): string =>
-  createHash('sha256')
+  createHash('sha256') // codeql[js/insufficient-password-hash]
     .update(JSON.stringify([key.subdomain, key.oauthClientId, key.scope]))
     .digest('hex')
     .slice(0, 8);
@@ -88,11 +93,11 @@ const keyDigest = (key: TokenKey): string =>
 export const resolveTokenPath = (key: TokenKey): string => {
   const override = process.env['ZENDESK_TOKEN_FILE'];
   if (override) return override;
-  // Sanitized one call at a time, not through `.map(safeName)`: the indirection
-  // hides the allowlist from CodeQL's path-injection tracking, which then reads
-  // three config values as reaching a path expression unfiltered.
-  const readable = `${safeName(key.subdomain)}--${safeName(key.oauthClientId)}--${safeName(key.scope)}`;
-  return join(configDir(), `${readable.slice(0, READABLE_BUDGET)}--${keyDigest(key)}.json`);
+  const readable = [key.subdomain, key.oauthClientId, key.scope]
+    .map(safeName)
+    .join('--')
+    .slice(0, READABLE_BUDGET);
+  return join(configDir(), `${readable}--${keyDigest(key)}.json`);
 };
 
 // Atomic write (tmp + rename) so a crash mid-write can't leave a truncated file,
