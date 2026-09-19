@@ -8,6 +8,7 @@ import {
 } from '../../../src/client/retry';
 import {
   fetchZendeskBinary,
+  helpCenterDelete,
   helpCenterGet,
   helpCenterPost,
   helpCenterPut,
@@ -546,5 +547,159 @@ describe('auth header', () => {
       '/users/me',
     );
     expect(result.user.auth_header).toBe('Bearer my-oauth-token');
+  });
+});
+
+// `executeRequest` decides the method, the headers and whether a body is sent
+// for every verb in this module, and none of that is visible in a response
+// assertion: a mutant that empties the Content-Type block, or `helpCenterDelete`'s
+// `{ method: 'DELETE' }` (which silently falls back to the `'GET'` default), still
+// returns the same parsed payload. So the wire shape is pinned here.
+describe('what each verb puts on the wire', () => {
+  const HC = 'https://testsubdomain.zendesk.com/api/v2/help_center';
+
+  interface SentRequest {
+    method: string;
+    accept: string | null;
+    contentType: string | null;
+    body: string;
+  }
+
+  // Registered on every verb the client could plausibly send, not just the
+  // expected one: a mutated method has to arrive *here* and be named by the
+  // assertion, rather than escape to the network and fail as an unrelated error.
+  const captureAnyVerb = (url: string): SentRequest[] => {
+    const seen: SentRequest[] = [];
+    const record = async ({ request }: { request: Request }) => {
+      seen.push({
+        method: request.method,
+        accept: request.headers.get('Accept'),
+        contentType: request.headers.get('Content-Type'),
+        body: await request.text(),
+      });
+      return HttpResponse.json({ ok: true });
+    };
+    mswServer.use(
+      http.get(url, record),
+      http.post(url, record),
+      http.put(url, record),
+      http.delete(url, record),
+    );
+    return seen;
+  };
+
+  it('declares JSON on a write, and sends the serialised body', async () => {
+    const seen = captureAnyVerb(`${HC}/articles`);
+
+    await helpCenterPost(SUB, TOKEN, '/articles', { article: { title: 'T' } });
+
+    expect(seen[0]).toStrictEqual({
+      method: 'POST',
+      accept: 'application/json',
+      contentType: 'application/json',
+      body: '{"article":{"title":"T"}}',
+    });
+  });
+
+  it('declares no content type on a read, and sends no body', async () => {
+    const seen = captureAnyVerb(`${HC}/articles/5000`);
+
+    await helpCenterGet(SUB, TOKEN, '/articles/5000');
+
+    // The counterpart of the write case: `Content-Type` is set *conditionally*,
+    // so forcing the guard open has to be visible too, not just closing it.
+    expect(seen[0]).toStrictEqual({
+      method: 'GET',
+      accept: 'application/json',
+      contentType: null,
+      body: '',
+    });
+  });
+
+  it('keeps the body and the content type in step on a falsy body', async () => {
+    const seen = captureAnyVerb(`${HC}/articles`);
+
+    // `body` is `unknown`, so a falsy one is a value a caller can pass, and the
+    // two `if (body)` guards have to answer it the same way: declaring JSON with
+    // nothing behind it, or sending a payload undeclared, are both malformed.
+    // Nothing else separates the second guard from a constant `true`.
+    await helpCenterPost(SUB, TOKEN, '/articles', '');
+
+    expect(seen[0]?.contentType).toBeNull();
+    expect(seen[0]?.body).toBe('');
+  });
+
+  it('sends a DELETE for helpCenterDelete, not the GET the default would give', async () => {
+    const seen = captureAnyVerb(`${HC}/articles/5000`);
+
+    await helpCenterDelete(SUB, TOKEN, '/articles/5000');
+
+    expect(seen[0]?.method).toBe('DELETE');
+  });
+});
+
+describe('error identity and per-status wording', () => {
+  it('names itself so a caller can branch on the class, not the message', async () => {
+    const error = await zendeskGet(SUB, TOKEN, '/tickets/404').catch((e: unknown) => e);
+    expect((error as Error).name).toBe('ZendeskApiError');
+  });
+
+  it('explains a 403 as a permission problem, not an expired token', async () => {
+    mswServer.use(
+      http.get('https://testsubdomain.zendesk.com/api/v2/restricted', () =>
+        HttpResponse.json({}, { status: 403 }),
+      ),
+    );
+
+    const error = await zendeskGet(SUB, TOKEN, '/restricted').catch((e: unknown) => e);
+
+    // Pinned whole: 401 and 403 both mean "no", and telling the agent to
+    // re-authenticate on a 403 sends it through a sign-in that cannot help.
+    expect((error as ZendeskApiError).message).toBe(
+      'Permission denied. Your Zendesk account does not have access to this resource.',
+    );
+  });
+});
+
+describe('attachment downloads', () => {
+  const FOREIGN = 'https://files.cdn.example.com/attachments/9.png';
+
+  it('withholds the Bearer token from a content_url on another host', async () => {
+    mswServer.use(
+      http.get(FOREIGN, ({ request }) =>
+        HttpResponse.text(request.headers.get('Authorization') ?? 'none', {
+          headers: { 'content-type': 'image/png' },
+        }),
+      ),
+    );
+
+    const { data } = await fetchZendeskBinary(SUB, TOKEN, FOREIGN);
+
+    // A `content_url` is whatever Zendesk's response said, so the host guard is
+    // what stops the tenant's OAuth token being handed to a third party. The
+    // same-host half is asserted above ("still carries the Bearer token on a
+    // tenant-host download"); without this one, forcing the guard open leaks the
+    // token and every test stays green.
+    expect(data.toString()).toBe('none');
+  });
+
+  it('falls back to a generic media type when the response declares none', async () => {
+    mswServer.use(
+      // `HttpResponse.arrayBuffer` would label it `application/octet-stream`
+      // itself and never exercise the fallback; the bare constructor sends the
+      // bytes with no Content-Type at all, which is the case it exists for.
+      http.get(
+        'https://testsubdomain.zendesk.com/attachments/3.bin',
+        () => new HttpResponse(new Uint8Array([1, 2, 3])),
+      ),
+    );
+
+    const { contentType } = await fetchZendeskBinary(
+      SUB,
+      TOKEN,
+      'https://testsubdomain.zendesk.com/attachments/3.bin',
+    );
+
+    expect(contentType).toBe('application/octet-stream');
   });
 });

@@ -118,6 +118,46 @@ describe('createLogger', () => {
     );
   });
 
+  it('redacts every key in the deny list, not just the ones OAuth happens to use', () => {
+    // The list is a security control, and the five entries below were carried by
+    // no test: an emptied entry lets that field's value through to stderr and to
+    // every MCP client subscribed to `notifications/message`. One line, all ten,
+    // so adding a key without a case is not possible.
+    const log = createLogger('debug');
+    log.error('leak_check', {
+      token: 'a',
+      accessToken: 'b',
+      refreshToken: 'c',
+      code: 'd',
+      codeVerifier: 'e',
+      authorization: 'f',
+      password: 'g',
+      secret: 'h',
+      apiToken: 'i',
+      bearer: 'j',
+    });
+
+    expect(errSpy.mock.calls[0]?.[0]).toBe(
+      '[zendesk-mcp] [error] leak_check token=[REDACTED] accessToken=[REDACTED] ' +
+        'refreshToken=[REDACTED] code=[REDACTED] codeVerifier=[REDACTED] ' +
+        'authorization=[REDACTED] password=[REDACTED] secret=[REDACTED] ' +
+        'apiToken=[REDACTED] bearer=[REDACTED]',
+    );
+  });
+
+  it('renders a non-finite number as itself, not as the null JSON would give', () => {
+    // `String` and `JSON.stringify` agree on every finite number, so only NaN and
+    // the infinities separate the number arm of renderValue's dispatch from the
+    // JSON fallback below it -- and a retry budget or a timeout arriving as NaN
+    // is exactly the diagnostic worth reading back.
+    const log = createLogger('debug');
+    log.warn('budget', { attempts: Number.NaN, deadline: Number.POSITIVE_INFINITY });
+
+    expect(errSpy.mock.calls[0]?.[0]).toBe(
+      '[zendesk-mcp] [warn] budget attempts=NaN deadline=Infinity',
+    );
+  });
+
   it('leaves a key that merely contains a sensitive word alone', () => {
     // The match is on the whole normalised key, not a substring: `tokenCount`
     // is a metric, not a credential.

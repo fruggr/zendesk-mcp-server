@@ -43,6 +43,15 @@ describe('createStrictParamsParser', () => {
     );
   });
 
+  it('reports only the unknown parameters when a known one is also malformed', () => {
+    // Both failures arrive in one ZodError, and the caller has to be told about
+    // the unknown key -- the one it can only have got from guessing -- rather
+    // than about the type error it can see in its own arguments.
+    expect(() => parse({ per_page: 3, page_size: 'big' })).toThrow(
+      'Unknown parameter(s): per_page. Valid parameters: cursor, page_size.',
+    );
+  });
+
   it('propagates the raw Zod error (not the rewritten message) for known-parameter failures', () => {
     const error = (() => {
       try {

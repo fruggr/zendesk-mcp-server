@@ -30,9 +30,39 @@ const loadWithReads = async (payloads: readonly (string | Error)[]) => {
 
 const pkgJson = (pkg: Record<string, string>): string => JSON.stringify(pkg);
 
+/**
+ * Load a fresh `package-info` with both `node:fs` and `node:path` stubbed, so the
+ * walk's own two terminators can be told apart. Every read throws, and `dirname`
+ * behaves as `walk` dictates: `'endless'` never reaches a fixed point, leaving the
+ * depth bound as the only way out; `'shallow'` reaches one after two steps, so the
+ * root check is. With the real `dirname` neither is observable — the module's own
+ * depth on disk decides which terminator fires first, which is why the call count
+ * below is asserted against a stubbed walk rather than the repo's layout.
+ */
+const loadWithWalk = async (walk: 'endless' | 'shallow') => {
+  vi.resetModules();
+  const readFileSyncMock = vi.fn((): string => {
+    throw ENOENT;
+  });
+  vi.doMock('node:fs', () => ({ readFileSync: readFileSyncMock }));
+  vi.doMock('node:path', () => ({
+    // Both are independent of where the module actually sits on disk -- under
+    // Stryker the sandbox adds two levels, which is enough to change a count.
+    // 'shallow' collapses any starting point onto the two-step chain /dir -> /.
+    dirname: (path: string) => {
+      if (walk === 'endless') return `${path}/up`;
+      return path === '/dir' || path === '/' ? '/' : '/dir';
+    },
+    join: (...parts: string[]) => parts.join('/'),
+  }));
+  const { readPackageInfo } = await import('../../../src/utils/package-info');
+  return { readPackageInfo, readFileSyncMock };
+};
+
 describe('readPackageInfo', () => {
   afterEach(() => {
     vi.doUnmock('node:fs');
+    vi.doUnmock('node:path');
     vi.resetModules();
   });
 
@@ -97,5 +127,45 @@ describe('readPackageInfo', () => {
     ]);
 
     expect(readPackageInfo()).toEqual({ name: 'complete', version: '8.0.0' });
+  });
+});
+
+describe('the walk terminates, and on whichever limit comes first', () => {
+  afterEach(() => {
+    vi.doUnmock('node:fs');
+    vi.doUnmock('node:path');
+    vi.resetModules();
+  });
+
+  it('gives up after eight levels when the walk never reaches a root', async () => {
+    // A bundled install can sit arbitrarily deep, and a symlink or a container
+    // mount can make `dirname` climb forever. The depth bound is what keeps a
+    // server start from turning into an unbounded scan, and counting down
+    // instead of up removes it entirely.
+    const { readPackageInfo, readFileSyncMock } = await loadWithWalk('endless');
+
+    expect(readPackageInfo()).toEqual({ name: '@fruggr/zendesk-mcp-server', version: '0.0.0' });
+    expect(readFileSyncMock).toHaveBeenCalledTimes(8);
+  });
+
+  it('stops at the filesystem root, well before the depth bound', async () => {
+    // The other terminator, and the one that fires in a normal install.
+    const { readPackageInfo, readFileSyncMock } = await loadWithWalk('shallow');
+
+    expect(readPackageInfo()).toEqual({ name: '@fruggr/zendesk-mcp-server', version: '0.0.0' });
+    // Two reads -- one directory, then the root -- and then the break. Without
+    // it the walk keeps re-reading `/package.json` up to the depth bound.
+    expect(readFileSyncMock).toHaveBeenCalledTimes(2);
+    expect(readFileSyncMock.mock.calls.at(-1)?.[0]).toBe('//package.json');
+  });
+
+  it('reads package.json as UTF-8, not as a Buffer', async () => {
+    // `readFileSync` without an encoding hands back a Buffer, and `JSON.parse`
+    // on one works by coercion -- so nothing downstream notices until a
+    // multi-byte character in the name comes back mangled.
+    const { readPackageInfo, readFileSyncMock } = await loadWithWalk('shallow');
+    readPackageInfo();
+
+    expect(readFileSyncMock).toHaveBeenCalledWith(expect.any(String), 'utf8');
   });
 });
