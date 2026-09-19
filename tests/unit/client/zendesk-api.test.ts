@@ -550,11 +550,9 @@ describe('auth header', () => {
   });
 });
 
-// `executeRequest` decides the method, the headers and whether a body is sent
-// for every verb in this module, and none of that is visible in a response
-// assertion: a mutant that empties the Content-Type block, or `helpCenterDelete`'s
-// `{ method: 'DELETE' }` (which silently falls back to the `'GET'` default), still
-// returns the same parsed payload. So the wire shape is pinned here.
+// `executeRequest` decides the method, the headers and the body for every verb
+// here, and a response assertion sees none of it: a `helpCenterDelete` downgraded
+// to GET returns the same parsed payload.
 describe('what each verb puts on the wire', () => {
   const HC = 'https://testsubdomain.zendesk.com/api/v2/help_center';
 
@@ -619,10 +617,9 @@ describe('what each verb puts on the wire', () => {
   it('keeps the body and the content type in step on a falsy body', async () => {
     const seen = captureAnyVerb(`${HC}/articles`);
 
-    // `body` is `unknown`, so a falsy one is a value a caller can pass, and the
-    // two `if (body)` guards have to answer it the same way: declaring JSON with
-    // nothing behind it, or sending a payload undeclared, are both malformed.
-    // Nothing else separates the second guard from a constant `true`.
+    // `body` is `unknown`, so a falsy one is a value a caller can pass, and the two
+    // `if (body)` guards must answer it alike: JSON declared with nothing behind it,
+    // or a payload sent undeclared, are both malformed.
     await helpCenterPost(SUB, TOKEN, '/articles', '');
 
     expect(seen[0]?.contentType).toBeNull();
@@ -675,11 +672,9 @@ describe('attachment downloads', () => {
 
     const { data } = await fetchZendeskBinary(SUB, TOKEN, FOREIGN);
 
-    // A `content_url` is whatever Zendesk's response said, so the host guard is
-    // what stops the tenant's OAuth token being handed to a third party. The
-    // same-host half is asserted above ("still carries the Bearer token on a
-    // tenant-host download"); without this one, forcing the guard open leaks the
-    // token and every test stays green.
+    // A `content_url` is whatever Zendesk's response said, so the host guard is what
+    // stops the tenant's OAuth token reaching a third party. The same-host half is
+    // asserted above.
     expect(data.toString()).toBe('none');
   });
 

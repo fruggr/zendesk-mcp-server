@@ -733,11 +733,35 @@ describe('what the flags resolve to when none is passed', () => {
   });
 
   it('flips each one, and only it, when the flag is passed', () => {
-    expect(loadConfig(['mycompany', '--read-only']).readOnly).toBe(true);
-    expect(loadConfig(['mycompany', '--dev']).dev).toBe(true);
-    expect(loadConfig(['mycompany', '--print-tools']).printTools).toBe(true);
-    expect(loadConfig(['mycompany', '--no-topology']).topology).toBe(false);
-    expect(loadConfig(['mycompany', '--no-promoted-articles']).promotedArticles).toBe(false);
+    // The whole state per invocation, not just the field under test: a flag that
+    // also set a second one -- `--dev` turning on `readOnly`, say -- would pass a
+    // single-field assertion, and "only it" is half of what this pins.
+    const standalone = (...argv: string[]) => {
+      const config = loadConfig(['mycompany', ...argv]);
+      return {
+        readOnly: config.readOnly,
+        dev: config.dev,
+        printTools: config.printTools,
+        topology: config.topology,
+        promotedArticles: config.promotedArticles,
+      };
+    };
+    const off = {
+      readOnly: false,
+      dev: false,
+      printTools: false,
+      topology: true,
+      promotedArticles: true,
+    };
+
+    expect(standalone('--read-only')).toStrictEqual({ ...off, readOnly: true });
+    expect(standalone('--dev')).toStrictEqual({ ...off, dev: true });
+    expect(standalone('--print-tools')).toStrictEqual({ ...off, printTools: true });
+    expect(standalone('--no-topology')).toStrictEqual({ ...off, topology: false });
+    expect(standalone('--no-promoted-articles')).toStrictEqual({
+      ...off,
+      promotedArticles: false,
+    });
   });
 
   it('reads the subdomain from argv when loadConfig is called with no arguments', () => {

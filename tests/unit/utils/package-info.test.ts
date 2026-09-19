@@ -38,13 +38,10 @@ const unmockModules = (): void => {
 };
 
 /**
- * Load a fresh `package-info` with both `node:fs` and `node:path` stubbed, so the
- * walk's own two terminators can be told apart. Every read throws, and `dirname`
- * behaves as `walk` dictates: `'endless'` never reaches a fixed point, leaving the
- * depth bound as the only way out; `'shallow'` reaches one after two steps, so the
- * root check is. With the real `dirname` neither is observable — the module's own
- * depth on disk decides which terminator fires first, which is why the call count
- * below is asserted against a stubbed walk rather than the repo's layout.
+ * Stub `node:fs` and `node:path` so the walk's two terminators can be told apart:
+ * `'endless'` never reaches a fixed point, leaving the depth bound as the only way
+ * out, `'shallow'` reaches one after two steps. With the real `dirname` the module's
+ * own depth on disk decides which fires first, so no call count would be stable.
  */
 const loadWithWalk = async (walk: 'endless' | 'shallow') => {
   vi.resetModules();

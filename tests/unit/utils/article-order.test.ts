@@ -254,10 +254,10 @@ describe('isPlacedAsRequested', () => {
   });
 });
 
-// Sections come back from Zendesk, and `noUncheckedIndexedAccess` is what makes
-// every element access in this file possibly-undefined. The guards that follow
-// from it are real code with a real contract -- a gap is skipped, not read --
-// and nothing asserted it, so forcing any of them open changed no output.
+// `noUncheckedIndexedAccess` makes every element access here possibly-undefined, and
+// the guards that follow have a contract nothing asserted: the cascade stops at a gap
+// rather than reading it. Not a claim that these functions tolerate a gap anywhere --
+// `findIndex` would still dereference one it has to walk past.
 describe('a section with a gap in it', () => {
   const withGap = [
     { id: 1, position: 0 },
