@@ -88,11 +88,11 @@ const keyDigest = (key: TokenKey): string =>
 export const resolveTokenPath = (key: TokenKey): string => {
   const override = process.env['ZENDESK_TOKEN_FILE'];
   if (override) return override;
-  const readable = [key.subdomain, key.oauthClientId, key.scope]
-    .map(safeName)
-    .join('--')
-    .slice(0, READABLE_BUDGET);
-  return join(configDir(), `${readable}--${keyDigest(key)}.json`);
+  // Sanitized one call at a time, not through `.map(safeName)`: the indirection
+  // hides the allowlist from CodeQL's path-injection tracking, which then reads
+  // three config values as reaching a path expression unfiltered.
+  const readable = `${safeName(key.subdomain)}--${safeName(key.oauthClientId)}--${safeName(key.scope)}`;
+  return join(configDir(), `${readable.slice(0, READABLE_BUDGET)}--${keyDigest(key)}.json`);
 };
 
 // Atomic write (tmp + rename) so a crash mid-write can't leave a truncated file,
