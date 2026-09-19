@@ -8,6 +8,7 @@ import {
 } from '../../../src/client/retry';
 import {
   fetchZendeskBinary,
+  helpCenterDelete,
   helpCenterGet,
   helpCenterPost,
   helpCenterPut,
@@ -546,5 +547,149 @@ describe('auth header', () => {
       '/users/me',
     );
     expect(result.user.auth_header).toBe('Bearer my-oauth-token');
+  });
+});
+
+// `executeRequest` decides the method, the headers and the body for every verb
+// here, and a response assertion sees none of it: a `helpCenterDelete` downgraded
+// to GET returns the same parsed payload.
+describe('what each verb puts on the wire', () => {
+  const HC = 'https://testsubdomain.zendesk.com/api/v2/help_center';
+
+  interface SentRequest {
+    method: string;
+    accept: string | null;
+    contentType: string | null;
+    body: string;
+  }
+
+  // Every verb, not just the expected one, so a wrong method is named by the assertion
+  // rather than escaping to the network as an unrelated error.
+  const captureAnyVerb = (url: string): SentRequest[] => {
+    const seen: SentRequest[] = [];
+    const record = async ({ request }: { request: Request }) => {
+      seen.push({
+        method: request.method,
+        accept: request.headers.get('Accept'),
+        contentType: request.headers.get('Content-Type'),
+        body: await request.text(),
+      });
+      return HttpResponse.json({ ok: true });
+    };
+    mswServer.use(
+      http.get(url, record),
+      http.post(url, record),
+      http.put(url, record),
+      http.delete(url, record),
+    );
+    return seen;
+  };
+
+  it('declares JSON on a write, and sends the serialised body', async () => {
+    const seen = captureAnyVerb(`${HC}/articles`);
+
+    await helpCenterPost(SUB, TOKEN, '/articles', { article: { title: 'T' } });
+
+    expect(seen[0]).toStrictEqual({
+      method: 'POST',
+      accept: 'application/json',
+      contentType: 'application/json',
+      body: '{"article":{"title":"T"}}',
+    });
+  });
+
+  it('declares no content type on a read, and sends no body', async () => {
+    const seen = captureAnyVerb(`${HC}/articles/5000`);
+
+    await helpCenterGet(SUB, TOKEN, '/articles/5000');
+
+    // The counterpart of the write case: the guard is conditional, so forcing it open
+    // has to be visible too.
+    expect(seen[0]).toStrictEqual({
+      method: 'GET',
+      accept: 'application/json',
+      contentType: null,
+      body: '',
+    });
+  });
+
+  it('keeps the body and the content type in step on a falsy body', async () => {
+    const seen = captureAnyVerb(`${HC}/articles`);
+
+    // `body` is `unknown`, so a falsy one is passable, and the two `if (body)` guards
+    // must answer it alike -- either mismatch is a malformed request.
+    await helpCenterPost(SUB, TOKEN, '/articles', '');
+
+    expect(seen[0]?.contentType).toBeNull();
+    expect(seen[0]?.body).toBe('');
+  });
+
+  it('sends a DELETE for helpCenterDelete, not the GET the default would give', async () => {
+    const seen = captureAnyVerb(`${HC}/articles/5000`);
+
+    await helpCenterDelete(SUB, TOKEN, '/articles/5000');
+
+    expect(seen[0]?.method).toBe('DELETE');
+  });
+});
+
+describe('error identity and per-status wording', () => {
+  it('names itself so a caller can branch on the class, not the message', async () => {
+    const error = await zendeskGet(SUB, TOKEN, '/tickets/404').catch((e: unknown) => e);
+    expect((error as Error).name).toBe('ZendeskApiError');
+  });
+
+  it('explains a 403 as a permission problem, not an expired token', async () => {
+    mswServer.use(
+      http.get('https://testsubdomain.zendesk.com/api/v2/restricted', () =>
+        HttpResponse.json({}, { status: 403 }),
+      ),
+    );
+
+    const error = await zendeskGet(SUB, TOKEN, '/restricted').catch((e: unknown) => e);
+
+    // 401 and 403 both mean "no", and a re-authenticate hint on a 403 sends the agent
+    // through a sign-in that cannot help.
+    expect((error as ZendeskApiError).message).toBe(
+      'Permission denied. Your Zendesk account does not have access to this resource.',
+    );
+  });
+});
+
+describe('attachment downloads', () => {
+  const FOREIGN = 'https://files.cdn.example.com/attachments/9.png';
+
+  it('withholds the Bearer token from a content_url on another host', async () => {
+    mswServer.use(
+      http.get(FOREIGN, ({ request }) =>
+        HttpResponse.text(request.headers.get('Authorization') ?? 'none', {
+          headers: { 'content-type': 'image/png' },
+        }),
+      ),
+    );
+
+    const { data } = await fetchZendeskBinary(SUB, TOKEN, FOREIGN);
+
+    // A `content_url` is whatever Zendesk's response said, so this guard is what stops
+    // the tenant's token reaching a third party. The same-host half is asserted above.
+    expect(data.toString()).toBe('none');
+  });
+
+  it('falls back to a generic media type when the response declares none', async () => {
+    mswServer.use(
+      // `HttpResponse.arrayBuffer` would label it itself and never reach the fallback.
+      http.get(
+        'https://testsubdomain.zendesk.com/attachments/3.bin',
+        () => new HttpResponse(new Uint8Array([1, 2, 3])),
+      ),
+    );
+
+    const { contentType } = await fetchZendeskBinary(
+      SUB,
+      TOKEN,
+      'https://testsubdomain.zendesk.com/attachments/3.bin',
+    );
+
+    expect(contentType).toBe('application/octet-stream');
   });
 });

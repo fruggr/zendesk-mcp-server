@@ -133,11 +133,14 @@ const keepAsHtml: Handle = (_state, node) => ({
   value: toHtml(node as Element),
 });
 
+// No `fences` option: `pre` is handled above, so rehype-remark emits no code node for
+// remark-stringify to format. Reinstate it if that handler ever goes -- the fallback
+// is the indented form, which is ambiguous inside a list.
 const htmlToMdProcessor = unified()
   .use(rehypeParse, { fragment: true })
   .use(rehypeRemark, { handlers: { table: keepAsHtml, pre: keepAsHtml } })
   .use(remarkGfm)
-  .use(remarkStringify, { bullet: '-', emphasis: '_', fences: true });
+  .use(remarkStringify, { bullet: '-', emphasis: '_' });
 
 const mdToHtmlProcessor = unified()
   .use(remarkParse)

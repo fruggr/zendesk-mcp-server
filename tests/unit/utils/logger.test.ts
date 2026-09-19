@@ -118,6 +118,43 @@ describe('createLogger', () => {
     );
   });
 
+  it('redacts every key in the deny list, not just the ones OAuth happens to use', () => {
+    // A security control: an emptied entry lets that field through to stderr and to every
+    // client subscribed to `notifications/message`. All ten on one line, so a key cannot
+    // be added without a case.
+    const log = createLogger('debug');
+    log.error('leak_check', {
+      token: 'a',
+      accessToken: 'b',
+      refreshToken: 'c',
+      code: 'd',
+      codeVerifier: 'e',
+      authorization: 'f',
+      password: 'g',
+      secret: 'h',
+      apiToken: 'i',
+      bearer: 'j',
+    });
+
+    expect(errSpy.mock.calls[0]?.[0]).toBe(
+      '[zendesk-mcp] [error] leak_check token=[REDACTED] accessToken=[REDACTED] ' +
+        'refreshToken=[REDACTED] code=[REDACTED] codeVerifier=[REDACTED] ' +
+        'authorization=[REDACTED] password=[REDACTED] secret=[REDACTED] ' +
+        'apiToken=[REDACTED] bearer=[REDACTED]',
+    );
+  });
+
+  it('renders a non-finite number as itself, not as the null JSON would give', () => {
+    // `String` and `JSON.stringify` agree on every finite number, so only NaN and the
+    // infinities separate the number arm from the JSON fallback below it.
+    const log = createLogger('debug');
+    log.warn('budget', { attempts: Number.NaN, deadline: Number.POSITIVE_INFINITY });
+
+    expect(errSpy.mock.calls[0]?.[0]).toBe(
+      '[zendesk-mcp] [warn] budget attempts=NaN deadline=Infinity',
+    );
+  });
+
   it('leaves a key that merely contains a sensitive word alone', () => {
     // The match is on the whole normalised key, not a substring: `tokenCount`
     // is a metric, not a credential.

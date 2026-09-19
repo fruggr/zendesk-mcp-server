@@ -1,17 +1,28 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ConfigSchema, DEFAULT_NAMESPACES, loadConfig, VALUE_FLAG_NAMES } from '../../src/config';
 
+// Cleared as one list: a suite that clears a subset only passes while the one before
+// it leaves the rest clean.
+const LOAD_CONFIG_ENV = [
+  'ZENDESK_SUBDOMAIN',
+  'ZENDESK_OAUTH_CLIENT_ID',
+  'LOG_LEVEL',
+  'TRANSPORT',
+  'HOST',
+  'PORT',
+  'PUBLIC_URL',
+  'CORS_ORIGIN',
+  'ZENDESK_OAUTH_CALLBACK_PORT',
+  'HC_RESOURCE_SCHEME',
+] as const;
+
+const clearLoadConfigEnv = (): void => {
+  for (const name of LOAD_CONFIG_ENV) delete process.env[name];
+};
+
 describe('loadConfig', () => {
-  beforeEach(() => {
-    delete process.env['ZENDESK_SUBDOMAIN'];
-    delete process.env['ZENDESK_OAUTH_CLIENT_ID'];
-    delete process.env['LOG_LEVEL'];
-    delete process.env['TRANSPORT'];
-    delete process.env['HOST'];
-    delete process.env['PORT'];
-    delete process.env['ZENDESK_OAUTH_CALLBACK_PORT'];
-    delete process.env['HC_RESOURCE_SCHEME'];
-  });
+  beforeEach(clearLoadConfigEnv);
+  afterEach(clearLoadConfigEnv);
 
   it('parses subdomain from CLI positional arg', () => {
     const config = loadConfig(['mycompany']);
@@ -256,10 +267,6 @@ describe('loadConfig', () => {
   });
 
   describe('corsOrigins', () => {
-    beforeEach(() => {
-      delete process.env['CORS_ORIGIN'];
-    });
-
     it('normalizes a trailing slash to the bare origin (browsers send no slash in Origin)', () => {
       const config = loadConfig(['mycompany', '--cors-origin', 'https://my-app.example.com/']);
       expect(config.corsOrigins).toEqual(['https://my-app.example.com']);
@@ -638,7 +645,7 @@ describe('loadConfig', () => {
 
 // The default lives in the schema rather than in loadConfig because the
 // integration harness parses a Config directly; these assertions pin that.
-describe('ConfigSchema namespaces', () => {
+describe('ConfigSchema defaults reached only by a direct parse', () => {
   const parse = (namespaces?: unknown) =>
     ConfigSchema.parse({
       subdomain: 'mycompany',
@@ -662,6 +669,18 @@ describe('ConfigSchema namespaces', () => {
     expect(parse().printTools).toBe(false);
   });
 
+  // `reload_tools` re-imports tool modules on a live session, so a default of true
+  // would expose it on every deployed server.
+  it('defaults dev to false when the field is absent', () => {
+    expect(parse().dev).toBe(false);
+  });
+
+  it('defaults corsOrigins to an empty list when the field is absent', () => {
+    // This field only adds to the transport's own allowlist, so a non-empty default
+    // would widen CORS for everyone.
+    expect(parse().corsOrigins).toEqual([]);
+  });
+
   it('rejects an empty array instead of treating it as "every namespace"', () => {
     // filterTools guards on `?.length`, so [] would mean "no filter" and would
     // quietly expose the opt-in requests surface. Refuse it at parse time.
@@ -680,5 +699,138 @@ describe('ConfigSchema namespaces', () => {
     const config = parse();
     config.namespaces.push('requests');
     expect([...DEFAULT_NAMESPACES]).toEqual(['tickets', 'help_center', 'users']);
+  });
+});
+
+// The flags an operator never passes: their whole contract is the value you get when
+// nothing is said, and every other test sets the flag it cares about.
+describe('what the flags resolve to when none is passed', () => {
+  beforeEach(clearLoadConfigEnv);
+  afterEach(clearLoadConfigEnv);
+
+  it('leaves every standalone flag at its off position', () => {
+    const config = loadConfig(['mycompany']);
+
+    // Asserted as one object so a default cannot be added without landing here.
+    expect({
+      readOnly: config.readOnly,
+      dev: config.dev,
+      printTools: config.printTools,
+      topology: config.topology,
+      promotedArticles: config.promotedArticles,
+    }).toStrictEqual({
+      readOnly: false,
+      dev: false,
+      printTools: false,
+      topology: true,
+      promotedArticles: true,
+    });
+  });
+
+  it('flips each one, and only it, when the flag is passed', () => {
+    // The whole state per invocation: a flag that also set a second one would pass a
+    // single-field assertion, and "only it" is half of what this pins.
+    const standalone = (...argv: string[]) => {
+      const config = loadConfig(['mycompany', ...argv]);
+      return {
+        readOnly: config.readOnly,
+        dev: config.dev,
+        printTools: config.printTools,
+        topology: config.topology,
+        promotedArticles: config.promotedArticles,
+      };
+    };
+    const off = {
+      readOnly: false,
+      dev: false,
+      printTools: false,
+      topology: true,
+      promotedArticles: true,
+    };
+
+    expect(standalone('--read-only')).toStrictEqual({ ...off, readOnly: true });
+    expect(standalone('--dev')).toStrictEqual({ ...off, dev: true });
+    expect(standalone('--print-tools')).toStrictEqual({ ...off, printTools: true });
+    expect(standalone('--no-topology')).toStrictEqual({ ...off, topology: false });
+    expect(standalone('--no-promoted-articles')).toStrictEqual({
+      ...off,
+      promotedArticles: false,
+    });
+  });
+
+  it('reads the subdomain from argv when loadConfig is called with no arguments', () => {
+    // Nothing else exercises the default parameter, and dropping the `.slice(2)` would
+    // feed it the node binary and the script path as two extra positionals.
+    const argv = process.argv;
+    try {
+      process.argv = [argv[0] as string, 'server.js', 'from-argv'];
+      expect(loadConfig().subdomain).toBe('from-argv');
+    } finally {
+      process.argv = argv;
+    }
+  });
+});
+
+describe('numeric and scheme validation, at the anchors', () => {
+  beforeEach(clearLoadConfigEnv);
+  afterEach(clearLoadConfigEnv);
+
+  // Without the `^`, `/\d+$/` matches the digits at the end of 'abc8080' and the
+  // failure becomes a ZodError naming neither the flag nor the range -- hence pinning
+  // the message rather than just "it throws".
+  it('rejects a port with leading garbage, with parsePort own message', () => {
+    expect(() => loadConfig(['mycompany', '--port', 'abc8080'])).toThrow(
+      'Invalid --port value. Expected an integer 0-65535.',
+    );
+  });
+
+  it('rejects a callback port with leading garbage the same way', () => {
+    expect(() => loadConfig(['mycompany', '--callback-port', 'abc51000'])).toThrow(
+      'Invalid --callback-port value. Expected an integer 0-65535.',
+    );
+  });
+
+  it('rejects PORT with leading garbage, naming the variable', () => {
+    process.env['PORT'] = 'abc8080';
+    expect(() => loadConfig(['mycompany'])).toThrow(
+      'Invalid PORT value. Expected an integer 0-65535.',
+    );
+  });
+
+  // Without the `$`, 'wiki' matches as a prefix and the value reaches the WHATWG
+  // refinement, which rejects it with the other message.
+  it('rejects a scheme with a trailing invalid character, on the format rule', () => {
+    expect(() => loadConfig(['mycompany', '--hc-resource-scheme', 'wiki!'])).toThrow(
+      /Expected a bare RFC 3986 scheme/,
+    );
+  });
+
+  it('accepts every LogLevel the enum declares, and refuses one it does not', () => {
+    // The level gates every stderr line, so an emptied enum member silently drops a
+    // whole severity.
+    for (const level of ['debug', 'info', 'warn', 'error'] as const) {
+      expect(loadConfig(['mycompany', '--log-level', level]).logLevel).toBe(level);
+    }
+    expect(() => loadConfig(['mycompany', '--log-level', 'trace'])).toThrow();
+  });
+});
+
+describe('CORS origin normalization', () => {
+  beforeEach(clearLoadConfigEnv);
+  afterEach(clearLoadConfigEnv);
+
+  it('rejects a URL whose origin is opaque, naming what it wanted instead', () => {
+    // `data:`, `file:` and `javascript:` all pass `.url()` and serialize to the literal
+    // origin "null", which the allowlist would then match against a browser's.
+    expect(() => loadConfig(['mycompany', '--cors-origin', 'data:text/plain,hi'])).toThrow(
+      'CORS origin must be an http(s) URL with a host',
+    );
+  });
+
+  it('drops a blank entry left by a trailing comma in CORS_ORIGIN', () => {
+    // `FOO=a, ` is what a hand-edited compose file produces; without the trim the blank
+    // fails URL validation and one stray comma stops the server booting.
+    process.env['CORS_ORIGIN'] = 'https://a.example.com, ';
+    expect(loadConfig(['mycompany']).corsOrigins).toEqual(['https://a.example.com']);
   });
 });

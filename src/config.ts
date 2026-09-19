@@ -92,12 +92,10 @@ export const ConfigSchema = z.object({
     // find it on read. Require the URI to round-trip.
     .refine(
       (scheme) => {
+        // No try/catch: `abort: true` above means only /^[a-z][a-z0-9+.-]*$/ gets
+        // here, which is WHATWG's own scheme grammar, so `new URL` always parses it.
         const uri = `${scheme}://topology`;
-        try {
-          return new URL(uri).toString() === uri;
-        } catch {
-          return false;
-        }
+        return new URL(uri).toString() === uri;
       },
       {
         message:

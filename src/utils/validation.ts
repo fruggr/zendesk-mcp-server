@@ -23,9 +23,9 @@ export const createStrictParamsParser = (
     const result = strict.safeParse(params);
     if (result.success) return result.data as Record<string, unknown>;
 
-    const unknownKeys = result.error.issues
-      .filter((issue) => issue.code === 'unrecognized_keys')
-      .flatMap((issue) => (issue as { keys?: string[] }).keys ?? []);
+    const unknownKeys = result.error.issues.flatMap((issue) =>
+      issue.code === 'unrecognized_keys' ? issue.keys : [],
+    );
 
     if (unknownKeys.length > 0) {
       throw new Error(

@@ -24,9 +24,11 @@ export interface ReorderWrite {
 // by date or alphabetically), so a write would be silently dropped. Ties are not
 // an inversion — they are the undefined-order bug this tool fixes.
 export const hasPositionInversion = (order: readonly OrderedArticle[]): boolean => {
-  for (let i = 0; i < order.length - 1; i += 1) {
-    const here = order[i];
-    const next = order[i + 1];
+  // Indexed from 1 so the bound is a plain `length`: the pair is (i - 1, i).
+  // Stryker disable next-line EqualityOperator: `<=` reads past the end, where next is undefined.
+  for (let i = 1; i < order.length; i += 1) {
+    const here = order[i - 1];
+    const next = order[i];
     if (here && next && here.position > next.position) return true;
   }
   return false;

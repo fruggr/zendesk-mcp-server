@@ -89,7 +89,9 @@ const sanitise = (fields?: Fields): Fields => {
 
 const renderValue = (value: unknown): string => {
   if (typeof value === 'string') return value;
-  if (typeof value === 'number' || typeof value === 'boolean' || value === null) {
+  // Only numbers need this: `JSON.stringify` below renders a boolean or `null`
+  // identically, and NaN and the infinities are the reason it cannot render these.
+  if (typeof value === 'number') {
     return String(value);
   }
   try {

@@ -289,3 +289,75 @@ describe('round-trip HTML ↔ Markdown', () => {
     );
   });
 });
+
+describe('parseSections, on the shapes a real article body takes', () => {
+  it('counts words from trimmed text, not from the padding around it', () => {
+    // Untrimmed, `split(/\s+/)` yields a leading and a trailing empty string, so the
+    // count comes out two too high on any indented body.
+    expect(parseSections('<p>  hello world  </p>')[0]?.wordCount).toBe(2);
+  });
+
+  it('trims the heading text, which Zendesk stores with the editor whitespace', () => {
+    expect(parseSections('<h2>  Getting started  </h2><p>body</p>')[0]?.heading).toBe(
+      'Getting started',
+    );
+  });
+
+  it('treats a bare text node at the root as intro content', () => {
+    // A bare text node has no `name`, so the tag test is all that stands between it and
+    // `undefined.toLowerCase()`.
+    const sections = parseSections('lead<h2>T</h2>body');
+    expect(sections.map((s) => [s.heading, s.html])).toEqual([
+      ['intro', 'lead'],
+      ['T', 'body'],
+    ]);
+  });
+
+  it('joins a multi-node intro and a multi-node section without a separator', () => {
+    // A single-node fixture cannot see a separator, and one would land inside the
+    // rendered article.
+    const sections = parseSections('<p>a</p><p>b</p><h2>T</h2><p>c</p><p>d</p>');
+    expect(sections.map((s) => s.html)).toEqual(['<p>a</p><p>b</p>', '<p>c</p><p>d</p>']);
+  });
+
+  it('returns nothing for a body Zendesk reported as absent', () => {
+    // `body` is typed `string` but arrives from the API, which is what the `?.` guards.
+    expect(parseSections(undefined as never)).toEqual([]);
+  });
+});
+
+describe('htmlToMarkdown, on the syntax choices the processor is configured for', () => {
+  it('writes list bullets as hyphens, not the default asterisk', () => {
+    expect(htmlToMarkdown('<ul><li>a</li><li>b</li></ul>')).toMatchInlineSnapshot(`
+      "- a
+      - b
+      "
+    `);
+  });
+
+  it('writes emphasis with underscores, not the default asterisk', () => {
+    // Asterisks collide with bold and with list bullets when the text is edited after.
+    expect(htmlToMarkdown('<p>x <em>y</em> z</p>')).toMatchInlineSnapshot(`
+      "x _y_ z
+      "
+    `);
+  });
+
+  it('leaves a <pre> as raw HTML rather than turning it into a code block', () => {
+    // `keepAsHtml` handles `pre`, because markdown would collapse an inline `<br>`
+    // inside it onto one line.
+    expect(htmlToMarkdown('<pre><code>x = 1</code></pre>')).toMatchInlineSnapshot(`
+      "<pre><code>x = 1</code></pre>
+      "
+    `);
+  });
+
+  it('parses the input as a fragment, so a stray table row keeps its cells', () => {
+    // Parsed as a document, the HTML parser drops a `<tr>` with no `<table>` around it
+    // and the cells collapse into loose text -- silent loss on a section cut mid-table.
+    expect(htmlToMarkdown('<tr><td>c</td></tr>')).toMatchInlineSnapshot(`
+      "| c |
+      "
+    `);
+  });
+});

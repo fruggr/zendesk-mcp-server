@@ -30,11 +30,40 @@ const loadWithReads = async (payloads: readonly (string | Error)[]) => {
 
 const pkgJson = (pkg: Record<string, string>): string => JSON.stringify(pkg);
 
-describe('readPackageInfo', () => {
-  afterEach(() => {
-    vi.doUnmock('node:fs');
-    vi.resetModules();
+// Both loaders mock modules and re-import, so both have to hand the registry back.
+const unmockModules = (): void => {
+  vi.doUnmock('node:fs');
+  vi.doUnmock('node:path');
+  vi.resetModules();
+};
+
+/**
+ * Load a fresh `package-info` over a made-up directory tree: every read fails, and
+ * `dirname` is whatever the caller says. The real one would make the count depend on how
+ * deep the module happens to sit, which differs inside Stryker's sandbox.
+ */
+const loadWithWalk = async (parentOf: (path: string) => string) => {
+  vi.resetModules();
+  const readFileSyncMock = vi.fn((): string => {
+    throw ENOENT;
   });
+  vi.doMock('node:fs', () => ({ readFileSync: readFileSyncMock }));
+  vi.doMock('node:path', () => ({
+    dirname: parentOf,
+    join: (...parts: string[]) => parts.join('/'),
+  }));
+  const { readPackageInfo } = await import('../../../src/utils/package-info');
+  return { readPackageInfo, readFileSyncMock };
+};
+
+/** Every directory has a parent, so the walk never reaches a root. */
+const NEVER_REACHES_ROOT = (dir: string) => `${dir}/up`;
+
+/** Every directory's parent is the root, so the walk gets there at once. */
+const ROOT_IS_THE_PARENT = () => '/';
+
+describe('readPackageInfo', () => {
+  afterEach(unmockModules);
 
   it('returns the name and version from the package own package.json', async () => {
     vi.resetModules();
@@ -97,5 +126,24 @@ describe('readPackageInfo', () => {
     ]);
 
     expect(readPackageInfo()).toEqual({ name: 'complete', version: '8.0.0' });
+  });
+});
+
+describe('the walk terminates, and on whichever limit comes first', () => {
+  afterEach(unmockModules);
+
+  it('gives up after eight levels rather than scanning the filesystem', async () => {
+    // A symlink or a container mount can make `dirname` climb forever.
+    const { readPackageInfo, readFileSyncMock } = await loadWithWalk(NEVER_REACHES_ROOT);
+
+    expect(readPackageInfo()).toEqual({ name: '@fruggr/zendesk-mcp-server', version: '0.0.0' });
+    expect(readFileSyncMock).toHaveBeenCalledTimes(8);
+  });
+
+  it('stops at the root instead of re-reading it to the depth bound', async () => {
+    const { readPackageInfo, readFileSyncMock } = await loadWithWalk(ROOT_IS_THE_PARENT);
+
+    expect(readPackageInfo()).toEqual({ name: '@fruggr/zendesk-mcp-server', version: '0.0.0' });
+    expect(readFileSyncMock.mock.calls).toEqual([['//package.json', 'utf8']]);
   });
 });

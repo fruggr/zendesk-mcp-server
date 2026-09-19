@@ -371,11 +371,47 @@ scope is a decision to do its assertion work *first*:
 Excluded from *mutation* only: it still runs under `pnpm test` and still counts
 towards the coverage thresholds.
 
-`src/utils/formatting.ts` was excluded here until #203, which brought it in at
-**zero escaped mutants**. That is the bar, and it is not a round-number
-aesthetic: re-arming the gate on a file with any residue leaves a mine on each
-line that carries one, which is the trap the exclusion existed to avoid. Getting
-there is also what corrected the reasoning below.
+`src/utils/formatting.ts` was excluded here until #203, which brought it in at zero
+escaped mutants. Getting there is what corrected the reasoning below.
+
+### The score is not a target
+
+**The gate on the changed lines is the contract. The global score is a thermometer.**
+`thresholds.break` stays `null` so a run can never fail a build on a percentage, and no
+area is expected to reach any particular number — 100 % least of all.
+
+That is not laxity, it is the position of everyone who has measured the alternative.
+Stryker's own defaults are `high: 80`, `low: 60`, `break: null`. Google, running mutation
+testing across more than 1 000 projects, reports that "achieving mutation adequacy is
+neither practical nor desirable" and deliberately does not use the mutation score as a
+metric: they mutate only changed code at review time, and let the developer dismiss a live
+mutant as irrelevant even when it is killable (*Practical Mutation Testing at Scale*, TSE
+2021). The parallel with coverage is theirs: some lines matter more than others, and 100 %
+is neither the norm nor desirable.
+
+What #250 measured, chasing zero on this repo: the last mutants in an area are equivalent
+ones, each needing a `// Stryker disable` whose justification ran two to five lines. Nine
+of those comments in `src/` bought no test and no behaviour — only a number.
+
+### Waive late, not early
+
+**An equivalent mutant stays escaped. The directive is written the day the gate actually
+trips on it, by whoever is touching that line.**
+
+An escaped mutant is not debt to clear in advance; it is a note to the next person who
+edits that line. They have the context to judge it, and they pay a small tax once instead
+of the file carrying speculative Stryker commentary for everyone, forever.
+
+Two consequences:
+
+- **A directive's reason is one sentence, two lines at most** — the ~50-word cap
+  `AGENTS.md` puts on any implementation comment, applied at the call site. A reason that
+  needs a paragraph earns a row in the table below instead; if nobody writes that row, the
+  mutant stays escaped.
+- **A file joins the `mutate` scope with no *escaped* mutant it has not looked at** — that
+  much of the old bar survives, because a file arriving with unreviewed debt mines the gate
+  on lines nobody has read. Reaching that by waiving is as valid as reaching it by killing.
+  What is gone is the expectation that an area already in scope be driven to zero.
 
 ### The `StringLiteral` question, decided on measurement
 
@@ -408,13 +444,13 @@ does**, and there are four roles:
 2. **Structural** — the `''` arm that suppresses an output line, and its
    non-string cousins (`filter(Boolean)`, list separators). **Assert**, with an
    input where the line *is* suppressed.
-3. **Output prose read by an agent or a user.** Also assert: an exact-output
-   assertion costs a `vitest -u` on a pre-filled `toMatchInlineSnapshot`, so the
-   maintenance argument for exempting cosmetic prose does not survive contact
-   with the tooling. Measured on one formatter — two snapshots took its region
-   from 6 killed / 15 escaped to 21 killed / 0 escaped, with no directive; the
-   block-scoped disable scored 36.36 % and left the seven logic mutants needing
-   *the same two inputs* anyway.
+3. **Output prose read by an agent or a user.** Assert when the string is a contract
+   something reads back — a formatter's output is; a stderr diagnostic is not. An
+   exact-output assertion is cheap where it applies: measured on one formatter, two
+   snapshots took its region from 6 killed / 15 escaped to 21 killed / 0 escaped, with no
+   directive, and the seven logic mutants needed *the same two inputs* anyway. Where the
+   string is only read by a human debugging, neither assert nor waive it — leave it
+   escaped.
 4. **Internal diagnostics** — log event names, debug payload keys. Disable with a
    reason, unless a test asserts the event name as an observability contract, in
    which case it is role 1.
@@ -433,6 +469,33 @@ along with its labels.
 Every disable names the role it claims, so a reviewer can challenge the
 classification; an unexplained disable is indistinguishable from hiding a gap.
 
+**A directive is only read as a leading comment of a node.** A `// Stryker restore` at the
+end of a block, or a `// Stryker disable next-line` between two `.use()` calls in a method
+chain, attaches to nothing and is dropped in silence. In #250 the first of those left a
+region open across the rest of `config.ts` and ignored 31 mutants instead of 5, while the
+report still read 100 %. Hence: after adding a directive, check the **Ignored count** in
+`reports/mutation/mutation.json`, not just the score.
+
+### Known equivalents, so nobody re-derives them
+
+Waiving late means the analysis has to outlive the moment it was done. These were checked
+in #250 and deliberately **left escaped**. If the gate trips on one of them, this is the
+finding — judge it against your change, then add the one-line directive.
+
+| Site | Mutator | Why no test can tell |
+| --- | --- | --- |
+| `config.ts` `parseCliArgs` field guard | ConditionalExpression | Only `--port` / `--callback-port` reach it with no field; the key they would write is read by nothing. |
+| `config.ts` `topology` / `promotedArticles` | LogicalOperator | `&&` and `??` agree for every value the CLI field holds — the schema's `.default(true)` resolves `undefined` to the same result. |
+| `article-order.ts` the cascade's loop bound | EqualityOperator | `<=` reads one step past the end, where the element is `undefined` and the break below leaves the loop. (Its sibling in `hasPositionInversion` is waived at the call site: #250 changed that line, so the gate asked.) |
+| `article-sections.ts` three `if (!x) return ''` | ConditionalExpression | `string` inputs, so they fire only on `''` — for which the pipeline also returns `''`. |
+| `article-sections.ts` `cheerio.load` fragment flag | BooleanLiteral | `textOf` only sees HTML `parseSections` re-serialised from its own fragment parse, so what a document parse would swallow (`<frameset>`) is already gone. |
+| `article-sections.ts` the `''` ternary arm | StringLiteral | It only feeds the heading lookup, which no marker string satisfies either. |
+| `logger.ts` `if (server)` | ConditionalExpression | With none attached the property read throws into the best-effort catch right below. |
+| `package-info.ts` the `raw && typeof raw === 'object'` guard | ConditionalExpression, LogicalOperator | The values it excludes carry no string `name`/`version`, so they fall through or throw into the catch that resumes the walk — what the closed guard does anyway. |
+
+A line-level directive cannot target one mutant among several of the same mutator, so each
+of these would also waive a killed sibling. One more reason to wait until the gate asks.
+
 **And it cannot target one mutant among several of the same mutator on a line.**
 The equivalent mutant is typically the whole-condition `ConditionalExpression`
 while its siblings on the same line are killed, so a line-level waiver takes them
@@ -450,7 +513,8 @@ audit name maps never carry key 0, the Zendesk API never sends an array with an
 own `minutes` property — while the guards live in a function whose signature
 promises neither. `AuditNames` is a plain `Map<number, string>`; `value` is
 `unknown`. Each mutant was killable by one test asserting the guard's own
-contract, and the file now needs **no directive at all**.
+contract. (That pass left the file with no directive at all; #295 has since added one
+back, for a type-narrowing half that cannot change output.)
 
 So: when a mutant looks equivalent, check whether the argument for that is a fact
 about the *type* or a fact about *today's caller*. If it is the caller, the
