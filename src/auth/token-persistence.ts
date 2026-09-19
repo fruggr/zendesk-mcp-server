@@ -70,12 +70,10 @@ const READABLE_BUDGET = 120;
 // actually keeps two keys off one file: `docs/decisions/token-file-keying.md`.
 // JSON, not a delimiter, because nothing bounds what a key part may contain;
 // hex, because a case-insensitive filesystem folds a base64url digest.
-// `js/insufficient-password-hash` reads `oauthClientId` as a password, because
-// the name carries "auth", and wants a slow KDF here. It is not one: an OAuth
-// client id is public by construction (it travels in the authorize URL),
-// nothing is ever verified against this digest, and the same id already sits in
-// clear in the filename this completes. Dismissed in code scanning as a false
-// positive; inline `codeql[...]` suppression is not honoured by default setup.
+// Not a password hash, whatever a scanner's name heuristic makes of
+// `oauthClientId`: the id is public by construction (it travels in the
+// authorize URL), nothing is verified against this digest, and the same id is
+// already in clear in the filename it completes. A slow KDF would buy nothing.
 const keyDigest = (key: TokenKey): string =>
   createHash('sha256')
     .update(JSON.stringify([key.subdomain, key.oauthClientId, key.scope]))

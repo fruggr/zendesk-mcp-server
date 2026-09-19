@@ -77,8 +77,8 @@ with [`--read-only`](configuration.md), which requests `read` alone.
 
 ## I am asked to sign in again after adding or dropping `--read-only`
 
-Expected, once per surface. Each token is stored against the scope it was
-granted for, so the read-only and read-write surfaces hold separate
+Expected, once per surface. Each token is stored against the scope *requested*
+for that surface, so the read-only and read-write surfaces hold separate
 credentials — toggling the flag reaches for the other one, which does not exist
 yet.
 
