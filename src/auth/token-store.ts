@@ -57,9 +57,13 @@ export const createTokenStore = (
   },
   logger: Logger = silentLogger,
 ) => {
-  const tokenPath = resolveTokenPath(config.subdomain);
   // Fixed for the life of the process: the tool surface cannot change under us.
   const requested = requestedScope(config.readOnly);
+  const tokenPath = resolveTokenPath({
+    subdomain: config.subdomain,
+    oauthClientId: config.oauthClientId,
+    scope: requested,
+  });
   // Seed the in-memory cache from disk so a restart (notably the Cowork-on-Windows
   // process churn) reuses the existing token instead of re-prompting.
   let token: StoredToken | undefined = loadToken(tokenPath);
@@ -67,10 +71,10 @@ export const createTokenStore = (
     if (grantCovers(token.scope, requested)) {
       logger.debug('oauth_token_loaded_from_disk');
     } else {
-      // Minted for a narrower surface (this server dropped `--read-only`
-      // since), and a refresh cannot widen a grant, so the empty cache sends
-      // the first call through a sign-in. Checked here only: a minted token is
-      // the best we can get. Memory-only -- a sibling may still need the record.
+      // The file is keyed by requested scope, so this is not a `--read-only`
+      // flip: Zendesk granted less than was asked, or the record was hand-
+      // edited. A refresh cannot widen a grant, so the first call signs in
+      // again -- and keeps doing so each start while the grant stays narrow.
       logger.warn('oauth_token_scope_insufficient', { requested, granted: token.scope });
       token = undefined;
     }

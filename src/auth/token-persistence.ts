@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { chmodSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -35,7 +36,7 @@ const appDirSegments = (): string[] => {
   return scoped?.[1] && scoped[2] ? [scoped[1], scoped[2]] : [name];
 };
 
-// OS config dir holding the per-subdomain token files: `%APPDATA%` on Windows,
+// OS config dir holding the token files, one per key: `%APPDATA%` on Windows,
 // `$XDG_CONFIG_HOME` (falling back to `~/.config`) elsewhere.
 const configDir = (): string => {
   const segments = appDirSegments();
@@ -47,21 +48,51 @@ const configDir = (): string => {
   return join(base, ...segments);
 };
 
-// Zendesk subdomains are [a-z0-9-]; sanitize defensively so a crafted value
-// can neither escape the config dir nor smuggle a path separator.
-const safeName = (subdomain: string): string => subdomain.replace(/[^a-z0-9-]/gi, '_');
+/**
+ * What makes one persisted credential distinct from another: two servers
+ * differing on any of these hold tokens that cannot substitute for each other.
+ */
+export interface TokenKey {
+  readonly subdomain: string;
+  readonly oauthClientId: string;
+  readonly scope: string;
+}
+
+// Key parts are attacker-shaped at worst (a crafted subdomain); sanitize so
+// none can escape the config dir or smuggle a path separator.
+const safeName = (part: string): string => part.replace(/[^a-z0-9-]/gi, '_');
+
+// Leaves the digest, its separator and `.json` well inside the 255-byte limit
+// every mainstream filesystem puts on one path component.
+const READABLE_BUDGET = 120;
+
+// The readable name above is lossy three ways over, so this digest is what
+// actually keeps two keys off one file. Why JSON rather than a delimiter, why
+// hex, and why this is no password hash despite what the name suggests:
+// `docs/decisions/token-file-keying.md`.
+const keyDigest = (key: TokenKey): string =>
+  createHash('sha256')
+    .update(JSON.stringify([key.subdomain, key.oauthClientId, key.scope]))
+    .digest('hex')
+    .slice(0, 8);
 
 /**
- * Path to the token file for a subdomain. Each subdomain gets its **own** file
- * (`<subdomain>.json`, a single record) so concurrent processes for different
- * subdomains never read-modify-write a shared file — no merge, no clobber.
- * `ZENDESK_TOKEN_FILE` overrides with an explicit path (a single file; use the
- * default layout for multi-subdomain installs).
+ * Path to the token file for one credential. Keyed on the whole `TokenKey`, so
+ * a read-only server, a read-write one and one on another OAuth client each get
+ * their own record instead of clobbering a shared file. Why that triple, and
+ * why no migration from the old subdomain-only layout:
+ * `docs/decisions/token-file-keying.md`.
+ * `ZENDESK_TOKEN_FILE` overrides with an explicit path — the way to separate
+ * two Zendesk accounts that share a subdomain, client and scope.
  */
-export const resolveTokenPath = (subdomain: string): string => {
+export const resolveTokenPath = (key: TokenKey): string => {
   const override = process.env['ZENDESK_TOKEN_FILE'];
   if (override) return override;
-  return join(configDir(), `${safeName(subdomain)}.json`);
+  const readable = [key.subdomain, key.oauthClientId, key.scope]
+    .map(safeName)
+    .join('--')
+    .slice(0, READABLE_BUDGET);
+  return join(configDir(), `${readable}--${keyDigest(key)}.json`);
 };
 
 // Atomic write (tmp + rename) so a crash mid-write can't leave a truncated file,

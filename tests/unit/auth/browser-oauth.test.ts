@@ -414,9 +414,14 @@ describe('startBrowserAuth', () => {
       ).catch((e) => e as Error);
 
       // The raw EADDRINUSE is rewrapped into guidance both the user and the LLM
-      // can act on: which port, which env var, and the Zendesk redirect URL.
+      // can act on: which port, what to do first (the port is the mutex between
+      // instances, so retrying after the other sign-in ends is the fix), then
+      // the env var and the Zendesk redirect URL for a port held by something
+      // else entirely.
       expect(err.message).toMatch(/EADDRINUSE/);
       expect(err.message).toContain(String(port));
+      expect(err.message).toContain('Another instance of this server');
+      expect(err.message).toContain('then retry');
       expect(err.message).toContain('ZENDESK_OAUTH_CALLBACK_PORT');
       expect(err.message).toContain('/callback');
       expect(logger.error).toHaveBeenCalledWith(
