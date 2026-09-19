@@ -404,9 +404,10 @@ of the file carrying speculative Stryker commentary for everyone, forever.
 
 Two consequences:
 
-- **A directive's reason fits on one line.** If it needs a paragraph, it earns a row in
-  the table below; if nobody writes that row, the mutant stays escaped. Same ~50-word cap
-  `AGENTS.md` puts on any implementation comment.
+- **A directive's reason is one sentence, two lines at most** — the ~50-word cap
+  `AGENTS.md` puts on any implementation comment, applied at the call site. A reason that
+  needs a paragraph earns a row in the table below instead; if nobody writes that row, the
+  mutant stays escaped.
 - **A file joins the `mutate` scope with no *escaped* mutant it has not looked at** — that
   much of the old bar survives, because a file arriving with unreviewed debt mines the gate
   on lines nobody has read. Reaching that by waiving is as valid as reaching it by killing.

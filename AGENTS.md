@@ -123,9 +123,9 @@ quality bar still hold — the freedom is from Zendesk's shape, not from craft.)
   you changed means an assertion is missing or too loose — tighten it, never weaken one to
   go green. Everywhere else, leave a survivor alone: **waive late, not early**, so an
   equivalent mutant stays escaped until the gate actually trips on it and the person
-  touching the line writes the one-line
-  `// Stryker disable next-line <mutator>: <reason>`. A reason that needs a paragraph goes
-  in the ADR's waiver table instead. Rationale, scope and costs:
+  touching the line writes a
+  `// Stryker disable next-line <mutator>: <reason>` whose reason is one sentence, two
+  lines at most. A reason that needs a paragraph goes in the ADR's waiver table instead. Rationale, scope and costs:
   `docs/decisions/mutation-testing.md`.
 
 ## Planning

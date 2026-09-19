@@ -25,8 +25,7 @@ export interface ReorderWrite {
 // an inversion — they are the undefined-order bug this tool fixes.
 export const hasPositionInversion = (order: readonly OrderedArticle[]): boolean => {
   // Indexed from 1 so the bound is a plain `length`: the pair is (i - 1, i).
-  // Stryker disable next-line EqualityOperator: `<=` reads one past the end, where the
-  // guard below skips the `undefined`.
+  // Stryker disable next-line EqualityOperator: `<=` reads past the end, where next is undefined.
   for (let i = 1; i < order.length; i += 1) {
     const here = order[i - 1];
     const next = order[i];
