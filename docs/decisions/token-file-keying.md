@@ -109,12 +109,19 @@ That is the right trade: whoever set that variable chose where the file lives,
 and `docs/troubleshooting.md` tells them what to do with the old one.
 
 One more case is accepted rather than solved: a server still on a pre-#301
-version, running beside an upgraded one on the same subdomain. The sweep deletes
-the file the older process is using. It costs at most one sign-in, and only in a
-narrow window — the old process keeps its token in memory and rewrites the file
-on its next refresh, so it is disturbed only if it restarts before then.
-Avoiding even that would mean not sweeping while any other version might be
-running, which is not knowable from inside one process.
+version, running beside an upgraded one on the same subdomain, with no override
+on either. The sweep deletes the file that older process persists to — and it
+can do so repeatedly. The old process rewrites the file on its next refresh, the
+next start of the upgraded server sweeps it again, and every restart of the old
+process that lands while the file is gone costs another sign-in. Where an MCP
+client respawns stdio servers per session, that is once a session, not once.
+
+Avoiding it would mean knowing, from inside one process, whether another version
+is running elsewhere. Nothing in the process does, and every approximation — an
+mtime threshold, a lock, a marker file — is permanent machinery bought for a
+transient case, in code that exists to be deleted. The exposure ends when every
+instance on the machine is upgraded, which is also when the sweep stops having
+anything to find.
 
 This is the one thing that keeps the old layout alive in the code, so it is
 migration-only and tracked for removal (#305) rather than left to become

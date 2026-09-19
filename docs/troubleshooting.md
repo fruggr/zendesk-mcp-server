@@ -113,6 +113,13 @@ If you still re-authenticate every time, check that the file is writable
 ([`ZENDESK_TOKEN_FILE`](configuration.md#zendesk_token_file) to relocate it) and
 look for `token_persist_failed` in the logs.
 
+One more cause, while you are part-way through an upgrade: an instance still on
+a version older than the one that renamed these files, running beside an
+upgraded one on the same subdomain. The upgraded server clears the old file at
+startup (below), and the older instance re-creates it, so each keeps undoing the
+other. Upgrade both, or give the older one its own
+[`ZENDESK_TOKEN_FILE`](configuration.md#zendesk_token_file) until you do.
+
 ## I signed in again after upgrading
 
 Expected, once. Token files used to be named after the subdomain alone, which is
