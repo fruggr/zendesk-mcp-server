@@ -1,6 +1,6 @@
 # The token file is keyed by subdomain, OAuth client and scope
 
-**Status**: accepted (issue #300)
+**Status**: accepted (issue #300, PR #301)
 
 ## Context
 

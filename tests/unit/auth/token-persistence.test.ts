@@ -141,6 +141,21 @@ describe('token-persistence', () => {
     );
   });
 
+  it('separates keys whose parts concatenate to the same string', async () => {
+    setPlatform('linux');
+    process.env['XDG_CONFIG_HOME'] = '/home/u/.config';
+    const { resolveTokenPath } = await importFresh();
+
+    // Both keys are `x…xabread` once the parts run together, and both readable
+    // names truncate to the same 120 `x`s — so only a delimiter *inside* the
+    // digested key tells them apart. Without one, a client id could be made to
+    // impersonate the tail of a subdomain and land on its file.
+    const stem = 'x'.repeat(130);
+    expect(resolveTokenPath({ subdomain: `${stem}a`, oauthClientId: 'b', scope: 'read' })).not.toBe(
+      resolveTokenPath({ subdomain: stem, oauthClientId: 'ab', scope: 'read' }),
+    );
+  });
+
   it('separates keys that differ only in case, which Windows would fold', async () => {
     setPlatform('win32');
     process.env['APPDATA'] = 'C:\\Users\\u\\AppData\\Roaming';
