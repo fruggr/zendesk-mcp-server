@@ -298,7 +298,10 @@ describe('computePositionWrites, at the boundaries', () => {
   it('returns nothing at all when the moved article is not in the desired order', () => {
     // Callers derive `desired` from the same list, so this is the contract of the
     // guard rather than a path the handler takes: without it the next line reads
-    // `position` off undefined.
+    // `position` off undefined. The empty section is the case that actually
+    // reaches that read: `findIndex` gives -1, which on an empty list is also
+    // `length - 1`, so the bottom branch is entered and dereferences the miss.
+    expect(computePositionWrites([], 99, false)).toEqual([]);
     const desired = ord([
       [1, 0],
       [2, 1],
