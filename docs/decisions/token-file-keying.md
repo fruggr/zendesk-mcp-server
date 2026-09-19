@@ -89,10 +89,20 @@ on the strength of a troubleshooting entry they have no reason to open, is not
 good enough for a credential — so the server deletes it on startup
 (`removeLegacyToken`), under two guards:
 
-- **never the active path.** A `ZENDESK_TOKEN_FILE` aimed at the old name makes
-  it the live record; deleting it would cost a sign-in on every start.
+- **never when `ZENDESK_TOKEN_FILE` is set.** An override may name the legacy
+  file, which makes it the *live* record — deleting it would cost a sign-in on
+  every start. Comparing it against the active path was tried first and is not
+  enough: the same file can be named relatively, through `..`, through a
+  symlink, or in another case on a case-insensitive filesystem, and no string
+  match catches all of those. Skipping the sweep entirely whenever an override
+  is in play has no such gap, and costs nothing — without an override the active
+  name always ends in `--<digest>.json`, so it can never *be* the legacy name.
 - **never a file we cannot read as ours.** The record has to parse as a
   `PersistedToken`, so a same-named file written by something else survives.
+
+The price is that an install pinned to a `ZENDESK_TOKEN_FILE` keeps its orphan.
+That is the right trade: whoever set that variable chose where the file lives,
+and `docs/troubleshooting.md` tells them what to do with the old one.
 
 This is the one thing that keeps the old layout alive in the code, so it is
 migration-only and tracked for removal (#305) rather than left to become

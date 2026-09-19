@@ -232,7 +232,7 @@ describe('token-persistence', () => {
       const active = resolveTokenPath(KEY);
       files.set(active, JSON.stringify({ accessToken: 'current' }));
 
-      removeLegacyToken('acme', active);
+      removeLegacyToken('acme');
 
       expect(files.has(LEGACY)).toBe(false);
       // Only the legacy name goes; the record this process actually uses stays.
@@ -250,18 +250,32 @@ describe('token-persistence', () => {
         attachServer: vi.fn(),
       };
 
-      removeLegacyToken('acme', '/elsewhere/token.json', logger);
+      removeLegacyToken('acme', logger);
 
       expect(logger.info).toHaveBeenCalledWith('oauth_legacy_token_removed');
     });
 
-    it('keeps the file when ZENDESK_TOKEN_FILE points at that very path', async () => {
+    it('does not sweep at all once ZENDESK_TOKEN_FILE is set', async () => {
+      process.env['ZENDESK_TOKEN_FILE'] = LEGACY;
       const { removeLegacyToken } = await linuxConfig();
       files.set(LEGACY, JSON.stringify({ accessToken: 'current' }));
 
-      // The override makes the old name the *live* record. Deleting it here
-      // would wipe a working token on every start.
-      removeLegacyToken('acme', LEGACY);
+      // The override makes the old name the *live* record; deleting it would
+      // wipe a working token on every start.
+      removeLegacyToken('acme');
+
+      expect(files.get(LEGACY)).toContain('current');
+    });
+
+    it('does not sweep when the override merely aliases the legacy path', async () => {
+      // The reason the guard is "any override" and not a path comparison: these
+      // spellings all name the same file, and no string match catches them all.
+      process.env['ZENDESK_TOKEN_FILE'] =
+        '/home/u/.config/fruggr/zendesk-mcp-server/../zendesk-mcp-server/acme.json';
+      const { removeLegacyToken } = await linuxConfig();
+      files.set(LEGACY, JSON.stringify({ accessToken: 'current' }));
+
+      removeLegacyToken('acme');
 
       expect(files.get(LEGACY)).toContain('current');
     });
@@ -270,7 +284,7 @@ describe('token-persistence', () => {
       const { removeLegacyToken } = await linuxConfig();
       files.set(LEGACY, '{"something":"else"}');
 
-      removeLegacyToken('acme', '/elsewhere/token.json');
+      removeLegacyToken('acme');
 
       expect(files.has(LEGACY)).toBe(true);
     });
@@ -285,7 +299,7 @@ describe('token-persistence', () => {
         attachServer: vi.fn(),
       };
 
-      removeLegacyToken('acme', '/elsewhere/token.json', logger);
+      removeLegacyToken('acme', logger);
 
       expect(files.size).toBe(0);
       expect(logger.info).not.toHaveBeenCalled();
@@ -297,7 +311,7 @@ describe('token-persistence', () => {
       files.set(LEGACY, JSON.stringify({ accessToken: 'a' }));
       files.set(other, JSON.stringify({ accessToken: 'b' }));
 
-      removeLegacyToken('acme', '/elsewhere/token.json');
+      removeLegacyToken('acme');
 
       expect(files.has(LEGACY)).toBe(false);
       expect(files.has(other)).toBe(true);

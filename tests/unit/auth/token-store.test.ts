@@ -96,14 +96,10 @@ describe('createTokenStore', () => {
     removeLegacyTokenMock.mockReset();
   });
 
-  it('sweeps the pre-#300 record away, guarding the path it is about to use', async () => {
+  it('sweeps the pre-#300 record away once per store, for its own subdomain', async () => {
     createTokenStore(CONFIG);
 
-    // The active path is passed so the sweep cannot delete a live record a
-    // ZENDESK_TOKEN_FILE happens to have aimed at the old name.
-    expect(removeLegacyTokenMock.mock.calls).toEqual([
-      ['testsubdomain', '/tmp/testsubdomain--test_client--read_write.json', expect.anything()],
-    ]);
+    expect(removeLegacyTokenMock.mock.calls).toEqual([['testsubdomain', expect.anything()]]);
   });
 
   it('returns a token set via setToken without triggering the browser flow', async () => {

@@ -121,11 +121,12 @@ client and scope too, so no existing file matches and everyone signs in once
 more.
 
 You do not need to clean up the old `<subdomain>.json`: the server deletes it
-the next time it starts, and logs `oauth_legacy_token_removed` when it does. It
-is left alone in the two cases where deleting it would be wrong — when
-[`ZENDESK_TOKEN_FILE`](configuration.md#zendesk_token_file) points at that very
-name, which makes it your live record, and when its contents are not a token
-record this server wrote.
+the next time it starts, and logs `oauth_legacy_token_removed` when it does. Two
+exceptions, both cases where deleting it could be wrong. It skips the cleanup
+entirely when [`ZENDESK_TOKEN_FILE`](configuration.md#zendesk_token_file) is set
+— that variable can name the old file, making it your live record — so delete
+the old file yourself if you use it. And it never touches a file whose contents
+are not a token record this server wrote.
 
 Deleting a refresh token is not revoking it, though: the grant stands until
 Zendesk expires it. On a shared machine, revoke it as well (Admin Center → Apps
