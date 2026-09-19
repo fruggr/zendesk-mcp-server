@@ -89,13 +89,9 @@ const sanitise = (fields?: Fields): Fields => {
 
 const renderValue = (value: unknown): string => {
   if (typeof value === 'string') return value;
-  // Stryker disable next-line ConditionalExpression,StringLiteral: `String(x)` and
-  // `JSON.stringify(x)` produce the same text for every boolean and for `null`, so
-  // dropping either of those two clauses routes the value to the fallback below and
-  // renders it identically. The `number` clause is the one that does differ -- on
-  // NaN and the infinities -- and it stays killed, by the non-finite-number case in
-  // tests/unit/utils/logger.test.ts, which this line-level waiver also covers.
-  if (typeof value === 'number' || typeof value === 'boolean' || value === null) {
+  // Only numbers need this: `JSON.stringify` below renders a boolean or `null`
+  // identically, and NaN and the infinities are the reason it cannot render these.
+  if (typeof value === 'number') {
     return String(value);
   }
   try {
@@ -135,13 +131,9 @@ export const createLogger = (level: LogLevel): Logger => {
       // Best-effort sink: a dead stderr must not break the caller.
     }
 
-    // Stryker disable next-line ConditionalExpression: forcing this true is not
-    // observable. With no server attached, reading `.sendLoggingMessage` off
-    // `undefined` throws inside the `try` right below, whose catch is there to make
-    // forwarding best-effort and swallows it -- same stderr line, same absence of a
-    // notification, no way for a test to tell. The waiver also takes the `false`
-    // sibling, which IS killed (nothing would ever be forwarded) by the
-    // attached-server cases; those assertions stay.
+    // Stryker disable next-line ConditionalExpression: with no server attached, the
+    // property read below throws and the best-effort catch swallows it, so forcing
+    // this true is unobservable. Takes the killed `false` sibling too (PR #304).
     if (server) {
       try {
         void server

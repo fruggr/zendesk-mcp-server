@@ -92,26 +92,11 @@ export const ConfigSchema = z.object({
     // find it on read. Require the URI to round-trip.
     .refine(
       (scheme) => {
+        // No try/catch: `abort: true` above means only /^[a-z][a-z0-9+.-]*$/ gets
+        // here, which is WHATWG's own scheme grammar, so `new URL` always parses it.
         const uri = `${scheme}://topology`;
-        // Stryker disable BlockStatement,BooleanLiteral: the catch is unreachable,
-        // so no test can tell it from its mutants. `abort: true` on the regex above
-        // means this refinement only ever sees a value matching
-        // /^[a-z][a-z0-9+.-]*$/, which is WHATWG's own scheme grammar, so `new URL`
-        // parses every one of them -- and the `catch` clause's line is the only
-        // place a directive for it can sit, which is why this is a region and not
-        // two `next-line`s. It therefore also covers the `try` block's own
-        // BlockStatement mutant, which IS killed, by the scheme tests in
-        // tests/unit/config.test.ts; only the gate accounting is waived here.
-        try {
-          return new URL(uri).toString() === uri;
-        } catch {
-          return false;
-        }
+        return new URL(uri).toString() === uri;
       },
-      // Stryker restore BlockStatement,BooleanLiteral -- a `restore` is only read
-      // as a leading comment of a following node, so it sits here rather than at
-      // the end of the block above, where it would be dropped and leave the rest
-      // of this file silently unmutated.
       {
         message:
           'Invalid HC_RESOURCE_SCHEME / --hc-resource-scheme value. WHATWG-special schemes (http, https, ws, wss, ftp, file) do not survive URL normalization and would make the resource unreadable; pick a custom scheme such as "wiki".',
@@ -320,6 +305,10 @@ const parseCliArgs = (args: string[]): CliResult => {
     }
 
     const field = FIELD_BY_FLAG.get(flag);
+    // Stryker disable next-line ConditionalExpression: only `--port` and
+    // `--callback-port` reach here with no field, and forcing the guard open writes
+    // them to the key `"undefined"`, which nothing in `loadConfig` reads. Closing it
+    // instead IS killed, by the value-flag cases (PR #304).
     if (field) Object.assign(result, { [field]: value });
   }
 
@@ -396,12 +385,9 @@ export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
     readOnly: cli.readOnly ?? false,
     namespaces,
     tools: cli.tools,
-    // Stryker disable next-line LogicalOperator: `&&` is indistinguishable from
-    // `??` here for all three values these can hold. `--no-topology` /
-    // `--no-promoted-articles` are the only writers, so the CLI value is
-    // `undefined` or `false`; `false` passes through either operator unchanged,
-    // and `undefined && true` is `undefined`, which the schema's own
-    // `.default(true)` then resolves to the same `true` the `??` produces.
+    // Stryker disable next-line LogicalOperator: `&&` is indistinguishable from `??`
+    // for every value this can hold -- `false` passes either unchanged, and
+    // `undefined && true` is `undefined`, which the schema default resolves to `true`.
     topology: cli.topology ?? true,
     // Stryker disable next-line LogicalOperator: as for `topology` above.
     promotedArticles: cli.promotedArticles ?? true,

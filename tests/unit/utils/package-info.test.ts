@@ -30,6 +30,13 @@ const loadWithReads = async (payloads: readonly (string | Error)[]) => {
 
 const pkgJson = (pkg: Record<string, string>): string => JSON.stringify(pkg);
 
+// Both loaders mock modules and re-import, so both have to hand the registry back.
+const unmockModules = (): void => {
+  vi.doUnmock('node:fs');
+  vi.doUnmock('node:path');
+  vi.resetModules();
+};
+
 /**
  * Load a fresh `package-info` with both `node:fs` and `node:path` stubbed, so the
  * walk's own two terminators can be told apart. Every read throws, and `dirname`
@@ -60,11 +67,7 @@ const loadWithWalk = async (walk: 'endless' | 'shallow') => {
 };
 
 describe('readPackageInfo', () => {
-  afterEach(() => {
-    vi.doUnmock('node:fs');
-    vi.doUnmock('node:path');
-    vi.resetModules();
-  });
+  afterEach(unmockModules);
 
   it('returns the name and version from the package own package.json', async () => {
     vi.resetModules();
@@ -131,11 +134,7 @@ describe('readPackageInfo', () => {
 });
 
 describe('the walk terminates, and on whichever limit comes first', () => {
-  afterEach(() => {
-    vi.doUnmock('node:fs');
-    vi.doUnmock('node:path');
-    vi.resetModules();
-  });
+  afterEach(unmockModules);
 
   it('gives up after eight levels when the walk never reaches a root', async () => {
     // A bundled install can sit arbitrarily deep, and a symlink or a container

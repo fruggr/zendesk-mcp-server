@@ -33,16 +33,12 @@ const countWords = (text: string): number => {
 
 const textOf = (html: string): string => {
   // Stryker disable next-line ConditionalExpression: `html` is a `string`, so this
-  // only fires on `''` -- and loading `<div></div>` yields `''` too. A shortcut, not
-  // a behaviour, and no input separates the two. The waiver also takes the inverse
-  // mutant, which IS killed (always returning `''` zeroes every word count); that
-  // assertion stays.
+  // fires only on `''`, and loading `<div></div>` yields `''` too. Takes the killed
+  // inverse with it (PR #304).
   if (!html) return '';
-  // Stryker disable next-line BooleanLiteral: document mode changes nothing
-  // observable here. The content is already wrapped in a `<div>` whose text is all
-  // that is read back, so the html/head/body scaffolding a document parse adds is
-  // never visited -- checked against tables, stray cells, <title>, <script>,
-  // <style>, comments and bare text.
+  // Stryker disable next-line BooleanLiteral: unreachable, not untested. `textOf`
+  // only ever sees HTML `parseSections` re-serialised from its own fragment parse, so
+  // what a document parse would swallow (`<frameset>`) is already gone (PR #304).
   const $ = cheerio.load(`<div>${html}</div>`, null, false);
   return $('div').first().text();
 };
@@ -63,11 +59,9 @@ export const parseSections = (html: string): Section[] => {
   let current: (typeof sections)[number] | null = null;
 
   for (const node of children) {
-    // Stryker disable next-line StringLiteral: the `''` arm only feeds the
-    // HEADING_LEVELS lookup below, which no marker string can satisfy either, and a
-    // non-tag node never reaches the branch that stores `tagName` as `headingTag`.
-    // The waiver also takes `'tag'`, which IS killed, by the bare-text-node case in
-    // tests/unit/utils/article-sections.test.ts -- that assertion stays.
+    // Stryker disable next-line StringLiteral: the `''` arm only feeds the lookup
+    // below, which no marker satisfies either, and a non-tag node never reaches the
+    // branch that stores `tagName`. Takes the killed `'tag'` with it (PR #304).
     const tagName = node.type === 'tag' ? node.name.toLowerCase() : '';
 
     if (HEADING_LEVELS.has(tagName)) {
@@ -148,19 +142,14 @@ const keepAsHtml: Handle = (_state, node) => ({
   value: toHtml(node as Element),
 });
 
-// Stryker disable BooleanLiteral: `fences` has no reachable input -- `pre` is handed
-// to `keepAsHtml` below, so a `<pre><code>` stays raw HTML and no markdown code block
-// is ever produced for the option to format. A region over the whole chain, because a
-// directive between two `.use()` calls is not a leading comment of any node and is
-// silently dropped; it therefore also covers `fragment: true`, which IS killed, by the
-// stray-table-row case in tests/unit/utils/article-sections.test.ts. That assertion
-// stays; only the gate accounting is waived.
+// No `fences` option: `pre` is handled above, so rehype-remark emits no code node for
+// remark-stringify to format. Reinstate it if that handler ever goes -- the fallback
+// is the indented form, which is ambiguous inside a list.
 const htmlToMdProcessor = unified()
   .use(rehypeParse, { fragment: true })
   .use(rehypeRemark, { handlers: { table: keepAsHtml, pre: keepAsHtml } })
   .use(remarkGfm)
-  .use(remarkStringify, { bullet: '-', emphasis: '_', fences: true });
-// Stryker restore BooleanLiteral
+  .use(remarkStringify, { bullet: '-', emphasis: '_' });
 
 const mdToHtmlProcessor = unified()
   .use(remarkParse)
@@ -171,8 +160,7 @@ const mdToHtmlProcessor = unified()
 
 export const htmlToMarkdown = (html: string): string => {
   // Stryker disable next-line ConditionalExpression: as in `textOf` -- a `string`
-  // input means this only fires on `''`, and the processor returns `''` for `''`.
-  // Also takes the killed inverse, whose assertions (the conversion cases) stay.
+  // input fires this only on `''`, for which the processor also returns `''`.
   if (!html) return '';
   return String(htmlToMdProcessor.processSync(html));
 };

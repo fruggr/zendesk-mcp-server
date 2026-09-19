@@ -24,16 +24,13 @@ export interface ReorderWrite {
 // by date or alphabetically), so a write would be silently dropped. Ties are not
 // an inversion — they are the undefined-order bug this tool fixes.
 export const hasPositionInversion = (order: readonly OrderedArticle[]): boolean => {
-  // Stryker disable next-line EqualityOperator,ArithmeticOperator: `<=` and
-  // `length + 1` both run the loop one step further, where `order[i + 1]` is past
-  // the end and so `undefined`; the `here && next` guard then skips that step and
-  // the result is identical for every input. Killing them would need an element at
-  // index `length`, which no array has. The waiver also takes the `>=` sibling,
-  // which IS killed -- it stops the loop before it starts, and the inversion tests
-  // catch that. Those assertions stay; only the accounting is waived.
-  for (let i = 0; i < order.length - 1; i += 1) {
-    const here = order[i];
-    const next = order[i + 1];
+  // Indexed from 1 so the bound is a plain `length`: the pair is (i - 1, i).
+  // Stryker disable next-line EqualityOperator: `<=` runs one step past the end,
+  // where `order[i]` is `undefined` and the guard below skips it. Takes the killed
+  // `>=` sibling with it (PR #304).
+  for (let i = 1; i < order.length; i += 1) {
+    const here = order[i - 1];
+    const next = order[i];
     if (here && next && here.position > next.position) return true;
   }
   return false;
@@ -106,9 +103,8 @@ export const computePositionWrites = (
   const left = desired[movedIndex - 1];
   let running = left ? left.position : -1;
   // Stryker disable next-line EqualityOperator: `<=` runs one step past the end,
-  // where `desired[i]` is `undefined` and the `if (!article) break` below leaves the
-  // loop before anything is read -- same writes, every time. As above, the waiver
-  // also takes the killed `>=` sibling, whose assertions (the cascade cases) stay.
+  // where `desired[i]` is `undefined` and the break below leaves the loop before
+  // anything is read. Takes the killed `>=` sibling with it (PR #304).
   for (let i = movedIndex; i < desired.length; i += 1) {
     const article = desired[i];
     if (!article) break;

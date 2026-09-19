@@ -23,20 +23,11 @@ export const createStrictParamsParser = (
     const result = strict.safeParse(params);
     if (result.success) return result.data as Record<string, unknown>;
 
-    // Stryker disable MethodExpression,ConditionalExpression,ArrayDeclaration: the
-    // filter and the `?? []` are belt and braces, so widening either is invisible --
-    // an issue of any other code has no `keys` and contributes nothing to the list,
-    // whether the filter drops it or the fallback does. Zod always sets `keys` on an
-    // `unrecognized_keys` issue, so the fallback is for the cast, not for a value
-    // anything produces. A region, because a directive inside a method chain is not
-    // a leading comment of any node and is silently dropped; it therefore also
-    // covers the two mutants that ARE killed here -- narrowing the filter, and
-    // suppressing it outright -- whose assertions (the unknown-parameter cases in
-    // tests/unit/utils/validation.test.ts) stay exactly as they are.
-    const unknownKeys = result.error.issues
-      .filter((issue) => issue.code === 'unrecognized_keys')
-      .flatMap((issue) => (issue as { keys?: string[] }).keys ?? []);
-    // Stryker restore MethodExpression,ConditionalExpression,ArrayDeclaration
+    // One narrowing flatMap rather than filter-then-map: Zod's issue union discriminates
+    // on `code`, so `keys` is typed here and needs neither a cast nor a fallback.
+    const unknownKeys = result.error.issues.flatMap((issue) =>
+      issue.code === 'unrecognized_keys' ? issue.keys : [],
+    );
 
     if (unknownKeys.length > 0) {
       throw new Error(

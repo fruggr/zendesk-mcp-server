@@ -35,14 +35,10 @@ export const readPackageInfo = (): PackageInfo => {
     try {
       // JSON.parse yields `unknown`; validate at runtime rather than asserting.
       const raw: unknown = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
-      // Stryker disable next-line ConditionalExpression,LogicalOperator: widening
-      // this guard is not observable. The values it excludes are the falsy and
-      // non-object results of `JSON.parse`, and none of them carries a string
-      // `name`/`version`: a primitive reads them as `undefined` and falls through,
-      // `null` throws on the property read and the loop's own catch resumes the
-      // walk -- which is exactly what the closed guard does. Narrowing it instead
-      // IS killed, by the first test in tests/unit/utils/package-info.test.ts, and
-      // that assertion stays; only this line's accounting is waived.
+      // Stryker disable next-line ConditionalExpression,LogicalOperator: widening this
+      // is unobservable -- the values it excludes carry no string `name`/`version`, so
+      // they either fall through or throw into the catch that resumes the walk, which
+      // is what the closed guard does anyway. Takes the killed narrowing (PR #304).
       if (raw && typeof raw === 'object') {
         const pkg = raw as Partial<PackageInfo>;
         if (typeof pkg.name === 'string' && typeof pkg.version === 'string') {

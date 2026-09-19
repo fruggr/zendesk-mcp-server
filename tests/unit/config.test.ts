@@ -1,17 +1,30 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ConfigSchema, DEFAULT_NAMESPACES, loadConfig, VALUE_FLAG_NAMES } from '../../src/config';
 
+// Every variable loadConfig consults. Cleared as one list rather than per
+// describe: a suite that clears a subset passes only while the describe before it
+// happens to leave the rest clean, and fails later for a reason unrelated to what
+// it asserts.
+const LOAD_CONFIG_ENV = [
+  'ZENDESK_SUBDOMAIN',
+  'ZENDESK_OAUTH_CLIENT_ID',
+  'LOG_LEVEL',
+  'TRANSPORT',
+  'HOST',
+  'PORT',
+  'PUBLIC_URL',
+  'CORS_ORIGIN',
+  'ZENDESK_OAUTH_CALLBACK_PORT',
+  'HC_RESOURCE_SCHEME',
+] as const;
+
+const clearLoadConfigEnv = (): void => {
+  for (const name of LOAD_CONFIG_ENV) delete process.env[name];
+};
+
 describe('loadConfig', () => {
-  beforeEach(() => {
-    delete process.env['ZENDESK_SUBDOMAIN'];
-    delete process.env['ZENDESK_OAUTH_CLIENT_ID'];
-    delete process.env['LOG_LEVEL'];
-    delete process.env['TRANSPORT'];
-    delete process.env['HOST'];
-    delete process.env['PORT'];
-    delete process.env['ZENDESK_OAUTH_CALLBACK_PORT'];
-    delete process.env['HC_RESOURCE_SCHEME'];
-  });
+  beforeEach(clearLoadConfigEnv);
+  afterEach(clearLoadConfigEnv);
 
   it('parses subdomain from CLI positional arg', () => {
     const config = loadConfig(['mycompany']);
@@ -256,10 +269,6 @@ describe('loadConfig', () => {
   });
 
   describe('corsOrigins', () => {
-    beforeEach(() => {
-      delete process.env['CORS_ORIGIN'];
-    });
-
     it('normalizes a trailing slash to the bare origin (browsers send no slash in Origin)', () => {
       const config = loadConfig(['mycompany', '--cors-origin', 'https://my-app.example.com/']);
       expect(config.corsOrigins).toEqual(['https://my-app.example.com']);
@@ -638,7 +647,7 @@ describe('loadConfig', () => {
 
 // The default lives in the schema rather than in loadConfig because the
 // integration harness parses a Config directly; these assertions pin that.
-describe('ConfigSchema namespaces', () => {
+describe('ConfigSchema defaults reached only by a direct parse', () => {
   const parse = (namespaces?: unknown) =>
     ConfigSchema.parse({
       subdomain: 'mycompany',
@@ -701,10 +710,8 @@ describe('ConfigSchema namespaces', () => {
 // write, or a dev-only tool on a deployed one, and every other test still
 // passes because they all set the flag they care about.
 describe('what the flags resolve to when none is passed', () => {
-  beforeEach(() => {
-    delete process.env['ZENDESK_SUBDOMAIN'];
-    delete process.env['LOG_LEVEL'];
-  });
+  beforeEach(clearLoadConfigEnv);
+  afterEach(clearLoadConfigEnv);
 
   it('leaves every standalone flag at its off position', () => {
     const config = loadConfig(['mycompany']);
@@ -749,11 +756,8 @@ describe('what the flags resolve to when none is passed', () => {
 });
 
 describe('numeric and scheme validation, at the anchors', () => {
-  beforeEach(() => {
-    delete process.env['ZENDESK_SUBDOMAIN'];
-    delete process.env['HC_RESOURCE_SCHEME'];
-    delete process.env['PORT'];
-  });
+  beforeEach(clearLoadConfigEnv);
+  afterEach(clearLoadConfigEnv);
 
   // The trailing-garbage half ('51000abc') is covered above. This is the leading
   // half: without the `^`, `/\d+$/` matches the digits at the end of 'abc8080',
@@ -800,10 +804,8 @@ describe('numeric and scheme validation, at the anchors', () => {
 });
 
 describe('CORS origin normalization', () => {
-  beforeEach(() => {
-    delete process.env['ZENDESK_SUBDOMAIN'];
-    delete process.env['CORS_ORIGIN'];
-  });
+  beforeEach(clearLoadConfigEnv);
+  afterEach(clearLoadConfigEnv);
 
   it('rejects a URL whose origin is opaque, naming what it wanted instead', () => {
     // `data:`, `file:` and `javascript:` all pass `.url()` and all serialize to
