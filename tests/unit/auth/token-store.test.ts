@@ -41,8 +41,11 @@ const loadTokenMock = vi.fn<() => unknown>();
 const saveTokenMock = vi.fn();
 const clearTokenMock = vi.fn();
 
+// Mirrors the real keying closely enough to prove the store addresses a file
+// per credential; the derivation itself is token-persistence.test.ts's job.
 vi.mock('../../../src/auth/token-persistence', () => ({
-  resolveTokenPath: () => '/tmp/fake-token.json',
+  resolveTokenPath: (key: { subdomain: string; oauthClientId: string; scope: string }) =>
+    `/tmp/${key.subdomain}--${key.oauthClientId}--${key.scope.replace(' ', '_')}.json`,
   loadToken: (...args: unknown[]) => loadTokenMock(...(args as [])),
   saveToken: (...args: unknown[]) => saveTokenMock(...args),
   clearToken: (...args: unknown[]) => clearTokenMock(...args),
@@ -179,6 +182,35 @@ describe('createTokenStore', () => {
     await expect(store.getToken()).rejects.toThrow('EADDRINUSE');
     await expect(store.getToken()).rejects.toThrow('authentication required');
     expect(startBrowserAuthMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('persists to a different file for the read-only and read-write surfaces', async () => {
+    createTokenStore(CONFIG).setToken('rw-access');
+    createTokenStore(RO_CONFIG).setToken('ro-access');
+
+    // Issue #300: one record for both surfaces let the read-only server inherit
+    // a write-capable token from its read-write sibling.
+    expect(saveTokenMock.mock.calls.map(([path]) => path)).toEqual([
+      '/tmp/testsubdomain--test_client--read_write.json',
+      '/tmp/testsubdomain--test_client--read.json',
+    ]);
+  });
+
+  it('clears only its own record when its refresh token is rejected', async () => {
+    refreshAccessTokenMock.mockRejectedValue(new Error('refresh token rotated out'));
+    startBrowserAuthMock.mockResolvedValue(deferredStarted().started);
+    const store = createTokenStore(RO_CONFIG);
+    store.setToken('ro-access', 'ro-refresh');
+
+    await expect(store.getToken()).rejects.toThrow('authentication required');
+
+    // The other half of #300: the loser of a rotation race used to delete the
+    // shared file, taking its sibling's still-valid token with it. Assert the
+    // whole call list, not just a matching call -- clearing a sibling *as well*
+    // is the regression, and `toHaveBeenCalledWith` would pass through it.
+    expect(clearTokenMock.mock.calls.map(([path]) => path)).toEqual([
+      '/tmp/testsubdomain--test_client--read.json',
+    ]);
   });
 
   it('reuses a token loaded from disk without starting a browser flow', async () => {
