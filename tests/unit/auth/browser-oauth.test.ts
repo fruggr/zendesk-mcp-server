@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { Server } from 'node:http';
 import { HttpResponse, http } from 'msw';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -67,6 +68,37 @@ const makeLogger = () => ({
 const SUB = 'testsubdomain';
 const CLIENT_ID = 'test_client';
 
+interface CallbackReply {
+  status: number;
+  contentType: string | null;
+  body: string;
+}
+
+/**
+ * Make the mocked browser hit the callback with `query` as soon as `open` is
+ * called, and hand back what the tab would have received.
+ */
+const answerCallbackWith = (query: string): Promise<CallbackReply> =>
+  new Promise((resolve, reject) => {
+    openMock.mockImplementation(async (url: string) => {
+      const redirectUri = new URL(url).searchParams.get('redirect_uri');
+      setImmediate(() => {
+        fetch(`${redirectUri}${query}`)
+          .then(async (res) =>
+            resolve({
+              status: res.status,
+              contentType: res.headers.get('content-type'),
+              body: await res.text(),
+            }),
+          )
+          .catch(reject);
+      });
+      return {};
+    });
+  });
+
+const FLOW = { subdomain: SUB, oauthClientId: CLIENT_ID, callbackPort: 0, readOnly: false };
+
 describe('authenticateViaBrowser', () => {
   beforeEach(() => {
     openMock.mockReset();
@@ -74,14 +106,13 @@ describe('authenticateViaBrowser', () => {
   });
 
   it('opens the browser once on the Zendesk authorize URL and completes the PKCE flow', async () => {
+    let exchange: { contentType: string | null; params: URLSearchParams } | undefined;
     mswServer.use(
       http.post(`https://${SUB}.zendesk.com/oauth/tokens`, async ({ request }) => {
-        const body = await request.text();
-        const params = new URLSearchParams(body);
-        expect(params.get('grant_type')).toBe('authorization_code');
-        expect(params.get('code')).toBe('the-auth-code');
-        expect(params.get('client_id')).toBe(CLIENT_ID);
-        expect(params.get('code_verifier')).toBeTruthy();
+        exchange = {
+          contentType: request.headers.get('content-type'),
+          params: new URLSearchParams(await request.text()),
+        };
         return HttpResponse.json({
           access_token: 'token-abc',
           token_type: 'bearer',
@@ -122,9 +153,23 @@ describe('authenticateViaBrowser', () => {
     expect(openedUrl.searchParams.get('response_type')).toBe('code');
     expect(openedUrl.searchParams.get('client_id')).toBe(CLIENT_ID);
     expect(openedUrl.searchParams.get('code_challenge_method')).toBe('S256');
-    expect(openedUrl.searchParams.get('code_challenge')).toBeTruthy();
     expect(openedUrl.searchParams.get('redirect_uri')).toMatch(
       /^http:\/\/localhost:\d+\/callback$/,
+    );
+
+    expect(exchange?.contentType).toBe('application/x-www-form-urlencoded');
+    const params = exchange?.params;
+    expect(params?.get('grant_type')).toBe('authorization_code');
+    expect(params?.get('code')).toBe('the-auth-code');
+    expect(params?.get('client_id')).toBe(CLIENT_ID);
+    // The authorization server matches the redirect_uri byte for byte against
+    // the one sent on the authorize call.
+    expect(params?.get('redirect_uri')).toBe(openedUrl.searchParams.get('redirect_uri'));
+    // RFC 7636: a 43-char base64url verifier, and S256 is BASE64URL(SHA256(verifier)).
+    const verifier = params?.get('code_verifier') ?? '';
+    expect(verifier).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(openedUrl.searchParams.get('code_challenge')).toBe(
+      createHash('sha256').update(verifier).digest('base64url'),
     );
   });
 
@@ -229,6 +274,87 @@ describe('authenticateViaBrowser', () => {
     const body = await bodyPromise;
     expect(body).not.toContain(xss);
     expect(body).toContain('&lt;script&gt;');
+  });
+
+  it('serves the success page as HTML once the code is exchanged', async () => {
+    mswServer.use(oauthTokenHandler);
+    const reply = answerCallbackWith('?code=the-auth-code');
+
+    await authenticateViaBrowser(FLOW);
+
+    expect(await reply).toMatchObject({ status: 200, contentType: 'text/html' });
+  });
+
+  it('escapes every HTML-significant character of an OAuth error, and rejects with it', async () => {
+    const reply = answerCallbackWith(
+      `?error=access_denied&error_description=${encodeURIComponent(`a&b<c>"d'e`)}`,
+    );
+
+    await expect(authenticateViaBrowser(FLOW)).rejects.toThrow(
+      new Error(`OAuth error: a&b<c>"d'e`),
+    );
+
+    expect(await reply).toMatchInlineSnapshot(`
+      {
+        "body": "<html><body><h1>Authentication failed</h1><p>a&amp;b&lt;c&gt;&quot;d&#39;e</p></body></html>",
+        "contentType": "text/html",
+        "status": 400,
+      }
+    `);
+  });
+
+  it('falls back to the OAuth error code when the callback carries no description', async () => {
+    const reply = answerCallbackWith('?error=access_denied');
+
+    await expect(authenticateViaBrowser(FLOW)).rejects.toThrow(
+      new Error('OAuth error: access_denied'),
+    );
+    expect((await reply).body).toContain('<p>access_denied</p>');
+  });
+
+  it('rejects a callback with neither a code nor an error, without calling the token endpoint', async () => {
+    let tokenCalls = 0;
+    mswServer.use(
+      http.post(`https://${SUB}.zendesk.com/oauth/tokens`, () => {
+        tokenCalls += 1;
+        return HttpResponse.json({ access_token: 'token-abc', token_type: 'bearer' });
+      }),
+    );
+    const reply = answerCallbackWith('?state=whatever');
+
+    await expect(authenticateViaBrowser(FLOW)).rejects.toThrow(
+      new Error('Missing authorization code in callback'),
+    );
+
+    // No detail, so no <p> at all.
+    expect(await reply).toMatchInlineSnapshot(`
+      {
+        "body": "<html><body><h1>Missing authorization code</h1></body></html>",
+        "contentType": "text/html",
+        "status": 400,
+      }
+    `);
+    expect(tokenCalls).toBe(0);
+  });
+
+  it('answers 500 and rejects with the token endpoint error when the exchange fails', async () => {
+    mswServer.use(
+      http.post(`https://${SUB}.zendesk.com/oauth/tokens`, () =>
+        HttpResponse.text('invalid_grant', { status: 400 }),
+      ),
+    );
+    const reply = answerCallbackWith('?code=the-auth-code');
+
+    await expect(authenticateViaBrowser(FLOW)).rejects.toThrow(
+      new Error('Token exchange failed (400): invalid_grant'),
+    );
+    expect(await reply).toMatchInlineSnapshot(`
+      {
+        "body": "<html><body><h1>Token exchange failed</h1><p>Token exchange failed (400): invalid_grant</p></body></html>",
+        "contentType": "text/html",
+        "status": 500,
+      }
+    `);
   });
 
   it('logs the failure (with platform diagnostics) instead of swallowing it when open rejects', async () => {
@@ -396,6 +522,12 @@ describe('startBrowserAuth', () => {
 
       await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
       expect(logger.error).not.toHaveBeenCalledWith('oauth_timeout', expect.anything());
+      // The start-phase handler was detached on listen, so a late error is not
+      // reported as a failure to bind.
+      expect(logger.error).not.toHaveBeenCalledWith(
+        'oauth_callback_listen_failed',
+        expect.anything(),
+      );
     } finally {
       vi.useRealTimers();
     }
@@ -424,6 +556,10 @@ describe('startBrowserAuth', () => {
       expect(err.message).toContain('then retry');
       expect(err.message).toContain('ZENDESK_OAUTH_CALLBACK_PORT');
       expect(err.message).toContain('/callback');
+      expect(err).toMatchObject({
+        code: 'EADDRINUSE',
+        cause: expect.objectContaining({ code: 'EADDRINUSE' }),
+      });
       expect(logger.error).toHaveBeenCalledWith(
         'oauth_callback_listen_failed',
         expect.objectContaining({ port, errorCode: 'EADDRINUSE' }),
@@ -431,6 +567,44 @@ describe('startBrowserAuth', () => {
       expect(openMock).not.toHaveBeenCalled();
     } finally {
       await new Promise<void>((resolve) => blocker.close(() => resolve()));
+    }
+  });
+
+  it('rejects with the listen error itself when it is not a port conflict', async () => {
+    openMock.mockResolvedValue({});
+    const pending = startBrowserAuth(FLOW);
+    const server = lastCallbackServer();
+    const denied = Object.assign(new Error('permission denied'), { code: 'EACCES' });
+    server.emit('error', denied);
+
+    await expect(pending).rejects.toBe(denied);
+    // The bind itself still completes; release it so the port does not leak.
+    if (!server.listening) await new Promise((resolve) => server.once('listening', resolve));
+    await awaitClosed(server.close());
+  });
+
+  it('keeps waiting until the five-minute timeout, and not a millisecond less', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      openMock.mockResolvedValue({});
+      const logger = makeLogger();
+      const started = await startBrowserAuth(FLOW, logger);
+      let settled = false;
+      started.tokenPromise
+        .catch(() => {})
+        .finally(() => {
+          settled = true;
+        });
+
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000 - 1);
+      expect(settled).toBe(false);
+      expect(logger.error).not.toHaveBeenCalledWith('oauth_timeout', expect.anything());
+
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(started.tokenPromise).rejects.toThrow('timed out');
+      await awaitClosed(lastCallbackServer());
+    } finally {
+      vi.useRealTimers();
     }
   });
 
@@ -470,6 +644,7 @@ describe('refreshAccessToken', () => {
   it('exchanges a refresh token for a rotated access/refresh token pair', async () => {
     mswServer.use(
       http.post(`https://${SUB}.zendesk.com/oauth/tokens`, async ({ request }) => {
+        expect(request.headers.get('content-type')).toBe('application/x-www-form-urlencoded');
         const params = new URLSearchParams(await request.text());
         expect(params.get('grant_type')).toBe('refresh_token');
         expect(params.get('refresh_token')).toBe('old-refresh');
