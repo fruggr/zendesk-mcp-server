@@ -1,3 +1,23 @@
+## [2.23.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.22.3...v2.23.0) (2026-09-23)
+
+### Features
+
+* **tickets:** read and manage ticket followers and email CCs ([#289](https://github.com/fruggr/zendesk-mcp-server/issues/289)) ([404a87b](https://github.com/fruggr/zendesk-mcp-server/commit/404a87bf17bfca9a46f0e33383a52c217fe60bc7)), closes [#278](https://github.com/fruggr/zendesk-mcp-server/issues/278)
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Chores
+
+* **deps:** lock file maintenance ([#308](https://github.com/fruggr/zendesk-mcp-server/issues/308)) ([ff39654](https://github.com/fruggr/zendesk-mcp-server/commit/ff39654a2b29eb9f3fb683be24d06e77ba06f91a))
+* **deps:** update dependency @biomejs/biome to v2.5.13 ([#306](https://github.com/fruggr/zendesk-mcp-server/issues/306)) ([ca64063](https://github.com/fruggr/zendesk-mcp-server/commit/ca640630879c2dfb58a32277bdfd1521673aea3f))
+* **deps:** update prod dependencies ([#307](https://github.com/fruggr/zendesk-mcp-server/issues/307)) ([930fcb1](https://github.com/fruggr/zendesk-mcp-server/commit/930fcb1d9204bdbbccd8cdc0eb4dd6bdffb6542c))
+
+### Tests
+
+* close the long tail's real test gaps, and stop treating the score as a target ([#304](https://github.com/fruggr/zendesk-mcp-server/issues/304)) ([c6ea307](https://github.com/fruggr/zendesk-mcp-server/commit/c6ea30792557fc9a257802d3ce02cf7a3ded06d0))
+</details>
+
 ## [2.22.3](https://github.com/fruggr/zendesk-mcp-server/compare/v2.22.2...v2.22.3) (2026-09-19)
 
 ### Bug Fixes
