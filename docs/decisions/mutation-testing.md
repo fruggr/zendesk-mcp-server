@@ -486,6 +486,7 @@ finding — judge it against your change, then add the one-line directive.
 | --- | --- | --- |
 | `config.ts` `parseCliArgs` field guard | ConditionalExpression | Only `--port` / `--callback-port` reach it with no field; the key they would write is read by nothing. |
 | `config.ts` `topology` / `promotedArticles` | LogicalOperator | `&&` and `??` agree for every value the CLI field holds — the schema's `.default(true)` resolves `undefined` to the same result. |
+| `browser-oauth.ts` `req.url ?? '/'` | StringLiteral | A request reaching a `node:http` server always has `req.url`, so the default is never read. |
 | `article-order.ts` the cascade's loop bound | EqualityOperator | `<=` reads one step past the end, where the element is `undefined` and the break below leaves the loop. (Its sibling in `hasPositionInversion` is waived at the call site: #250 changed that line, so the gate asked.) |
 | `article-sections.ts` three `if (!x) return ''` | ConditionalExpression | `string` inputs, so they fire only on `''` — for which the pipeline also returns `''`. |
 | `article-sections.ts` `cheerio.load` fragment flag | BooleanLiteral | `textOf` only sees HTML `parseSections` re-serialised from its own fragment parse, so what a document parse would swallow (`<frameset>`) is already gone. |
