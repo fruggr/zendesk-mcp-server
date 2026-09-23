@@ -531,11 +531,9 @@ const SUBSCRIBER_PARAMS = [
   { param: 'email_ccs', field: 'email_cc_ids' },
 ] as const satisfies ReadonlyArray<{ param: SubscriberParam; field: keyof ZendeskTicket }>;
 
-// Zendesk takes followers and email CCs as action objects; the tool exposes
-// `{ add, remove }` instead, like manage_tags, because an LLM should not have to
-// know that "put" means add. A user named in both loses the add, matching
-// manage_tags, which adds then deletes over a Set. `undefined` when nothing maps,
-// so the key never reaches the payload.
+// Zendesk takes these as action objects; the tool exposes `{ add, remove }` like
+// manage_tags. An id in both loses the add. `undefined` when nothing maps, so the
+// key never reaches the payload.
 const toSubscriberActions = (edit: SubscriberEdit | undefined): SubscriberAction[] | undefined => {
   if (!edit) return undefined;
   const removed = new Set(edit.remove);
@@ -562,11 +560,10 @@ const unappliedActions = (
   });
 };
 
-// Zendesk never errors on a subscriber write: an id it does not know is ignored,
-// and both lists are ignored wholesale when the account's "CCs and followers"
-// setting is off. The two cases come back identical, so this detects without
-// diagnosing, and the message names both causes rather than picking one. '' when
-// everything is confirmed: the rendered block is then the proof.
+// Zendesk never errors on a subscriber write: an unknown id is ignored, and both
+// lists are ignored wholesale when the account's "CCs and followers" setting is
+// off. The two are indistinguishable in the response, so this detects without
+// diagnosing and names both causes.
 const formatSubscriberOutcome = (
   sent: SubscriberActions,
   after: Pick<ZendeskTicket, 'follower_ids' | 'email_cc_ids'>,
