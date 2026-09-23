@@ -10,6 +10,11 @@ export interface ZendeskTicket {
   group_id: number | null;
   organization_id: number | null;
   tags: string[];
+  // Who Zendesk notifies besides the assignee. Optional defensively: the docs call
+  // these "ignored when CCs and followers is not enabled" without saying whether a
+  // read then omits the key or returns it empty.
+  follower_ids?: number[];
+  email_cc_ids?: number[];
   created_at: string;
   updated_at: string;
   custom_fields: Array<{ id: number; value: unknown }>;

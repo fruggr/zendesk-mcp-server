@@ -245,6 +245,25 @@ const withName = (id: unknown, names: Map<number, string>): string => {
   return name ? `${name} (${id})` : String(id);
 };
 
+// Same contract as `formatSlaBlock`: '' when Zendesk reported nothing, so the
+// caller concatenates unconditionally. The two lines are not interchangeable:
+// followers are notified of internal notes, email CCs only of public
+// correspondence. A key present but empty renders `none`, because "nobody is
+// subscribed" has to be stated, not inferred from a missing block.
+export const formatSubscribersBlock = (
+  ticket: Pick<ZendeskTicket, 'follower_ids' | 'email_cc_ids'>,
+  names: Map<number, string>,
+): string => {
+  const line = (label: string, ids: number[]): string =>
+    `- **${label}**: ${ids.length > 0 ? ids.map((id) => withName(id, names)).join(', ') : 'none'}`;
+  const rows = [
+    Array.isArray(ticket.follower_ids) ? line('Followers', ticket.follower_ids) : '',
+    Array.isArray(ticket.email_cc_ids) ? line('Email CCs', ticket.email_cc_ids) : '',
+  ].filter(Boolean);
+  if (rows.length === 0) return '';
+  return `\n\n${['### Subscribers', ...rows].join('\n')}`;
+};
+
 // `authors` is the id -> name map the caller resolved (side-load or batched
 // look-up); an id it does not carry renders as the bare id rather than failing
 // the whole thread. The comment id is rendered because it is the only read path
