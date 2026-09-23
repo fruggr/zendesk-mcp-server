@@ -10,12 +10,9 @@ export interface ZendeskTicket {
   group_id: number | null;
   organization_id: number | null;
   tags: string[];
-  // Who Zendesk notifies besides the assignee. Both keys were present on every
-  // ticket observed on our tenant (Show Ticket and List Tickets, 2026-09-12), so
-  // they are optional defensively rather than on evidence: Zendesk documents
-  // `follower_ids` as "ignored when CCs and followers is not enabled" without
-  // saying whether a read then omits the key or returns it empty, and no account
-  // with the setting off has been observed either way.
+  // Who Zendesk notifies besides the assignee. Optional defensively: the docs call
+  // these "ignored when CCs and followers is not enabled" without saying whether a
+  // read then omits the key or returns it empty.
   follower_ids?: number[];
   email_cc_ids?: number[];
   created_at: string;
