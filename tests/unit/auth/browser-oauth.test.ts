@@ -17,6 +17,11 @@ vi.mock('open', () => ({
 // `error` on it is the only way to reach the post-`listen` handler.
 const callbackServers: Server[] = [];
 
+// When set, the next server's `listen` fails the way a refused bind does: an
+// async `error` and never `listening`. Only EADDRINUSE is reproducible with a
+// real bind (a privileged port succeeds as root), so other codes are faked.
+let nextListenError: Error | undefined;
+
 vi.mock('node:http', async () => {
   const actual = await vi.importActual<typeof import('node:http')>('node:http');
   return {
@@ -28,6 +33,14 @@ vi.mock('node:http', async () => {
       // evaluated here, long after this module initialised. Dereferencing the
       // array in the factory body would be a temporal-dead-zone crash at load.
       callbackServers.push(server);
+      const listenError = nextListenError;
+      nextListenError = undefined;
+      if (listenError) {
+        server.listen = (() => {
+          process.nextTick(() => server.emit('error', listenError));
+          return server;
+        }) as typeof server.listen;
+      }
       return server;
     },
   };
@@ -571,16 +584,12 @@ describe('startBrowserAuth', () => {
   });
 
   it('rejects with the listen error itself when it is not a port conflict', async () => {
-    openMock.mockResolvedValue({});
-    const pending = startBrowserAuth(FLOW);
-    const server = lastCallbackServer();
     const denied = Object.assign(new Error('permission denied'), { code: 'EACCES' });
-    server.emit('error', denied);
+    nextListenError = denied;
 
-    await expect(pending).rejects.toBe(denied);
-    // The bind itself still completes; release it so the port does not leak.
-    if (!server.listening) await new Promise((resolve) => server.once('listening', resolve));
-    await awaitClosed(server.close());
+    await expect(startBrowserAuth(FLOW)).rejects.toBe(denied);
+    expect(lastCallbackServer().listening).toBe(false);
+    expect(openMock).not.toHaveBeenCalled();
   });
 
   it('keeps waiting until the five-minute timeout, and not a millisecond less', async () => {
