@@ -52,17 +52,85 @@ building on it.
 
 ## 2. Trusted CIMD clients (consent skip list)
 
-No canonical public list was found. Delegate the research to an agent. Seed only
-entries verified at the source:
+**No public, maintained registry of MCP CIMD `client_id`s exists.** We checked
+the Zuplo compatibility matrix, FastMCP's `CIMDTrustPolicy` example,
+workers-oauth-provider, better-auth, Keycloak, Clerk and Authlete. They offer
+mechanisms or examples, not a reusable list. So we keep our own short,
+versioned allowlist in the repo.
 
-- claude.ai: `https://claude.ai/oauth/mcp-oauth-client-metadata`, secondary
-  source.
-- Claude Code: `https://claude.ai/oauth/claude-code-client-metadata`. It uses
-  loopback redirects, so the consent screen stays on for it.
-- ChatGPT: `https://chatgpt.com/oauth/client.json`, secondary source.
+### Seed list
 
-The list is configurable (e.g. `--oauth-trusted-client <url>`, repeatable). A
-skip also requires non-loopback HTTPS `redirect_uris` (ADR, Consent).
+Documents fetched with `curl -H 'Accept: application/json'` on 2026-09-24. Only
+the first two are skip-eligible.
+
+| Client | `client_id` (exact) | `redirect_uris` (as fetched) | Auth method | Verdict |
+| --- | --- | --- | --- | --- |
+| claude.ai, Claude Desktop, mobile, Cowork | `https://claude.ai/oauth/mcp-oauth-client-metadata` | `https://claude.ai/api/mcp/auth_callback` | `none` | **skip** |
+| ChatGPT (web, desktop), stable URL | `https://chatgpt.com/oauth/client.json` | `https://chatgpt.com/connector_platform_oauth_redirect` | `private_key_jwt` (also `none`) | **skip** |
+| Claude Code | `https://claude.ai/oauth/claude-code-client-metadata` | `http://localhost/callback`, `http://127.0.0.1/callback` | `none` | consent |
+| Codex | `https://chatgpt.com/oauth/codex/client.json` | `http://127.0.0.1/callback`, `http://localhost/callback` | `none` | consent |
+| VS Code | `https://vscode.dev/oauth/client-metadata.json` | `http://127.0.0.1:33418/`, `https://vscode.dev/redirect` | `none` | consent (desktop uses loopback) |
+| Zed | `https://zed.dev/oauth/client-metadata.json` | `http://127.0.0.1/callback` | `none` | consent |
+| OpenCode | `https://opencode.ai/oauth/opencode/client.json` | `http://127.0.0.1/callback`, `http://localhost/callback` | `none` | consent |
+
+These clients publish no CIMD (they use DCR, a static client, or were not
+found): Cursor, Copilot Studio, Gemini CLI, Mistral Le Chat, Windsurf, JetBrains,
+Perplexity, Grok, Cline, Continue, LibreChat, n8n, Zapier, Make. Goose supports
+CIMD, but its URL was not found.
+
+### Matching rule, checked on every authorization request
+
+1. The `client_id` is in the allowlist, as an **exact string**. Never match on
+   the domain: `claude.ai` and `chatgpt.com` also host loopback clients (Claude
+   Code, Codex).
+2. The fetched document's `client_id` equals its URL.
+3. The requested `redirect_uri` is an exact member of the document's
+   `redirect_uris`.
+4. That `redirect_uri` is `https`, not loopback (`localhost`, `127.0.0.0/8`,
+   `[::1]`), and not a custom scheme.
+5. All four pass: skip consent. Otherwise, show the MCP screen with the redirect
+   hostname displayed.
+
+The remembered consent is tied to a hash of the `redirect_uris`. It is asked for
+again when the document changes.
+
+### Requirements this puts on the AS (spike items)
+
+- **RFC 9207 `iss` in authorization responses.** ChatGPT uses its stable URL
+  only if the AS advertises `authorization_response_iss_parameter_supported:
+  true`. Without it, ChatGPT switches to per-connector URLs
+  (`https://chatgpt.com/oauth/{callback_id}/client.json`) that cannot be
+  enumerated. Allowlist only the stable URL. Do not add a pattern rule.
+- **`private_key_jwt`.** ChatGPT prefers it, with `jwks_uri`
+  `https://chatgpt.com/oauth/jwks.json`. Accept it, or at least negotiate `none`
+  from its `token_endpoint_auth_methods_supported`. Otherwise ChatGPT is rejected
+  (django-oauth-toolkit #1857).
+- **The `jwt-bearer` grant** that claude.ai declares must be ignored, not
+  rejected.
+- **Document fetch.** Fetch only allowlisted `client_id`s, plus unknown CIMD
+  clients, which always get the consent screen.
+  - HTTPS on port 443, no redirects, DNS resolved once and the IP pinned.
+  - Private, loopback and link-local ranges refused.
+  - Size capped at ~64 KB, 5 s timeout.
+  - `jwks_uri` follows the same rules.
+- **Cache.** Honour the HTTP cache headers, capped at 24 h. Keep the last valid
+  copy for an allowlisted client if a fetch fails, and cache failures for 60 s.
+  Some documents return 403 to cloud egress IPs:
+  - `claude-code-client-metadata` (anthropics/claude-code #84263);
+  - Codex (cloudflare/workers-oauth-provider #333).
+  
+  Pinned copies, with an alert when they diverge from the live document, cover
+  that case.
+- **Config.**
+  - `--oauth-trusted-client <url>` (repeatable) adds entries.
+  - `--no-default-trusted-clients` drops the built-in seed.
+
+### Upkeep
+
+- An integration test (live, not in CI) re-fetches each allowlisted document and
+  fails when its `redirect_uris` change.
+- Review the list quarterly. The Zuplo matrix signals new CIMD clients, and more
+  will come as the spec deprecates DCR.
 
 ## 3. Implementation (TDD, functional style)
 

@@ -133,11 +133,18 @@ code sent to their own redirect URI.
 Showing it to everyone would put two screens in a row that say the same thing.
 Instead:
 
-- **A trusted CIMD client with non-loopback HTTPS redirect URIs skips it**
-  (claude.ai, ChatGPT, …, from a configurable list). The redirect URIs come from
-  a document served on the client's own domain, so the code cannot be diverted.
-  The skip goes through `loadExistingGrant`, which `oidc-provider` documents for
-  pre-agreed consent.
+- **A trusted CIMD client with non-loopback HTTPS redirect URIs skips it.**
+  - Trust is an exact `client_id` match against a configurable allowlist.
+  - It is never a domain match: `claude.ai` and `chatgpt.com` also host loopback
+    clients (Claude Code, Codex).
+  - The requested `redirect_uri` must be HTTPS, non-loopback, and listed in the
+    fetched document. The redirect URIs come from a document served on the
+    client's own domain, so the code cannot be diverted.
+  - The built-in seed is claude.ai and ChatGPT. They are the only mainstream CIMD
+    clients whose redirects are HTTPS today (fetched 2026-09-24).
+  - The skip goes through `loadExistingGrant`, which `oidc-provider` documents for
+    pre-agreed consent.
+  - The remembered consent is tied to a hash of the client's `redirect_uris`.
 - **Everything else sees the MCP screen once per client**: DCR, unknown CIMD,
   and loopback redirect URIs. Loopback is the case the spec flags as
   impersonable. The screen names the client, the scopes and the redirect URI, per
