@@ -8,15 +8,15 @@
 ## 0. Before coding
 
 - Re-read #127 live, and check that no other PR is open on it.
-- Split out the SDK v2 migration. Open an issue for it, then a branch
-  `<n>-mcp-sdk-v2` and a separate PR that **lands first**. It is a mechanical
-  upgrade with no behaviour change:
-  - run `npx @modelcontextprotocol/codemod@latest v1-to-v2 .` at the repo root;
-  - `StreamableHTTPServerTransport` becomes `NodeStreamableHTTPServerTransport`
-    (`@modelcontextprotocol/node`);
-  - stdio moves to `@modelcontextprotocol/server/stdio`.
-  - Check against the repo: Zod ≥ 4.2 and Node ≥ 20 are already met.
-- Rebase this branch on it.
+- **Prerequisite: #231 (SDK v2 migration) is merged.** It ships separately as a
+  2.x minor, with no behaviour change. It swaps the HTTP transport for
+  `NodeStreamableHTTPServerTransport` and keeps everything else. There is no
+  beta channel.
+- Merge `main` into this branch once #231 has landed.
+- **Nobody uses the HTTP transport today.** Rewrite it freely: no migration
+  path, no compatibility shim for the passthrough mode. The 3.0 release notes
+  just state that it was removed. Adopting the v2 stateless handler
+  (`createMcpHandler`) is allowed if it simplifies things.
 
 ## 1. Spike (throwaway, findings go into this file)
 

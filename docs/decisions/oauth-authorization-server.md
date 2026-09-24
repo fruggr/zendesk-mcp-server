@@ -9,7 +9,7 @@
 | --- | --- |
 | **Status** | Decided, not yet applied |
 | **Date** | 2026-09-24 |
-| **Applies** | [#127](https://github.com/fruggr/zendesk-mcp-server/issues/127) — ships as a major release (3.0) |
+| **Applies** | [#127](https://github.com/fruggr/zendesk-mcp-server/issues/127) — ships as a major release (3.0), after the SDK v2 migration ([#231](https://github.com/fruggr/zendesk-mcp-server/issues/231)) |
 | **Question** | How does a remote MCP client (claude.ai, ChatGPT, …) sign a user in when Zendesk offers neither discovery nor client registration? |
 | **Answer** | The server is the OAuth authorization server (AS), built on [`oidc-provider`](https://github.com/panva/node-oidc-provider). Zendesk is the upstream identity provider, through one confidential client. The server issues its own tokens and keeps the Zendesk ones server-side, in a pluggable store (Keyv). The default store is a file. |
 
