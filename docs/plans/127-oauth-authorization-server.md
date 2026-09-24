@@ -139,8 +139,11 @@ Suggested modules:
 - `src/auth/server/`: provider configuration;
 - the Zendesk upstream interaction;
 - the consent view;
-- keys and encryption;
-- the Keyv adapter, and loading it from `--oauth-store` /
+- keys and encryption: the HKDF derivation of the four keys, the `kid`s, the
+  rotation list, and the refusal to start without a secret (ADR, Keys and
+  secrets);
+- the Keyv adapter, with SHA-256-hashed record ids and encrypted payloads,
+  and loading it from `--oauth-store` /
   `--oauth-store-adapter`;
 - the trusted-clients policy.
 
@@ -164,6 +167,12 @@ Then:
   - the audience check;
   - a restart with a `file://` store keeps refresh working;
   - concurrent refreshes.
+- Keys:
+  - HTTP mode refuses to start without a secret, or with one under 32 bytes;
+  - `DEV_KEYSTORE` and empty `cookies.keys` are never reached;
+  - a token issued under the old secret still validates after a new secret is
+    prepended, and fails once the old one is dropped;
+  - the store file holds no raw token id and no plaintext payload.
 - Filled `toMatchInlineSnapshot` for the metadata documents.
 - Mutation gate on changed lines. Keep the coverage ratchet.
 

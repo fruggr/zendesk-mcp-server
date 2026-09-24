@@ -93,9 +93,9 @@ spec. The full survey is kept in the PR that applied this record.
   and FastMCP tracks the same race in
   [#4901](https://github.com/PrefectHQ/fastmcp/issues/4901). `rotateRefreshToken`
   is set with that in mind.
-- **Keys** come from configuration, not generation. Otherwise every restart
-  would invalidate every token. The keys are the JWKS, the JWE key and the
-  at-rest key.
+- **Keys** are derived from one configured secret, never generated at startup.
+  Otherwise every restart would invalidate every token. See
+  [Keys and secrets](#keys-and-secrets).
 - **The client's `resource` is never forwarded to Zendesk.**
 
 ### Upstream login
@@ -163,6 +163,86 @@ Instead:
 - **Single instance.** Keyv has no atomic get-and-delete, so single use relies
   on an in-process lock per key. Running several replicas needs a store with
   atomic operations, which is out of scope.
+- **Reading the store yields nothing usable.**
+  - `oidc-provider` uses an opaque token's value as its storage id. Stored as
+    is, the file would hand out valid refresh tokens to anyone who can read it.
+  - So the adapter keys every record by the SHA-256 of its id (Cloudflare's
+    provider stores tokens by hash too).
+  - The adapter encrypts **the whole payload** at rest, not only the Zendesk
+    tokens.
+
+### Keys and secrets
+
+`oidc-provider` 9.12.2 has two unsafe defaults, verified in its source:
+
+- **Without `jwks` it falls back to `DEV_KEYSTORE`.** These are development keys
+  shipped inside the package, so they are public, and it only logs a warning.
+  Anyone could forge our signatures.
+- **`cookies.keys` defaults to `[]`.** Session, interaction and consent cookies
+  would then go unsigned.
+
+So in HTTP mode the server **refuses to start** without its secret. It never
+leaves either value to the library's defaults.
+
+#### Four keys, one secret
+
+| Key | Purpose | Type |
+| --- | --- | --- |
+| Signing key (`jwks`) | Anything the AS signs; the public half is served at `/jwks`. Required by `oidc-provider` even though MCP clients do not ask for ID tokens. | Ed25519 |
+| Access-token key | Encrypts the JWE access tokens (`dir` + `A256GCM`). Authenticated encryption, no separate signature: `oidc-provider` accepts encrypt-only with a symmetric key. | 256-bit symmetric |
+| At-rest key | Encrypts store payloads (grants, refresh tokens, the Zendesk tokens inside them). | 256-bit symmetric |
+| Cookie keys (`cookies.keys`) | Keygrip HMAC for session, interaction and consent cookies. | HMAC |
+
+- **All four derive from one master secret** through HKDF (RFC 5869,
+  `node:crypto`), with a distinct `info` label per purpose.
+  - The Ed25519 key is derived the same way: its private key is, by definition, a
+    32-byte random seed.
+  - The operator manages **one secret** besides the Zendesk client secret.
+  - The alternative was a JWKS file, a symmetric key and cookie keys supplied
+    separately. It is more conventional for the signing key, but it triples what
+    has to be provisioned, rotated and kept in sync, for no security gain: all
+    the keys fall together anyway if the host is compromised.
+- **Input.** Either `ZENDESK_MCP_OAUTH_SECRET` or `--oauth-secret-file <path>`.
+  - The secret is base64, at least 32 bytes of entropy. The server rejects a
+    shorter one.
+  - Generate it with `openssl rand -base64 32`.
+  - On Azure Container Apps it is a secret that references Key Vault.
+- **Custody.**
+  - The secret never sits on the store's volume.
+  - It is never logged, and never echoed in errors (ASCII-only messages on auth
+    paths still apply).
+
+#### Rotation
+
+- The secret accepts a **comma-separated list**, newest first.
+  - The first entry signs and encrypts.
+  - Every entry verifies and decrypts.
+  - Each derived key carries a `kid` derived from it, so the right key is picked
+    without trial decryption.
+  - Keygrip takes the cookie keys as a list natively.
+- **Procedure.**
+  1. Prepend the new secret.
+  2. Redeploy.
+  3. Drop the old secret after the longest refresh-token lifetime has passed
+     (≤ 90 days, Zendesk's cap).
+  
+  Every record rewritten in the meantime is re-encrypted with the current key.
+  Records still under the old key when it is dropped fail to decrypt, and those
+  users sign in again.
+- **Emergency rotation** (secret exposed): replace the list outright, without
+  keeping the old secret.
+  - Every token becomes invalid, every user signs in again, and the store is
+    purged.
+  - Pair it with regenerating the Zendesk client secret, which revokes the
+    upstream tokens the store held.
+
+#### Loss and dev mode
+
+- **A lost secret means the same as an emergency rotation.** Tokens and store
+  contents become unreadable, users sign in again, and the store is purged. There
+  is no recovery path by design.
+- **Dev and tests only.** With `memory://` and `--dev`, the server generates an
+  ephemeral secret and says so on stderr.
 
 ### Scope of the change
 
@@ -180,6 +260,9 @@ Instead:
   in.
 - **A security surface we now own.** Token custody, key management and the
   consent policy.
+- **One master secret is a single point of failure.** Exposing it together with
+  the store exposes the users' Zendesk refresh tokens, hence the separate
+  volumes and the emergency rotation above.
 - **Two layers of grants** (ours and Zendesk's). Revoking at Zendesk still wins:
   the next Zendesk call fails, the server answers 401, and the client re-runs
   authorization.
