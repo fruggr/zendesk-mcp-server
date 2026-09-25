@@ -1,10 +1,10 @@
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { STDIO_DEFAULT_MAX_BUFFER_SIZE } from '@modelcontextprotocol/sdk/shared/stdio.js';
+import { STDIO_DEFAULT_MAX_BUFFER_SIZE } from '@modelcontextprotocol/server';
+import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
 import { describe, expect, it, vi } from 'vitest';
 import { STDIO_MAX_MESSAGE_BYTES } from '../../../src/constants';
 import { startStdioTransport } from '../../../src/transports/stdio';
 
-vi.mock('@modelcontextprotocol/sdk/server/stdio.js', () => ({
+vi.mock('@modelcontextprotocol/server/stdio', () => ({
   StdioServerTransport: vi.fn(),
 }));
 

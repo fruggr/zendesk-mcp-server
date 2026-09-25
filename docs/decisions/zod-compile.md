@@ -164,7 +164,8 @@ synchronous parse leaves the schema compiled and an asynchronous one does not.
 
 Numbers above, from the repo root on the branch under test.
 
-Per-message and cold-start cost, baseline vs compiled:
+Per-message and cold-start cost, baseline vs compiled (measured on SDK v1; v2 no longer exports
+`JSONRPCMessageSchema`, so this snippet needs a `@modelcontextprotocol/sdk@1` install):
 
 ```js
 // coldstart.mjs — run: node coldstart.mjs   /   node coldstart.mjs compile

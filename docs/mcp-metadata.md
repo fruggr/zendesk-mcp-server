@@ -90,10 +90,10 @@ exactly which dimension regressed.
 
 ## No regression on a tool change
 
-Agents consume our Zod schemas as **JSON Schema draft-07**. We author schemas
-with `zod/v4` (see `src/tools/*`); the MCP SDK serializes them to draft-07
-internally via zod v4's mini/`toJSONSchema` path, so you don't import `v4-mini`
-yourself. A change is *multi-agent-safe* only when the exposed schema keeps
+Agents consume our Zod schemas as **JSON Schema 2020-12**. We author schemas
+with `zod/v4` (see `src/tools/*`); the MCP SDK serializes them to 2020-12
+internally through zod's Standard JSON Schema interface (the target is fixed by
+the SDK, not configurable here), so you don't import `v4-mini` yourself. A change is *multi-agent-safe* only when the exposed schema keeps
 everything an agent could depend on:
 
 - **Never drop what a description said** — unless it became false, where fixing
@@ -103,7 +103,7 @@ everything an agent could depend on:
   emitted schema shape.
 - **Adding constraints is an enrichment, not a regression.** Tightening
   `z.string().min(1)` to `z.string().min(1).base64()` only *adds* `format` and
-  `pattern` to the draft-07 output and leaves the `description` byte-for-byte
+  `pattern` to the JSON Schema output and leaves the `description` byte-for-byte
   identical (verified on PR #110). That is exactly the kind of change we want.
 
 **How to verify:** dump the tool's JSON Schema before and after the change and

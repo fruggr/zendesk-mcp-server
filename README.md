@@ -83,7 +83,7 @@ differently.
 - Two deployment shapes, same auth story. Run it on your laptop as a stdio MCP
   server, or deploy it as a private remote MCP server reached over HTTP, with one
   Zendesk session per request and each client carrying its own user's token.
-- A lean stack: the official `@modelcontextprotocol/sdk` plus `zod`, speaking to
+- A lean stack: the official MCP TypeScript SDK (`@modelcontextprotocol/server`) plus `zod`, speaking to
   the Zendesk Support and Help Center (Guide) APIs.
 
 Look elsewhere when:

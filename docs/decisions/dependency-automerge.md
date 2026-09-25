@@ -42,14 +42,16 @@ Semver level is a claim by the publisher about compatibility. It says nothing
 about how far a change can travel *in this repository*, which is the thing worth
 gating on.
 
-- **`@modelcontextprotocol/sdk` and `zod` define the tool surface itself.** The
-  JSON Schema (draft-07) that agents consume is generated from Zod schemas and
+- **The `@modelcontextprotocol/*` SDK and `zod` define the tool surface itself.** The
+  JSON Schema (2020-12) that agents consume is generated from Zod schemas and
   serialised by the SDK. A minor on either can move that schema — exactly what
   the multi-agent compatibility rule in [`AGENTS.md`](../../AGENTS.md) forbids
   degrading, and what [`mcp-metadata.md`](../mcp-metadata.md) exists to diff.
-  These two are read by hand.
-- **The other thirteen production dependencies are leaves.** `open`, `cheerio`,
-  and the `unified` / `remark` / `rehype` chain sit behind our own code. What they
+  These are read by hand.
+- **The other fourteen production dependencies are leaves.** `open`, `cheerio`,
+  and the `unified` / `remark` / `rehype` chain sit behind our own code; `hono`
+  is the HTTP plumbing under the SDK's Node transport, exercised by
+  `tests/unit/transports/http.test.ts`. What they
   can change is rendering output, and that is asserted:
   `tests/unit/utils/article-sections.test.ts` pins the HTML ↔ Markdown conversion
   the chain performs, and `tests/unit/utils/formatting.test.ts` holds 63 committed
@@ -58,7 +60,7 @@ gating on.
   on a dependency bump — it only mutates lines the diff changed under `src/` — but
   it is why those assertions are tight enough to catch one.
 
-So the list is two names, not a category, and it is applied to **minors only**.
+So the list is the SDK packages plus `zod`, not a category, and it is applied to **minors only**.
 A patch on `zod` goes through the batch like any other patch, on the bet that a
 patch moving the exposed schema is an upstream bug rather than a normal release.
 Reviewing `zod` 4.5.4 → 4.5.5 by hand would reintroduce the rubber stamp on the one
@@ -71,7 +73,7 @@ over a real MCP transport (`tests/integration/core-scenarios.ts`),
 [#273](https://github.com/fruggr/zendesk-mcp-server/pull/273)
 `tests/unit/tools/schema-compile.test.ts` fails loudly if any tool schema stops
 compiling under zod's AOT compiler — a zod-specific tripwire that a patch would
-trip. But **nothing asserts the serialised draft-07 JSON Schema itself.** A
+trip. But **nothing asserts the serialised JSON Schema itself** (only its `$schema` dialect). A
 snapshot over `tools/list` would close that gap and is the obvious follow-up;
 until it exists, a schema regression from a patch reaches CI only if it also
 breaks parsing or compilation, and otherwise waits for the inter-LLM functional

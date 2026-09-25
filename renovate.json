@@ -66,12 +66,25 @@
       "automerge": true
     },
     {
-      "description": "@modelcontextprotocol/sdk and zod define the JSON Schema (draft-07) this server exposes to agents, so a minor on either can move the tool surface itself, which the multi-agent compatibility rule in AGENTS.md forbids degrading. Their minors are read by hand, and the three overrides here are what pull them back out of the batch above: without groupName they stay grouped, without a schedule their PR could only open on Monday morning, and automerge false is what actually holds them. Patches stay in the batch on purpose: a patch that moved the exposed schema would be an upstream bug, not a normal release. That is a calculated bet, not a guarantee, because nothing asserts the serialised draft-07 output today - docs/decisions/dependency-automerge.md says what would close the gap.",
-      "matchPackageNames": ["@modelcontextprotocol/sdk", "zod"],
+      "description": "The @modelcontextprotocol/* packages release in lockstep over one shared @modelcontextprotocol/core, and @modelcontextprotocol/client is a devDependency while server and node are production ones. Left to the batches above, a bump would split across the prod and dev groups and leave two copies of core in the lockfile, so every non-major update of the family travels together in its own group. Patches stay auto-merged like any other patch; the next rule is what holds the minors.",
+      "matchPackageNames": ["@modelcontextprotocol/*"],
+      "matchUpdateTypes": ["patch", "minor"],
+      "groupName": "mcp sdk",
+      "schedule": ["* 0-7 * * 1"],
+      "timezone": "Europe/Paris",
+      "automerge": true
+    },
+    {
+      "description": "The @modelcontextprotocol/* SDK packages and zod define the JSON Schema (2020-12) this server exposes to agents, so a minor on either can move the tool surface itself, which the multi-agent compatibility rule in AGENTS.md forbids degrading. Their minors are read by hand. The overrides here are what pull them back out of the batches above: without a schedule their PR could only open on Monday morning, and automerge false is what actually holds them. zod's groupName null takes it out of the prod batch; the SDK packages keep the 'mcp sdk' group from the rule above, because they must move together. Patches stay in their batch on purpose: a patch that moved the exposed schema would be an upstream bug, not a normal release. That is a calculated bet, not a guarantee, because nothing asserts the serialised JSON Schema beyond its $schema dialect today - docs/decisions/dependency-automerge.md says what would close the gap.",
+      "matchPackageNames": ["@modelcontextprotocol/*", "zod"],
       "matchUpdateTypes": ["minor"],
-      "groupName": null,
       "schedule": ["at any time"],
       "automerge": false
+    },
+    {
+      "matchPackageNames": ["zod"],
+      "matchUpdateTypes": ["minor"],
+      "groupName": null
     },
     {
       "matchDepNames": ["pnpm"],

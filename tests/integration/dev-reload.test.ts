@@ -1,6 +1,4 @@
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { ToolListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
+import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 import { describe, expect, it } from 'vitest';
 import { Namespace } from '../../src/config';
 import { createReloadableServer, registerReloadTool } from '../../src/dev/reload';
@@ -19,7 +17,7 @@ const connect = async (server: Awaited<ReturnType<typeof createServerShell>>) =>
   await server.connect(serverTransport);
   const client = new Client({ name: 'dev-reload-test', version: '0.0.0' });
   let listChanged = 0;
-  client.setNotificationHandler(ToolListChangedNotificationSchema, () => {
+  client.setNotificationHandler('notifications/tools/list_changed', () => {
     listChanged += 1;
   });
   await client.connect(clientTransport);

@@ -1,4 +1,4 @@
-import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { McpServer, ResourceTemplate } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 import { ZendeskApiError } from './client/zendesk-api';
 import type { Config } from './config';
@@ -148,10 +148,10 @@ const registerProxyTool = (
     {
       title,
       description: `${prefix}${title}. Specify the operation and its parameters.\n\nAvailable operations:\n${operationList}`,
-      inputSchema: {
+      inputSchema: z.object({
         operation: z.string().describe(`One of: ${operationNames.join(', ')}`),
         params: z.record(z.string(), z.unknown()).default({}).describe('Operation parameters'),
-      },
+      }),
       annotations,
     },
     async (args) => dispatch(args as Record<string, unknown>),

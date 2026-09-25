@@ -139,8 +139,8 @@ security fix arrives in one of two weekly batches.
 
 | Update kind                                                         | Vulnerability (security) | Non-vulnerability                |
 | ------------------------------------------------------------------- | ------------------------ | -------------------------------- |
-| **patch**, any `package.json` dependency                            | auto-merge, own PR       | auto-merge, weekly batch         |
-| **minor** on `@modelcontextprotocol/sdk` or `zod`                   | manual review            | **manual review**, never batched |
+| **patch**, any `package.json` dependency                            | auto-merge, own PR       | auto-merge, weekly batch\*\*\*\* |
+| **minor** on `@modelcontextprotocol/*` or `zod`                     | manual review            | **manual review**, never batched\*\*\*\* |
 | **minor**, any other `package.json` dependency                      | manual review\*          | auto-merge, weekly batch         |
 | **major**, any dependency (prod and dev)                            | manual review\*\*         | dashboard approval               |
 | **patch / minor** on `pnpm` (`packageManager`)                      | auto-merge               | auto-merge, own PR               |
@@ -154,6 +154,8 @@ security fix arrives in one of two weekly batches.
 
 \*\*\* Both columns read that way for the same reason: the three overrides are caret ranges. Pin one to an exact version and it behaves like any other dependency. See **The overrides** below.
 
+\*\*\*\* The `@modelcontextprotocol/*` packages (production and dev alike) travel as one `mcp sdk` group, never split across the prod and dev batches: they release in lockstep over one shared `@modelcontextprotocol/core`, and a split bump would leave two copies of it in the lockfile.
+
 **The weekly batches.** Everything auto-merged and non-security is grouped into two PRs,
 `chore(deps): update prod dependencies` and `chore(deps): update dev dependencies`, opened
 Monday before 8am (Europe/Paris). Two groups and not one, so a broken dev bump does not hold
@@ -163,9 +165,9 @@ that has not yet cleared the 5-day `minimumReleaseAge` is left out of the batch 
 next one. The cost of batching is that one member breaking CI holds the whole batch open — the
 way out is in [Pause or disable](#pause-or-disable).
 
-**The exception list.** `@modelcontextprotocol/sdk` and `zod` define the JSON Schema (draft-07)
-this server exposes to agents, so a minor on either can move the tool surface itself. Those two
-minors are read by hand. Everything else is a leaf behind our own code, whose rendering output
+**The exception list.** The `@modelcontextprotocol/*` SDK packages and `zod` define the JSON Schema
+(2020-12) this server exposes to agents, so a minor on either can move the tool surface itself.
+Those minors are read by hand. Everything else is a leaf behind our own code, whose rendering output
 is pinned by the unit tests over the HTML/Markdown conversion and by the committed inline
 snapshots over the formatters. Why the criterion is the dependency and not the semver level,
 and what the trade-offs are:

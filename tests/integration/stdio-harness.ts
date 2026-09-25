@@ -1,5 +1,4 @@
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 import type { Config } from '../../src/config';
 import { createMcpServer } from '../../src/server';
 import type { ConnectedClient, IntegrationHarness } from './harness';
