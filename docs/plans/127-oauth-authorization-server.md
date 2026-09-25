@@ -1,7 +1,8 @@
 # Plan — #127 remote OAuth authorization server
 
-> **Temporary.** Working plan for the implementing session. Delete this file in
-> the last commit before merge. The durable record is
+> **Temporary.** This is the working plan for the session that implements
+> [#127](https://github.com/fruggr/zendesk-mcp-server/issues/127). That session
+> deletes this file in the last commit of its PR. The durable record is
 > [`docs/decisions/oauth-authorization-server.md`](../decisions/oauth-authorization-server.md):
 > read it first, every choice below comes from it.
 

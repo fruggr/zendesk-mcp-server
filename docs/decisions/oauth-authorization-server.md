@@ -74,7 +74,9 @@ server-side. Examples:
   pairs `oidc-provider` with Keyv.
 
 Passthrough (softeria, mcp-use's `oauthProxy`) is the minority, and it breaks the
-spec. The full survey is kept in the PR that applied this record.
+spec. The full survey, with its sources, is at the end of
+[the implementation plan](../plans/127-oauth-authorization-server.md#community-survey-sources-behind-the-adr)
+while #127 is open.
 
 ## The design
 
