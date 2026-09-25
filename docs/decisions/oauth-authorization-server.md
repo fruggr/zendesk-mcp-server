@@ -56,7 +56,10 @@
 | `@modelcontextprotocol/server-legacy/auth` | Rejected | Frozen and deprecated. |
 | FastMCP (TypeScript, `punkpeye/fastmcp`) | Rejected | It is its own, uncertified OAuth proxy. It ships only an in-memory `TokenStorage` and still depends on SDK v1. The project already left it once, over an unfixed high-severity vulnerability. |
 | `@cloudflare/workers-oauth-provider` | Rejected | Bound to Cloudflare Workers KV. |
-| External IdP (Keycloak, Auth0, Entra) | Rejected | Constraint 2. |
+| Hosted IdP (Auth0, Entra, Stytch, WorkOS, Descope) | Rejected | Constraint 2. |
+| Self-hosted Keycloak as the AS | Rejected | It would work: it brokers generic OAuth 2 upstreams since 26.3, has experimental CIMD since 26.6, and hands the Zendesk token back via `POST /realms/{realm}/broker/{alias}/token`. Our server would shrink to a resource server. But it means running Keycloak plus Postgres next to a single small container, which is far too heavy a prerequisite for a niche MCP server. |
+| Azure API Management (credential manager as token vault, APIM as the AS) | Rejected | Ties the project to one cloud and to a paid gateway tier. Per-Zendesk-user delegation was not demonstrated: the official sample signs users in through Entra. |
+| MCP gateways (Pomerium, agentgateway, MCP Mesh, Obot, ToolHive) | Rejected | Another service for every deployer to run. None was confirmed to combine a generic OAuth upstream like Zendesk with CIMD. |
 | `@better-auth/mcp` | Not retained | It targets spec 2026-07-28 and SDK v2, but brings a full database-backed auth framework. `oidc-provider` is certified. |
 
 ### Where the community landed
@@ -274,5 +277,8 @@ leaves either value to the library's defaults.
   Zendesk token is not.
 - **`oidc-provider` stops being maintained**, or drops CIMD. Then re-evaluate
   `@better-auth/mcp`.
+- **Deployers ask to bring their own AS** (Keycloak, a gateway). Then add an
+  opt-in resource-server mode that validates a configured issuer's JWT and
+  fetches the Zendesk token from a broker. The built-in AS stays the default.
 - **A supported stateless refresh-token format lands** in `oidc-provider`. Then
   the store could go.
