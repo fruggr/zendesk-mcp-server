@@ -7,7 +7,7 @@
 
 | | |
 | --- | --- |
-| **Status** | Decided, not yet applied |
+| **Status** | Decided and applied ([#317](https://github.com/fruggr/zendesk-mcp-server/pull/317)) |
 | **Date** | 2026-09-24 |
 | **Applies** | [#127](https://github.com/fruggr/zendesk-mcp-server/issues/127) — ships as a major release (3.0), after the SDK v2 migration ([#231](https://github.com/fruggr/zendesk-mcp-server/issues/231)) |
 | **Question** | How does a remote MCP client (claude.ai, ChatGPT, …) sign a user in when Zendesk offers neither discovery nor client registration? |
@@ -128,6 +128,10 @@ while #127 is open.
     a stolen Zendesk refresh token could be used without it, and the store is
     already encrypted.
 - The account is resolved with `/api/v2/users/me`, since Zendesk is not OIDC.
+- **Every authorization goes through Zendesk**, even with a live browser session,
+  and creates a fresh grant holding the Zendesk tokens of that sign-in. A grant
+  remembered by the session would carry no Zendesk tokens of its own. Zendesk
+  remembers its consent, so the extra round trip is a redirect.
 - The Zendesk access token is requested with its maximum lifetime (48 h). The
   refresh token is requested with a lifetime that fits constraint 4.
 
@@ -176,7 +180,8 @@ Instead:
     clients whose redirects are HTTPS today (fetched 2026-09-24).
   - The skip goes through `loadExistingGrant`, which `oidc-provider` documents for
     pre-agreed consent.
-  - The remembered consent is tied to a hash of the client's `redirect_uris`.
+  - The remembered consent is tied to a hash of the account, the client and its
+    `redirect_uris`, persisted for 90 days: a changed document asks again.
 - **Everything else sees the MCP screen once per client**: DCR, unknown CIMD,
   and loopback redirect URIs. Loopback is the case the spec flags as
   impersonable. The screen names the client, the scopes and the redirect URI, per

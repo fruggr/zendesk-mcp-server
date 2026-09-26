@@ -159,6 +159,51 @@ lands on a fresh transport that has seen no `initialize`. Either way a
 well-behaved client re-initializes and the next tool call goes through. See
 [Long-lived SSE streams behind a proxy](http-deployment.md#long-lived-sse-streams-behind-a-proxy).
 
+## HTTP: every user is asked to sign in again
+
+The server's tokens, and the Zendesk tokens it keeps for each user, only survive
+a restart when **both** the master secret and the grant store do.
+
+- **The store is gone**: a container restarted without a persistent volume, or
+  `--oauth-store memory://`. Mount the store's directory on a volume
+  ([Master secret and grant store](http-deployment.md#master-secret-and-grant-store)).
+- **The secret changed**: an auto-generated `oauth-master-secret` was lost with
+  the container's config dir, or `OAUTH_MASTER_SECRET` was replaced without
+  keeping the old value in the list. Supply the secret explicitly and rotate by
+  prepending, never replacing.
+- **The store file cannot be read**: the server refuses to start rather than
+  start empty, naming the store file. Check its permissions (owner-only, `0600`)
+  and that it is not truncated.
+
+## HTTP: a client keeps getting `401` right after signing in
+
+- **It sends a Zendesk token.** Only tokens this server issued are accepted: a
+  client configured with a Zendesk bearer, or pointed at Zendesk directly, gets
+  `401` on every request. Remove any manual token and let the client discover
+  the server's own authorization server.
+- **The public URL is wrong.** Tokens are bound to `<public-url>/mcp`. Behind a
+  reverse proxy, set `--public-url` to the URL clients use, and make the proxy
+  forward `X-Forwarded-Proto` and `X-Forwarded-Host`.
+- **Zendesk rejected the user's token** (the app was revoked, or an admin
+  revoked the token). The tool call reports an authentication error, the grant
+  ends, and the client's next request gets `401`: signing in again fixes it.
+
+## HTTP: a user is signed out after a few minutes or hours
+
+Most often the client replayed an old refresh token. Refresh tokens rotate, and
+presenting one that was already used revokes the whole grant, as OAuth 2.1
+requires to contain a stolen token. A client that retries a refresh after a lost
+response, or refreshes from two places with the same token, signs its user out.
+Signing in again fixes it; if it recurs, report it to the client's maintainers.
+
+## HTTP: the sign-in page says the link expired
+
+The sign-in went through another browser than the one that started it, or took
+longer than 10 minutes. Start the connection again from the MCP client. If it
+happens every time behind a reverse proxy, check that the proxy keeps the
+cookies and that the redirect URL registered in Zendesk is exactly
+`<public-url>/oauth/callback`.
+
 ## `Permission denied` on `list_permission_groups`, `list_user_segments`, or the topology resource
 
 Enumerating Guide permission groups and Help Center user segments requires
