@@ -48,10 +48,8 @@ gating on.
   the multi-agent compatibility rule in [`AGENTS.md`](../../AGENTS.md) forbids
   degrading, and what [`mcp-metadata.md`](../mcp-metadata.md) exists to diff.
   These are read by hand.
-- **The other fourteen production dependencies are leaves.** `open`, `cheerio`,
-  and the `unified` / `remark` / `rehype` chain sit behind our own code; `hono`
-  is the HTTP plumbing under the SDK's Node transport, exercised by
-  `tests/unit/transports/http.test.ts`. What they
+- **The other thirteen production dependencies are leaves.** `open`, `cheerio`,
+  and the `unified` / `remark` / `rehype` chain sit behind our own code. What they
   can change is rendering output, and that is asserted:
   `tests/unit/utils/article-sections.test.ts` pins the HTML ↔ Markdown conversion
   the chain performs, and `tests/unit/utils/formatting.test.ts` holds 63 committed

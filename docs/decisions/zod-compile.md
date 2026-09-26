@@ -34,14 +34,16 @@ and does not compile the schema at all** while doing so. Probed on a live server
 | Every JSON-RPC message — `JSONRPCMessageSchema.parse`, synchronous in stdio, SSE and streamable HTTP alike | **yes** |
 | `createStrictParamsParser`'s params parse (`src/utils/validation.ts`) — the proxy dispatch path, i.e. `namespace` and `single`, the default modes | **yes** |
 | `ConfigSchema.parse` at startup (`src/config.ts`) | yes, once |
-| The SDK's tool-argument validation — the registered schema in `all` mode, the proxy's `{operation, params}` schema in the others | **no**: `mcp.js` uses `safeParseAsync` |
+| The SDK's tool-argument validation — the registered schema in `all` mode, the proxy's `{operation, params}` schema in the others | **yes** since SDK v2: it validates through zod's `~standard.validate`, which runs synchronously (on SDK v1, `safeParseAsync`: **no**) |
 
-So in `all` mode no tool input schema is ever compiled, and in the default mode the
-*inner* params parse is compiled while the SDK's outer one is not. Nothing can be done
-about it from here: `compile()` is forward-and-synchronous by construction, and the
-choice of `safeParseAsync` belongs to the SDK. `tests/unit/tools/schema-compile.test.ts`
-pins both halves — that the sync path really compiles, and that the async one really
-does not — so this table cannot quietly go stale.
+On SDK v1 no tool input schema was ever compiled in `all` mode, and in the default mode
+only the *inner* params parse was; the cost figures below were measured then. SDK v2
+compiles both, which moves the numbers in the direction the doc already accepts (a
+little more first-parse cost per schema, a little less per call). `compile()` is
+forward-and-synchronous by construction, and which parse the SDK calls is its choice.
+`tests/unit/tools/schema-compile.test.ts` pins both halves of the zod mechanism — that
+the sync path really compiles, and that the async one really does not — but not the
+SDK's choice, so re-probe this table on an SDK major.
 
 ## The argument that does *not* justify this
 
@@ -51,8 +53,8 @@ wrong, and this section exists so nobody reaches for it later.
 Every tool call in this server is one or more HTTPS round-trips to Zendesk
 (`src/client/zendesk-api.ts`), i.e. 100–500 ms. The zod work on that path is one
 `safeParse` of the tool's input schema plus the SDK's validation of two JSON-RPC
-messages — **~2 µs saved per call, about 0.001% of it**, and less than that in `all`
-mode, where the tool-input parse is the SDK's async one and is not compiled at all. No
+messages — **~2 µs saved per call, about 0.001% of it** (measured on SDK v1, where the
+`all`-mode tool-input parse was async and not compiled at all). No
 zod schema parses Zendesk *responses*: those are plain TypeScript interfaces (`src/types.ts`), so there is no
 hidden hot path. The server's real CPU cost is the unified/cheerio HTML↔Markdown
 pipeline in `src/tools/help-center.ts`, which the compiler does not touch.
@@ -103,8 +105,9 @@ Four things follow, and they are the honest shape of this change:
    SDK's module-level protocol schemas: compiled once per process, hit by every message.
 3. Under stdio (one process, one session) both effects are once-per-launch and the
    break-even on protocol messages arrives after ~35 messages.
-4. In `all` mode there is neither cost nor gain on tool inputs: that validation is the
-   SDK's async one, so nothing there is ever compiled.
+4. In `all` mode, on SDK v1, there was neither cost nor gain on tool inputs: that
+   validation was the SDK's async one. SDK v2 validates synchronously, so `all` mode now
+   pays and gains like the proxy path in point 2.
 
 ## Why it is still adopted
 
@@ -153,9 +156,10 @@ synchronous parse leaves the schema compiled and an asynchronous one does not.
 - **A schema feature we need that the fast path cannot model.** The guard test will say
   so. Expressing the constraint differently is preferable; accepting the fallback is
   fine too, but then say which tool and why, here.
-- **The SDK dropping `safeParseAsync`** — the reverse of a reversal: tool-argument
-  validation would start being compiled, and the *Which parses it actually reaches* table
-  above would need redoing. The guard test's async assertion is what would notice.
+- **The SDK dropping `safeParseAsync`** — happened with SDK v2, which validates tool
+  arguments through `~standard.validate` (synchronous, hence compiled). The *Which parses
+  it actually reaches* table above records it; the guard test did not notice, because it
+  exercises zod directly rather than the SDK.
 - **The fallback becoming observable** — a zod release where a compiled schema's errors,
   coercions or key handling differ from the runtime parser's. The byte-identical
   `tools/list` check and the full suite running compiled are what would catch it.

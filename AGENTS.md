@@ -45,7 +45,7 @@ web, which generates them: leave those alone, don't imitate the shape by hand.
 ## Architecture
 
 Transports: stdio (SDK `StdioServerTransport`) plus a thin `node:http` HTTP
-transport that wraps `StreamableHTTPServerTransport` and serves the RFC 9728 /
+transport that wraps `NodeStreamableHTTPServerTransport` and serves the RFC 9728 /
 RFC 8414 OAuth discovery endpoints; HTTP builds a per-session `McpServer` so the
 request's bearer is captured in the tools' closure — no shared state.
 

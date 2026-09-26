@@ -75,9 +75,9 @@ describe('tool input schemas compile', () => {
   });
 
   it('an async parse is never compiled — the limitation this rests on', () => {
-    // Pins the mechanism behind the SDK caveat in the decision doc: the shim returns the
+    // Pins the zod mechanism the decision doc's parse table rests on: the shim returns the
     // runtime parser for async calls without ever compiling, so async-only schemas stay
-    // uncompiled forever. If this ever starts passing as compiled, that caveat is stale.
+    // uncompiled forever. If this ever starts passing as compiled, that table is stale.
     const schema = z.object({ id: z.number() });
 
     return schema.safeParseAsync({ id: 1 }).then(() => {

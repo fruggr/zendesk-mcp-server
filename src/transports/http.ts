@@ -445,12 +445,7 @@ export const startHttpTransport = async (
     transport.onclose = () => {
       if (transport.sessionId) sessions.delete(transport.sessionId);
     };
-    // The SDK's Transport interface uses `onclose?: () => void` which conflicts
-    // with the concrete transport's class member typing under
-    // exactOptionalPropertyTypes — the runtime contract is identical, this is
-    // purely a type-system seam.
-    // biome-ignore lint/suspicious/noExplicitAny: SDK type seam, see above
-    await server.connect(transport as any);
+    await server.connect(transport);
     await transport.handleRequest(req, res, body.value);
   };
 

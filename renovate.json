@@ -87,6 +87,12 @@
       "groupName": null
     },
     {
+      "description": "Majors of the @modelcontextprotocol/* family move together too, for the same shared-core reason as the 'mcp sdk' rule above; this only groups them, dashboard approval still gates them.",
+      "matchPackageNames": ["@modelcontextprotocol/*"],
+      "matchUpdateTypes": ["major"],
+      "groupName": "mcp sdk"
+    },
+    {
       "matchDepNames": ["pnpm"],
       "matchUpdateTypes": ["patch", "minor"],
       "automerge": true
