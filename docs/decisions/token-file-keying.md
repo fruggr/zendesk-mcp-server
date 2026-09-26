@@ -37,7 +37,7 @@ The file name carries the whole key: `(subdomain, oauthClientId, scope)`, as
 `<subdomain>--<client>--<scope>--<digest>.json`. Two servers whose credentials
 cannot substitute for each other no longer address one record.
 
-Nothing else changes. `ZENDESK_TOKEN_FILE` still overrides the path outright,
+Nothing else changes. `OAUTH_TOKEN_FILE` still overrides the path outright,
 and remains the answer for the one case the key does not separate: two Zendesk
 *accounts* on the same subdomain, client and scope.
 

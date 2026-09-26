@@ -1,5 +1,6 @@
 import { type ParseArgsConfig, parseArgs } from 'node:util';
 import * as z from 'zod/v4';
+import { readEnv } from './utils/env';
 
 export const ToolMode = z.enum(['single', 'namespace', 'all']);
 export type ToolMode = z.infer<typeof ToolMode>;
@@ -177,7 +178,7 @@ interface CliResult {
 // validate strictly. Range checks stay in ConfigSchema, the single authority.
 //
 // The error must not echo the value: reflecting `raw` from a sensitive-looking
-// variable (ZENDESK_OAUTH_CALLBACK_PORT) into a message that reaches
+// variable (OAUTH_CALLBACK_PORT) into a message that reaches
 // `console.error` trips CodeQL's js/clear-text-logging. The label names the knob.
 const DIGITS_ONLY = /^\d+$/;
 
@@ -188,19 +189,25 @@ const parsePort = (raw: string, label: string): number => {
   return Number(raw);
 };
 
-const parsePortEnv = (raw: string | undefined, label: string): number | undefined =>
-  raw === undefined ? undefined : parsePort(raw, label);
-
 // An empty variable is a misconfiguration, not "unset": `FOO=` and `FOO="$BAR"`
 // with BAR unset both reach us as ''. Defaulting there boots a config that
 // disagrees with the deployment's intent, so fail naming it (#174). CORS_ORIGIN
 // is exempt — as a list, empty means "no extra origins".
-const requireNonEmptyEnv = (name: string): string | undefined => {
-  const raw = process.env[name];
-  if (raw === '') {
-    throw new Error(`Empty ${name}. Set it to a value, or unset it entirely.`);
+// Errors name the variable actually read, which is the legacy one when that
+// is what the deployment still sets (readEnv).
+const readNonEmptyEnv = (name: string): ReturnType<typeof readEnv> => {
+  const env = readEnv(name);
+  if (env.value === '') {
+    throw new Error(`Empty ${env.name}. Set it to a value, or unset it entirely.`);
   }
-  return raw;
+  return env;
+};
+
+const requireNonEmptyEnv = (name: string): string | undefined => readNonEmptyEnv(name).value;
+
+const portEnv = (name: string): number | undefined => {
+  const env = readNonEmptyEnv(name);
+  return env.value === undefined ? undefined : parsePort(env.value, env.name);
 };
 
 // The whole CLI surface as one declarative table: `parseArgs` derives the
@@ -341,8 +348,8 @@ const resolveTransportSettings = (cli: CliResult): TransportSettings => {
 
   return {
     transport: cli.transport ?? requireNonEmptyEnv('TRANSPORT') ?? 'stdio',
-    host: cli.host ?? requireNonEmptyEnv('HOST') ?? '0.0.0.0',
-    port: cli.port ?? parsePortEnv(requireNonEmptyEnv('PORT'), 'PORT') ?? 3000,
+    host: cli.host ?? requireNonEmptyEnv('LISTEN_HOST') ?? '0.0.0.0',
+    port: cli.port ?? portEnv('PORT') ?? 3000,
     publicUrl: cli.publicUrl ?? requireNonEmptyEnv('PUBLIC_URL'),
     corsOrigins: [...(cli.corsOrigins ?? []), ...corsFromEnv],
   };
@@ -365,9 +372,7 @@ export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
   // `--namespace` therefore opens the namespace filter and narrows by tool.
   const namespaces = cli.namespaces ?? (cli.tools?.length ? [...Namespace.options] : undefined);
 
-  const callbackPort =
-    cli.callbackPort ??
-    parsePortEnv(requireNonEmptyEnv('ZENDESK_OAUTH_CALLBACK_PORT'), 'ZENDESK_OAUTH_CALLBACK_PORT');
+  const callbackPort = cli.callbackPort ?? portEnv('OAUTH_CALLBACK_PORT');
 
   // Unset leaves this undefined so the schema default (`zendesk-hc`) applies;
   // empty is rejected by requireNonEmptyEnv. Format is schema-validated.

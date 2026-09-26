@@ -1,8 +1,10 @@
+import { readEnv } from './utils/env';
+
 // Unchecked Number() coercion is unsafe here: '' yields 0 and a typo NaN, either
 // silently breaking the guardrail that reads the value. These constants are all
 // counts and sizes, so a fraction or an unsafe integer is a typo — fall back.
 const positiveIntEnv = (name: string, fallback: number): number => {
-  const raw = process.env[name];
+  const raw = readEnv(name).value;
   if (raw === undefined || raw.trim() === '') return fallback;
   const parsed = Number(raw);
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
@@ -12,7 +14,7 @@ const positiveIntEnv = (name: string, fallback: number): number => {
 // what to do (truncateIfNeeded). The default protects the client's context
 // budget, so raising it is rarely right; it is overridable mainly to exercise
 // truncation on a small tenant.
-export const CHARACTER_LIMIT = positiveIntEnv('ZENDESK_CHARACTER_LIMIT', 25_000);
+export const CHARACTER_LIMIT = positiveIntEnv('RESPONSE_CHARACTER_LIMIT', 25_000);
 export const DEFAULT_PAGE_SIZE = 100;
 export const MAX_PAGE_SIZE = 100;
 
@@ -46,7 +48,7 @@ export const ARTICLE_RESOURCES_TTL_MS = 5 * 60 * 1000;
 // filters client-side. Promoted articles beyond the cap are omitted, and the
 // truncation logged.
 export const ARTICLE_RESOURCES_SCAN_MAX_PAGES = positiveIntEnv(
-  'ZENDESK_ARTICLE_RESOURCES_SCAN_MAX_PAGES',
+  'ARTICLE_RESOURCES_SCAN_MAX_PAGES',
   20,
 );
 
@@ -59,12 +61,12 @@ export const DEFAULT_CALLBACK_PORT = 27439;
 // Per-attachment cap for inline image content. Images larger than this are
 // returned as text references instead of base64 image content blocks. The
 // default is aligned with the Anthropic vision API per-image limit; override
-// via ZENDESK_MAX_ATTACHMENT_BYTES (bytes).
-export const MAX_ATTACHMENT_BYTES = positiveIntEnv('ZENDESK_MAX_ATTACHMENT_BYTES', 5 * 1024 * 1024);
+// via ATTACHMENT_MAX_BYTES (bytes).
+export const MAX_ATTACHMENT_BYTES = positiveIntEnv('ATTACHMENT_MAX_BYTES', 5 * 1024 * 1024);
 
 // Maximum number of images embedded as base64 in a single tool call. Remaining
-// images are returned as text references. Override via ZENDESK_MAX_EMBEDDED_IMAGES.
-export const MAX_EMBEDDED_IMAGE_COUNT = positiveIntEnv('ZENDESK_MAX_EMBEDDED_IMAGES', 10);
+// images are returned as text references. Override via EMBEDDED_IMAGES_MAX.
+export const MAX_EMBEDDED_IMAGE_COUNT = positiveIntEnv('EMBEDDED_IMAGES_MAX', 10);
 
 // Largest JSON-RPC message the stdio transport accepts, and the ceiling the
 // payload guards derive from. Ours rather than the SDK's default: the caps
@@ -89,7 +91,7 @@ const MESSAGE_CONTENT_BUDGET_BYTES = STDIO_MAX_MESSAGE_BYTES - ENVELOPE_RESERVE_
 // larger value is clamped, because emitting past what the transport carries
 // fails on the client's side.
 export const MAX_RESPONSE_BYTES = Math.min(
-  positiveIntEnv('ZENDESK_MAX_RESPONSE_BYTES', MESSAGE_CONTENT_BUDGET_BYTES),
+  positiveIntEnv('RESPONSE_MAX_BYTES', MESSAGE_CONTENT_BUDGET_BYTES),
   MESSAGE_CONTENT_BUDGET_BYTES,
 );
 
@@ -107,22 +109,19 @@ export const MAX_BASE64_INPUT_MB = Number.parseFloat(
 );
 
 // Hard cap on comment pages fetched when collecting ticket attachments.
-// Overridable via ZENDESK_MAX_COMMENT_PAGES for tickets with many comments.
-export const MAX_COMMENT_PAGES = positiveIntEnv('ZENDESK_MAX_COMMENT_PAGES', 10);
+// Overridable via COMMENT_MAX_PAGES for tickets with many comments.
+export const MAX_COMMENT_PAGES = positiveIntEnv('COMMENT_MAX_PAGES', 10);
 
 // Max /ticket_fields pages scanned when resolving a form's fields. That endpoint
 // cannot say when it is done: `count` is the UNFILTERED total (measured 27 while
 // returning 8 rows with `next_page: null`). We follow `next_page` alone, bounded
 // here.
-export const TICKET_FIELD_SCAN_MAX_PAGES = positiveIntEnv(
-  'ZENDESK_TICKET_FIELD_SCAN_MAX_PAGES',
-  10,
-);
+export const TICKET_FIELD_SCAN_MAX_PAGES = positiveIntEnv('TICKET_FIELD_SCAN_MAX_PAGES', 10);
 
 // Blast-radius guard: moving one article can rewrite the `position` of several
 // neighbours, so past this many the tool refuses without confirm:true — a single
 // "move to top" must not silently rewrite hundreds of articles.
-export const REORDER_CONFIRM_THRESHOLD = positiveIntEnv('ZENDESK_REORDER_CONFIRM_THRESHOLD', 20);
+export const REORDER_CONFIRM_THRESHOLD = positiveIntEnv('REORDER_CONFIRM_THRESHOLD', 20);
 
 // Thresholds used to nudge callers toward section-scoped article tools
 // (get_article_outline / get_article_section / update_article_section)

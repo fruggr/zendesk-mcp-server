@@ -140,7 +140,7 @@ const runScenario = (scenario, tokenPath) =>
           ...process.env,
           SUB,
           FAULT: scenario.fault,
-          ZENDESK_TOKEN_FILE: tokenPath,
+          OAUTH_TOKEN_FILE: tokenPath,
           ZENDESK_OAUTH_CLIENT_ID: 'validation_client',
           LOG_LEVEL: 'error',
         },

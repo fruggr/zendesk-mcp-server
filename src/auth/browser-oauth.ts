@@ -54,7 +54,7 @@ const callbackPortInUseError = (port: number, cause: Error): Error =>
       `Cannot start the Zendesk OAuth sign-in: local callback port ${port} is already in use. ` +
         `Another instance of this server is most likely signing in right now: finish that ` +
         `browser window, then retry. If an unrelated program holds the port, set ` +
-        `ZENDESK_OAUTH_CALLBACK_PORT (or --callback-port) to a free port, then register ` +
+        `OAUTH_CALLBACK_PORT (or --callback-port) to a free port, then register ` +
         `http://localhost:<port>/callback as a redirect URL in your Zendesk OAuth client. ` +
         `(EADDRINUSE)`,
     ),

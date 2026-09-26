@@ -3,7 +3,7 @@
 Full reference for configuring the [Zendesk MCP Server](../README.md): the CLI
 flags and the environment variables. Each variable has its own anchor, so you can
 deep-link a specific setting (e.g.
-[`docs/configuration.md#zendesk_max_attachment_bytes`](#zendesk_max_attachment_bytes)).
+[`docs/configuration.md#attachment_max_bytes`](#attachment_max_bytes)).
 
 CLI flags generally take precedence over the matching environment variable. The
 one exception is `--cors-origin`, which is additive and *extends* `CORS_ORIGIN`
@@ -82,7 +82,7 @@ predict, don't guess — ask the server:
 zendesk-mcp-server mycompany --print-tools --namespace requests --mode single
 ```
 
-`--read-only` also narrows the OAuth scope the server asks Zendesk for, from `read write` down to `read`, so it works with an OAuth client whose allowed scopes stop at `read` (and in HTTP mode the advertised `scopes_supported` follows the same rule). What it does *not* do is revoke a grant you already have: a broader token found in the [token cache](#zendesk_token_file) is still used as-is. Dropping the flag on a server whose cached token is `read`-only costs one browser sign-in, because OAuth cannot widen a grant on refresh.
+`--read-only` also narrows the OAuth scope the server asks Zendesk for, from `read write` down to `read`, so it works with an OAuth client whose allowed scopes stop at `read` (and in HTTP mode the advertised `scopes_supported` follows the same rule). What it does *not* do is revoke a grant you already have: a broader token found in the [token cache](#oauth_token_file) is still used as-is. Dropping the flag on a server whose cached token is `read`-only costs one browser sign-in, because OAuth cannot widen a grant on refresh.
 
 ### A malformed invocation fails at startup
 
@@ -178,16 +178,39 @@ Three deliberate exceptions:
   8080` alongside a stray `PORT=` still boots, and so does the positional
   `<subdomain>` alongside an empty `ZENDESK_SUBDOMAIN`. Validation applies to
   the value the server actually uses.
-- The **numeric tuning caps** — `ZENDESK_CHARACTER_LIMIT`,
-  `ZENDESK_MAX_ATTACHMENT_BYTES`, `ZENDESK_MAX_EMBEDDED_IMAGES`,
-  `ZENDESK_MAX_COMMENT_PAGES`, `ZENDESK_REORDER_CONFIRM_THRESHOLD`,
-  `ZENDESK_TICKET_FIELD_SCAN_MAX_PAGES` and
-  `ZENDESK_ARTICLE_RESOURCES_SCAN_MAX_PAGES` — read through a shared parser that
+- The **numeric tuning caps** — `RESPONSE_CHARACTER_LIMIT`,
+  `ATTACHMENT_MAX_BYTES`, `EMBEDDED_IMAGES_MAX`,
+  `COMMENT_MAX_PAGES`, `REORDER_CONFIRM_THRESHOLD`,
+  `TICKET_FIELD_SCAN_MAX_PAGES` and
+  `ARTICLE_RESOURCES_SCAN_MAX_PAGES` — read through a shared parser that
   treats an empty value as unset and falls back to the default, along with any
   value that is not a positive safe integer. They bound response sizes and scan
   depth rather than describing the deployment, so a typo there degrades a
   guardrail instead of misrouting traffic, and refusing to boot over one would
   be the harsher failure.
+
+### Renamed variables
+
+`ZENDESK_*` now names only what describes the Zendesk side (the tenant, the
+OAuth client registered in it); the server's own knobs dropped the prefix, and
+`HOST` gained a qualifier. The old names still work until **3.0.0**: each one
+still set logs one `deprecated_env_var` warning on stderr the first time it is
+read, and when both names are set the new one wins. Errors about a value name the variable it
+came from.
+
+| Old name (removed in 3.0.0) | New name |
+|---|---|
+| `ZENDESK_OAUTH_CALLBACK_PORT` | [`OAUTH_CALLBACK_PORT`](#oauth_callback_port) |
+| `ZENDESK_TOKEN_FILE` | [`OAUTH_TOKEN_FILE`](#oauth_token_file) |
+| `HOST` | [`LISTEN_HOST`](#listen_host) |
+| `ZENDESK_CHARACTER_LIMIT` | [`RESPONSE_CHARACTER_LIMIT`](#response_character_limit) |
+| `ZENDESK_MAX_ATTACHMENT_BYTES` | [`ATTACHMENT_MAX_BYTES`](#attachment_max_bytes) |
+| `ZENDESK_MAX_EMBEDDED_IMAGES` | [`EMBEDDED_IMAGES_MAX`](#embedded_images_max) |
+| `ZENDESK_MAX_RESPONSE_BYTES` | [`RESPONSE_MAX_BYTES`](#response_max_bytes) |
+| `ZENDESK_MAX_COMMENT_PAGES` | [`COMMENT_MAX_PAGES`](#comment_max_pages) |
+| `ZENDESK_TICKET_FIELD_SCAN_MAX_PAGES` | [`TICKET_FIELD_SCAN_MAX_PAGES`](#ticket_field_scan_max_pages) |
+| `ZENDESK_REORDER_CONFIRM_THRESHOLD` | [`REORDER_CONFIRM_THRESHOLD`](#reorder_confirm_threshold) |
+| `ZENDESK_ARTICLE_RESOURCES_SCAN_MAX_PAGES` | [`ARTICLE_RESOURCES_SCAN_MAX_PAGES`](#article_resources_scan_max_pages) |
 
 ### `ZENDESK_SUBDOMAIN`
 **Required:** yes (or the CLI `<subdomain>` argument) · **Default:** none
@@ -199,12 +222,12 @@ Zendesk subdomain (e.g. `acme` for `acme.zendesk.com`).
 
 OAuth client identifier.
 
-### `ZENDESK_OAUTH_CALLBACK_PORT`
+### `OAUTH_CALLBACK_PORT`
 **Required:** no · **Default:** `27439`
 
 Local port for the OAuth browser callback (also `--callback-port`). Must match the redirect URL registered in Zendesk. **stdio only.**
 
-### `ZENDESK_TOKEN_FILE`
+### `OAUTH_TOKEN_FILE`
 **Required:** no · **Default:** OS config dir, one file per subdomain + OAuth client + scope
 
 Path to the persisted OAuth token file (`0600`). Overriding it pins one explicit file, which is how two Zendesk accounts sharing a subdomain, client and scope are kept apart — instances differing in any of those three are already separate by default ([troubleshooting](troubleshooting.md#two-instances-of-the-server-interfere-with-each-other)).
@@ -214,7 +237,7 @@ Path to the persisted OAuth token file (`0600`). Overriding it pins one explicit
 
 `stdio` or `http`.
 
-### `HOST`
+### `LISTEN_HOST`
 **Required:** no · **Default:** `0.0.0.0`
 
 HTTP bind host.
@@ -255,7 +278,7 @@ connected to several servers.
 
 Log verbosity (`debug` surfaces the full OAuth flow trace).
 
-### `ZENDESK_CHARACTER_LIMIT`
+### `RESPONSE_CHARACTER_LIMIT`
 **Required:** no · **Default:** `25000`
 
 Ceiling on the characters a single tool response may carry. Past it the text is cut and a notice says what to do about it — the notice names a lever the tool in question actually accepts (a page parameter, a narrower filter, or the tool that pages the same data), so it differs per tool.
@@ -263,30 +286,30 @@ Ceiling on the characters a single tool response may carry. Past it the text is 
 Raising it is rarely what you want: the default exists to protect the client's own context budget, and a larger response mostly moves the problem downstream. **Lowering it is the useful direction** — it is how the truncation paths get exercised on a tenant whose real data never reaches 25 000 characters. Set it to a few hundred and any ordinary response trips the notice:
 
 ```bash
-ZENDESK_CHARACTER_LIMIT=2000 pnpm dev -- <your-subdomain> --mode all
+RESPONSE_CHARACTER_LIMIT=2000 pnpm dev -- <your-subdomain> --mode all
 ```
 
-### `ZENDESK_MAX_ATTACHMENT_BYTES`
+### `ATTACHMENT_MAX_BYTES`
 **Required:** no · **Default:** `5242880` (5 MB)
 
 Per-image size cap for inline (multimodal) ticket attachments. Images larger than this are returned as text references instead of embedded image content. The default is aligned with the Anthropic vision API per-image limit.
 
-### `ZENDESK_MAX_EMBEDDED_IMAGES`
+### `EMBEDDED_IMAGES_MAX`
 **Required:** no · **Default:** `10`
 
 Maximum number of images embedded as native image content in a single tool call. Remaining images are returned as text references.
 
-### `ZENDESK_MAX_RESPONSE_BYTES`
+### `RESPONSE_MAX_BYTES`
 **Required:** no · **Default:** `10420224` (10 MB, less a 64 KB envelope reserve)
 
 Total size budget for the content of one tool response. The two caps above bound each image and how many are embedded, never the sum: two 3.8 MB screenshots pass both and still build a message beyond what the stdio transport accepts, which **closes the transport** rather than failing the call (SDK 1.30 caps its read buffer at 10 MB). Attachment listings therefore track the serialized weight of what they emit: an image that no longer fits degrades to a text reference stating the budget, and once even references stop fitting the listing stops with a block naming how many were omitted. Lower it if your client enforces a smaller message ceiling. Only a value below the default takes effect: a larger one is clamped back to it, since emitting past what the stdio transport carries breaks the client, where none of these guards run.
 
-### `ZENDESK_MAX_COMMENT_PAGES`
+### `COMMENT_MAX_PAGES`
 **Required:** no · **Default:** `10`
 
 Hard cap on the number of comment pages fetched when collecting a ticket's attachments (raise it for tickets with very long comment threads).
 
-### `ZENDESK_TICKET_FIELD_SCAN_MAX_PAGES`
+### `TICKET_FIELD_SCAN_MAX_PAGES`
 **Required:** no · **Default:** `10`
 
 Hard cap on the number of pages scanned when the end-user tools walk a listing
@@ -300,12 +323,12 @@ leave a required question unasked, and the submitter would meet an opaque
 Zendesk 422 instead. Raise it for an account with more portal fields, or more
 end-user forms, than the default scan covers.
 
-### `ZENDESK_REORDER_CONFIRM_THRESHOLD`
+### `REORDER_CONFIRM_THRESHOLD`
 **Required:** no · **Default:** `20`
 
 Safety threshold for `reorder_article`. When moving an article would rewrite more than this many article positions (for example moving an article to the top of a large or heavily tied section), the tool refuses and reports the count until the call is retried with `confirm: true`. Lower it to be prompted sooner, raise it to reorder large sections without confirmation.
 
-### `ZENDESK_ARTICLE_RESOURCES_SCAN_MAX_PAGES`
+### `ARTICLE_RESOURCES_SCAN_MAX_PAGES`
 **Required:** no · **Default:** `20`
 
 Hard cap on the number of article pages scanned to find promoted ("featured") articles. This backs both the `<scheme>://article/{id}` resource listing (`resources/list`) and the `list_promoted_articles` tool. The Help Center API has no server-side promoted filter, so the scan pages through the articles and filters them client-side; this bounds that scan on a very large Help Center (promoted articles beyond the cap are omitted, and the truncation is flagged). Raise it if promoted articles live deep in a large catalog.

@@ -522,7 +522,7 @@ const sectionListPath = (categoryId: number | undefined, locale: string | undefi
 // (costly, don't repeat), or a single cheap page (no note at all).
 const scanCostNote = (truncated: boolean, pagesScanned: number, cost: string): string => {
   if (truncated) {
-    return `\n\n_Note: the scan hit its ${ARTICLE_RESOURCES_SCAN_MAX_PAGES}-page cap (${cost}), so promoted articles deeper in the catalog may be missing. This call is costly on this Help Center — avoid repeating it; raise ZENDESK_ARTICLE_RESOURCES_SCAN_MAX_PAGES to widen coverage._`;
+    return `\n\n_Note: the scan hit its ${ARTICLE_RESOURCES_SCAN_MAX_PAGES}-page cap (${cost}), so promoted articles deeper in the catalog may be missing. This call is costly on this Help Center — avoid repeating it; raise ARTICLE_RESOURCES_SCAN_MAX_PAGES to widen coverage._`;
   }
   if (pagesScanned > 1) {
     return `\n\n_Note: this scan cost ${cost}; this tool performs a fresh scan every call (no caching), so avoid calling it again right away._`;
@@ -987,7 +987,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: true,
       title: 'List Promoted Help Center Articles',
       description:
-        'List the promoted ("featured") Help Center articles — the small, editorially-curated set surfaced at the top of their sections. Returns metadata only (no body); use get_article for full content. COST: the Help Center API has no server-side promoted filter, so this scans article pages (one Zendesk API request per page, up to ZENDESK_ARTICLE_RESOURCES_SCAN_MAX_PAGES, default 20) and filters client-side — potentially costly on a large Help Center. Each call performs a fresh, uncached scan, so avoid calling it repeatedly. On a very large Help Center some promoted articles may be omitted, and both the omission and the number of pages scanned are flagged in the output. Lists the default locale. To promote or unpromote an article, use update_article with `promoted` (requires Help Center admin / Guide admin rights).',
+        'List the promoted ("featured") Help Center articles — the small, editorially-curated set surfaced at the top of their sections. Returns metadata only (no body); use get_article for full content. COST: the Help Center API has no server-side promoted filter, so this scans article pages (one Zendesk API request per page, up to ARTICLE_RESOURCES_SCAN_MAX_PAGES, default 20) and filters client-side — potentially costly on a large Help Center. Each call performs a fresh, uncached scan, so avoid calling it repeatedly. On a very large Help Center some promoted articles may be omitted, and both the omission and the number of pages scanned are flagged in the output. Lists the default locale. To promote or unpromote an article, use update_article with `promoted` (requires Help Center admin / Guide admin rights).',
       inputSchema: z.object({}),
       annotations: {
         readOnlyHint: true,
@@ -1730,7 +1730,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           .boolean()
           .default(false)
           .describe(
-            'Safety guard for large reorders. When the move would rewrite more article positions than the configured threshold (ZENDESK_REORDER_CONFIRM_THRESHOLD, default 20), the tool refuses and reports the count until you pass true here. Has no effect on small reorders.',
+            'Safety guard for large reorders. When the move would rewrite more article positions than the configured threshold (REORDER_CONFIRM_THRESHOLD, default 20), the tool refuses and reports the count until you pass true here. Has no effect on small reorders.',
           ),
       }),
       annotations: {

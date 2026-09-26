@@ -58,6 +58,7 @@ describe('token-persistence', () => {
     chmodCalls.length = 0;
     failWrite = false;
     failDirChmod = false;
+    delete process.env['OAUTH_TOKEN_FILE'];
     delete process.env['ZENDESK_TOKEN_FILE'];
     delete process.env['XDG_CONFIG_HOME'];
     delete process.env['APPDATA'];
@@ -68,8 +69,16 @@ describe('token-persistence', () => {
     vi.resetModules();
   });
 
-  it('resolves the path from ZENDESK_TOKEN_FILE whatever the key', async () => {
-    process.env['ZENDESK_TOKEN_FILE'] = '/custom/token.json';
+  it('still honors the legacy ZENDESK_TOKEN_FILE', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    process.env['ZENDESK_TOKEN_FILE'] = '/legacy/token.json';
+    const { resolveTokenPath } = await importFresh();
+    expect(resolveTokenPath(KEY)).toBe('/legacy/token.json');
+    vi.restoreAllMocks();
+  });
+
+  it('resolves the path from OAUTH_TOKEN_FILE whatever the key', async () => {
+    process.env['OAUTH_TOKEN_FILE'] = '/custom/token.json';
     const { resolveTokenPath } = await importFresh();
     expect(resolveTokenPath(KEY)).toBe('/custom/token.json');
     // The override is a single explicit file: it outranks every key dimension,

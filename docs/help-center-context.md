@@ -60,7 +60,7 @@ same set.
 Only the pre-listing costs requests. Zendesk has no server-side filter for
 promoted articles, so finding them means scanning article pages, one API request
 per page, capped by
-[`ZENDESK_ARTICLE_RESOURCES_SCAN_MAX_PAGES`](configuration.md#zendesk_article_resources_scan_max_pages).
+[`ARTICLE_RESOURCES_SCAN_MAX_PAGES`](configuration.md#article_resources_scan_max_pages).
 
 - The scan runs only on a client's `resources/list` call or a
   `list_promoted_articles` call, **never at connect time**. No other tool
