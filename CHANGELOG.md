@@ -1,3 +1,28 @@
+## [2.24.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.23.0...v2.24.0) (2026-09-26)
+
+### Features
+
+* **config:** reserve ZENDESK_* for Zendesk-side settings, rename server knobs ([#318](https://github.com/fruggr/zendesk-mcp-server/issues/318)) ([1c30930](https://github.com/fruggr/zendesk-mcp-server/commit/1c30930613cea1f3064f14def14879666b672cbb))
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Documentation
+
+* **decisions:** record the remote OAuth authorization-server design ([#127](https://github.com/fruggr/zendesk-mcp-server/issues/127)) ([#313](https://github.com/fruggr/zendesk-mcp-server/issues/313)) ([5808bdd](https://github.com/fruggr/zendesk-mcp-server/commit/5808bdd4fedc4150677c797f671cbb3990a9e406))
+
+### Chores
+
+* **deps:** lock file maintenance ([#314](https://github.com/fruggr/zendesk-mcp-server/issues/314)) ([d47195b](https://github.com/fruggr/zendesk-mcp-server/commit/d47195b0e49e3d5f212cd9ca778f5f314425bde4))
+* **deps:** migrate to MCP SDK v2 packages ([#315](https://github.com/fruggr/zendesk-mcp-server/issues/315)) ([896fbe3](https://github.com/fruggr/zendesk-mcp-server/commit/896fbe36ccbdbaa8f83822ac4c0b8e0f78b942f4))
+* **deps:** update pnpm to v12.5.0 ([#311](https://github.com/fruggr/zendesk-mcp-server/issues/311)) ([30add66](https://github.com/fruggr/zendesk-mcp-server/commit/30add663f370428a5f481f96334a495f2dd10479))
+* **deps:** update pnpm to v12.5.1 ([#312](https://github.com/fruggr/zendesk-mcp-server/issues/312)) ([792d6a1](https://github.com/fruggr/zendesk-mcp-server/commit/792d6a180f50334c3ee00bf285435dd8adc37ce3))
+
+### Tests
+
+* **auth:** assert the PKCE, protocol and escaping contract of the browser flow ([#310](https://github.com/fruggr/zendesk-mcp-server/issues/310)) ([5552612](https://github.com/fruggr/zendesk-mcp-server/commit/5552612338113c1d81ad1c72fdf086849a7aba09))
+</details>
+
 ## [2.23.0](https://github.com/fruggr/zendesk-mcp-server/compare/v2.22.3...v2.23.0) (2026-09-23)
 
 ### Features
