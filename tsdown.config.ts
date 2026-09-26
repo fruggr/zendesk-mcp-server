@@ -3,7 +3,7 @@ import { defineConfig } from 'tsdown';
 export default defineConfig({
   entry: ['src/index.ts'],
   format: ['esm'],
-  target: 'node20',
+  target: 'node22',
   outDir: 'dist',
   clean: true,
   // Nothing debugs the bundle: dev runs tsx on src/, and no code path reads `.stack`.

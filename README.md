@@ -117,7 +117,7 @@ it. A few are listed under
 ## Quick start: local (stdio)
 
 The default shape: one developer, one Zendesk account, OAuth 2.1 PKCE in the
-browser. You need **Node.js >= 20** and a **Zendesk** instance (Support or
+browser. You need **Node.js >= 22** and a **Zendesk** instance (Support or
 Suite).
 
 ### Install
