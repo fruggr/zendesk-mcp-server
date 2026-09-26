@@ -325,8 +325,8 @@ and persists it (see [Input](#four-keys-one-secret)).
   once, usually in an image, so it absorbs that step far better than every stdio
   launch would absorb the download.
 - `src/transports/http-peers.ts` lists them, a unit test keeps that list equal to
-  `package.json`, and CI checks on Node 20 that a plain install leaves them out
-  and that HTTP runs once they are added.
+  `package.json`, and CI checks on the engines floor that a plain install leaves
+  them out and that HTTP runs once they are added.
 
 ## Costs accepted
 
