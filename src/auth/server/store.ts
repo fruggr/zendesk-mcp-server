@@ -70,10 +70,10 @@ const unseal = async <T>(ring: KeyRing, sealed: string): Promise<SealedRecord<T>
 const open = <T>(ring: KeyRing, sealed: string): Promise<SealedRecord<T> | undefined> =>
   unseal<T>(ring, sealed).catch(() => undefined);
 
-const remainingTtlMs = (value: unknown): number | undefined => {
-  const exp = (value as { exp?: unknown } | undefined)?.exp;
-  return typeof exp === 'number' ? Math.max(exp * 1000 - Date.now(), 1) : undefined;
-};
+// Whole seconds left until a token's `exp`, at least one.
+const secondsUntil = (exp: number | undefined): number | undefined =>
+  // Stryker disable next-line ConditionalExpression: without the guard, the NaN reaching set() is dropped by its falsy check all the same.
+  exp === undefined ? undefined : Math.max(exp - Math.floor(Date.now() / 1000), 1);
 
 /**
  * One named collection of whole-payload-encrypted records. A record read under
@@ -175,11 +175,10 @@ export const createAdapterFactory = (stores: AdapterStores, ring: KeyRing): Adap
       consume: async (id) => {
         const payload = await records.get(id);
         if (!payload) return;
-        const ttl = remainingTtlMs(payload);
         await records.set(
           id,
           { ...payload, consumed: Math.floor(Date.now() / 1000) },
-          ttl ? Math.ceil(ttl / 1000) : undefined,
+          secondsUntil(payload.exp),
         );
       },
       destroy: (id) => records.delete(id),

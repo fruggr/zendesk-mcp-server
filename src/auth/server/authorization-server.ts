@@ -84,6 +84,7 @@ const asVerified = (
     typeof claims.exp === 'number' &&
     claims.exp * 1000 > Date.now() &&
     typeof claims.zd === 'string' &&
+    // Stryker disable next-line ConditionalExpression: Grant.find refuses a non-string id too; kept so the contract does not rest on it.
     typeof claims.gid === 'string';
   if (!valid) return undefined;
   return {

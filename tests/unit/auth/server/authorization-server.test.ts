@@ -187,7 +187,8 @@ describe('createAuthorizationServer', () => {
     });
 
     it('rejects a token without a numeric expiry, a Zendesk token or a grant id', async () => {
-      const as = build(await withGrants(createMemoryStore(), 'g-1'));
+      const { logger, events } = recordingLogger();
+      const as = build(await withGrants(createMemoryStore(), 'g-1'), logger);
       for (const claims of [
         { exp: String(Math.floor(Date.now() / 1000) + 60) },
         { exp: undefined },
@@ -199,6 +200,7 @@ describe('createAuthorizationServer', () => {
       ]) {
         expect(await as.verifyAccessToken(await forge(issuer, claims))).toBeUndefined();
       }
+      expect(events).toEqual([]);
     });
 
     it('rejects a token whose grant no longer exists, or cannot be read', async () => {
