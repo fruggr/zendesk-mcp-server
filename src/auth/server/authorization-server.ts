@@ -128,6 +128,15 @@ export const createAuthorizationServer = (
   provider.on('server_error', (_ctx, err) => {
     logger.error('oauth_server_error', { error: err.message });
   });
+  // The provider ends grants itself (a refresh-token replay, a revocation
+  // request): the Zendesk tokens must go with them, not linger at rest.
+  provider.on('grant.revoked', (_ctx, grantId: string) => {
+    zendeskGrants.remove(grantId).catch((err: unknown) => {
+      logger.warn('oauth_grant_revoke_failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
+  });
 
   const interactions = createInteractionRoutes({
     provider,
@@ -184,7 +193,12 @@ export const createAuthorizationServer = (
       // The grant, not only the token, must still exist: a revocation then
       // holds across a restart, which empties the in-memory denial list.
       // Fails closed: a store it cannot read accepts no token.
-      const grant = await provider.Grant.find(verified.grantId).catch(() => undefined);
+      const grant = await provider.Grant.find(verified.grantId).catch((err: unknown) => {
+        logger.warn('oauth_grant_lookup_failed', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return undefined;
+      });
       return grant ? verified : undefined;
     },
     // Never rejects: it runs fire-and-forget from a tool call's 401, where an

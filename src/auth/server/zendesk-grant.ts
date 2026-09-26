@@ -73,8 +73,8 @@ export const createZendeskGrants = (options: ZendeskGrantsOptions): ZendeskGrant
       logger.warn('oauth_upstream_refresh_failed', {
         error: err instanceof Error ? err.message : String(err),
       });
-      // Only Zendesk refusing the refresh token ends the grant. An outage leaves
-      // that token unspent, so the next attempt can still succeed.
+      // Only Zendesk refusing the refresh token ends the grant. An outage may
+      // leave that token unspent, so the next attempt can still succeed.
       if (!isRefusal(err)) throw err;
       await records.delete(grantId);
       throw grantUnavailableError();

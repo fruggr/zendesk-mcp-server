@@ -88,7 +88,7 @@ const withGrants = async (store: RecordStore, ...ids: string[]): Promise<RecordS
   return store;
 };
 
-/** A store whose reads of one collection can be made to fail. */
+/** A store whose reads and deletes in one collection can be made to fail. */
 const faultyStore = () => {
   const map = new Map<string, string>();
   const ttls = new Map<string, number | undefined>();
@@ -103,6 +103,7 @@ const faultyStore = () => {
       ttls.set(key, ttlMs);
     },
     delete: async (key) => {
+      if (faults.failing && key.includes(`${faults.failing}:`)) throw faults.error;
       map.delete(key);
     },
   };
@@ -202,10 +203,13 @@ describe('createAuthorizationServer', () => {
 
     it('rejects a token whose grant no longer exists, or cannot be read', async () => {
       const { persistent, faults } = faultyStore();
-      const as = build(await withGrants(persistent, 'g-1'));
+      const { logger, events } = recordingLogger();
+      const as = build(await withGrants(persistent, 'g-1'), logger);
       expect(await as.verifyAccessToken(await forge(issuer, { gid: 'g-2' }))).toBeUndefined();
+      expect(events).toEqual([]);
       faults.failing = 'Grant';
       expect(await as.verifyAccessToken(await forge(issuer, {}))).toBeUndefined();
+      expect(events).toEqual([['warn', 'oauth_grant_lookup_failed', { error: 'store down' }]]);
     });
 
     it('rejects a token from its expiry second on', async () => {
@@ -353,6 +357,34 @@ describe('createAuthorizationServer', () => {
       expect(
         (await refresh(base, kept.clientId, kept.tokens.body.refresh_token ?? '')).status,
       ).toBe(200);
+    });
+
+    it('drops the Zendesk tokens of a grant the provider revokes on a refresh-token replay', async () => {
+      const store = faultyStore();
+      await serve(store.persistent);
+      const { clientId, tokens } = await signInWithDcr(base);
+      await refresh(base, clientId, tokens.body.refresh_token ?? '');
+      expect(store.collections()).toContain('ZendeskTokens');
+      const replay = await refresh(base, clientId, tokens.body.refresh_token ?? '');
+      expect(replay.body.error).toBe('invalid_grant');
+      await vi.waitFor(() => expect(store.collections()).not.toContain('ZendeskTokens'));
+    });
+
+    it('logs, and survives, a store failure while dropping those Zendesk tokens', async () => {
+      const store = faultyStore();
+      const { logger, events } = recordingLogger();
+      await serve(store.persistent, logger);
+      const { clientId, tokens } = await signInWithDcr(base);
+      await refresh(base, clientId, tokens.body.refresh_token ?? '');
+      store.faults.failing = 'ZendeskTokens';
+      await refresh(base, clientId, tokens.body.refresh_token ?? '');
+      await vi.waitFor(() =>
+        expect(events).toContainEqual([
+          'warn',
+          'oauth_grant_revoke_failed',
+          { error: 'store down' },
+        ]),
+      );
     });
 
     it('answers a store failure while minting a token with a server error, and logs it', async () => {

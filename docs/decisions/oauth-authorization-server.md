@@ -112,7 +112,8 @@ while #127 is open.
     a network error or a `5xx` fails the request and keeps the Zendesk tokens.
     For a public client this saves less than it seems: `oidc-provider` has
     already rotated our refresh token when the access token is minted, so the
-    client's retry is a replay.
+    client's retry is a replay. A grant the provider ends that way (or on a
+    revocation request) takes its Zendesk tokens with it (`grant.revoked`).
 - **The granted scope narrows the tool surface.** A token without `write` gets
   the read tools only, like `--read-only`, and cannot drive a session opened
   with `write`.
