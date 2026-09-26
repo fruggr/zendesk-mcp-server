@@ -87,7 +87,10 @@ const keyDigest = (key: TokenKey): string =>
  * two Zendesk accounts that share a subdomain, client and scope.
  */
 export const resolveTokenPath = (key: TokenKey): string => {
-  const override = readEnv('OAUTH_TOKEN_FILE').value;
+  const { name, value: override } = readEnv('OAUTH_TOKEN_FILE');
+  if (override === '') {
+    throw new Error(`Empty ${name}. Set it to a value, or unset it entirely.`);
+  }
   if (override) return override;
   const readable = [key.subdomain, key.oauthClientId, key.scope]
     .map(safeName)

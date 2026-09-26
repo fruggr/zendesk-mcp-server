@@ -179,7 +179,7 @@ Three deliberate exceptions:
   `<subdomain>` alongside an empty `ZENDESK_SUBDOMAIN`. Validation applies to
   the value the server actually uses.
 - The **numeric tuning caps** — `RESPONSE_CHARACTER_LIMIT`,
-  `ATTACHMENT_MAX_BYTES`, `EMBEDDED_IMAGES_MAX`,
+  `RESPONSE_MAX_BYTES`, `ATTACHMENT_MAX_BYTES`, `EMBEDDED_IMAGES_MAX`,
   `COMMENT_MAX_PAGES`, `REORDER_CONFIRM_THRESHOLD`,
   `TICKET_FIELD_SCAN_MAX_PAGES` and
   `ARTICLE_RESOURCES_SCAN_MAX_PAGES` — read through a shared parser that
@@ -195,8 +195,8 @@ Three deliberate exceptions:
 OAuth client registered in it); the server's own knobs dropped the prefix, and
 `HOST` gained a qualifier. The old names still work until **3.0.0**: each one
 still set logs one `deprecated_env_var` warning on stderr the first time it is
-read, and when both names are set the new one wins. Errors about a value name the variable it
-came from.
+read, and when both names are set the new one wins. An empty or malformed value is reported
+under the name it was read from.
 
 | Old name (removed in 3.0.0) | New name |
 |---|---|

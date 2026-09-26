@@ -60,12 +60,11 @@ export const DEFAULT_CALLBACK_PORT = 27439;
 
 // Per-attachment cap for inline image content. Images larger than this are
 // returned as text references instead of base64 image content blocks. The
-// default is aligned with the Anthropic vision API per-image limit; override
-// via ATTACHMENT_MAX_BYTES (bytes).
+// default, in bytes, is aligned with the Anthropic vision API per-image limit.
 export const MAX_ATTACHMENT_BYTES = positiveIntEnv('ATTACHMENT_MAX_BYTES', 5 * 1024 * 1024);
 
 // Maximum number of images embedded as base64 in a single tool call. Remaining
-// images are returned as text references. Override via EMBEDDED_IMAGES_MAX.
+// images are returned as text references.
 export const MAX_EMBEDDED_IMAGE_COUNT = positiveIntEnv('EMBEDDED_IMAGES_MAX', 10);
 
 // Largest JSON-RPC message the stdio transport accepts, and the ceiling the
@@ -108,8 +107,8 @@ export const MAX_BASE64_INPUT_MB = Number.parseFloat(
   (((MAX_BASE64_INPUT_CHARS / 4) * 3) / (1024 * 1024)).toFixed(2),
 );
 
-// Hard cap on comment pages fetched when collecting ticket attachments.
-// Overridable via COMMENT_MAX_PAGES for tickets with many comments.
+// Hard cap on comment pages fetched when collecting ticket attachments; raise it
+// for tickets with many comments.
 export const MAX_COMMENT_PAGES = positiveIntEnv('COMMENT_MAX_PAGES', 10);
 
 // Max /ticket_fields pages scanned when resolving a form's fields. That endpoint
