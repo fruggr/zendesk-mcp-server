@@ -39,8 +39,9 @@ const warnDeprecated = (legacy: string, current: string): void => {
 export const readEnv = (name: string): { name: string; value: string | undefined } => {
   const value = process.env[name];
   const legacy = LEGACY_NAMES.get(name);
-  const legacyValue = legacy === undefined ? undefined : process.env[legacy];
-  if (legacy === undefined || legacyValue === undefined) return { name, value };
+  if (legacy === undefined) return { name, value };
+  const legacyValue = process.env[legacy];
+  if (legacyValue === undefined) return { name, value };
 
   warnDeprecated(legacy, name);
   return value === undefined ? { name: legacy, value: legacyValue } : { name, value };

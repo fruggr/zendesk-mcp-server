@@ -85,6 +85,33 @@ describe('readEnv', () => {
     expect(errSpy.mock.calls[1]?.[0]).toContain('name=ZENDESK_MAX_COMMENT_PAGES');
   });
 
+  it.each([
+    ['OAUTH_TOKEN_FILE', 'ZENDESK_TOKEN_FILE'],
+    ['OAUTH_CALLBACK_PORT', 'ZENDESK_OAUTH_CALLBACK_PORT'],
+    ['LISTEN_HOST', 'HOST'],
+    ['RESPONSE_CHARACTER_LIMIT', 'ZENDESK_CHARACTER_LIMIT'],
+    ['RESPONSE_MAX_BYTES', 'ZENDESK_MAX_RESPONSE_BYTES'],
+    ['ATTACHMENT_MAX_BYTES', 'ZENDESK_MAX_ATTACHMENT_BYTES'],
+    ['EMBEDDED_IMAGES_MAX', 'ZENDESK_MAX_EMBEDDED_IMAGES'],
+    ['COMMENT_MAX_PAGES', 'ZENDESK_MAX_COMMENT_PAGES'],
+    ['TICKET_FIELD_SCAN_MAX_PAGES', 'ZENDESK_TICKET_FIELD_SCAN_MAX_PAGES'],
+    ['ARTICLE_RESOURCES_SCAN_MAX_PAGES', 'ZENDESK_ARTICLE_RESOURCES_SCAN_MAX_PAGES'],
+    ['REORDER_CONFIRM_THRESHOLD', 'ZENDESK_REORDER_CONFIRM_THRESHOLD'],
+  ])('reads %s from its legacy name %s', async (current, legacy) => {
+    vi.stubEnv(current, undefined);
+    vi.stubEnv(legacy, 'legacy-value');
+    expect((await load())(current)).toEqual({ name: legacy, value: 'legacy-value' });
+  });
+
+  // An unmapped name has no legacy variable to consult: looking one up anyway
+  // would read `process.env['undefined']`.
+  it('does not consult a legacy variable for an unmapped name', async () => {
+    vi.stubEnv('PORT', '8080');
+    vi.stubEnv('undefined', 'stray');
+    expect((await load())('PORT')).toEqual({ name: 'PORT', value: '8080' });
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
   it('survives a dead stderr', async () => {
     errSpy.mockImplementation(() => {
       throw new Error('EPIPE');
