@@ -3,7 +3,7 @@
 // docs/decisions/zod-compile.md.
 import 'zod/compile';
 
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import { createTokenStore } from './auth/token-store';
 import type { Config } from './config';
 import { loadConfig } from './config';

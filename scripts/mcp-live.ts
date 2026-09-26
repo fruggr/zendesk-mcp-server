@@ -24,8 +24,7 @@
  * ZENDESK_OAUTH_TOKEN and sends it as a Bearer. Grab one via the normal OAuth
  * flow (e.g. in a local session) and export it before calling.
  */
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 import { loadConfig, VALUE_FLAG_NAMES } from '../src/config';
 import { createMcpServer } from '../src/server';
 

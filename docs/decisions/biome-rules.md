@@ -104,7 +104,7 @@ enabled. One line each; the count is diagnostics across `src/ tests/ scripts/`.
 | `useNumericSeparators` | 52 | Mostly 3–4 digit test fixtures where separators add noise. |
 | `noExcessiveLinesPerFunction` | 49 | The big hits are `ToolDefinition[]` factories — line count measures how many tools exist, not complexity. Contradicts the documented architecture. |
 | `noNodejsModules` | 46 | It is a Node application. |
-| `noUnresolvedImports` | 31 | All false positives: Biome cannot read the export maps of `msw` and `@modelcontextprotocol/sdk`. Was 110 on 2.5.4; worth re-checking on future bumps. |
+| `noUnresolvedImports` | 32 | All false positives: Biome cannot read the export maps of `msw` and the `@modelcontextprotocol/*` packages (plus one each for `cheerio` and `tsdown`). Was 110 on 2.5.4; worth re-checking on future bumps. |
 | `noExcessiveLinesPerFile` | 18 | Same as `noExcessiveLinesPerFunction`: a namespace of tools is legitimately long. |
 | `useExportsLast` | 17 | Pure ordering preference; the repo interleaves exports with the code they belong to. |
 | `noUselessUndefined` | 14 | `return undefined` is *clearer* in a function typed `T \| undefined`. |

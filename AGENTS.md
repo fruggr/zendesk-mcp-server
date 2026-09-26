@@ -45,7 +45,7 @@ web, which generates them: leave those alone, don't imitate the shape by hand.
 ## Architecture
 
 Transports: stdio (SDK `StdioServerTransport`) plus a thin `node:http` HTTP
-transport that wraps `StreamableHTTPServerTransport` and serves the RFC 9728 /
+transport that wraps `NodeStreamableHTTPServerTransport` and serves the RFC 9728 /
 RFC 8414 OAuth discovery endpoints; HTTP builds a per-session `McpServer` so the
 request's bearer is captured in the tools' closure — no shared state.
 
@@ -208,7 +208,7 @@ guidelines, stated side effects, per-parameter `.describe()`) and keep the tool
 set coherent (naming, disambiguation, no needless duplication) — the server
 score is `60% mean + 40% min`, so one weak tool drags the whole surface down.
 Every **tool change** must keep what agents depend on in the exposed JSON Schema
-(draft-07): never drop a field or loosen a type, and never drop what a
+(draft 2020-12): never drop a field or loosen a type, and never drop what a
 description said — though saying it in fewer words is a win, and fixing a false
 one is a duty. Criteria, the checklist and how to diff the schema:
 `docs/mcp-metadata.md`.

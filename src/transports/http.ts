@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node';
 import { supportedScopes } from '../auth/oauth-scopes';
 import type { Config } from '../config';
 import { getOAuthUrls } from '../constants';
@@ -243,7 +243,7 @@ const sendUnauthorized = (res: ServerResponse, resource: string): void => {
 };
 
 interface Session {
-  transport: StreamableHTTPServerTransport;
+  transport: NodeStreamableHTTPServerTransport;
   /**
    * Latest bearer presented for this session. Tool calls read through this
    * object so a client that refreshes its Zendesk token mid-session has the
@@ -428,7 +428,7 @@ export const startHttpTransport = async (
     // needed because each session has its own server instance.
     const auth = { bearer };
     const server = createMcpServer(config, () => auth.bearer, logger);
-    const transport = new StreamableHTTPServerTransport({
+    const transport = new NodeStreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
       onsessioninitialized: (newId) => {
         sessions.set(newId, {
@@ -445,12 +445,7 @@ export const startHttpTransport = async (
     transport.onclose = () => {
       if (transport.sessionId) sessions.delete(transport.sessionId);
     };
-    // The SDK's Transport interface uses `onclose?: () => void` which conflicts
-    // with the concrete transport's class member typing under
-    // exactOptionalPropertyTypes — the runtime contract is identical, this is
-    // purely a type-system seam.
-    // biome-ignore lint/suspicious/noExplicitAny: SDK type seam, see above
-    await server.connect(transport as any);
+    await server.connect(transport);
     await transport.handleRequest(req, res, body.value);
   };
 

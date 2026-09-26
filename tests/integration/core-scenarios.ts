@@ -258,6 +258,20 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         expect(names).not.toContain('get_current_user');
       });
 
+      it('stamps every input schema with the JSON Schema 2020-12 dialect and no execution block', async () => {
+        for (const mode of ['all', 'namespace', 'single'] as const) {
+          connected = await harness.connect(makeConfig({ mode }));
+          const { tools } = await connected.client.listTools();
+          expect(tools.length).toBeGreaterThan(0);
+          for (const tool of tools) {
+            expect(tool.inputSchema.$schema).toBe('https://json-schema.org/draft/2020-12/schema');
+            expect(tool.execution).toBeUndefined();
+          }
+          await connected.close();
+          connected = undefined;
+        }
+      });
+
       it('exposes the requests proxy only when that namespace is named', async () => {
         connected = await harness.connect(
           makeConfig({ mode: 'namespace', namespaces: ['requests'] }),
@@ -422,6 +436,28 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         });
         expect(result.isError).toBe(true);
         expect(textOf(result)).toContain('per_page');
+      });
+
+      it('reports a wrongly typed parameter in "all" mode as a tool error naming the field', async () => {
+        connected = await harness.connect(makeConfig({ mode: 'all' }));
+        const result = await connected.client.callTool({
+          name: 'get_ticket',
+          arguments: { ticket_id: 'abc' },
+        });
+        expect(result.isError).toBe(true);
+        expect(textOf(result)).toMatchInlineSnapshot(
+          `"Input validation error: Invalid arguments for tool get_ticket: ticket_id: Invalid input: expected number, received string"`,
+        );
+      });
+
+      it('rejects a call to an unknown tool with a JSON-RPC invalid-params error', async () => {
+        connected = await harness.connect(makeConfig({ mode: 'all' }));
+        await expect(
+          connected.client.callTool({ name: 'nope', arguments: {} }),
+        ).rejects.toMatchObject({
+          code: -32602,
+          message: expect.stringContaining('Tool nope not found'),
+        });
       });
 
       it('rejects an unknown parameter through a proxy instead of silently dropping it (#100)', async () => {
