@@ -567,7 +567,7 @@ describe('startBrowserAuth', () => {
       expect(err.message).toContain(String(port));
       expect(err.message).toContain('Another instance of this server');
       expect(err.message).toContain('then retry');
-      expect(err.message).toContain('ZENDESK_OAUTH_CALLBACK_PORT');
+      expect(err.message).toContain('OAUTH_CALLBACK_PORT');
       expect(err.message).toContain('/callback');
       expect(err).toMatchObject({
         code: 'EADDRINUSE',

@@ -46,7 +46,7 @@ export const supportedScopes = (readOnly: boolean): string[] =>
  * Whether a grant still covers what this process needs: a flat subset test.
  * Coverage, not equality, so a token Zendesk granted wider than requested stays
  * usable. A non-string `granted` is a pre-#283 record, i.e. `read write` — only
- * reachable now through a `ZENDESK_TOKEN_FILE` aimed at one by hand, since the
+ * reachable now through a `OAUTH_TOKEN_FILE` aimed at one by hand, since the
  * default layout no longer names those files. No scope hierarchy: granular
  * scopes (#284) replace this.
  */

@@ -196,6 +196,20 @@ test: if a running server behaves no differently for a client, it's tooling.
   in `WWW-Authenticate` and other headers (`ERR_INVALID_CHAR`), which surfaces
   as a 500 instead of the spec-required 401.
 
+## Environment variables
+
+- `ZENDESK_*` is reserved for what describes the Zendesk side: the tenant, or
+  something registered in it (`ZENDESK_SUBDOMAIN`, `ZENDESK_OAUTH_CLIENT_ID`). A
+  knob only this server reads to tune itself never takes the prefix.
+- Server knobs take no prefix, but a name so common that another program in the
+  same shell or container reads it (`HOST`, `SECRET`) gets qualified
+  (`LISTEN_HOST`). `PORT` stays bare on purpose: PaaS platforms inject it.
+- Read every variable through `readEnv` (`src/utils/env.ts`). A rename is never a
+  big bang: map the old name there, so it keeps working with a deprecation
+  warning, and delete the mapping in the next major. Docs show the new name only,
+  plus the rename table in `docs/configuration.md`.
+- Dev-only variables (scripts, CI) rename outright: no alias.
+
 ## Communication language
 
 GitHub (PRs, commits, comments, code) in **English**. Chat follows the user's language.

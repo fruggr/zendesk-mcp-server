@@ -1049,9 +1049,9 @@ describe('ticket tools', () => {
           inline: false,
         }));
 
-      it('honors ZENDESK_MAX_EMBEDDED_IMAGES', async () => {
+      it('honors EMBEDDED_IMAGES_MAX', async () => {
         vi.resetModules();
-        vi.stubEnv('ZENDESK_MAX_EMBEDDED_IMAGES', '2');
+        vi.stubEnv('EMBEDDED_IMAGES_MAX', '2');
         mockCommentAttachments(buildImages(12));
         const tool = await loadAttachmentsTool();
         const result = await tool.handler({ ticket_id: 1 });
@@ -1064,8 +1064,8 @@ describe('ticket tools', () => {
         vi.resetModules();
         // Empty string is not caught by `??`; a raw Number() would yield 0 and
         // skip every image. It must fall back to the 10-image default instead.
-        vi.stubEnv('ZENDESK_MAX_EMBEDDED_IMAGES', '');
-        vi.stubEnv('ZENDESK_MAX_ATTACHMENT_BYTES', 'not-a-number');
+        vi.stubEnv('EMBEDDED_IMAGES_MAX', '');
+        vi.stubEnv('ATTACHMENT_MAX_BYTES', 'not-a-number');
         mockCommentAttachments(buildImages(12));
         const tool = await loadAttachmentsTool();
         const result = await tool.handler({ ticket_id: 1 });
@@ -1074,9 +1074,9 @@ describe('ticket tools', () => {
         expect(getAllText(result)).toContain('skipped: max 10 embedded images reached');
       });
 
-      it('honors ZENDESK_MAX_ATTACHMENT_BYTES (with a dynamic skip message)', async () => {
+      it('honors ATTACHMENT_MAX_BYTES (with a dynamic skip message)', async () => {
         vi.resetModules();
-        vi.stubEnv('ZENDESK_MAX_ATTACHMENT_BYTES', String(2 * 1024 * 1024));
+        vi.stubEnv('ATTACHMENT_MAX_BYTES', String(2 * 1024 * 1024));
         mockCommentAttachments([
           {
             id: 71000,
@@ -1105,7 +1105,7 @@ describe('ticket tools', () => {
 
         const runWithBudget = async (budget: number, attachments: Record<string, unknown>[]) => {
           vi.resetModules();
-          vi.stubEnv('ZENDESK_MAX_RESPONSE_BYTES', String(budget));
+          vi.stubEnv('RESPONSE_MAX_BYTES', String(budget));
           mockCommentAttachments(attachments);
           const tool = await loadAttachmentsTool();
           return tool.handler({ ticket_id: 1 });
@@ -1174,7 +1174,7 @@ describe('ticket tools', () => {
           const tool = findTool('get_ticket_attachments');
           for (const budget of [1013, 1100, 1200, 1337]) {
             vi.resetModules();
-            vi.stubEnv('ZENDESK_MAX_RESPONSE_BYTES', String(budget));
+            vi.stubEnv('RESPONSE_MAX_BYTES', String(budget));
             mockCommentAttachments(
               Array.from({ length: 40 }, (_, i) => ({
                 id: 84000 + i,
@@ -1582,7 +1582,7 @@ describe('ticket tools', () => {
       const baseline = await readMaxLength();
 
       vi.resetModules();
-      vi.stubEnv('ZENDESK_MAX_RESPONSE_BYTES', '4096');
+      vi.stubEnv('RESPONSE_MAX_BYTES', '4096');
       expect(await readMaxLength()).toBe(baseline);
       vi.unstubAllEnvs();
       vi.resetModules();

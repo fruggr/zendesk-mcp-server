@@ -207,7 +207,7 @@ leaves either value to the library's defaults.
     separately. It is more conventional for the signing key, but it triples what
     has to be provisioned, rotated and kept in sync, for no security gain: all
     the keys fall together anyway if the host is compromised.
-- **Input.** Either `ZENDESK_MCP_OAUTH_SECRET` or `--oauth-secret-file <path>`.
+- **Input.** Either `OAUTH_SERVER_SECRET` or `--oauth-secret-file <path>`.
   - The secret is base64, at least 32 bytes of entropy. The server rejects a
     shorter one.
   - Generate it with `openssl rand -base64 32`.

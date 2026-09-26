@@ -130,7 +130,7 @@ const fetchAllPages = async <T, R extends PagedResponse = ZendeskListResponse<T>
   extract,
   params = {},
   maxPages = TICKET_FIELD_SCAN_MAX_PAGES,
-  capEnvVar = 'ZENDESK_TICKET_FIELD_SCAN_MAX_PAGES',
+  capEnvVar = 'TICKET_FIELD_SCAN_MAX_PAGES',
   onPage,
   forbiddenHint,
 }: PageWalk<T, R>): Promise<T[]> => {
@@ -250,7 +250,7 @@ const fetchAllRequestComments = async (
     // when it comes back anyway.
     params: { include: 'users' },
     maxPages: MAX_COMMENT_PAGES,
-    capEnvVar: 'ZENDESK_MAX_COMMENT_PAGES',
+    capEnvVar: 'COMMENT_MAX_PAGES',
     forbiddenHint: OTHER_USERS_REQUEST_HINT,
     onPage: (response) => {
       for (const user of response.users ?? []) authors.set(user.id, user);

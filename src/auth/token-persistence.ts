@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { chmodSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { readEnv } from '../utils/env';
 import { type Logger, silentLogger } from '../utils/logger';
 import { readPackageInfo } from '../utils/package-info';
 
@@ -82,11 +83,14 @@ const keyDigest = (key: TokenKey): string =>
  * their own record instead of clobbering a shared file. Why that triple, and
  * why no migration from the old subdomain-only layout:
  * `docs/decisions/token-file-keying.md`.
- * `ZENDESK_TOKEN_FILE` overrides with an explicit path — the way to separate
+ * `OAUTH_TOKEN_FILE` overrides with an explicit path — the way to separate
  * two Zendesk accounts that share a subdomain, client and scope.
  */
 export const resolveTokenPath = (key: TokenKey): string => {
-  const override = process.env['ZENDESK_TOKEN_FILE'];
+  const { name, value: override } = readEnv('OAUTH_TOKEN_FILE');
+  if (override === '') {
+    throw new Error(`Empty ${name}. Set it to a value, or unset it entirely.`);
+  }
   if (override) return override;
   const readable = [key.subdomain, key.oauthClientId, key.scope]
     .map(safeName)
