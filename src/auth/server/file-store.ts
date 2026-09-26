@@ -1,25 +1,58 @@
 import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import type { KeyvStoreAdapter, StoredData } from 'keyv';
+
+/**
+ * The key-value contract the authorization server stores its sealed records in.
+ * Values are opaque strings (JWEs); `ttlMs` makes a record expire. A new backend
+ * (Redis, a database) implements this and nothing else: the store is not
+ * pluggable today, deliberately (ADR, Storage).
+ */
+export interface RecordStore {
+  get(key: string): Promise<string | undefined>;
+  set(key: string, value: string, ttlMs?: number): Promise<void>;
+  delete(key: string): Promise<void>;
+}
+
+/** One record: its value and, when it expires, the epoch ms it does. */
+export interface StoredEntry {
+  readonly v: string;
+  readonly exp?: number;
+}
 
 const isWindows = process.platform === 'win32';
 
-// Keyv serializes each entry as `{"value":...,"expires":<epoch ms>}`; reading
-// `expires` back lets a restart drop entries nobody will ever read again.
-const isLive = (serialized: string, now: number): boolean => {
-  try {
-    const { expires } = JSON.parse(serialized) as { expires?: unknown };
-    return typeof expires !== 'number' || expires > now;
-  } catch {
-    return true;
-  }
-};
+const isLive = (entry: StoredEntry, now: number): boolean =>
+  entry.exp === undefined || entry.exp > now;
 
-const load = (path: string): Map<string, string> => {
+/**
+ * A store over a `Map`, calling `onChange` after every write. The map is the
+ * caller's, so a test can look at exactly what was stored.
+ */
+export const createMemoryStore = (
+  entries: Map<string, StoredEntry> = new Map(),
+  onChange: () => void = () => undefined,
+): RecordStore => ({
+  get: async (key) => {
+    const entry = entries.get(key);
+    return entry && isLive(entry, Date.now()) ? entry.v : undefined;
+  },
+  set: async (key, value, ttlMs) => {
+    entries.set(key, ttlMs === undefined ? { v: value } : { v: value, exp: Date.now() + ttlMs });
+    onChange();
+  },
+  delete: async (key) => {
+    if (entries.delete(key)) onChange();
+  },
+});
+
+const isEntry = (value: unknown): value is StoredEntry =>
+  typeof (value as StoredEntry | null)?.v === 'string' &&
+  ((value as StoredEntry).exp === undefined || typeof (value as StoredEntry).exp === 'number');
+
+const load = (path: string): Map<string, StoredEntry> => {
   let raw: string;
   try {
-    // Stryker disable next-line StringLiteral: JSON.parse stringifies a Buffer as UTF-8, so
-    // reading without an encoding parses the same file.
+    // Stryker disable next-line StringLiteral: JSON.parse decodes a Buffer as UTF-8 all the same.
     raw = readFileSync(path, 'utf8');
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return new Map();
@@ -36,47 +69,30 @@ const load = (path: string): Map<string, string> => {
   const now = Date.now();
   return new Map(
     Object.entries(parsed).filter(
-      (entry): entry is [string, string] => typeof entry[1] === 'string' && isLive(entry[1], now),
+      (entry): entry is [string, StoredEntry] => isEntry(entry[1]) && isLive(entry[1], now),
     ),
   );
 };
 
 // tmp + rename so a crash mid-write leaves the previous file intact; owner-only
-// perms because the file holds (encrypted) refresh tokens.
-const persist = (path: string, data: Map<string, string>): void => {
+// perms because the file holds (encrypted) refresh tokens. Expired records are
+// dropped on the way out, so the file does not grow with dead entries.
+const persist = (path: string, entries: Map<string, StoredEntry>): void => {
+  const now = Date.now();
+  const live = [...entries].filter(([, entry]) => isLive(entry, now));
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   const tmp = `${path}.${process.pid}.tmp`;
-  writeFileSync(tmp, JSON.stringify(Object.fromEntries(data)), { mode: 0o600 });
+  writeFileSync(tmp, JSON.stringify(Object.fromEntries(live)), { mode: 0o600 });
   if (!isWindows) chmodSync(tmp, 0o600);
   renameSync(tmp, path);
 };
 
 /**
- * A Keyv store backed by one JSON file, written atomically on every change.
- * Replaces `keyv-file`, whose plain `writeFile` can truncate the file on a
- * crash and whose loader then silently starts empty. Single process only,
- * like the rest of the store (ADR, Storage).
+ * The default store: one JSON file, written atomically on every change. Chosen
+ * over `keyv-file`, whose plain `writeFile` can truncate the file on a crash and
+ * whose loader then silently starts empty. Single process only (ADR, Storage).
  */
-export const createFileStore = (path: string): KeyvStoreAdapter => {
-  const data = load(path);
-  const store: KeyvStoreAdapter = {
-    opts: { path },
-    get: async <Value>(key: string) => data.get(key) as StoredData<Value> | undefined,
-    set: async (key: string, value: string) => {
-      data.set(key, value);
-      persist(path, data);
-    },
-    delete: async (key: string) => {
-      const existed = data.delete(key);
-      if (existed) persist(path, data);
-      return existed;
-    },
-    clear: async () => {
-      data.clear();
-      persist(path, data);
-    },
-    // Nothing here ever fails asynchronously, so there is no event to deliver.
-    on: () => store,
-  };
-  return store;
+export const createFileStore = (path: string): RecordStore => {
+  const entries = load(path);
+  return createMemoryStore(entries, () => persist(path, entries));
 };

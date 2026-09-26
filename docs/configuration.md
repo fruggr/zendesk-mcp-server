@@ -52,9 +52,7 @@ Options:
                           secret (else OAUTH_MASTER_SECRET, else generated and
                           persisted in the config dir)
   --oauth-store <uri>     HTTP: grant store, file:// (default: a file in the
-                          config dir), redis://, postgres://, sqlite://, memory://
-  --oauth-store-adapter <package>
-                          HTTP: Keyv store package to load for --oauth-store
+                          config dir) or memory://
   --oauth-trusted-client <url>
                           HTTP: CIMD client id that skips the consent screen
                           (repeatable; adds to claude.ai and ChatGPT)
@@ -289,9 +287,7 @@ never shows in a process listing; `--oauth-master-secret-file` (or
 **Required:** no · **Default:** `file://<config dir>/oauth-store.json`
 
 Where grants, refresh tokens and registered clients are kept, encrypted (also
-`--oauth-store`). `redis://`, `postgres://` and `sqlite://` need their `@keyv/*`
-package installed; `OAUTH_STORE_ADAPTER` (also `--oauth-store-adapter`) names any
-other Keyv store package. **HTTP only.**
+`--oauth-store`): `file://<path>`, or `memory://` for tests. **HTTP only.**
 
 ### `OAUTH_TRUSTED_CLIENTS`
 **Required:** no · **Default:** none (claude.ai and ChatGPT are built in)

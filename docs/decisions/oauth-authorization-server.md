@@ -11,7 +11,7 @@
 | **Date** | 2026-09-24 |
 | **Applies** | [#127](https://github.com/fruggr/zendesk-mcp-server/issues/127) — ships as a major release (3.0), after the SDK v2 migration ([#231](https://github.com/fruggr/zendesk-mcp-server/issues/231)) |
 | **Question** | How does a remote MCP client (claude.ai, ChatGPT, …) sign a user in when Zendesk offers neither discovery nor client registration? |
-| **Answer** | The server is the OAuth authorization server (AS), built on [`oidc-provider`](https://github.com/panva/node-oidc-provider). Zendesk is the upstream identity provider, through the same public PKCE client the stdio flow already uses. The server issues its own tokens and keeps the Zendesk ones server-side, in a pluggable store (Keyv). The default store is a file. |
+| **Answer** | The server is the OAuth authorization server (AS), built on [`oidc-provider`](https://github.com/panva/node-oidc-provider). Zendesk is the upstream identity provider, through the same public PKCE client the stdio flow already uses. The server issues its own tokens and keeps the Zendesk ones server-side, encrypted, in a file store (a pluggable backend is deferred). |
 
 ## Why the current design cannot stay
 
@@ -43,13 +43,14 @@
    ([Zendesk](https://developer.zendesk.com/documentation/api-basics/authentication/refresh-token/)).
    A 48 h re-login was judged too frequent.
 5. **This is a library, not a hosted service.** Anyone deploys it anywhere, so
-   storage has to be pluggable and chosen by configuration.
+   storage must need nothing but a file. Other backends can come later behind
+   the same small interface (see [Storage](#storage)).
 
 ## Options considered
 
 | Option | Verdict | Why |
 | --- | --- | --- |
-| **`oidc-provider` + pluggable store** | **Chosen** | Certified library, and the pattern the community converged on (below). Its one cost, a store, is inevitable for refresh. |
+| **`oidc-provider` + a store** | **Chosen** | Certified library, and the pattern the community converged on (below). Its one cost, a store, is inevitable for refresh. It is a file today (see [Storage](#storage)). |
 | `oidc-provider` with no refresh tokens, memory only | Rejected | Stateless in practice, but forces a re-login every ≤48 h (constraint 4). |
 | Stateless AS written in-house (JWE-wrapped Zendesk code and refresh token) | Rejected | Zendesk would enforce single use and rotation. But every endpoint, DCR, CIMD, consent and metadata would be ours (constraint 1). No reference MCP implementation hands a refresh token to the client. |
 | Relay in the style of [softeria/ms-365-mcp-server](https://github.com/softeria/ms-365-mcp-server) | Rejected | Zero storage only by cutting what the spec requires. Its `/register` returns `mcp-client-${Date.now()}` and stores nothing. `/token` returns the upstream token and refresh token to the client (passthrough). Read in its source. |
@@ -189,18 +190,22 @@ Instead:
 
 ### Storage
 
-- **Keyv** is the abstraction. `--oauth-store <uri>` picks the backend by URL
-  scheme: `file://` (the default), `redis://`, `postgres://`, `sqlite://`,
-  `memory://` (dev and tests).
-- `file://` is a small in-repo Keyv store: atomic writes (tmp + rename), owner-
-  only permissions, and a refusal to start on a corrupt file rather than a
-  silent reset. `keyv-file` was rejected for lacking all three.
-- Each other adapter is an optional peer dependency, imported only when its
-  scheme is asked for. `--oauth-store-adapter <package>` loads any third-party Keyv store.
+- **One file, no storage library.** `--oauth-store <uri>` takes `file://` (the
+  default) or `memory://` (dev and tests). The file store is ours: atomic writes
+  (tmp + rename), owner-only permissions, expired records dropped, and a refusal
+  to start on a corrupt file rather than a silent reset.
+- **Keyv was dropped.** It was first chosen for pluggable backends (Redis,
+  Postgres, SQLite), but its file backend, `keyv-file`, has none of the three
+  guarantees above: a crash can truncate the file, which it then reads as empty,
+  logging everyone out. With our own file store as the only backend, Keyv was a
+  pass-through, so it went, and its adapter loading with it.
+- **A backend added later** implements `RecordStore` (`get`, `set` with a TTL,
+  `delete`, in `src/auth/server/file-store.ts`) and nothing else: the sealing,
+  hashing and indexing sit above it.
 - **Short-lived models stay in memory** whatever the store: sessions,
   interactions, authorization codes. A restart then costs only an in-flight
   login.
-- **Single instance.** Keyv has no atomic get-and-delete, so single use relies
+- **Single instance.** The store has no atomic get-and-delete, so single use relies
   on an in-process lock per key. Running several replicas needs a store with
   atomic operations, which is out of scope.
 - **Reading the store yields nothing usable.**

@@ -3,9 +3,13 @@ import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import Keyv, { type KeyvStoreAdapter } from 'keyv';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createFileStore } from '../../../../src/auth/server/file-store';
+import {
+  createFileStore,
+  createMemoryStore,
+  type RecordStore,
+  type StoredEntry,
+} from '../../../../src/auth/server/file-store';
 import { deriveKeyRing } from '../../../../src/auth/server/keys';
 import {
   createAdapterFactory,
@@ -20,10 +24,11 @@ const NEW = Buffer.alloc(32, 2).toString('base64');
 const futureExp = (seconds: number) => Math.floor(Date.now() / 1000) + seconds;
 
 const hashed = (id: string) => createHash('sha256').update(id).digest('base64url');
-const keysOf = (keyv: Keyv) => [...(keyv.store as Map<string, string>).keys()].sort();
-const expiresOf = (keyv: Keyv, key: string): unknown => {
-  const raw = (keyv.store as Map<string, string>).get(`keyv:${key}`);
-  return raw === undefined ? 'absent' : (JSON.parse(raw) as { expires?: unknown }).expires;
+type Entries = Map<string, StoredEntry>;
+const keysOf = (entries: Entries) => [...entries.keys()].sort();
+const expiresOf = (entries: Entries, key: string): unknown => {
+  const entry = entries.get(key);
+  return entry === undefined ? 'absent' : entry.exp;
 };
 // A fractional second, so Math.floor and Math.ceil disagree on it.
 const NOW = 1_700_000_000_500;
@@ -31,24 +36,21 @@ const NOW_S = Math.floor(NOW / 1000);
 
 // A backend whose writes and deletes on matching keys wait until released.
 const holdableStore = () => {
-  const data = new Map<string, unknown>();
+  const data = new Map<string, string>();
   let held: { match: (key: string) => boolean; until: Promise<void> } | undefined;
   const wait = async (key: string) => {
     if (held?.match(key)) await held.until;
   };
-  const adapter: KeyvStoreAdapter = {
-    opts: {},
-    get: async (key: string) => data.get(key) as never,
-    set: async (key: string, value: unknown) => {
+  const store: RecordStore = {
+    get: async (key) => data.get(key),
+    set: async (key, value) => {
       await wait(key);
       data.set(key, value);
     },
-    delete: async (key: string) => {
+    delete: async (key) => {
       await wait(key);
-      return data.delete(key);
+      data.delete(key);
     },
-    clear: async () => data.clear(),
-    on: () => adapter,
   };
   const hold = (match: (key: string) => boolean) => {
     let release = () => {};
@@ -60,7 +62,7 @@ const holdableStore = () => {
     };
     return release;
   };
-  return { keyv: new Keyv({ store: adapter }), hold };
+  return { store, hold };
 };
 
 const settlesSoon = (operation: Promise<unknown>) =>
@@ -81,12 +83,16 @@ describe('PERSISTENT_MODELS', () => {
 });
 
 describe('createAdapterFactory', () => {
-  let persistent: Keyv;
-  let memory: Keyv;
+  let persistentEntries: Entries;
+  let memoryEntries: Entries;
+  let persistent: RecordStore;
+  let memory: RecordStore;
 
   beforeEach(() => {
-    persistent = new Keyv();
-    memory = new Keyv();
+    persistentEntries = new Map();
+    memoryEntries = new Map();
+    persistent = createMemoryStore(persistentEntries);
+    memory = createMemoryStore(memoryEntries);
   });
 
   const adapterFor = (name: string, secret = OLD) =>
@@ -95,17 +101,9 @@ describe('createAdapterFactory', () => {
   it('routes persistent models to the persistent store and the rest to memory', async () => {
     await adapterFor('RefreshToken').upsert('rt-1', { grantId: 'g', exp: futureExp(60) }, 60);
     await adapterFor('Session').upsert('s-1', { uid: 'u' }, 60);
-    expect(
-      [...(persistent.store as Map<string, unknown>).keys()].some((k) =>
-        k.includes('RefreshToken:'),
-      ),
-    ).toBe(true);
-    expect(
-      [...(persistent.store as Map<string, unknown>).keys()].some((k) => k.includes('Session:')),
-    ).toBe(false);
-    expect(
-      [...(memory.store as Map<string, unknown>).keys()].some((k) => k.includes('Session:')),
-    ).toBe(true);
+    expect(keysOf(persistentEntries).some((k) => k.includes('RefreshToken:'))).toBe(true);
+    expect(keysOf(persistentEntries).some((k) => k.includes('Session:'))).toBe(false);
+    expect(keysOf(memoryEntries).some((k) => k.includes('Session:'))).toBe(true);
   });
 
   it('round-trips a payload', async () => {
@@ -127,7 +125,7 @@ describe('createAdapterFactory', () => {
       { grantId: 'grant-xyz', accountId: 'zendesk:4242', exp: futureExp(60) },
       60,
     );
-    const dump = JSON.stringify([...(persistent.store as Map<string, unknown>).entries()]);
+    const dump = JSON.stringify([...persistentEntries]);
     for (const secret of ['raw-refresh-token-value', 'grant-xyz', 'zendesk:4242', '4242']) {
       expect(dump).not.toContain(secret);
     }
@@ -189,13 +187,17 @@ describe('createAdapterFactory', () => {
 });
 
 describe('createAdapterFactory, key layout and expiry', () => {
-  let persistent: Keyv;
-  let memory: Keyv;
+  let persistentEntries: Entries;
+  let memoryEntries: Entries;
+  let persistent: RecordStore;
+  let memory: RecordStore;
   const ring = deriveKeyRing(OLD);
 
   beforeEach(() => {
-    persistent = new Keyv();
-    memory = new Keyv();
+    persistentEntries = new Map();
+    memoryEntries = new Map();
+    persistent = createMemoryStore(persistentEntries);
+    memory = createMemoryStore(memoryEntries);
   });
   afterEach(() => vi.useRealTimers());
 
@@ -206,11 +208,11 @@ describe('createAdapterFactory, key layout and expiry', () => {
   it('keys records as <model>:<sha256 of the id>, with per-model grant and uid indexes', async () => {
     await adapterFor('RefreshToken').upsert('rt-1', { grantId: 'g-1', exp: futureExp(60) }, 60);
     await adapterFor('Session').upsert('s-1', { uid: 'u-1' }, 60);
-    expect(keysOf(persistent)).toEqual(
-      [`keyv:RefreshToken:${hashed('rt-1')}`, `keyv:RefreshToken:grant:${hashed('g-1')}`].sort(),
+    expect(keysOf(persistentEntries)).toEqual(
+      [`RefreshToken:${hashed('rt-1')}`, `RefreshToken:grant:${hashed('g-1')}`].sort(),
     );
-    expect(keysOf(memory)).toEqual(
-      [`keyv:Session:${hashed('s-1')}`, `keyv:Session:uid:${hashed('u-1')}`].sort(),
+    expect(keysOf(memoryEntries)).toEqual(
+      [`Session:${hashed('s-1')}`, `Session:uid:${hashed('u-1')}`].sort(),
     );
   });
 
@@ -218,7 +220,7 @@ describe('createAdapterFactory, key layout and expiry', () => {
     const adapter = adapterFor('RefreshToken');
     await adapter.upsert('rt-1', { grantId: 'g-1', exp: futureExp(60) }, 60);
     await adapter.revokeByGrantId('g-1');
-    expect(keysOf(persistent)).toEqual([]);
+    expect(keysOf(persistentEntries)).toEqual([]);
   });
 
   it('indexes a grant until its latest expiry, never shortening it', async () => {
@@ -226,12 +228,12 @@ describe('createAdapterFactory, key layout and expiry', () => {
     const adapter = adapterFor('RefreshToken');
     await adapter.upsert('a', { grantId: 'g', exp: NOW_S + 60 }, 60);
     expect(await grantIndexOf('g')).toEqual({ ids: ['a'], exp: NOW_S + 60 });
-    expect(expiresOf(persistent, `RefreshToken:grant:${hashed('g')}`)).toBe(NOW + 60_000);
+    expect(expiresOf(persistentEntries, `RefreshToken:grant:${hashed('g')}`)).toBe(NOW + 60_000);
 
     await adapter.upsert('b', { grantId: 'g', exp: NOW_S + 120 }, 120);
     await adapter.upsert('c', { grantId: 'g', exp: NOW_S + 30 }, 30);
     expect(await grantIndexOf('g')).toEqual({ ids: ['a', 'b', 'c'], exp: NOW_S + 120 });
-    expect(expiresOf(persistent, `RefreshToken:grant:${hashed('g')}`)).toBe(NOW + 120_000);
+    expect(expiresOf(persistentEntries, `RefreshToken:grant:${hashed('g')}`)).toBe(NOW + 120_000);
   });
 
   it('indexes a grant with no expiry forever, and one already expired for a second', async () => {
@@ -239,10 +241,10 @@ describe('createAdapterFactory, key layout and expiry', () => {
     const adapter = adapterFor('RefreshToken');
     await adapter.upsert('a', { grantId: 'forever' });
     expect(await grantIndexOf('forever')).toEqual({ ids: ['a'] });
-    expect(expiresOf(persistent, `RefreshToken:grant:${hashed('forever')}`)).toBeUndefined();
+    expect(expiresOf(persistentEntries, `RefreshToken:grant:${hashed('forever')}`)).toBeUndefined();
 
     await adapter.upsert('b', { grantId: 'past', exp: NOW_S - 10 });
-    expect(expiresOf(persistent, `RefreshToken:grant:${hashed('past')}`)).toBe(NOW + 1000);
+    expect(expiresOf(persistentEntries, `RefreshToken:grant:${hashed('past')}`)).toBe(NOW + 1000);
   });
 
   it('consumes a token in place, stamping the time and keeping its expiry', async () => {
@@ -257,19 +259,19 @@ describe('createAdapterFactory, key layout and expiry', () => {
       consumed: NOW_S + 10,
     });
     // 49.5 s were left: rounded up to whole seconds, the record outlives its exp by 0.5 s.
-    expect(expiresOf(persistent, `RefreshToken:${hashed('rt')}`)).toBe(NOW + 60_000);
+    expect(expiresOf(persistentEntries, `RefreshToken:${hashed('rt')}`)).toBe(NOW + 60_000);
   });
 
   it('creates nothing when consuming an unknown token', async () => {
     const adapter = adapterFor('RefreshToken');
     await adapter.consume('missing');
     expect(await adapter.find('missing')).toBeUndefined();
-    expect(keysOf(persistent)).toEqual([]);
+    expect(keysOf(persistentEntries)).toEqual([]);
   });
 
   it('serialises index updates per grant, so a stalled grant never blocks another', async () => {
-    const { keyv, hold } = holdableStore();
-    const adapter = createAdapterFactory({ persistent: keyv, memory }, ring)('RefreshToken');
+    const { store, hold } = holdableStore();
+    const adapter = createAdapterFactory({ persistent: store, memory }, ring)('RefreshToken');
     await adapter.upsert('x', { grantId: 'g2', exp: futureExp(60) }, 60);
     const release = hold((key) => key.endsWith(`:${hashed('g1')}`));
     const stalled = adapter.upsert('a', { grantId: 'g1', exp: futureExp(60) }, 60);
@@ -284,8 +286,8 @@ describe('createAdapterFactory, key layout and expiry', () => {
   });
 
   it('lets a revocation through while another grant is being revoked', async () => {
-    const { keyv, hold } = holdableStore();
-    const adapter = createAdapterFactory({ persistent: keyv, memory }, ring)('RefreshToken');
+    const { store, hold } = holdableStore();
+    const adapter = createAdapterFactory({ persistent: store, memory }, ring)('RefreshToken');
     await adapter.upsert('a', { grantId: 'g1', exp: futureExp(60) }, 60);
     await adapter.upsert('b', { grantId: 'g2', exp: futureExp(60) }, 60);
     const release = hold((key) => key.endsWith(`:${hashed('g1')}`));
@@ -300,19 +302,21 @@ describe('createAdapterFactory, key layout and expiry', () => {
 
 describe('createSealedCollection', () => {
   it('treats a tampered or foreign value as absent', async () => {
-    const store = new Keyv();
+    const entries: Entries = new Map();
+    const store = createMemoryStore(entries);
     const ring = deriveKeyRing(OLD);
     const collection = createSealedCollection<{ a: number }>(store, 'Thing', ring);
     await collection.set('x', { a: 1 });
-    const [[key]] = [...(store.store as Map<string, unknown>).entries()] as [[string, unknown]];
-    await store.set(key.replace(/^keyv:/, ''), 'not-a-jwe');
+    expect(keysOf(entries)).toEqual([`Thing:${hashed('x')}`]);
+    await store.set(`Thing:${hashed('x')}`, 'not-a-jwe');
     expect(await collection.get('x')).toBeUndefined();
   });
 
   it('keeps its expiry when re-encrypting a record under the current secret', async () => {
     vi.useFakeTimers({ now: NOW });
     try {
-      const store = new Keyv();
+      const entries: Entries = new Map();
+      const store = createMemoryStore(entries);
       const key = `Thing:${hashed('x')}`;
       const write = createSealedCollection<unknown>(store, 'Thing', deriveKeyRing(OLD));
       const rotate = createSealedCollection<unknown>(
@@ -323,15 +327,15 @@ describe('createSealedCollection', () => {
 
       await write.set('x', { exp: NOW_S + 60 }, 60);
       expect(await rotate.get('x')).toEqual({ exp: NOW_S + 60 });
-      expect(expiresOf(store, key)).toBe((NOW_S + 60) * 1000);
+      expect(expiresOf(entries, key)).toBe((NOW_S + 60) * 1000);
 
       await write.set('x', { exp: NOW_S - 10 });
       await rotate.get('x');
-      expect(expiresOf(store, key)).toBe(NOW + 1);
+      expect(expiresOf(entries, key)).toBe(NOW + 1);
 
       await write.set('x', { exp: '5' });
       await rotate.get('x');
-      expect(expiresOf(store, key)).toBeUndefined();
+      expect(expiresOf(entries, key)).toBeUndefined();
 
       await write.set('x', null);
       expect(await rotate.get('x')).toBeNull();
@@ -343,7 +347,11 @@ describe('createSealedCollection', () => {
   it('expires a record after its ttl', async () => {
     vi.useFakeTimers();
     try {
-      const collection = createSealedCollection<string>(new Keyv(), 'Thing', deriveKeyRing(OLD));
+      const collection = createSealedCollection<string>(
+        createMemoryStore(),
+        'Thing',
+        deriveKeyRing(OLD),
+      );
       await collection.set('x', 'v', 10);
       expect(await collection.get('x')).toBe('v');
       vi.advanceTimersByTime(9_000);
@@ -353,6 +361,20 @@ describe('createSealedCollection', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  // A store outage must not read as every grant being gone: clients would drop
+  // their tokens. Raised, it is a 500 the client retries.
+  it('raises a backend failure instead of reading it as a missing record', async () => {
+    const down: RecordStore = {
+      get: () => Promise.reject(new Error('backend down')),
+      set: () => Promise.reject(new Error('backend down on write')),
+      delete: () => Promise.reject(new Error('backend down on delete')),
+    };
+    const collection = createSealedCollection<string>(down, 'Thing', deriveKeyRing(OLD));
+    await expect(collection.get('x')).rejects.toThrow('backend down');
+    await expect(collection.set('x', 'v')).rejects.toThrow('backend down on write');
+    await expect(collection.delete('x')).rejects.toThrow('backend down on delete');
   });
 });
 
@@ -365,15 +387,15 @@ describe('file store', () => {
 
   it('survives a restart and writes owner-only files', async () => {
     const path = join(dir, 'nested', 'store.json');
-    const first = new Keyv({ store: createFileStore(path) });
+    const first = createFileStore(path);
     await first.set('k', 'v');
     if (process.platform !== 'win32') {
       expect((statSync(path).mode % 0o1000).toString(8)).toBe('600');
     }
-    const second = new Keyv({ store: createFileStore(path) });
+    const second = createFileStore(path);
     expect(await second.get('k')).toBe('v');
     await second.delete('k');
-    expect(await new Keyv({ store: createFileStore(path) }).get('k')).toBeUndefined();
+    expect(await createFileStore(path).get('k')).toBeUndefined();
   });
 
   it('drops expired entries on load', async () => {
@@ -381,16 +403,17 @@ describe('file store', () => {
     writeFileSync(
       path,
       JSON.stringify({
-        'keyv:gone': JSON.stringify({ value: 'x', expires: Date.now() - 1 }),
-        'keyv:kept': JSON.stringify({ value: 'y', expires: Date.now() + 60_000 }),
-        'keyv:forever': JSON.stringify({ value: 'z' }),
+        gone: { v: 'x', exp: Date.now() - 1 },
+        kept: { v: 'y', exp: Date.now() + 60_000 },
+        forever: { v: 'z' },
       }),
     );
-    const store = new Keyv({ store: createFileStore(path) });
+    const store = createFileStore(path);
+    expect(await store.get('gone')).toBeUndefined();
     expect(await store.get('kept')).toBe('y');
     expect(await store.get('forever')).toBe('z');
-    await store.set('touch', 1);
-    expect(readFileSync(path, 'utf8')).not.toContain('keyv:gone');
+    await store.set('touch', '1');
+    expect(readFileSync(path, 'utf8')).not.toContain('gone');
   });
 
   it('refuses a corrupt file instead of silently starting empty', () => {
@@ -399,14 +422,6 @@ describe('file store', () => {
     expect(() => createFileStore(path)).toThrow();
     writeFileSync(path, '[]');
     expect(() => createFileStore(path)).toThrow('The OAuth store file is not a JSON object.');
-  });
-
-  it('clears everything', async () => {
-    const path = join(dir, 'store.json');
-    const store = new Keyv({ store: createFileStore(path) });
-    await store.set('a', 1);
-    await store.clear();
-    expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({});
   });
 });
 
@@ -417,80 +432,32 @@ describe('openStore', () => {
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-  it('opens memory:// and file:// without any extra package', async () => {
-    const memory = await openStore('memory://');
-    await memory.set('a', 1);
-    expect(await memory.get('a')).toBe(1);
-    const file = await openStore(pathToFileURL(join(dir, 'store.json')).href);
-    await file.set('b', 2);
-    expect(await (await openStore(pathToFileURL(join(dir, 'store.json')).href)).get('b')).toBe(2);
+  it('opens memory:// in memory, a fresh store each time', async () => {
+    const memory = openStore('memory://');
+    await memory.set('a', '1');
+    expect(await memory.get('a')).toBe('1');
+    expect(await openStore('memory://').get('a')).toBeUndefined();
   });
 
-  it('names the missing package for an optional scheme', async () => {
-    await expect(openStore('redis://localhost:6379')).rejects.toThrow(
-      'The OAuth store needs the package "@keyv/redis". Install it next to the server (npm install @keyv/redis).',
-    );
-    await expect(openStore('postgres://u@h/db')).rejects.toThrow('"@keyv/postgres"');
-    await expect(openStore('sqlite:///tmp/x.sqlite')).rejects.toThrow('"@keyv/sqlite"');
-    await expect(openStore('rediss://localhost:6380')).rejects.toThrow('"@keyv/redis"');
-    await expect(openStore('postgresql://u@h/db')).rejects.toThrow('"@keyv/postgres"');
+  it('opens file:// as the file at that path, which survives a reopen', async () => {
+    const path = join(dir, 'my store.json');
+    const file = openStore(pathToFileURL(path).href);
+    await file.set('b', '2');
+    expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({ b: { v: '2' } });
+    expect(await openStore(pathToFileURL(path).href).get('b')).toBe('2');
   });
 
-  it('keeps the import failure as the cause of a missing package', async () => {
-    const failure = await openStore('redis://localhost:6379').catch((err: unknown) => err);
-    expect((failure as Error).cause).toBeInstanceOf(Error);
-  });
-
-  it('reports a backend failure once, as a rejection, without also emitting it', async () => {
-    const pkg = join(dir, 'failing-store.mjs');
-    writeFileSync(
-      pkg,
-      `export default class { constructor() { this.opts = {}; } on() { return this; }
-        async get() {} async set() { throw new Error('backend down'); } async delete() { return false; }
-        async clear() {} }`,
-    );
-    const store = await openStore('custom://down', pathToFileURL(pkg).href);
-    const emitted = vi.fn();
-    store.on('error', emitted);
-    await expect(store.set('k', 'v')).rejects.toThrow('backend down');
-    expect(emitted).not.toHaveBeenCalled();
-  });
-
-  it('raises a backend failure instead of reading it as a missing record', async () => {
-    const pkg = join(dir, 'down-store.mjs');
-    writeFileSync(
-      pkg,
-      `export default class { constructor() { this.opts = {}; } on() { return this; }
-        async get() { throw new Error('backend down'); } async set() {} async delete() { return false; }
-        async clear() {} }`,
-    );
-    const store = await openStore('custom://down', pathToFileURL(pkg).href);
-    await expect(store.get('k')).rejects.toThrow('backend down');
-  });
-
-  it('rejects an unknown scheme', async () => {
-    await expect(openStore('ftp://x')).rejects.toThrow('Unsupported OAuth store scheme "ftp:".');
-  });
-
-  it('loads a third-party adapter package and passes it the URI', async () => {
-    const pkg = join(dir, 'custom-store.mjs');
-    writeFileSync(
-      pkg,
-      `export default class { constructor(uri) { this.opts = { uri }; this.m = new Map(); }
-        on() { return this; } async get(k) { return this.m.get(k); } async set(k, v) { this.m.set(k, v); }
-        async delete(k) { return this.m.delete(k); } async clear() { this.m.clear(); } }`,
-    );
-    const store = await openStore('custom://somewhere', pathToFileURL(pkg).href);
-    await store.set('k', 'v');
-    expect(await store.get('k')).toBe('v');
-    expect((store.store as { opts: { uri: string } }).opts.uri).toBe('custom://somewhere');
-  });
-
-  it('rejects an adapter package without a default-exported class', async () => {
-    const pkg = join(dir, 'bad-store.mjs');
-    writeFileSync(pkg, 'export const notAStore = 1;');
-    await expect(openStore('custom://x', pathToFileURL(pkg).href)).rejects.toThrow(
-      'The OAuth store adapter package has no default-exported Keyv store class.',
+  it.each([
+    'redis://localhost:6379',
+    'rediss://localhost:6380',
+    'postgres://u@h/db',
+    'postgresql://u@h/db',
+    'sqlite:///tmp/x.sqlite',
+    'ftp://x',
+  ])('rejects %s, naming the schemes it supports', (uri) => {
+    const scheme = `${new URL(uri).protocol}`;
+    expect(() => openStore(uri)).toThrow(
+      new Error(`Unsupported OAuth store scheme "${scheme}". Use file:// or memory://.`),
     );
   });
 });

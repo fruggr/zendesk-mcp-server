@@ -1,9 +1,8 @@
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { CompactEncrypt, compactDecrypt, decodeProtectedHeader } from 'jose';
-import Keyv, { type KeyvStoreAdapter } from 'keyv';
 import type { Adapter, AdapterFactory, AdapterPayload } from 'oidc-provider';
-import { createFileStore } from './file-store';
+import { createFileStore, createMemoryStore, type RecordStore } from './file-store';
 import type { KeyRing } from './keys';
 
 /**
@@ -67,17 +66,16 @@ const remainingTtlMs = (value: unknown): number | undefined => {
  * later loses nothing still in use (DCR clients are otherwise never rewritten).
  */
 export const createSealedCollection = <T>(
-  store: Keyv,
+  store: RecordStore,
   name: string,
   ring: KeyRing,
 ): SealedCollection<T> => {
   const key = (id: string) => `${name}:${hashId(id)}`;
   return {
     get: async (id) => {
-      const sealed = await store.get<string>(key(id));
-      // Stryker disable next-line ConditionalExpression: open answers undefined for any value that
-      // is not a JWE, a missing one included.
-      if (typeof sealed !== 'string') return undefined;
+      const sealed = await store.get(key(id));
+      // Stryker disable next-line ConditionalExpression: open answers undefined for a missing one too.
+      if (sealed === undefined) return undefined;
       const record = await open<T>(ring, sealed);
       if (record && !record.current) {
         await store.set(key(id), await seal(ring, record.value), remainingTtlMs(record.value));
@@ -93,7 +91,7 @@ export const createSealedCollection = <T>(
   };
 };
 
-// Keyv has no atomic read-modify-write, so such updates (the grant index, the
+// The store has no atomic read-modify-write, so such updates (the grant index, the
 // Zendesk refresh) are serialised per key in-process (single instance, ADR).
 export const createKeyLock = () => {
   const tails = new Map<string, Promise<unknown>>();
@@ -118,14 +116,14 @@ interface GrantIndex {
 
 export interface AdapterStores {
   /** The configured backend (`--oauth-store`). */
-  readonly persistent: Keyv;
-  /** Short-lived models; defaults to a fresh in-memory Keyv. */
-  readonly memory?: Keyv | undefined;
+  readonly persistent: RecordStore;
+  /** Short-lived models; defaults to a fresh in-memory store. */
+  readonly memory?: RecordStore | undefined;
 }
 
-/** oidc-provider adapter factory over two Keyv stores, sealed with the at-rest key. */
+/** oidc-provider adapter factory over two stores, sealed with the at-rest key. */
 export const createAdapterFactory = (stores: AdapterStores, ring: KeyRing): AdapterFactory => {
-  const memory = stores.memory ?? new Keyv();
+  const memory = stores.memory ?? createMemoryStore();
   const withLock = createKeyLock();
 
   return (name: string): Adapter => {
@@ -177,59 +175,14 @@ export const createAdapterFactory = (stores: AdapterStores, ring: KeyRing): Adap
   };
 };
 
-type KeyvStoreModule = Record<string, unknown> & { default?: unknown };
-
-// Kept a variable specifier so the bundler leaves these optional packages to
-// runtime resolution: only the scheme a deployer picks has to be installed.
-const importOptional = async (specifier: string): Promise<KeyvStoreModule> => {
-  try {
-    return (await import(specifier)) as KeyvStoreModule;
-  } catch (err) {
-    throw new Error(
-      `The OAuth store needs the package "${specifier}". Install it next to the server (npm install ${specifier}).`,
-      { cause: err },
-    );
-  }
-};
-
-const constructStore = (module: KeyvStoreModule, uri: string): KeyvStoreAdapter => {
-  // Every @keyv/* store default-exports a class taking the connection URI.
-  const Store = module.default;
-  if (typeof Store !== 'function') {
-    throw new Error('The OAuth store adapter package has no default-exported Keyv store class.');
-  }
-  return new (Store as new (uri: string) => KeyvStoreAdapter)(uri);
-};
-
-const SCHEME_PACKAGES: Readonly<Record<string, string>> = {
-  'redis:': '@keyv/redis',
-  'rediss:': '@keyv/redis',
-  'postgres:': '@keyv/postgres',
-  'postgresql:': '@keyv/postgres',
-  'sqlite:': '@keyv/sqlite',
-};
-
 /**
- * Open the persistent store named by `--oauth-store`. `file://` and `memory://`
- * are built in; the other schemes import their `@keyv/*` package on demand, and
- * `--oauth-store-adapter` loads any third-party Keyv store for the URI.
+ * Open the persistent store named by `--oauth-store`: `file://` (the default)
+ * or `memory://` (tests, throwaway runs). Another backend means implementing
+ * `RecordStore`; the ADR records why the store is not pluggable yet.
  */
-// Keyv's default swallows a backend failure and answers "not found": a store
-// outage would then read as every grant being gone, and clients would drop
-// their tokens. Raised instead, it is a 500 the client retries.
-const keyvOver = (store?: KeyvStoreAdapter): Keyv =>
-  new Keyv({ ...(store ? { store } : {}), emitErrors: false, throwOnErrors: true });
-
-export const openStore = async (uri: string, adapterPackage?: string): Promise<Keyv> => {
-  if (adapterPackage) return keyvOver(constructStore(await importOptional(adapterPackage), uri));
+export const openStore = (uri: string): RecordStore => {
   const { protocol } = new URL(uri);
-  if (protocol === 'memory:') return keyvOver();
-  if (protocol === 'file:') return keyvOver(createFileStore(fileURLToPath(uri)));
-  const specifier = SCHEME_PACKAGES[protocol];
-  if (!specifier) {
-    throw new Error(
-      `Unsupported OAuth store scheme "${protocol}". Use file://, memory://, redis://, postgres://, sqlite://, or --oauth-store-adapter.`,
-    );
-  }
-  return keyvOver(constructStore(await importOptional(specifier), uri));
+  if (protocol === 'memory:') return createMemoryStore();
+  if (protocol === 'file:') return createFileStore(fileURLToPath(uri));
+  throw new Error(`Unsupported OAuth store scheme "${protocol}". Use file:// or memory://.`);
 };

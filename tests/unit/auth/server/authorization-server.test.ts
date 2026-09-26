@@ -3,7 +3,6 @@ import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CompactEncrypt } from 'jose';
-import Keyv from 'keyv';
 import { HttpResponse, http } from 'msw';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -11,6 +10,7 @@ import {
   createAuthorizationServer,
   prepareAuthorizationServer,
 } from '../../../../src/auth/server/authorization-server';
+import { createMemoryStore, type RecordStore } from '../../../../src/auth/server/file-store';
 import { deriveKeyRing } from '../../../../src/auth/server/keys';
 import type { Config } from '../../../../src/config';
 import type { Logger } from '../../../../src/utils/logger';
@@ -45,7 +45,7 @@ const recordingLogger = () => {
 
 const RING = deriveKeyRing(Buffer.alloc(32, 7).toString('base64'));
 
-const build = (persistent: Keyv, logger?: Logger, issuer = 'https://mcp.example.com') =>
+const build = (persistent: RecordStore, logger?: Logger, issuer = 'https://mcp.example.com') =>
   createAuthorizationServer({
     config: makeConfig({ transport: 'http' }),
     issuer,
@@ -75,71 +75,67 @@ const forge = (issuer: string, claims: Record<string, unknown>) =>
 
 /** A store whose reads of one collection can be made to fail. */
 const faultyStore = () => {
-  const map = new Map<string, unknown>();
+  const map = new Map<string, string>();
   const ttls = new Map<string, number | undefined>();
   const faults = { failing: undefined as string | undefined, error: new Error('store down') };
-  const store = {
-    opts: {},
-    on() {
-      return store;
-    },
-    get: async (key: string) => {
+  const persistent: RecordStore = {
+    get: async (key) => {
       if (faults.failing && key.includes(`${faults.failing}:`)) throw faults.error;
       return map.get(key);
     },
-    set: async (key: string, value: unknown, ttl?: number) => {
+    set: async (key, value, ttlMs) => {
       map.set(key, value);
-      ttls.set(key, ttl);
-      return true;
+      ttls.set(key, ttlMs);
     },
-    delete: async (key: string) => map.delete(key),
-    clear: async () => map.clear(),
+    delete: async (key) => {
+      map.delete(key);
+    },
   };
-  const nameOf = (key: string) => /^(?:keyv:)?(.+):[\w-]{43}$/.exec(key)?.[1];
+  const nameOf = (key: string) => /^(.+):[\w-]{43}$/.exec(key)?.[1];
   return {
     map,
     faults,
     /** The TTL (ms) each collection's records were last written with. */
     ttls: () => Object.fromEntries([...ttls].map(([key, ttl]) => [nameOf(key), ttl])),
-    keyv: new Keyv({ store, emitErrors: false, throwOnErrors: true }),
+    persistent,
     collections: () => [...new Set([...map.keys()].map(nameOf))].sort(),
   };
 };
 
 describe('createAuthorizationServer', () => {
   it('names the resource after the issuer', () => {
-    const as = build(new Keyv());
+    const as = build(createMemoryStore());
     expect(as.resource).toBe('https://mcp.example.com/mcp');
     expect(as.protectedResourceMetadata.authorization_servers).toEqual(['https://mcp.example.com']);
   });
 
   it('rejects anything that is not one of its tokens', async () => {
-    const as = build(new Keyv());
+    const as = build(createMemoryStore());
     for (const bearer of ['', 'zd-access-1', 'a.b.c.d.e', 'eyJhbGciOiJkaXIifQ.x.y.z.w']) {
       expect(await as.verifyAccessToken(bearer)).toBeUndefined();
     }
   });
 
   it('never rejects when revoking a grant fails in the store, and logs why', async () => {
-    const { keyv, faults } = faultyStore();
+    const { persistent, faults } = faultyStore();
     faults.failing = 'Grant';
     const { logger, events } = recordingLogger();
-    await expect(build(keyv, logger).revokeGrant('g-1')).resolves.toBeUndefined();
+    await expect(build(persistent, logger).revokeGrant('g-1')).resolves.toBeUndefined();
     expect(events).toEqual([['warn', 'oauth_grant_revoke_failed', { error: 'store down' }]]);
   });
 
   it('logs a store failure that is not an Error as its string', async () => {
-    const { keyv, faults } = faultyStore();
+    const { persistent, faults } = faultyStore();
     faults.failing = 'Grant';
     faults.error = 'socket closed' as unknown as Error;
     const { logger, events } = recordingLogger();
-    await build(keyv, logger).revokeGrant('g-1');
+    await build(persistent, logger).revokeGrant('g-1');
     expect(events).toEqual([['warn', 'oauth_grant_revoke_failed', { error: 'socket closed' }]]);
   });
 
   it('revokes a grant it does not know without failing', async () => {
     const { logger, events } = recordingLogger();
-    await build(new Keyv(), logger).revokeGrant('unknown');
+    await build(createMemoryStore(), logger).revokeGrant('unknown');
     expect(events).toEqual([['info', 'oauth_grant_revoked', { reason: 'zendesk_unauthorized' }]]);
   });
 
@@ -148,7 +144,7 @@ describe('createAuthorizationServer', () => {
     afterEach(() => vi.restoreAllMocks());
 
     it('hands back what the token carries', async () => {
-      const as = build(new Keyv());
+      const as = build(createMemoryStore());
       const exp = Math.floor(Date.now() / 1000) + 60;
       expect(await as.verifyAccessToken(await forge(issuer, { exp }))).toEqual({
         zendeskAccessToken: 'zd-token',
@@ -163,7 +159,7 @@ describe('createAuthorizationServer', () => {
     });
 
     it('rejects a token without a numeric expiry, a Zendesk token or a grant id', async () => {
-      const as = build(new Keyv());
+      const as = build(createMemoryStore());
       for (const claims of [
         { exp: String(Math.floor(Date.now() / 1000) + 60) },
         { exp: undefined },
@@ -178,7 +174,7 @@ describe('createAuthorizationServer', () => {
     });
 
     it('rejects a token from its expiry second on', async () => {
-      const as = build(new Keyv());
+      const as = build(createMemoryStore());
       const token = await forge(issuer, { exp: 2_000_000_000 });
       vi.spyOn(Date, 'now').mockReturnValue(2_000_000_000_000 - 1);
       expect(await as.verifyAccessToken(token)).toMatchObject({ expiresAt: 2_000_000_000 });
@@ -187,7 +183,7 @@ describe('createAuthorizationServer', () => {
     });
 
     it('refuses a revoked grant for one access-token lifetime, and only that grant', async () => {
-      const as = build(new Keyv());
+      const as = build(createMemoryStore());
       const revoked = await forge(issuer, { gid: 'g-1', exp: 2_000_000_000 });
       const other = await forge(issuer, { gid: 'g-2', exp: 2_000_000_000 });
       const start = 1_900_000_000_000;
@@ -209,7 +205,7 @@ describe('createAuthorizationServer', () => {
     let zendesk: ReturnType<typeof createZendeskOAuthMock>;
 
     const serve = async (
-      persistent: Keyv,
+      persistent: RecordStore,
       logger?: Logger,
       config: Partial<Config> = {},
     ): Promise<AuthorizationServer> => {
@@ -246,7 +242,7 @@ describe('createAuthorizationServer', () => {
     });
 
     it('mints tokens that carry the grant and the signed-in Zendesk user', async () => {
-      const as = await serve(new Keyv());
+      const as = await serve(createMemoryStore());
       const { clientId, tokens } = await signInWithDcr(base);
       const verified = await as.verifyAccessToken(tokens.body.access_token ?? '');
       expect(verified).toEqual({
@@ -263,7 +259,7 @@ describe('createAuthorizationServer', () => {
 
     it('keeps its records in named collections of the persistent store', async () => {
       const store = faultyStore();
-      await serve(store.keyv);
+      await serve(store.persistent);
       await signInWithDcr(base);
       expect(store.ttls()).toMatchInlineSnapshot(`
         {
@@ -290,7 +286,7 @@ describe('createAuthorizationServer', () => {
     it('ends a revoked grant: its tokens, its refresh token and its Zendesk tokens', async () => {
       const store = faultyStore();
       const { logger, events } = recordingLogger();
-      const as = await serve(store.keyv, logger);
+      const as = await serve(store.persistent, logger);
       const { clientId, tokens } = await signInWithDcr(base);
       const kept = await signInWithDcr(base);
       const { grantId } = (await as.verifyAccessToken(tokens.body.access_token ?? '')) ?? {};
@@ -313,7 +309,7 @@ describe('createAuthorizationServer', () => {
     it('answers a store failure while minting a token with a server error, and logs it', async () => {
       const store = faultyStore();
       const { logger, events } = recordingLogger();
-      await serve(store.keyv, logger);
+      await serve(store.persistent, logger);
       const clientId = (await registerDcrClient(base)).body.client_id ?? '';
       const result = await authorize(base, { clientId, redirectUri: DCR_REDIRECT });
       store.faults.failing = 'ZendeskTokens';
@@ -325,14 +321,14 @@ describe('createAuthorizationServer', () => {
 
     it('refreshes a Zendesk token that would lapse within our access-token lifetime', async () => {
       useZendesk(3600);
-      await serve(new Keyv());
+      await serve(createMemoryStore());
       await signInWithDcr(base);
       expect(zendesk.state.refreshes).toBe(1);
     });
 
     it('keeps a Zendesk token that outlives our access token by the refresh margin', async () => {
       useZendesk(3600 + 5 * 60 + 60);
-      await serve(new Keyv());
+      await serve(createMemoryStore());
       await signInWithDcr(base);
       expect(zendesk.state.refreshes).toBe(0);
     });
@@ -349,7 +345,7 @@ describe('createAuthorizationServer', () => {
           }),
         ),
       );
-      await serve(new Keyv());
+      await serve(createMemoryStore());
       const result = await authorize(base, {
         clientId,
         redirectUri: 'https://tools.example.com/callback',
@@ -359,7 +355,7 @@ describe('createAuthorizationServer', () => {
     });
 
     it('leaves a non-GET request on the Zendesk callback path to the provider', async () => {
-      await serve(new Keyv());
+      await serve(createMemoryStore());
       const res = await fetch(`${base}/oauth/callback?state=abc&code=x`, {
         method: 'POST',
         redirect: 'manual',

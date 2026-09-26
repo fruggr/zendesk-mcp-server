@@ -158,8 +158,6 @@ export const ConfigSchema = z.object({
   oauthMasterSecretFile: z.string().min(1).optional(),
   /** HTTP only: the grant store URI; defaults to a file in the config dir. */
   oauthStore: z.string().url().optional(),
-  /** HTTP only: a package exporting a third-party Keyv store for `oauthStore`. */
-  oauthStoreAdapter: z.string().min(1).optional(),
   /** HTTP only: CIMD client ids added to the consent-skip allowlist. */
   oauthTrustedClients: z.array(z.string().url()).default([]),
   /** HTTP only: whether the built-in allowlist (claude.ai, ChatGPT) applies. */
@@ -191,7 +189,6 @@ interface CliResult {
   callbackPort?: number;
   oauthMasterSecretFile?: string;
   oauthStore?: string;
-  oauthStoreAdapter?: string;
   oauthTrustedClients?: string[];
   defaultTrustedClients?: boolean;
 }
@@ -249,7 +246,6 @@ const CLI_OPTIONS = {
   'callback-port': { type: 'string' },
   'oauth-master-secret-file': { type: 'string' },
   'oauth-store': { type: 'string' },
-  'oauth-store-adapter': { type: 'string' },
   'oauth-trusted-client': { type: 'string', multiple: true },
   'no-default-trusted-clients': { type: 'boolean' },
   'read-only': { type: 'boolean' },
@@ -283,7 +279,6 @@ const FIELD_BY_FLAG = new Map<string, keyof CliResult>([
   ['cors-origin', 'corsOrigins'],
   ['oauth-master-secret-file', 'oauthMasterSecretFile'],
   ['oauth-store', 'oauthStore'],
-  ['oauth-store-adapter', 'oauthStoreAdapter'],
   ['oauth-trusted-client', 'oauthTrustedClients'],
 ]);
 
@@ -398,7 +393,6 @@ const resolveOAuthServerSettings = (cli: CliResult) => ({
   oauthMasterSecretFile:
     cli.oauthMasterSecretFile ?? requireNonEmptyEnv('OAUTH_MASTER_SECRET_FILE'),
   oauthStore: cli.oauthStore ?? requireNonEmptyEnv('OAUTH_STORE'),
-  oauthStoreAdapter: cli.oauthStoreAdapter ?? requireNonEmptyEnv('OAUTH_STORE_ADAPTER'),
   oauthTrustedClients: [
     ...(cli.oauthTrustedClients ?? []),
     ...splitList(readEnv('OAUTH_TRUSTED_CLIENTS').value),

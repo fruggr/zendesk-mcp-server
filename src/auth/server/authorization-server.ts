@@ -2,12 +2,12 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { compactDecrypt, decodeProtectedHeader } from 'jose';
-import type Keyv from 'keyv';
 import type { Config } from '../../config';
 import { type Logger, silentLogger } from '../../utils/logger';
 import { supportedScopes } from '../oauth-scopes';
 import { configDir } from '../token-persistence';
 import { createExpiringMap } from './expiring-map';
+import type { RecordStore } from './file-store';
 import { createInteractionRoutes } from './interactions';
 import { deriveKeyRing, type KeyRing } from './keys';
 import { ACCESS_TOKEN_TTL_S, buildProvider } from './provider';
@@ -50,7 +50,7 @@ export interface AuthorizationServerOptions {
   /** The public base URL (no trailing slash): our issuer. */
   readonly issuer: string;
   readonly ring: KeyRing;
-  readonly persistent: Keyv;
+  readonly persistent: RecordStore;
   readonly isAllowedOrigin: (origin: string) => boolean;
   readonly logger?: Logger | undefined;
   /** Base fetch for CIMD documents (tests). */
@@ -227,7 +227,7 @@ export const prepareAuthorizationServer = async (
     logger,
   );
   const ring = deriveKeyRing(secret.value);
-  const persistent = await openStore(storeUri, config.oauthStoreAdapter);
+  const persistent = openStore(storeUri);
   return (issuer, isAllowedOrigin, overrides = {}) =>
     createAuthorizationServer({
       config,

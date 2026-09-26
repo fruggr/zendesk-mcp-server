@@ -53,7 +53,7 @@ Zendesk.
 | | Default | For a deployment |
 |---|---|---|
 | **Master secret** | Generated on first start into `oauth-master-secret` (mode 0600) in the config directory | `OAUTH_MASTER_SECRET` from a secret manager (e.g. a Key Vault reference on Azure Container Apps), or `--oauth-master-secret-file` |
-| **Grant store** | `file://<config dir>/oauth-store.json` | `--oauth-store file:///data/oauth-store.json` on a persistent volume, or `redis://`, `postgres://`, `sqlite://` |
+| **Grant store** | `file://<config dir>/oauth-store.json` | `--oauth-store file:///data/oauth-store.json` on a persistent volume |
 
 - **Generate a secret** with `openssl rand -base64 32`. Anything under 32 bytes
   is refused at startup.
@@ -62,10 +62,8 @@ Zendesk.
   an auto-generated secret sits next to a file store.
 - **Keep both across redeploys.** With the same secret and store, a restart or a
   redeploy logs nobody out. Lose either and every user signs in again.
-- **Other stores** load their Keyv package on demand: install `@keyv/redis`,
-  `@keyv/postgres` or `@keyv/sqlite` next to the server. `--oauth-store-adapter
-  <package>` loads any other Keyv store, which receives the `--oauth-store` URI.
-  `memory://` keeps everything in memory, for tests only.
+- **A file is the only persistent store.** `memory://` keeps everything in
+  memory, for tests only.
 - **One instance only.** Several replicas sharing a store are not supported.
 
 ### Rotating the secret

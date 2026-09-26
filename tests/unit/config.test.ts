@@ -17,7 +17,6 @@ const LOAD_CONFIG_ENV = [
   'OAUTH_MASTER_SECRET',
   'OAUTH_MASTER_SECRET_FILE',
   'OAUTH_STORE',
-  'OAUTH_STORE_ADAPTER',
   'OAUTH_TRUSTED_CLIENTS',
   // Legacy names, still read until 3.0.0 (src/utils/env.ts).
   'HOST',
@@ -302,7 +301,6 @@ describe('loadConfig', () => {
       expect(config.oauthMasterSecret).toBeUndefined();
       expect(config.oauthMasterSecretFile).toBeUndefined();
       expect(config.oauthStore).toBeUndefined();
-      expect(config.oauthStoreAdapter).toBeUndefined();
       expect(config.oauthTrustedClients).toEqual([]);
       expect(config.defaultTrustedClients).toBe(true);
     });
@@ -322,30 +320,28 @@ describe('loadConfig', () => {
 
     it('prefers the flags over the env vars', () => {
       process.env['OAUTH_MASTER_SECRET_FILE'] = '/env/secret';
-      process.env['OAUTH_STORE'] = 'redis://env:6379';
-      process.env['OAUTH_STORE_ADAPTER'] = 'env-adapter';
+      process.env['OAUTH_STORE'] = 'file:///env/store.json';
       const config = loadConfig([
         'mycompany',
         '--oauth-master-secret-file',
         '/flag/secret',
         '--oauth-store',
         'file:///flag/store.json',
-        '--oauth-store-adapter',
-        'flag-adapter',
       ]);
       expect(config.oauthMasterSecretFile).toBe('/flag/secret');
       expect(config.oauthStore).toBe('file:///flag/store.json');
-      expect(config.oauthStoreAdapter).toBe('flag-adapter');
     });
 
     it('falls back to the env vars', () => {
       process.env['OAUTH_MASTER_SECRET_FILE'] = '/env/secret';
-      process.env['OAUTH_STORE'] = 'redis://env:6379';
-      process.env['OAUTH_STORE_ADAPTER'] = 'env-adapter';
+      process.env['OAUTH_STORE'] = 'file:///env/store.json';
       const config = loadConfig(['mycompany']);
       expect(config.oauthMasterSecretFile).toBe('/env/secret');
-      expect(config.oauthStore).toBe('redis://env:6379');
-      expect(config.oauthStoreAdapter).toBe('env-adapter');
+      expect(config.oauthStore).toBe('file:///env/store.json');
+    });
+
+    it('refuses the removed --oauth-store-adapter flag instead of ignoring it', () => {
+      expect(() => loadConfig(['mycompany', '--oauth-store-adapter', 'some-store'])).toThrow();
     });
 
     it('rejects a store that is not a URI', () => {
@@ -541,7 +537,7 @@ describe('loadConfig', () => {
 
     it('covers every value-taking flag declared in CLI_OPTIONS', () => {
       // Guards the parametrised cases below against silently shrinking to zero.
-      expect(valueFlags).toHaveLength(15);
+      expect(valueFlags).toHaveLength(14);
     });
 
     it.each(valueFlags)('rejects %s as the last argument (value forgotten)', (flag) => {

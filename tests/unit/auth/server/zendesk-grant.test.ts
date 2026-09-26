@@ -1,5 +1,5 @@
-import Keyv from 'keyv';
 import { describe, expect, it, vi } from 'vitest';
+import { createMemoryStore } from '../../../../src/auth/server/file-store';
 import { deriveKeyRing } from '../../../../src/auth/server/keys';
 import { createSealedCollection } from '../../../../src/auth/server/store';
 import type { ZendeskTokenSet } from '../../../../src/auth/server/upstream';
@@ -14,7 +14,11 @@ const UPSTREAM = { subdomain: 'testsubdomain', clientId: 'c' };
 const ring = deriveKeyRing(Buffer.alloc(32, 3).toString('base64'));
 
 const setup = (refresh = vi.fn(), logger?: Logger) => {
-  const records = createSealedCollection<ZendeskTokenSet>(new Keyv(), 'ZendeskTokens', ring);
+  const records = createSealedCollection<ZendeskTokenSet>(
+    createMemoryStore(),
+    'ZendeskTokens',
+    ring,
+  );
   let clock = 1_000_000;
   const grants = createZendeskGrants({
     records,
