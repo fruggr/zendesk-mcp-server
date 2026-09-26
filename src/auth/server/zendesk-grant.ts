@@ -1,6 +1,7 @@
 import { type Logger, silentLogger } from '../../utils/logger';
 import { createKeyLock, type SealedCollection } from './store';
 import {
+  isUpstreamAuthError,
   refreshZendeskTokens,
   ZENDESK_REFRESH_TOKEN_TTL_S,
   type ZendeskTokenSet,
@@ -16,8 +17,9 @@ export interface ZendeskGrants {
   save(grantId: string, tokens: ZendeskTokenSet): Promise<void>;
   /**
    * A Zendesk access token valid for at least the refresh margin, refreshing
-   * (and persisting the rotated pair) when needed. Rejects when the grant has
-   * no Zendesk tokens or Zendesk refuses the refresh: the user must sign in again.
+   * (and persisting the rotated pair) when needed. Rejects with a grant-unavailable
+   * error when the grant has no Zendesk tokens or Zendesk refuses the refresh: the
+   * user must sign in again. Any other failure is rethrown and the grant kept.
    */
   accessToken(grantId: string): Promise<string>;
   remove(grantId: string): Promise<void>;
@@ -40,6 +42,10 @@ export const grantUnavailableError = (): Error =>
 
 export const isGrantUnavailableError = (err: unknown): boolean =>
   err instanceof Error && err.name === 'ZendeskGrantUnavailable';
+
+// RFC 6749: an invalid or expired refresh token is a 400, a bad client a 401.
+const isRefusal = (err: unknown): boolean =>
+  isUpstreamAuthError(err) && (err.status === 400 || err.status === 401);
 
 /**
  * Zendesk tokens per grant of ours. Both layers rotate their refresh tokens, so
@@ -67,6 +73,9 @@ export const createZendeskGrants = (options: ZendeskGrantsOptions): ZendeskGrant
       logger.warn('oauth_upstream_refresh_failed', {
         error: err instanceof Error ? err.message : String(err),
       });
+      // Only Zendesk refusing the refresh token ends the grant. An outage leaves
+      // that token unspent, so the next attempt can still succeed.
+      if (!isRefusal(err)) throw err;
       await records.delete(grantId);
       throw grantUnavailableError();
     }
@@ -76,7 +85,9 @@ export const createZendeskGrants = (options: ZendeskGrantsOptions): ZendeskGrant
 
   return {
     save: (grantId, tokens) => records.set(grantId, tokens, ZENDESK_REFRESH_TOKEN_TTL_S),
-    remove: (grantId) => records.delete(grantId),
+    // Under the lock: a refresh already running would otherwise write the
+    // rotated tokens back after the removal.
+    remove: (grantId) => withLock(grantId, () => records.delete(grantId)),
     accessToken: (grantId) =>
       withLock(grantId, async () => {
         const tokens = await records.get(grantId);

@@ -134,13 +134,17 @@ access token this server issued for its `/mcp` resource is accepted. A Zendesk
 token presented directly gets a `401`: the server never passes a token through.
 A session id alone is never a credential, and a session only accepts tokens of
 the user who opened it. The most recent token presented on a session is the one
-used, so a client refreshing mid-session just works.
+used, so a client refreshing mid-session just works. A token granted `read`
+alone gets the read tools only, as if the server ran `--read-only`, and cannot
+drive a session opened with `write`.
 
 Access tokens last one hour; refresh tokens up to 90 days, like Zendesk's own.
 The server refreshes the user's Zendesk token by itself when needed. If Zendesk
 rejects it (the user revoked the app, an admin revoked the token), the tool call
 fails with an authentication error and the client's next request gets a `401`,
-which makes it sign the user in again.
+which makes it sign the user in again. That grant stays revoked across a
+restart. A Zendesk outage during a refresh ends nothing: the request fails, and
+the next one retries.
 
 ## Verify discovery endpoints
 

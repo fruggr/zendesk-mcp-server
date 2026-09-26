@@ -1,3 +1,4 @@
+import { deadlineSignal, REQUEST_TIMEOUT_MS } from '../../client/retry';
 import { zendeskGet } from '../../client/zendesk-api';
 import { getOAuthUrls } from '../../constants';
 import { type Logger, silentLogger } from '../../utils/logger';
@@ -18,6 +19,8 @@ export const ZENDESK_REFRESH_TOKEN_TTL_S = 90 * 86400;
 export interface ZendeskUpstream {
   readonly subdomain: string;
   readonly clientId: string;
+  /** Token-request deadline (tests); defaults to the API client's. */
+  readonly timeoutMs?: number | undefined;
 }
 
 export interface ZendeskTokenSet {
@@ -90,6 +93,9 @@ const requestTokens = async (
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: body.toString(),
+      // Bounded: a refresh runs under the grant's lock, so a stalled Zendesk
+      // would otherwise hold every /token call for that grant.
+      signal: deadlineSignal(upstream.timeoutMs ?? REQUEST_TIMEOUT_MS),
     });
   } catch (err) {
     throw upstreamAuthError('Zendesk token endpoint unreachable.', undefined, err);

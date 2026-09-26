@@ -750,15 +750,15 @@ export const oauthTokenHandler = http.post('https://testsubdomain.zendesk.com/oa
   HttpResponse.json({ access_token: 'token-abc', token_type: 'bearer', scope: 'read write' }),
 );
 
+/** Lets requests to a local test server through without an MSW warning. */
+export const localServerPassthrough = http.all(/^http:\/\/127\.0\.0\.1:\d+\//, () => passthrough());
+
 /**
  * A stateful Zendesk OAuth upstream for the HTTP authorization server: codes
  * and refresh tokens are single-use and refresh rotates, as Zendesk's do, and
  * `/users/me` answers only for a live access token. Opt-in via
  * `mswServer.use(...mock.handlers)`.
  */
-/** Lets requests to a local test server through without an MSW warning. */
-export const localServerPassthrough = http.all(/^http:\/\/127\.0\.0\.1:\d+\//, () => passthrough());
-
 export const createZendeskOAuthMock = (options: { accessTtlSeconds?: number } = {}) => {
   const accessTtl = options.accessTtlSeconds ?? 172800;
   let serial = 0;

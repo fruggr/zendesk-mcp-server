@@ -11,7 +11,13 @@ import {
   startHttpTransport,
 } from '../../../src/transports/http';
 import { type Logger, silentLogger } from '../../../src/utils/logger';
-import { signInWithDcr } from '../../integration/oauth-client';
+import {
+  authorize,
+  DCR_REDIRECT,
+  exchangeCode,
+  registerDcrClient,
+  signInWithDcr,
+} from '../../integration/oauth-client';
 import {
   createZendeskOAuthMock,
   errorHandlers,
@@ -50,6 +56,29 @@ const bearerFor = async (port: number): Promise<string> => {
   if (!tokens.body.access_token) throw new Error(`sign-in failed: ${JSON.stringify(tokens.body)}`);
   return `Bearer ${tokens.body.access_token}`;
 };
+
+// A token granted only the scopes asked for: `read` alone on a writable server.
+const bearerWithScope = async (port: number, scope: string): Promise<string> => {
+  const base = `http://127.0.0.1:${port}`;
+  const clientId = (await registerDcrClient(base)).body.client_id ?? '';
+  const result = await authorize(base, { clientId, redirectUri: DCR_REDIRECT, scope });
+  const { body } = await exchangeCode(base, clientId, DCR_REDIRECT, result);
+  if (body.scope !== scope || !body.access_token)
+    throw new Error(`sign-in: ${JSON.stringify(body)}`);
+  return `Bearer ${body.access_token}`;
+};
+
+const listTools = (port: number, authorization: string, sessionId: string) =>
+  fetch(`http://127.0.0.1:${port}/mcp`, {
+    method: 'POST',
+    headers: {
+      Authorization: authorization,
+      'Content-Type': 'application/json',
+      Accept: 'application/json, text/event-stream',
+      'mcp-session-id': sessionId,
+    },
+    body: JSON.stringify({ jsonrpc: '2.0', method: 'tools/list', id: 2 }),
+  });
 
 const mockRequest = (headers: Record<string, string | string[] | undefined>): IncomingMessage =>
   ({ headers }) as unknown as IncomingMessage;
@@ -297,6 +326,38 @@ describe('startHttpTransport (HTTP roundtrip)', () => {
     });
     expect(followUp.status).toBe(200);
     await followUp.text();
+  });
+
+  it('serves only the read tools to a token granted `read` alone', async () => {
+    handle = await startHttpTransport(baseConfig);
+    const readOnly = await bearerWithScope(handle.port, 'read');
+    const readWrite = await bearerWithScope(handle.port, 'read write');
+
+    const narrow = await (
+      await listTools(handle.port, readOnly, await initializeSession(handle.port, readOnly))
+    ).text();
+    expect(narrow).toContain('"get_current_user"');
+    expect(narrow).not.toContain('"update_ticket"');
+    const full = await (
+      await listTools(handle.port, readWrite, await initializeSession(handle.port, readWrite))
+    ).text();
+    expect(full).toContain('"update_ticket"');
+  });
+
+  it('refuses a `read` token on a session opened with write access', async () => {
+    handle = await startHttpTransport(baseConfig);
+    const readWrite = await bearerWithScope(handle.port, 'read write');
+    const readOnly = await bearerWithScope(handle.port, 'read');
+    const sessionId = await initializeSession(handle.port, readWrite);
+
+    const res = await listTools(handle.port, readOnly, sessionId);
+    const text = await res.text();
+    expect(res.status).toBe(400);
+    expect(text).not.toContain('"get_current_user"');
+    // The session itself is unharmed: its own scope still drives it.
+    const again = await listTools(handle.port, readWrite, sessionId);
+    expect(again.status).toBe(200);
+    await again.text();
   });
 
   it('rejects a sessionful request without Authorization with 401 (session id is not a credential)', async () => {

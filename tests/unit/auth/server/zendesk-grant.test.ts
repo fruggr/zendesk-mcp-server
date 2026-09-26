@@ -11,6 +11,14 @@ import {
 import type { Logger } from '../../../../src/utils/logger';
 
 const UPSTREAM = { subdomain: 'testsubdomain', clientId: 'c' };
+
+const upstreamError = (message: string, status?: number): Error =>
+  Object.assign(new Error(message), {
+    name: 'UpstreamAuthError',
+    ...(status === undefined ? {} : { status }),
+  });
+const refusal = (status: number) =>
+  upstreamError(`Zendesk refused the refresh_token grant (${status}).`, status);
 const ring = deriveKeyRing(Buffer.alloc(32, 3).toString('base64'));
 
 const setup = (refresh = vi.fn(), logger?: Logger) => {
@@ -93,7 +101,7 @@ describe('createZendeskGrants', () => {
 
   it('drops the grant when Zendesk refuses the refresh', async () => {
     const refresh = vi.fn(async () => {
-      throw new Error('Zendesk refused the refresh_token grant (400).');
+      throw refusal(400);
     });
     const events: [string, unknown][] = [];
     const logger: Logger = {
@@ -117,6 +125,60 @@ describe('createZendeskGrants', () => {
         { error: 'Zendesk refused the refresh_token grant (400).' },
       ],
     ]);
+  });
+
+  it('drops the grant on a 401 refusal too', async () => {
+    const { grants, records, now } = setup(
+      vi.fn(async () => {
+        throw refusal(401);
+      }),
+    );
+    await grants.save('g', { accessToken: 'a1', refreshToken: 'r1', expiresAt: now() });
+    await expect(grants.accessToken('g')).rejects.toSatisfy(isGrantUnavailableError);
+    expect(await records.get('g')).toBeUndefined();
+  });
+
+  it('keeps the grant through a Zendesk outage, so a later refresh can still succeed', async () => {
+    for (const failure of [
+      upstreamError('Zendesk token endpoint unreachable.'),
+      refusal(500),
+      refusal(429),
+      new Error('socket hang up'),
+    ]) {
+      const refresh = vi.fn(async () => {
+        throw failure;
+      });
+      const { grants, records, now } = setup(refresh);
+      const tokens = { accessToken: 'a1', refreshToken: 'r1', expiresAt: now() };
+      await grants.save('g', tokens);
+      await expect(grants.accessToken('g')).rejects.toBe(failure);
+      expect(await records.get('g')).toEqual(tokens);
+      refresh.mockResolvedValueOnce({
+        accessToken: 'a2',
+        refreshToken: 'r2',
+        expiresAt: now() + 1e9,
+      });
+      expect(await grants.accessToken('g')).toBe('a2');
+    }
+  });
+
+  it('removes a grant only once an in-flight refresh has settled', async () => {
+    let finish: (tokens: ZendeskTokenSet) => void = () => undefined;
+    const refresh = vi.fn(
+      () =>
+        new Promise<ZendeskTokenSet>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const { grants, records, now } = setup(refresh);
+    await grants.save('g', { accessToken: 'a1', refreshToken: 'r1', expiresAt: now() });
+    const pending = grants.accessToken('g');
+    await vi.waitFor(() => expect(refresh).toHaveBeenCalled());
+    const removal = grants.remove('g');
+    finish({ accessToken: 'a2', refreshToken: 'r2', expiresAt: now() + 1e9 });
+    expect(await pending).toBe('a2');
+    await removal;
+    expect(await records.get('g')).toBeUndefined();
   });
 
   it('rejects an unknown grant, and an expiring token that cannot be refreshed', async () => {

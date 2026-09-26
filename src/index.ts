@@ -83,9 +83,8 @@ const main = async (): Promise<void> => {
     logger.warn('dev_mode_ignored_http');
   }
 
-  // HTTP mode: the HTTP transport creates a per-session McpServer with the
-  // request's bearer captured in its tools' closure — no shared state. Loaded
-  // on demand: its packages are optional peers that a stdio install lacks.
+  // HTTP mode: loaded on demand, because its packages are optional peers that
+  // a stdio install lacks.
   const { startHttpTransport } = await loadHttpTransport();
   const http = await startHttpTransport(config, logger);
 

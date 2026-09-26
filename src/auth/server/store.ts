@@ -28,6 +28,8 @@ interface SealedRecord<T> {
   readonly value: T;
   /** False when the record was sealed under an older secret. */
   readonly current: boolean;
+  /** Epoch ms the record was written to expire at, if it does. */
+  readonly expiresAt: number | undefined;
 }
 
 export interface SealedCollection<T> {
@@ -36,19 +38,32 @@ export interface SealedCollection<T> {
   delete(id: string): Promise<void>;
 }
 
-const seal = (ring: KeyRing, value: unknown): Promise<string> =>
+// The expiry rides in the (authenticated) protected header rather than the
+// payload, whose shape varies by collection: a rewrite under a newer secret
+// keeps it whatever the record holds.
+const seal = (ring: KeyRing, value: unknown, expiresAt: number | undefined): Promise<string> =>
   new CompactEncrypt(encoder.encode(JSON.stringify(value)))
-    .setProtectedHeader({ alg: 'dir', enc: 'A256GCM', kid: ring[0].atRest.kid })
+    .setProtectedHeader({
+      alg: 'dir',
+      enc: 'A256GCM',
+      kid: ring[0].atRest.kid,
+      // Left out of the header when undefined: JSON drops it.
+      expiresAt,
+    })
     .encrypt(ring[0].atRest.key);
 
 const unseal = async <T>(ring: KeyRing, sealed: string): Promise<SealedRecord<T> | undefined> => {
-  const { kid } = decodeProtectedHeader(sealed);
+  const { kid, expiresAt } = decodeProtectedHeader(sealed);
   const keySet = ring.find((set) => set.atRest.kid === kid);
   // Stryker disable next-line ConditionalExpression: without the guard the missing key throws
   // into open's catch, which answers undefined all the same.
   if (!keySet) return undefined;
   const { plaintext } = await compactDecrypt(sealed, keySet.atRest.key);
-  return { value: JSON.parse(decoder.decode(plaintext)) as T, current: keySet === ring[0] };
+  return {
+    value: JSON.parse(decoder.decode(plaintext)) as T,
+    current: keySet === ring[0],
+    expiresAt: expiresAt as number | undefined,
+  };
 };
 
 // Unknown kid, tampering or a foreign value: indistinguishable from absent.
@@ -78,12 +93,16 @@ export const createSealedCollection = <T>(
       if (sealed === undefined) return undefined;
       const record = await open<T>(ring, sealed);
       if (record && !record.current) {
-        await store.set(key(id), await seal(ring, record.value), remainingTtlMs(record.value));
+        const { expiresAt } = record;
+        const ttlMs = expiresAt === undefined ? undefined : expiresAt - Date.now();
+        await store.set(key(id), await seal(ring, record.value, expiresAt), ttlMs);
       }
       return record?.value;
     },
     set: async (id, value, ttlSeconds) => {
-      await store.set(key(id), await seal(ring, value), ttlSeconds ? ttlSeconds * 1000 : undefined);
+      const ttlMs = ttlSeconds ? ttlSeconds * 1000 : undefined;
+      const expiresAt = ttlMs === undefined ? undefined : Date.now() + ttlMs;
+      await store.set(key(id), await seal(ring, value, expiresAt), ttlMs);
     },
     delete: async (id) => {
       await store.delete(key(id));

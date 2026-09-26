@@ -108,6 +108,18 @@ while #127 is open.
   - `rotateRefreshToken` keeps its default: rotate every refresh for public
     clients. A client that replays an old refresh token therefore signs its
     user out. That is the OAuth 2.1 reuse-detection trade-off, accepted.
+  - Only Zendesk refusing the refresh (`400`/`401`) ends the grant. A timeout,
+    a network error or a `5xx` fails the request and keeps the Zendesk tokens.
+    For a public client this saves less than it seems: `oidc-provider` has
+    already rotated our refresh token when the access token is minted, so the
+    client's retry is a replay.
+- **The granted scope narrows the tool surface.** A token without `write` gets
+  the read tools only, like `--read-only`, and cannot drive a session opened
+  with `write`.
+- **A token is accepted only while its grant exists.** Revoking the grant (a
+  Zendesk `401`, a refresh-token replay) therefore holds across a restart. An
+  in-memory denial covers the same tokens should the store fail to delete the
+  grant.
 - **Refresh tokens are issued without `offline_access`.** The library default
   requires it, and MCP clients do not all ask for it. `expiresWithSession` is
   off, since sessions live in memory and would otherwise take the tokens down
@@ -214,7 +226,8 @@ Instead:
   - So the adapter keys every record by the SHA-256 of its id (Cloudflare's
     provider stores tokens by hash too).
   - The adapter encrypts **the whole payload** at rest, not only the Zendesk
-    tokens.
+    tokens. The record's expiry rides in the JWE's protected header, so a
+    rewrite keeps it whatever the payload holds.
   - A record read under an older key is re-encrypted with the current one.
     Without that, dropping an old secret would also drop every DCR client,
     since client records are never rewritten otherwise.

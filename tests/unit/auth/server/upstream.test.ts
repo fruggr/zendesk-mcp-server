@@ -1,4 +1,4 @@
-import { HttpResponse, http } from 'msw';
+import { delay, HttpResponse, http } from 'msw';
 import { describe, expect, it, vi } from 'vitest';
 import { generateCodeChallenge } from '../../../../src/auth/browser-oauth';
 import {
@@ -142,6 +142,18 @@ describe('exchangeZendeskCode', () => {
     expect(isUpstreamAuthError(err)).toBe(true);
     expect(err.cause).toBeInstanceOf(TypeError);
     expect(Object.hasOwn(err, 'status')).toBe(false);
+  });
+
+  it('gives up on a token endpoint that never answers', async () => {
+    mswServer.use(
+      http.post(TOKEN_URL, async () => {
+        await delay('infinite');
+        return HttpResponse.json({});
+      }),
+    );
+    const err = await rejection(refreshZendeskTokens({ ...UPSTREAM, timeoutMs: 20 }, 'r'));
+    expect(err.message).toBe('Zendesk token endpoint unreachable.');
+    expect((err.cause as Error).name).toBe('TimeoutError');
   });
 
   it('leaves expiresAt unset when Zendesk reports no expiry', async () => {

@@ -217,6 +217,8 @@ interface Session {
   auth: { zendeskToken: string; grantId: string };
   /** The signed-in user the session was opened for: another user's token cannot drive it. */
   subject: string;
+  /** Whether the session serves write tools: a token without `write` cannot drive it. */
+  canWrite: boolean;
   /** Epoch ms of the last request routed to this session (idle eviction). */
   lastActivityAt: number;
   close(): Promise<void>;
@@ -352,6 +354,7 @@ export const startHttpTransport = async (
   ): Promise<boolean> => {
     const session = sessions.get(sessionId);
     if (!session || session.subject !== token.subject) return false;
+    if (session.canWrite && !token.canWrite) return false;
 
     session.auth.zendeskToken = token.zendeskAccessToken;
     session.auth.grantId = token.grantId;
@@ -366,6 +369,50 @@ export const startHttpTransport = async (
     }
     await session.transport.handleRequest(req, res, body.value);
     return true;
+  };
+
+  const openSession = async (
+    req: IncomingMessage,
+    res: ServerResponse,
+    body: unknown,
+    token: VerifiedAccessToken,
+    as: AuthorizationServer,
+  ): Promise<void> => {
+    // New session: the Zendesk token is held in a per-session mutable cell read
+    // by the per-session McpServer's token source — no async-local storage
+    // needed because each session has its own server instance. A Zendesk 401
+    // ends the grant, so the client's next request re-runs authorization.
+    const auth = { zendeskToken: token.zendeskAccessToken, grantId: token.grantId };
+    // The granted scope narrows the surface like --read-only does: a client
+    // that asked for `read` alone gets the read tools only.
+    const canWrite = !config.readOnly && token.canWrite;
+    const server = createMcpServer(
+      canWrite ? config : { ...config, readOnly: true },
+      () => auth.zendeskToken,
+      logger,
+      () => void as.revokeGrant(auth.grantId),
+    );
+    const transport = new NodeStreamableHTTPServerTransport({
+      sessionIdGenerator: () => randomUUID(),
+      onsessioninitialized: (newId) => {
+        sessions.set(newId, {
+          transport,
+          auth,
+          subject: token.subject,
+          canWrite,
+          lastActivityAt: Date.now(),
+          close: async () => {
+            await transport.close();
+            await server.close();
+          },
+        });
+      },
+    });
+    transport.onclose = () => {
+      if (transport.sessionId) sessions.delete(transport.sessionId);
+    };
+    await server.connect(transport);
+    await transport.handleRequest(req, res, body);
   };
 
   const handleMcpRequest = async (
@@ -402,37 +449,7 @@ export const startHttpTransport = async (
       return;
     }
 
-    // New session: the Zendesk token is held in a per-session mutable cell read
-    // by the per-session McpServer's token source — no async-local storage
-    // needed because each session has its own server instance. A Zendesk 401
-    // ends the grant, so the client's next request re-runs authorization.
-    const auth = { zendeskToken: token.zendeskAccessToken, grantId: token.grantId };
-    const server = createMcpServer(
-      config,
-      () => auth.zendeskToken,
-      logger,
-      () => void as.revokeGrant(auth.grantId),
-    );
-    const transport = new NodeStreamableHTTPServerTransport({
-      sessionIdGenerator: () => randomUUID(),
-      onsessioninitialized: (newId) => {
-        sessions.set(newId, {
-          transport,
-          auth,
-          subject: token.subject,
-          lastActivityAt: Date.now(),
-          close: async () => {
-            await transport.close();
-            await server.close();
-          },
-        });
-      },
-    });
-    transport.onclose = () => {
-      if (transport.sessionId) sessions.delete(transport.sessionId);
-    };
-    await server.connect(transport);
-    await transport.handleRequest(req, res, body.value);
+    await openSession(req, res, body.value, token, as);
   };
 
   const route = async (

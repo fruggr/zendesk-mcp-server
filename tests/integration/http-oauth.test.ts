@@ -3,7 +3,14 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { CompactEncrypt, decodeJwt, decodeProtectedHeader, exportJWK, SignJWT } from 'jose';
+import {
+  CompactEncrypt,
+  compactDecrypt,
+  decodeJwt,
+  decodeProtectedHeader,
+  exportJWK,
+  SignJWT,
+} from 'jose';
 import { HttpResponse, http } from 'msw';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { deriveKeyRing } from '../../src/auth/server/keys';
@@ -452,6 +459,12 @@ describe('HTTP authorization server', () => {
       );
 
       const [keys] = deriveKeyRing(OLD);
+      // A forged token needs a grant that exists: take the real one's.
+      const { gid } = JSON.parse(
+        new TextDecoder().decode(
+          (await compactDecrypt(tokens.body.access_token ?? '', keys.accessToken.key)).plaintext,
+        ),
+      ) as { gid: string };
       const forge = (claims: Record<string, unknown>) =>
         new CompactEncrypt(
           new TextEncoder().encode(
@@ -460,7 +473,7 @@ describe('HTTP authorization server', () => {
               aud: `${base}/mcp`,
               exp: Math.floor(Date.now() / 1000) + 60,
               zd: 'zd-access-2',
-              gid: 'g',
+              gid,
               sub: 's',
               ...claims,
             }),

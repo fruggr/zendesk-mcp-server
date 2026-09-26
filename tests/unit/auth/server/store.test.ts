@@ -325,16 +325,18 @@ describe('createSealedCollection', () => {
         deriveKeyRing(`${NEW},${OLD}`),
       );
 
-      await write.set('x', { exp: NOW_S + 60 }, 60);
-      expect(await rotate.get('x')).toEqual({ exp: NOW_S + 60 });
-      expect(expiresOf(entries, key)).toBe((NOW_S + 60) * 1000);
+      // Whatever the payload: a consent is a bare `true`, Zendesk tokens carry
+      // no `exp`. The expiry set at write time is the one kept.
+      await write.set('x', true, 60);
+      vi.advanceTimersByTime(10_000);
+      expect(await rotate.get('x')).toBe(true);
+      expect(expiresOf(entries, key)).toBe(NOW + 60_000);
+      vi.advanceTimersByTime(10_000);
+      expect(await createSealedCollection(store, 'Thing', deriveKeyRing(NEW)).get('x')).toBe(true);
+      expect(expiresOf(entries, key)).toBe(NOW + 60_000);
 
-      await write.set('x', { exp: NOW_S - 10 });
-      await rotate.get('x');
-      expect(expiresOf(entries, key)).toBe(NOW + 1);
-
-      await write.set('x', { exp: '5' });
-      await rotate.get('x');
+      await write.set('x', { exp: NOW_S + 999 });
+      expect(await rotate.get('x')).toEqual({ exp: NOW_S + 999 });
       expect(expiresOf(entries, key)).toBeUndefined();
 
       await write.set('x', null);

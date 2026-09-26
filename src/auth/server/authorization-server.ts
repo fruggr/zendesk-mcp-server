@@ -22,6 +22,8 @@ export interface VerifiedAccessToken {
   readonly grantId: string;
   readonly clientId: string;
   readonly subject: string;
+  /** Whether the grant includes `write`: without it only the read tools are served. */
+  readonly canWrite: boolean;
   /** Epoch seconds. */
   readonly expiresAt: number;
 }
@@ -65,6 +67,7 @@ interface AccessTokenClaims {
   exp?: unknown;
   sub?: unknown;
   client_id?: unknown;
+  scope?: unknown;
   zd?: unknown;
   gid?: unknown;
 }
@@ -88,6 +91,7 @@ const asVerified = (
     grantId: claims.gid as string,
     clientId: String(claims.client_id),
     subject: String(claims.sub),
+    canWrite: typeof claims.scope === 'string' && claims.scope.split(' ').includes('write'),
     expiresAt: claims.exp as number,
   };
 };
@@ -176,7 +180,12 @@ export const createAuthorizationServer = (
     },
     verifyAccessToken: async (bearer) => {
       const verified = await readAccessToken(bearer).catch(() => undefined);
-      return verified && !revokedGrants.get(verified.grantId) ? verified : undefined;
+      if (!verified || revokedGrants.get(verified.grantId)) return undefined;
+      // The grant, not only the token, must still exist: a revocation then
+      // holds across a restart, which empties the in-memory denial list.
+      // Fails closed: a store it cannot read accepts no token.
+      const grant = await provider.Grant.find(verified.grantId).catch(() => undefined);
+      return grant ? verified : undefined;
     },
     // Never rejects: it runs fire-and-forget from a tool call's 401, where an
     // unhandled rejection would take the process down. The in-memory denial
