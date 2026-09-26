@@ -56,6 +56,7 @@ export const createZendeskGrants = (options: ZendeskGrantsOptions): ZendeskGrant
   const withLock = createKeyLock();
 
   const needsRefresh = (tokens: ZendeskTokenSet): boolean =>
+    // Stryker disable next-line ConditionalExpression: without the guard, undefined - now() is NaN and NaN <= margin is false, the same answer.
     tokens.expiresAt !== undefined && tokens.expiresAt - now() <= margin;
 
   const refreshed = async (grantId: string, refreshToken: string): Promise<string> => {

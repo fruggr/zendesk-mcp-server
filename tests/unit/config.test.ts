@@ -764,6 +764,13 @@ describe('ConfigSchema defaults reached only by a direct parse', () => {
     expect(parse().corsOrigins).toEqual([]);
   });
 
+  // loadConfig always passes the trusted-client list, and leaves the allowlist
+  // switch to the schema when the flag is absent.
+  it('defaults to no extra trusted clients and to the built-in allowlist', () => {
+    expect(parse().oauthTrustedClients).toEqual([]);
+    expect(parse().defaultTrustedClients).toBe(true);
+  });
+
   it('rejects an empty array instead of treating it as "every namespace"', () => {
     // filterTools guards on `?.length`, so [] would mean "no filter" and would
     // quietly expose the opt-in requests surface. Refuse it at parse time.

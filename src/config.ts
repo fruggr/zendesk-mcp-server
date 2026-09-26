@@ -396,7 +396,7 @@ const resolveOAuthServerSettings = (cli: CliResult) => ({
     ...(cli.oauthTrustedClients ?? []),
     ...splitList(process.env['OAUTH_TRUSTED_CLIENTS']),
   ],
-  defaultTrustedClients: cli.defaultTrustedClients ?? true,
+  defaultTrustedClients: cli.defaultTrustedClients,
 });
 
 export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {

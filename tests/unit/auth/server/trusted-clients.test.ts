@@ -33,10 +33,14 @@ describe('isLoopbackHost', () => {
   it.each(['localhost', '127.0.0.1', '127.10.20.30', '[::1]'])('%s is loopback', (host) => {
     expect(isLoopbackHost(host)).toBe(true);
   });
-  it.each(['claude.ai', '128.0.0.1', '127.0.0.1.example.com', 'localhost.example.com', '10.0.0.1'])(
-    '%s is not loopback',
-    (host) => expect(isLoopbackHost(host)).toBe(false),
-  );
+  it.each([
+    'claude.ai',
+    '128.0.0.1',
+    '127.0.0.1.example.com',
+    'x127.0.0.1',
+    'localhost.example.com',
+    '10.0.0.1',
+  ])('%s is not loopback', (host) => expect(isLoopbackHost(host)).toBe(false));
 });
 
 describe('isSkipEligibleRedirect', () => {
@@ -121,6 +125,17 @@ describe('inferNativeApplication', () => {
       expect(inferNativeApplication(doc)).toBe(doc);
     for (const value of [null, 'x', [1]]) expect(inferNativeApplication(value)).toBe(value);
   });
+
+  it('leaves a document alone when a redirect URI is not a parseable string', () => {
+    const unparseable = { redirect_uris: ['not a url'] };
+    const notString = { redirect_uris: [new URL('http://localhost/cb')] };
+    for (const doc of [unparseable, notString]) expect(inferNativeApplication(doc)).toBe(doc);
+  });
+
+  it('leaves a non-object alone even when it carries loopback redirect URIs', () => {
+    const fn = Object.assign(() => undefined, { redirect_uris: ['http://localhost/cb'] });
+    expect(inferNativeApplication(fn)).toBe(fn);
+  });
 });
 
 describe('createCimdFetch', () => {
@@ -157,12 +172,24 @@ describe('createCimdFetch', () => {
     expect(await jwks.json()).toEqual({ keys: [{ kty: 'RSA' }] });
     const text = await createCimdFetch(async () => new Response('not json'))('https://x/doc', {});
     expect(await text.text()).toBe('not json');
-    const failed = await createCimdFetch(async () => new Response('nope', { status: 403 }))(
-      'https://x/doc',
-      {},
-    );
+    const upstreamFailure = new Response('nope', { status: 403 });
+    const failed = await createCimdFetch(async () => upstreamFailure)('https://x/doc', {});
+    expect(failed).toBe(upstreamFailure);
     expect(failed.status).toBe(403);
     expect(await failed.text()).toBe('nope');
+  });
+
+  it('hands on a non-document byte for byte, with its status and headers', async () => {
+    const raw = '{ "keys": [ { "kty": "RSA" } ] }';
+    const res = await createCimdFetch(
+      async () =>
+        new Response(raw, { status: 203, headers: { 'content-type': 'application/jwk-set+json' } }),
+    )('https://x/jwks', {});
+    expect(res.status).toBe(203);
+    expect(res.headers.get('content-type')).toBe('application/jwk-set+json');
+    expect(await res.text()).toBe(raw);
+    const nullBody = await createCimdFetch(async () => new Response('null'))('https://x/doc', {});
+    expect(await nullBody.text()).toBe('null');
   });
 
   it('hands an oversized body on without parsing it, for the library to reject', async () => {
@@ -171,6 +198,50 @@ describe('createCimdFetch', () => {
     const body = await res.text();
     expect(body.length).toBeGreaterThan(16 * 1024);
     expect(body.startsWith('xxx')).toBe(true);
+  });
+
+  // The cap is 16 KiB: a body is read up to the first chunk that crosses it.
+  const chunked = (chunks: Uint8Array[]) => {
+    let index = 0;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        const next = chunks[index++];
+        if (next) controller.enqueue(next);
+        else controller.close();
+      },
+    });
+    return new Response(stream);
+  };
+
+  it('stops reading at the first chunk past the cap', async () => {
+    const source = chunked(Array.from({ length: 64 }, () => new Uint8Array(1024).fill(120)));
+    const res = await createCimdFetch(async () => source)('https://x/doc', {});
+    expect((await res.text()).length).toBe(17 * 1024);
+  });
+
+  it('reads on past a body that exactly fills the cap', async () => {
+    const source = chunked([new Uint8Array(16 * 1024).fill(120), new Uint8Array(1).fill(120)]);
+    const res = await createCimdFetch(async () => source)('https://x/doc', {});
+    expect((await res.text()).length).toBe(16 * 1024 + 1);
+  });
+
+  const paddedDocument = (size: number) => {
+    const doc = { client_id: 'https://x/doc', redirect_uris: ['http://localhost/cb'], pad: '' };
+    const pad = size - JSON.stringify(doc).length;
+    return JSON.stringify({ ...doc, pad: 'x'.repeat(pad) });
+  };
+
+  it('still rewrites a client document of exactly the cap', async () => {
+    const raw = paddedDocument(16 * 1024);
+    expect(raw.length).toBe(16 * 1024);
+    const res = await createCimdFetch(async () => new Response(raw))('https://x/doc', {});
+    expect((await res.json()).application_type).toBe('native');
+  });
+
+  it('never rewrites a client document past the cap, even one that parses', async () => {
+    const raw = paddedDocument(16 * 1024 + 1);
+    const res = await createCimdFetch(async () => new Response(raw))('https://x/doc', {});
+    expect(await res.text()).toBe(raw);
   });
 
   it('copes with an empty body', async () => {

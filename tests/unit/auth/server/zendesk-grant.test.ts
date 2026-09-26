@@ -8,14 +8,21 @@ import {
   isGrantUnavailableError,
   ZENDESK_REFRESH_MARGIN_MS,
 } from '../../../../src/auth/server/zendesk-grant';
+import type { Logger } from '../../../../src/utils/logger';
 
 const UPSTREAM = { subdomain: 'testsubdomain', clientId: 'c' };
 const ring = deriveKeyRing(Buffer.alloc(32, 3).toString('base64'));
 
-const setup = (refresh = vi.fn()) => {
+const setup = (refresh = vi.fn(), logger?: Logger) => {
   const records = createSealedCollection<ZendeskTokenSet>(new Keyv(), 'ZendeskTokens', ring);
   let clock = 1_000_000;
-  const grants = createZendeskGrants({ records, upstream: UPSTREAM, refresh, now: () => clock });
+  const grants = createZendeskGrants({
+    records,
+    upstream: UPSTREAM,
+    refresh,
+    now: () => clock,
+    logger,
+  });
   return {
     grants,
     records,
@@ -84,7 +91,15 @@ describe('createZendeskGrants', () => {
     const refresh = vi.fn(async () => {
       throw new Error('Zendesk refused the refresh_token grant (400).');
     });
-    const { grants, records, now } = setup(refresh);
+    const events: [string, unknown][] = [];
+    const logger: Logger = {
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: (e, f) => events.push([e, f]),
+      error: vi.fn(),
+      attachServer: vi.fn(),
+    };
+    const { grants, records, now } = setup(refresh, logger);
     await grants.save('g', { accessToken: 'a1', refreshToken: 'r1', expiresAt: now() });
     const failure = grants.accessToken('g');
     await expect(failure).rejects.toThrow(
@@ -92,6 +107,12 @@ describe('createZendeskGrants', () => {
     );
     await failure.catch((err: unknown) => expect(isGrantUnavailableError(err)).toBe(true));
     expect(await records.get('g')).toBeUndefined();
+    expect(events).toEqual([
+      [
+        'oauth_upstream_refresh_failed',
+        { error: 'Zendesk refused the refresh_token grant (400).' },
+      ],
+    ]);
   });
 
   it('rejects an unknown grant, and an expiring token that cannot be refreshed', async () => {

@@ -1,5 +1,5 @@
 import { HttpResponse, http } from 'msw';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { generateCodeChallenge } from '../../../../src/auth/browser-oauth';
 import {
   buildZendeskAuthorizeUrl,
@@ -8,12 +8,35 @@ import {
   isUpstreamAuthError,
   refreshZendeskTokens,
 } from '../../../../src/auth/server/upstream';
+import { ZendeskApiError } from '../../../../src/client/zendesk-api';
+import type { Logger } from '../../../../src/utils/logger';
 import { createZendeskOAuthMock, MOCK_USER } from '../../../msw-handlers';
 import { mswServer } from '../../../setup';
 
 const UPSTREAM = { subdomain: 'testsubdomain', clientId: 'testsubdomain_zendesk' };
 const REDIRECT = 'http://localhost:3000/oauth/callback';
 const TOKEN_URL = 'https://testsubdomain.zendesk.com/oauth/tokens';
+
+const recordingLogger = () => {
+  const events: [string, string, unknown][] = [];
+  const logger: Logger = {
+    debug: (e, f) => events.push(['debug', e, f]),
+    info: (e, f) => events.push(['info', e, f]),
+    warn: (e, f) => events.push(['warn', e, f]),
+    error: (e, f) => events.push(['error', e, f]),
+    attachServer: vi.fn(),
+  };
+  return { logger, events };
+};
+
+const rejection = async (promise: Promise<unknown>): Promise<Error> => {
+  try {
+    await promise;
+  } catch (err) {
+    return err as Error;
+  }
+  throw new Error('expected a rejection');
+};
 
 const signIn = async (mock: ReturnType<typeof createZendeskOAuthMock>) => {
   const verifier = 'v'.repeat(43);
@@ -86,14 +109,39 @@ describe('exchangeZendeskCode', () => {
     await failure.catch((err: unknown) => {
       expect(isUpstreamAuthError(err)).toBe(true);
       expect((err as { status?: number }).status).toBe(400);
+      expect(Object.hasOwn(err as Error, 'cause')).toBe(false);
     });
+  });
+
+  it('posts a form-encoded body and logs the grant type with the status', async () => {
+    const seen: { method: string; contentType: string | null }[] = [];
+    mswServer.use(
+      http.post(TOKEN_URL, ({ request }) => {
+        seen.push({ method: request.method, contentType: request.headers.get('content-type') });
+        return HttpResponse.json({ access_token: 'a', token_type: 'bearer' });
+      }),
+    );
+    const { logger, events } = recordingLogger();
+    await exchangeZendeskCode(
+      UPSTREAM,
+      { code: 'x', redirectUri: REDIRECT, codeVerifier: 'v' },
+      logger,
+    );
+    expect(seen).toEqual([{ method: 'POST', contentType: 'application/x-www-form-urlencoded' }]);
+    expect(events).toEqual([
+      ['debug', 'oauth_upstream_token', { grant: 'authorization_code', status: 200 }],
+    ]);
   });
 
   it('names an unreachable token endpoint', async () => {
     mswServer.use(http.post(TOKEN_URL, () => HttpResponse.error()));
-    await expect(
+    const err = await rejection(
       exchangeZendeskCode(UPSTREAM, { code: 'x', redirectUri: REDIRECT, codeVerifier: 'v' }),
-    ).rejects.toThrow('Zendesk token endpoint unreachable.');
+    );
+    expect(err.message).toBe('Zendesk token endpoint unreachable.');
+    expect(isUpstreamAuthError(err)).toBe(true);
+    expect(err.cause).toBeInstanceOf(TypeError);
+    expect(Object.hasOwn(err, 'status')).toBe(false);
   });
 
   it('leaves expiresAt unset when Zendesk reports no expiry', async () => {
@@ -176,6 +224,26 @@ describe('fetchZendeskIdentity', () => {
         () => new HttpResponse(null, { status: 401 }),
       ),
     );
-    await expect(fetchZendeskIdentity(UPSTREAM, 't')).rejects.toThrow(message);
+    const failed = await rejection(fetchZendeskIdentity(UPSTREAM, 't'));
+    expect(failed.message).toBe(message);
+    expect(isUpstreamAuthError(failed)).toBe(true);
+    expect(failed.cause).toBeInstanceOf(ZendeskApiError);
+  });
+
+  it('refuses an answer that carries no user at all', async () => {
+    mswServer.use(
+      http.get('https://testsubdomain.zendesk.com/api/v2/users/me', () => HttpResponse.json({})),
+    );
+    const err = await rejection(fetchZendeskIdentity(UPSTREAM, 't'));
+    expect(err.message).toBe('Could not resolve the Zendesk account of the signed-in user.');
+    expect(Object.hasOwn(err, 'cause')).toBe(false);
+  });
+});
+
+describe('isUpstreamAuthError', () => {
+  it('recognises only an Error named UpstreamAuthError', () => {
+    expect(isUpstreamAuthError(new Error('x'))).toBe(false);
+    expect(isUpstreamAuthError({ name: 'UpstreamAuthError', message: 'x' })).toBe(false);
+    expect(isUpstreamAuthError('UpstreamAuthError')).toBe(false);
   });
 });

@@ -22,13 +22,7 @@ const IPV4_LOOPBACK = /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
 export const isLoopbackHost = (hostname: string): boolean =>
   hostname === 'localhost' || hostname === '[::1]' || IPV4_LOOPBACK.test(hostname);
 
-const parse = (uri: string): URL | undefined => {
-  try {
-    return new URL(uri);
-  } catch {
-    return undefined;
-  }
-};
+const parse = (uri: string): URL | undefined => (URL.canParse(uri) ? new URL(uri) : undefined);
 
 /** HTTPS and not loopback: a code sent there cannot land on the user's machine. */
 export const isSkipEligibleRedirect = (uri: string): boolean => {
@@ -121,7 +115,7 @@ export const createCimdFetch =
     try {
       parsed = JSON.parse(Buffer.from(bytes).toString('utf8'));
     } catch {
-      return rebuilt(Buffer.from(bytes));
+      // Not JSON: left undefined, so it is handed on below like any non-document.
     }
     const isClientDocument =
       typeof (parsed as { client_id?: unknown } | null)?.client_id === 'string';
