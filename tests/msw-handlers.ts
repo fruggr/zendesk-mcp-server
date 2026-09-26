@@ -1,4 +1,5 @@
-import { HttpResponse, http } from 'msw';
+import { createHash } from 'node:crypto';
+import { HttpResponse, http, passthrough } from 'msw';
 
 const BASE = 'https://testsubdomain.zendesk.com/api/v2';
 const HC_BASE = 'https://testsubdomain.zendesk.com/api/v2/help_center';
@@ -748,6 +749,101 @@ export const ticketWithNoSubscribersHandler = http.get(`${BASE}/tickets/:id`, ({
 export const oauthTokenHandler = http.post('https://testsubdomain.zendesk.com/oauth/tokens', () =>
   HttpResponse.json({ access_token: 'token-abc', token_type: 'bearer', scope: 'read write' }),
 );
+
+/**
+ * A stateful Zendesk OAuth upstream for the HTTP authorization server: codes
+ * and refresh tokens are single-use and refresh rotates, as Zendesk's do, and
+ * `/users/me` answers only for a live access token. Opt-in via
+ * `mswServer.use(...mock.handlers)`.
+ */
+/** Lets requests to a local test server through without an MSW warning. */
+export const localServerPassthrough = http.all(/^http:\/\/127\.0\.0\.1:\d+\//, () => passthrough());
+
+export const createZendeskOAuthMock = (options: { accessTtlSeconds?: number } = {}) => {
+  const accessTtl = options.accessTtlSeconds ?? 172800;
+  let serial = 0;
+  const codes = new Map<string, { redirectUri: string; challenge: string }>();
+  const access = new Map<string, number>();
+  const refresh = new Set<string>();
+  const state = {
+    codeExchanges: 0,
+    refreshes: 0,
+    refreshFailures: 0,
+    tokenRequests: [] as URLSearchParams[],
+  };
+  const issue = () => {
+    serial += 1;
+    const accessToken = `zd-access-${serial}`;
+    const refreshToken = `zd-refresh-${serial}`;
+    access.set(accessToken, Date.now() + accessTtl * 1000);
+    refresh.add(refreshToken);
+    return HttpResponse.json({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+      token_type: 'bearer',
+      scope: 'read write',
+      expires_in: accessTtl,
+      refresh_token_expires_in: 7776000,
+    });
+  };
+  const handlers = [
+    http.get('https://testsubdomain.zendesk.com/oauth/authorizations/new', ({ request }) => {
+      const url = new URL(request.url);
+      serial += 1;
+      const code = `zd-code-${serial}`;
+      codes.set(code, {
+        redirectUri: url.searchParams.get('redirect_uri') ?? '',
+        challenge: url.searchParams.get('code_challenge') ?? '',
+      });
+      const back = new URL(url.searchParams.get('redirect_uri') ?? '');
+      back.searchParams.set('code', code);
+      back.searchParams.set('state', url.searchParams.get('state') ?? '');
+      return new HttpResponse(null, { status: 302, headers: { location: back.toString() } });
+    }),
+    http.post('https://testsubdomain.zendesk.com/oauth/tokens', async ({ request }) => {
+      const body = new URLSearchParams(await request.text());
+      state.tokenRequests.push(body);
+      if (body.get('grant_type') === 'authorization_code') {
+        const pending = codes.get(body.get('code') ?? '');
+        codes.delete(body.get('code') ?? '');
+        const verifier = body.get('code_verifier') ?? '';
+        const challenge = createHash('sha256').update(verifier).digest('base64url');
+        if (
+          !pending ||
+          pending.redirectUri !== body.get('redirect_uri') ||
+          pending.challenge !== challenge
+        ) {
+          return HttpResponse.json({ error: 'invalid_grant' }, { status: 400 });
+        }
+        state.codeExchanges += 1;
+        return issue();
+      }
+      if (body.get('grant_type') === 'refresh_token') {
+        if (!refresh.delete(body.get('refresh_token') ?? '')) {
+          state.refreshFailures += 1;
+          return HttpResponse.json({ error: 'invalid_grant' }, { status: 400 });
+        }
+        state.refreshes += 1;
+        return issue();
+      }
+      return HttpResponse.json({ error: 'unsupported_grant_type' }, { status: 400 });
+    }),
+    http.get(`${BASE}/users/me`, ({ request }) => {
+      const token = (request.headers.get('authorization') ?? '').replace(/^Bearer /i, '');
+      const expiresAt = access.get(token);
+      if (expiresAt === undefined || expiresAt < Date.now()) {
+        return new HttpResponse('unauthorized', { status: 401 });
+      }
+      return HttpResponse.json({ user: MOCK_USER });
+    }),
+  ];
+  /** Invalidate an access token at Zendesk, as a revocation or expiry would. */
+  const revokeAccess = (token: string) => access.delete(token);
+  const expireAllAccess = () => {
+    for (const token of access.keys()) access.set(token, 0);
+  };
+  return { handlers, state, revokeAccess, expireAllAccess };
+};
 
 // Opt-in error handlers for tests that exercise failure paths. Kept here so all
 // Zendesk mocking stays centralized; activate one per test via mswServer.use().

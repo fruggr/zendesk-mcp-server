@@ -1,21 +1,26 @@
 import { request as httpRequest, type IncomingMessage } from 'node:http';
 import { HttpResponse, http } from 'msw';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Config } from '../../../src/config';
 import {
-  buildOAuthMetadata,
   DEFAULT_BROWSER_MCP_CLIENT_ORIGINS,
   extractBearer,
   MAX_BODY_BYTES,
   resolveAllowedOrigin,
-  resolveResourceUrl,
+  resolvePublicUrl,
   startHttpTransport,
 } from '../../../src/transports/http';
 import { type Logger, silentLogger } from '../../../src/utils/logger';
-import { errorHandlers, MOCK_USER } from '../../msw-handlers';
+import { signInWithDcr } from '../../integration/oauth-client';
+import {
+  createZendeskOAuthMock,
+  errorHandlers,
+  localServerPassthrough,
+  MOCK_USER,
+} from '../../msw-handlers';
 import { mswServer } from '../../setup';
 
-const baseConfig: Config = {
+const baseConfig = {
   subdomain: 'testsubdomain',
   oauthClientId: 'test_zendesk',
   logLevel: 'error',
@@ -25,6 +30,25 @@ const baseConfig: Config = {
   host: '127.0.0.1',
   port: 0,
   corsOrigins: [],
+  // In memory, with a fixed secret: nothing is written to the config dir.
+  oauthStore: 'memory://',
+  oauthMasterSecret: Buffer.alloc(32, 4).toString('base64'),
+  oauthTrustedClients: [],
+  defaultTrustedClients: true,
+} as Config;
+
+// Zendesk's OAuth endpoints mocked statefully, local requests let through.
+const mockZendeskOAuth = () => {
+  const zendesk = createZendeskOAuthMock();
+  mswServer.use(localServerPassthrough, ...zendesk.handlers);
+  return zendesk;
+};
+
+// A real access token of ours: DCR, sign-in through the mocked Zendesk, consent.
+const bearerFor = async (port: number): Promise<string> => {
+  const { tokens } = await signInWithDcr(`http://127.0.0.1:${port}`);
+  if (!tokens.body.access_token) throw new Error(`sign-in failed: ${JSON.stringify(tokens.body)}`);
+  return `Bearer ${tokens.body.access_token}`;
 };
 
 const mockRequest = (headers: Record<string, string | string[] | undefined>): IncomingMessage =>
@@ -84,21 +108,21 @@ describe('extractBearer', () => {
   });
 });
 
-describe('resolveResourceUrl', () => {
+describe('resolvePublicUrl', () => {
   it('strips trailing slashes from an explicit publicUrl', () => {
-    expect(resolveResourceUrl({ ...baseConfig, publicUrl: 'https://mcp.example.com/' })).toBe(
+    expect(resolvePublicUrl({ ...baseConfig, publicUrl: 'https://mcp.example.com/' })).toBe(
       'https://mcp.example.com',
     );
   });
 
   it('uses publicUrl verbatim when no trailing slash', () => {
-    expect(resolveResourceUrl({ ...baseConfig, publicUrl: 'https://mcp.example.com' })).toBe(
+    expect(resolvePublicUrl({ ...baseConfig, publicUrl: 'https://mcp.example.com' })).toBe(
       'https://mcp.example.com',
     );
   });
 
   it('falls back to host:port when host is a concrete address', () => {
-    expect(resolveResourceUrl({ ...baseConfig, host: '10.0.0.5', port: 9000 })).toBe(
+    expect(resolvePublicUrl({ ...baseConfig, host: '10.0.0.5', port: 9000 })).toBe(
       'http://10.0.0.5:9000',
     );
   });
@@ -106,7 +130,7 @@ describe('resolveResourceUrl', () => {
   it('warns via the structured logger when host is 0.0.0.0 and publicUrl is unset', () => {
     const warnSpy = vi.fn();
     const logger: Logger = { ...silentLogger, warn: warnSpy };
-    const url = resolveResourceUrl({ ...baseConfig, host: '0.0.0.0', port: 3000 }, logger);
+    const url = resolvePublicUrl({ ...baseConfig, host: '0.0.0.0', port: 3000 }, logger);
     expect(url).toBe('http://0.0.0.0:3000');
     expect(warnSpy).toHaveBeenCalledWith(
       'public_url_unset',
@@ -115,62 +139,46 @@ describe('resolveResourceUrl', () => {
   });
 
   it('also recognizes :: as the wildcard host', () => {
-    expect(resolveResourceUrl({ ...baseConfig, host: '::', port: 3000 })).toBe('http://:::3000');
-  });
-});
-
-describe('buildOAuthMetadata', () => {
-  it('builds RFC 9728 protected-resource metadata pointing at Zendesk', () => {
-    const meta = buildOAuthMetadata({ ...baseConfig, publicUrl: 'https://mcp.example.com' });
-    expect(meta.protectedResource.authorization_servers).toEqual([
-      'https://testsubdomain.zendesk.com',
-    ]);
-    expect(meta.protectedResource.resource).toBe('https://mcp.example.com');
-    expect(meta.protectedResource.bearer_methods_supported).toEqual(['header']);
-  });
-
-  it('builds RFC 8414 authorization-server metadata with S256 PKCE', () => {
-    const meta = buildOAuthMetadata(baseConfig);
-    expect(meta.authorizationServer.issuer).toBe('https://testsubdomain.zendesk.com');
-    expect(meta.authorizationServer.authorization_endpoint).toContain('/oauth/authorizations/new');
-    expect(meta.authorizationServer.token_endpoint).toContain('/oauth/tokens');
-    expect(meta.authorizationServer.code_challenge_methods_supported).toEqual(['S256']);
-    expect(meta.authorizationServer.token_endpoint_auth_methods_supported).toEqual(['none']);
-  });
-
-  // Both documents are built separately, so both are asserted: a client that
-  // reads only one of them must not be told a different story.
-  it('advertises read and write by default', () => {
-    const meta = buildOAuthMetadata(baseConfig);
-    expect(meta.protectedResource.scopes_supported).toEqual(['read', 'write']);
-    expect(meta.authorizationServer.scopes_supported).toEqual(['read', 'write']);
-  });
-
-  it('advertises the read scope only under --read-only', () => {
-    const meta = buildOAuthMetadata({ ...baseConfig, readOnly: true });
-    expect(meta.protectedResource.scopes_supported).toEqual(['read']);
-    expect(meta.authorizationServer.scopes_supported).toEqual(['read']);
+    expect(resolvePublicUrl({ ...baseConfig, host: '::', port: 3000 })).toBe('http://:::3000');
   });
 });
 
 describe('startHttpTransport (HTTP roundtrip)', () => {
   let handle: Awaited<ReturnType<typeof startHttpTransport>> | undefined;
 
+  beforeEach(() => {
+    mockZendeskOAuth();
+  });
+
   afterEach(async () => {
     await handle?.close();
     handle = undefined;
   });
 
-  it('serves /.well-known/oauth-protected-resource (RFC 9728)', async () => {
+  it('serves the RFC 9728 metadata naming this server as the authorization server', async () => {
     handle = await startHttpTransport({ ...baseConfig, publicUrl: 'https://mcp.example.com' });
-    const res = await fetch(`http://127.0.0.1:${handle.port}/.well-known/oauth-protected-resource`);
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as {
-      authorization_servers: string[];
-      resource: string;
-    };
-    expect(body.authorization_servers).toContain('https://testsubdomain.zendesk.com');
-    expect(body.resource).toBe('https://mcp.example.com');
+    for (const path of [
+      '/.well-known/oauth-protected-resource/mcp',
+      '/.well-known/oauth-protected-resource',
+    ]) {
+      const res = await fetch(`http://127.0.0.1:${handle.port}${path}`);
+      expect(res.status).toBe(200);
+      expect(await res.json()).toMatchInlineSnapshot(`
+        {
+          "authorization_servers": [
+            "https://mcp.example.com",
+          ],
+          "bearer_methods_supported": [
+            "header",
+          ],
+          "resource": "https://mcp.example.com/mcp",
+          "scopes_supported": [
+            "read",
+            "write",
+          ],
+        }
+      `);
+    }
   });
 
   it('serves the narrowed scopes_supported of a read-only server', async () => {
@@ -186,8 +194,12 @@ describe('startHttpTransport (HTTP roundtrip)', () => {
       `http://127.0.0.1:${handle.port}/.well-known/oauth-authorization-server`,
     );
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { code_challenge_methods_supported: string[] };
-    expect(body.code_challenge_methods_supported).toContain('S256');
+    const body = (await res.json()) as {
+      issuer: string;
+      code_challenge_methods_supported: string[];
+    };
+    expect(body.issuer).toBe(`http://127.0.0.1:${handle.port}`);
+    expect(body.code_challenge_methods_supported).toEqual(['S256']);
   });
 
   it('returns 200 on /healthz', async () => {
@@ -234,10 +246,11 @@ describe('startHttpTransport (HTTP roundtrip)', () => {
     // server-side new-session path: bearer extraction, McpServer creation,
     // transport.handleRequest.
     handle = await startHttpTransport(baseConfig);
+    const authorization = await bearerFor(handle.port);
     const res = await fetch(`http://127.0.0.1:${handle.port}/mcp`, {
       method: 'POST',
       headers: {
-        Authorization: 'Bearer test-token',
+        Authorization: authorization,
         'Content-Type': 'application/json',
         Accept: 'application/json, text/event-stream',
       },
@@ -265,7 +278,8 @@ describe('startHttpTransport (HTTP roundtrip)', () => {
     // initialize once → capture the session id → POST again with that id and
     // assert the request is routed to the same session (no re-init).
     handle = await startHttpTransport(baseConfig);
-    const sessionId = await initializeSession(handle.port, 'Bearer test-token');
+    const authorization = await bearerFor(handle.port);
+    const sessionId = await initializeSession(handle.port, await bearerFor(handle.port));
 
     // Follow-up: tools/list on the same session. The handler should route via
     // sessions.get(sessionId).transport.handleRequest. The bearer stays
@@ -274,7 +288,7 @@ describe('startHttpTransport (HTTP roundtrip)', () => {
     const followUp = await fetch(`http://127.0.0.1:${handle.port}/mcp`, {
       method: 'POST',
       headers: {
-        Authorization: 'Bearer test-token',
+        Authorization: authorization,
         'Content-Type': 'application/json',
         Accept: 'application/json, text/event-stream',
         'mcp-session-id': sessionId,
@@ -289,7 +303,7 @@ describe('startHttpTransport (HTTP roundtrip)', () => {
     // Security regression lock: a leaked mcp-session-id alone must NOT grant
     // access to the session's Zendesk token.
     handle = await startHttpTransport(baseConfig);
-    const sessionId = await initializeSession(handle.port, 'Bearer test-token');
+    const sessionId = await initializeSession(handle.port, await bearerFor(handle.port));
 
     const followUp = await fetch(`http://127.0.0.1:${handle.port}/mcp`, {
       method: 'POST',
@@ -316,12 +330,15 @@ describe('startHttpTransport (HTTP roundtrip)', () => {
       }),
     );
     handle = await startHttpTransport(baseConfig);
-    const sessionId = await initializeSession(handle.port, 'Bearer first-token');
+    // Two sign-ins of the same user: two grants, two distinct Zendesk tokens.
+    const sessionId = await initializeSession(handle.port, await bearerFor(handle.port));
+    const rotated = await bearerFor(handle.port);
+    seenAuth.length = 0;
 
     const call = await fetch(`http://127.0.0.1:${handle.port}/mcp`, {
       method: 'POST',
       headers: {
-        Authorization: 'Bearer rotated-token',
+        Authorization: rotated,
         'Content-Type': 'application/json',
         Accept: 'application/json, text/event-stream',
         'mcp-session-id': sessionId,
@@ -335,7 +352,8 @@ describe('startHttpTransport (HTTP roundtrip)', () => {
     });
     expect(call.status).toBe(200);
     await call.text();
-    expect(seenAuth).toEqual(['Bearer rotated-token']);
+    // The second sign-in was the second Zendesk token the mock issued.
+    expect(seenAuth).toEqual(['Bearer zd-access-4']);
   });
 
   // Both 413 tests inject a small cap: the production default is 4 MB, and
@@ -346,10 +364,11 @@ describe('startHttpTransport (HTTP roundtrip)', () => {
 
   it('rejects a body over the configured cap with 413', async () => {
     handle = await startHttpTransport(baseConfig, undefined, { maxBodyBytes: SMALL_CAP });
+    const authorization = await bearerFor(handle.port);
     const res = await fetch(`http://127.0.0.1:${handle.port}/mcp`, {
       method: 'POST',
       headers: {
-        Authorization: 'Bearer test-token',
+        Authorization: authorization,
         'Content-Type': 'application/json',
         Accept: 'application/json, text/event-stream',
       },
@@ -369,6 +388,7 @@ describe('startHttpTransport (HTTP roundtrip)', () => {
     // connection wedges, hanging handle.close() in afterEach forever. Reproduced
     // with a request that announces more than it ever sends.
     handle = await startHttpTransport(baseConfig, undefined, { maxBodyBytes: SMALL_CAP });
+    const authorization = await bearerFor(handle.port);
     const status = await new Promise<number>((resolve, reject) => {
       const req = httpRequest({
         host: '127.0.0.1',
@@ -376,7 +396,7 @@ describe('startHttpTransport (HTTP roundtrip)', () => {
         path: '/mcp',
         method: 'POST',
         headers: {
-          Authorization: 'Bearer test-token',
+          Authorization: authorization,
           'Content-Type': 'application/json',
           'Content-Length': String(SMALL_CAP * 2),
         },
@@ -402,10 +422,11 @@ describe('startHttpTransport (HTTP roundtrip)', () => {
 
   it('rejects malformed JSON with 400 and JSON-RPC -32700 Parse Error', async () => {
     handle = await startHttpTransport(baseConfig);
+    const authorization = await bearerFor(handle.port);
     const res = await fetch(`http://127.0.0.1:${handle.port}/mcp`, {
       method: 'POST',
       headers: {
-        Authorization: 'Bearer test-token',
+        Authorization: authorization,
         'Content-Type': 'application/json',
         Accept: 'application/json, text/event-stream',
       },
@@ -421,7 +442,8 @@ describe('startHttpTransport (HTTP roundtrip)', () => {
       sessionIdleTimeoutMs: 50,
       sweepIntervalMs: 20,
     });
-    const sessionId = await initializeSession(handle.port, 'Bearer test-token');
+    const authorization = await bearerFor(handle.port);
+    const sessionId = await initializeSession(handle.port, await bearerFor(handle.port));
 
     await new Promise((resolve) => setTimeout(resolve, 200));
 
@@ -431,7 +453,7 @@ describe('startHttpTransport (HTTP roundtrip)', () => {
     const followUp = await fetch(`http://127.0.0.1:${handle.port}/mcp`, {
       method: 'POST',
       headers: {
-        Authorization: 'Bearer test-token',
+        Authorization: authorization,
         'Content-Type': 'application/json',
         Accept: 'application/json, text/event-stream',
         'mcp-session-id': sessionId,
@@ -444,12 +466,13 @@ describe('startHttpTransport (HTTP roundtrip)', () => {
 
   it('returns 400 when a non-POST /mcp request has no session and no bearer combo', async () => {
     handle = await startHttpTransport(baseConfig);
+    const authorization = await bearerFor(handle.port);
     // PUT is neither POST (initialize path) nor GET (SSE stream path) — and
     // without a session ID, our handler short-circuits. With bearer present
     // but wrong method, the "non-POST" branch fires.
     const res = await fetch(`http://127.0.0.1:${handle.port}/mcp`, {
       method: 'PUT',
-      headers: { Authorization: 'Bearer test-token' },
+      headers: { Authorization: authorization },
     });
     expect(res.status).toBe(400);
   });
@@ -597,24 +620,29 @@ const parseFirstRpcPayload = (raw: string): { result?: unknown; error?: unknown 
 describe('startHttpTransport (Zendesk 401 backstop)', () => {
   let handle: Awaited<ReturnType<typeof startHttpTransport>> | undefined;
 
+  beforeEach(() => {
+    mockZendeskOAuth();
+  });
+
   afterEach(async () => {
     await handle?.close();
     handle = undefined;
   });
 
-  // Spec under test, locked against a quiet refactor. In HTTP mode the bearer is
-  // the client's own OAuth token, so a Zendesk 401 must come back as a tool result
-  // with `isError: true` — not a 500, not a session crash. No `onUnauthorized`
-  // fires: there is nothing server-side to invalidate.
-  it('surfaces a Zendesk 401 as an MCP tool error and keeps the session open', async () => {
-    mswServer.use(errorHandlers.usersMeUnauthorized);
+  // Spec under test: a Zendesk 401 (the user revoked the app, or Zendesk
+  // expired the token early) comes back as a tool result with isError, then
+  // ends the grant, so the client's next request gets our 401 and re-runs
+  // authorization instead of looping on a dead Zendesk token.
+  it('surfaces a Zendesk 401 as a tool error, then answers 401 so the client signs in again', async () => {
     handle = await startHttpTransport(baseConfig);
-    const sessionId = await initializeSession(handle.port, 'Bearer client-issued-bearer');
+    const authorization = await bearerFor(handle.port);
+    const sessionId = await initializeSession(handle.port, authorization);
+    mswServer.use(errorHandlers.usersMeUnauthorized);
 
     const callRes = await fetch(`http://127.0.0.1:${handle.port}/mcp`, {
       method: 'POST',
       headers: {
-        Authorization: 'Bearer client-issued-bearer',
+        Authorization: authorization,
         'Content-Type': 'application/json',
         Accept: 'application/json, text/event-stream',
         'mcp-session-id': sessionId,
@@ -626,8 +654,6 @@ describe('startHttpTransport (Zendesk 401 backstop)', () => {
         params: { name: 'get_current_user', arguments: {} },
       }),
     });
-    // Claim 1: transport remains a healthy 200; the failure lives inside the
-    // JSON-RPC payload as a tool result with isError=true.
     expect(callRes.status).toBe(200);
     const payload = parseFirstRpcPayload(await callRes.text()) as {
       result?: {
@@ -636,28 +662,23 @@ describe('startHttpTransport (Zendesk 401 backstop)', () => {
       };
     };
     expect(payload.result?.isError).toBe(true);
-    // The error must convey "your bearer is no good, re-do OAuth" so the client
-    // restarts discovery. Matched on intent rather than the literal string:
-    // `ZendeskApiError.buildMessage` keys that wording strictly on `status ===
-    // 401`, so the pattern is a tight proxy for "a 401 reached the payload".
     const text = (payload.result?.content ?? []).map((c) => c.text ?? '').join(' ');
     expect(text).toMatch(/re-?authenticate/i);
 
-    // The session must still be alive: a follow-up tools/list on the same
-    // mcp-session-id has to come back 200, not a fresh 401 or a dead session.
-    // That onUnauthorized stays unwired cannot be asserted without spying on
-    // createMcpServer; this call surviving is the behavioural proxy.
-    const followUp = await fetch(`http://127.0.0.1:${handle.port}/mcp`, {
-      method: 'POST',
-      headers: {
-        Authorization: 'Bearer client-issued-bearer',
-        'Content-Type': 'application/json',
-        Accept: 'application/json, text/event-stream',
-        'mcp-session-id': sessionId,
-      },
-      body: JSON.stringify({ jsonrpc: '2.0', method: 'tools/list', id: 3 }),
+    await vi.waitFor(async () => {
+      const followUp = await fetch(`http://127.0.0.1:${handle?.port}/mcp`, {
+        method: 'POST',
+        headers: {
+          Authorization: authorization,
+          'Content-Type': 'application/json',
+          Accept: 'application/json, text/event-stream',
+          'mcp-session-id': sessionId,
+        },
+        body: JSON.stringify({ jsonrpc: '2.0', method: 'tools/list', id: 3 }),
+      });
+      await followUp.text();
+      expect(followUp.status).toBe(401);
+      expect(followUp.headers.get('www-authenticate')).toMatch(/^Bearer\b/i);
     });
-    expect(followUp.status).toBe(200);
-    await followUp.text();
   });
 });

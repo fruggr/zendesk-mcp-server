@@ -11,19 +11,110 @@ path), see [Quick start: local](../README.md#quick-start-local-stdio).
 > clients, and 401 / refresh flows. Please open an issue with the symptoms you
 > hit.
 
-Deploy a private MCP server for **one** Zendesk account. Every MCP client connecting to the server presents its **own** user's OAuth bearer in `Authorization:`, so the server never sees a shared admin key.
+Deploy a private MCP server for **one** Zendesk account. The server is its own
+OAuth authorization server: MCP clients register with it (Client ID Metadata
+Document or Dynamic Client Registration), each user signs in to Zendesk through
+it, and every tool call runs with that user's own Zendesk permissions. No shared
+admin key, and no per-client setup in Zendesk. Why it works this way:
+[the ADR](decisions/oauth-authorization-server.md).
 
 ## Zendesk OAuth setup
 
-Same procedure as the [local quick start](../README.md#zendesk-oauth-setup), with one difference: the **Redirect URL** must match the callback your MCP client uses. The client provides it, e.g. `https://claude.ai/oauth/callback` for claude.ai on the web. Check your client's docs.
+Reuse the OAuth client of the [local quick start](../README.md#zendesk-oauth-setup):
+the same public PKCE client, the same `ZENDESK_OAUTH_CLIENT_ID`, no client
+secret. Add one **Redirect URL** to it:
+
+```
+<public-url>/oauth/callback
+```
+
+for example `https://mcp.example.com/oauth/callback`, or
+`http://localhost:3000/oauth/callback` for a local run. That single URL serves
+every MCP client: they never talk to Zendesk directly.
+
+## Install
+
+The HTTP transport's packages (`oidc-provider`, `jose`,
+`@modelcontextprotocol/node`) are optional peer dependencies, so a stdio install
+never downloads them. Install them next to the server:
+
+```bash
+npm install @fruggr/zendesk-mcp-server \
+  oidc-provider@~9.12.2 jose@^6.2.12 @modelcontextprotocol/node@^2.0.0
+```
+
+or, without a project, `npx -y -p @fruggr/zendesk-mcp-server -p oidc-provider@~9.12.2
+-p jose@^6.2.12 -p @modelcontextprotocol/node@^2.0.0 zendesk-mcp-server ...`. The
+ranges are the package's `peerDependencies`. Without them, `--transport http`
+stops at startup and prints this command. Prefer a project install (or a
+container image): it is the path CI tests. A global one (`npm install -g`) starts
+too, but gives `@modelcontextprotocol/node` its own copy of the MCP SDK.
 
 ## Run the server
 
 ```bash
 zendesk-mcp-server <your-subdomain> --transport http --port 3000 \
   --public-url https://mcp.example.com
-# stderr: Zendesk MCP server running via http on 0.0.0.0:3000
+# stderr: http_transport_ready ... issuer=https://mcp.example.com
 ```
+
+That is enough to start: the master secret is generated on first start and the
+grants are kept in a file, both in the config directory (next section). For a
+deployment, supply both explicitly.
+
+## Master secret and grant store
+
+The server signs and encrypts its own tokens, and encrypts what it stores, with
+keys derived from one **master secret**. It belongs to this server, not to
+Zendesk.
+
+| | Default | For a deployment |
+|---|---|---|
+| **Master secret** | Generated on first start into `oauth-master-secret` (mode 0600) in the config directory | `OAUTH_MASTER_SECRET` from a secret manager (e.g. a Key Vault reference on Azure Container Apps), or `--oauth-master-secret-file` |
+| **Grant store** | `file://<config dir>/oauth-store.json` | `--oauth-store file:///data/oauth-store.json` on a persistent volume |
+
+- **Generate a secret** with `openssl rand -base64 32`. Anything under 32 bytes
+  is refused at startup.
+- **Keep the secret off the store's volume.** Together they expose the users'
+  Zendesk refresh tokens; apart, the store is unreadable. The server warns when
+  an auto-generated secret sits next to a file store.
+- **Keep both across redeploys.** With the same secret and store, a restart or a
+  redeploy logs nobody out. Lose either and every user signs in again.
+- **A file is the only persistent store.** `memory://` keeps everything in
+  memory, for tests only.
+- **One instance only.** Several replicas sharing a store are not supported.
+
+### Rotating the secret
+
+`OAUTH_MASTER_SECRET` takes a comma-separated list, newest first: the first entry
+signs and encrypts, every entry still decrypts.
+
+1. Prepend a new secret: `OAUTH_MASTER_SECRET=<new>,<old>`, and redeploy.
+2. After 90 days (the longest a refresh token lives), drop the old one.
+
+A record read in the meantime is re-encrypted under the new secret. Users whose
+records are still under the old one when you drop it sign in again.
+
+**If the secret leaked**, replace the list outright (no old entry): every token
+becomes invalid and every user signs in again. If the store may have leaked
+too, also revoke the users' OAuth tokens at Zendesk, which still honours them
+until they expire.
+
+## Trusted clients and consent
+
+Users sign in to Zendesk and approve the Zendesk consent screen. The server adds
+its own consent screen, once per client and user, for any client it cannot vouch
+for: clients registered through DCR, unknown CIMD clients, and clients whose
+redirect is a loopback address (Claude Code, Codex, VS Code, Zed, ...).
+
+**claude.ai and ChatGPT skip it**: their client id is on a built-in allowlist,
+and the redirect they ask for is HTTPS and listed in the document served on
+their own domain, so the code cannot be diverted.
+
+- `--oauth-trusted-client <client-id-url>` (repeatable) or
+  `OAUTH_TRUSTED_CLIENTS` (comma-separated) adds a CIMD client to the allowlist.
+  The same HTTPS rules apply to it.
+- `--no-default-trusted-clients` drops the built-in entries.
 
 ## Public URL
 
@@ -38,27 +129,34 @@ zendesk-mcp-server <your-subdomain> --transport http --port 3000 \
 
 ## Authentication on every request
 
-`Authorization: Bearer …` is required on **every** `/mcp` request. A session id alone is never accepted as a credential. The most recent bearer presented on a session is the one used for Zendesk calls, so a client refreshing its token mid-session just works.
+`Authorization: Bearer …` is required on **every** `/mcp` request, and only an
+access token this server issued for its `/mcp` resource is accepted. A Zendesk
+token presented directly gets a `401`: the server never passes a token through.
+A session id alone is never a credential, and a session only accepts tokens of
+the user who opened it. The most recent token presented on a session is the one
+used, so a client refreshing mid-session just works.
+
+Access tokens last one hour; refresh tokens up to 90 days, like Zendesk's own.
+The server refreshes the user's Zendesk token by itself when needed. If Zendesk
+rejects it (the user revoked the app, an admin revoked the token), the tool call
+fails with an authentication error and the client's next request gets a `401`,
+which makes it sign the user in again.
 
 ## Verify discovery endpoints
 
-Served by the HTTP transport in `src/transports/http.ts`:
-
 ```bash
-curl -s http://localhost:3000/.well-known/oauth-protected-resource
-# → { "authorization_servers": ["https://<subdomain>.zendesk.com"], ... }
+curl -s http://localhost:3000/.well-known/oauth-protected-resource/mcp
+# → { "resource": "http://localhost:3000/mcp", "authorization_servers": ["http://localhost:3000"], ... }
 
 curl -s http://localhost:3000/.well-known/oauth-authorization-server
-# → { "issuer": "https://<subdomain>.zendesk.com", "authorization_endpoint": "...", ... }
+# → { "issuer": "http://localhost:3000", "registration_endpoint": "...",
+#     "client_id_metadata_document_supported": true, ... }
 
 curl -s -i http://localhost:3000/healthz   # → 200 OK
 ```
 
-Both documents carry `scopes_supported`, and both follow `--read-only`:
-`["read", "write"]` normally, `["read"]` on a read-only server. It is advice to
-the client, not a control — the server never inspects the grant behind the
-bearer it is presented, so a bearer minted with `read` alone will simply get
-`403` from Zendesk on any write.
+`scopes_supported` follows `--read-only`: `["read", "write"]` normally, `["read"]`
+on a read-only server, which then also asks Zendesk for `read` only.
 
 ## MCP client wiring
 
@@ -132,7 +230,7 @@ If you're on an older Zed build that predates that change, fall back to [`mcp-re
 
 </details>
 
-On the first call the MCP client fetches the discovery metadata, performs the OAuth 2.1 PKCE flow against Zendesk on behalf of the **end user**, and sends the resulting access token as a `Bearer` to the server. Each subsequent tool call runs with that user's Zendesk permissions.
+On the first call the MCP client fetches the discovery metadata, registers with the server, and runs the OAuth 2.1 PKCE flow against it. The server sends the user to Zendesk to sign in, then hands the client an access token of its own. Each subsequent tool call runs with that user's Zendesk permissions.
 
 ## CORS
 
@@ -160,9 +258,10 @@ The heartbeat does **not** keep the *session* alive: the idle sweeper evicts it 
 
 ## Operator responsibilities
 
-This server provides the MCP transport and the OAuth discovery metadata. The operator is still responsible for:
+This server provides the MCP transport and the OAuth authorization server. The operator is still responsible for:
 
-- TLS termination. Put the server behind a reverse proxy like Caddy, nginx or Cloudflare Tunnel.
+- The master secret and the grant store: supply the secret from a secret manager, keep the store on a persistent volume, and keep the two apart (see [Master secret and grant store](#master-secret-and-grant-store)).
+- TLS termination. Put the server behind a reverse proxy like Caddy, nginx or Cloudflare Tunnel, which must forward `X-Forwarded-Proto` and `X-Forwarded-Host`: with an `https` public URL the server trusts them to build its endpoint URLs.
 - Network exposure and firewalling. The server binds `0.0.0.0` by default, so choose carefully.
 - Process supervision (systemd, Docker, fly.io, your hosting provider's runner). None is shipped here.
 

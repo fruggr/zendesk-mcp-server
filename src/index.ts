@@ -11,7 +11,7 @@ import { startDevServer } from './dev/reload';
 import { renderToolSurface } from './routing/print';
 import { createMcpServer } from './server';
 import { createAllTools } from './tools/index';
-import { startHttpTransport } from './transports/http';
+import { loadHttpTransport } from './transports/http-peers';
 import { startStdioTransport } from './transports/stdio';
 import { createLogger, type Logger } from './utils/logger';
 import { installShutdown } from './utils/shutdown';
@@ -84,7 +84,9 @@ const main = async (): Promise<void> => {
   }
 
   // HTTP mode: the HTTP transport creates a per-session McpServer with the
-  // request's bearer captured in its tools' closure — no shared state.
+  // request's bearer captured in its tools' closure — no shared state. Loaded
+  // on demand: its packages are optional peers that a stdio install lacks.
+  const { startHttpTransport } = await loadHttpTransport();
   const http = await startHttpTransport(config, logger);
 
   // Signals only: an HTTP server has no client on stdin to lose. Nothing reads

@@ -14,6 +14,10 @@ const LOAD_CONFIG_ENV = [
   'CORS_ORIGIN',
   'OAUTH_CALLBACK_PORT',
   'HC_RESOURCE_SCHEME',
+  'OAUTH_MASTER_SECRET',
+  'OAUTH_MASTER_SECRET_FILE',
+  'OAUTH_STORE',
+  'OAUTH_TRUSTED_CLIENTS',
   // Legacy names, still read until 3.0.0 (src/utils/env.ts).
   'HOST',
   'ZENDESK_OAUTH_CALLBACK_PORT',
@@ -291,6 +295,81 @@ describe('loadConfig', () => {
     });
   });
 
+  describe('authorization server settings', () => {
+    it('leaves every knob unset or at its default', () => {
+      const config = loadConfig(['mycompany']);
+      expect(config.oauthMasterSecret).toBeUndefined();
+      expect(config.oauthMasterSecretFile).toBeUndefined();
+      expect(config.oauthStore).toBeUndefined();
+      expect(config.oauthTrustedClients).toEqual([]);
+      expect(config.defaultTrustedClients).toBe(true);
+    });
+
+    it('reads the master secret from OAUTH_MASTER_SECRET only, never from a flag', () => {
+      process.env['OAUTH_MASTER_SECRET'] = 'c2VjcmV0';
+      expect(loadConfig(['mycompany']).oauthMasterSecret).toBe('c2VjcmV0');
+      expect(() => loadConfig(['mycompany', '--oauth-master-secret', 'x'])).toThrow();
+    });
+
+    it('rejects an empty OAUTH_MASTER_SECRET instead of generating one', () => {
+      process.env['OAUTH_MASTER_SECRET'] = '';
+      expect(() => loadConfig(['mycompany'])).toThrow(
+        'Empty OAUTH_MASTER_SECRET. Set it to a value, or unset it entirely.',
+      );
+    });
+
+    it('prefers the flags over the env vars', () => {
+      process.env['OAUTH_MASTER_SECRET_FILE'] = '/env/secret';
+      process.env['OAUTH_STORE'] = 'file:///env/store.json';
+      const config = loadConfig([
+        'mycompany',
+        '--oauth-master-secret-file',
+        '/flag/secret',
+        '--oauth-store',
+        'file:///flag/store.json',
+      ]);
+      expect(config.oauthMasterSecretFile).toBe('/flag/secret');
+      expect(config.oauthStore).toBe('file:///flag/store.json');
+    });
+
+    it('falls back to the env vars', () => {
+      process.env['OAUTH_MASTER_SECRET_FILE'] = '/env/secret';
+      process.env['OAUTH_STORE'] = 'file:///env/store.json';
+      const config = loadConfig(['mycompany']);
+      expect(config.oauthMasterSecretFile).toBe('/env/secret');
+      expect(config.oauthStore).toBe('file:///env/store.json');
+    });
+
+    it('refuses the removed --oauth-store-adapter flag instead of ignoring it', () => {
+      expect(() => loadConfig(['mycompany', '--oauth-store-adapter', 'some-store'])).toThrow();
+    });
+
+    it('rejects a store that is not a URI', () => {
+      expect(() => loadConfig(['mycompany', '--oauth-store', './store.json'])).toThrow();
+    });
+
+    it('merges trusted clients from the repeatable flag and the comma list', () => {
+      process.env['OAUTH_TRUSTED_CLIENTS'] =
+        ' https://b.example/c.json , ,https://c.example/c.json';
+      const config = loadConfig([
+        'mycompany',
+        '--oauth-trusted-client',
+        'https://a.example/c.json',
+        '--no-default-trusted-clients',
+      ]);
+      expect(config.oauthTrustedClients).toEqual([
+        'https://a.example/c.json',
+        'https://b.example/c.json',
+        'https://c.example/c.json',
+      ]);
+      expect(config.defaultTrustedClients).toBe(false);
+    });
+
+    it('rejects a trusted client that is not a URL', () => {
+      expect(() => loadConfig(['mycompany', '--oauth-trusted-client', 'claude.ai'])).toThrow();
+    });
+  });
+
   describe('hcResourceScheme', () => {
     it('defaults to zendesk-hc', () => {
       const config = loadConfig(['mycompany']);
@@ -458,7 +537,7 @@ describe('loadConfig', () => {
 
     it('covers every value-taking flag declared in CLI_OPTIONS', () => {
       // Guards the parametrised cases below against silently shrinking to zero.
-      expect(valueFlags).toHaveLength(11);
+      expect(valueFlags).toHaveLength(14);
     });
 
     it.each(valueFlags)('rejects %s as the last argument (value forgotten)', (flag) => {
@@ -719,6 +798,13 @@ describe('ConfigSchema defaults reached only by a direct parse', () => {
     // This field only adds to the transport's own allowlist, so a non-empty default
     // would widen CORS for everyone.
     expect(parse().corsOrigins).toEqual([]);
+  });
+
+  // loadConfig always passes the trusted-client list, and leaves the allowlist
+  // switch to the schema when the flag is absent.
+  it('defaults to no extra trusted clients and to the built-in allowlist', () => {
+    expect(parse().oauthTrustedClients).toEqual([]);
+    expect(parse().defaultTrustedClients).toBe(true);
   });
 
   it('rejects an empty array instead of treating it as "every namespace"', () => {

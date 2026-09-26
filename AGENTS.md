@@ -44,10 +44,13 @@ web, which generates them: leave those alone, don't imitate the shape by hand.
 
 ## Architecture
 
-Transports: stdio (SDK `StdioServerTransport`) plus a thin `node:http` HTTP
-transport that wraps `NodeStreamableHTTPServerTransport` and serves the RFC 9728 /
-RFC 8414 OAuth discovery endpoints; HTTP builds a per-session `McpServer` so the
-request's bearer is captured in the tools' closure — no shared state.
+Transports: stdio (SDK `StdioServerTransport`) plus a `node:http` HTTP transport
+that wraps `NodeStreamableHTTPServerTransport` next to its own OAuth authorization
+server (`auth/server/`, on `oidc-provider`); HTTP builds a per-session `McpServer`
+so the user's Zendesk token is captured in the tools' closure — no shared state.
+`index.ts` imports the HTTP transport lazily, and its packages are optional peers
+(`src/transports/http-peers.ts`): a stdio install never downloads them, so never
+import one outside the HTTP path.
 
 **Tool modes** (chosen at startup by `--mode`): `all` (every tool individually),
 `namespace` (default — one proxy per namespace), `single` (one `zendesk` proxy).
@@ -65,8 +68,10 @@ reached Zendesk. Why the loop is ours rather than a library's — and what would
 that: `docs/decisions/client-retry.md`.
 
 **Auth** — per-user OAuth 2.1 PKCE only, no static API-token mode. stdio: lazy
-browser PKCE via `token-store.ts`. HTTP: per-session bearer captured from
-`Authorization:`. Dropping API-token auth is deliberate (static shared
+browser PKCE via `token-store.ts`. HTTP: the server is the authorization server
+(DCR, CIMD, consent), Zendesk the upstream login through the same public client,
+and `/mcp` accepts only its own audience-bound JWE — never a Zendesk token
+(`docs/decisions/oauth-authorization-server.md`). Dropping API-token auth is deliberate (static shared
 credential — insufficiently secure, doesn't scale to multi-user/remote); the
 rationale lives in `README.md` ("What this server does *not* do").
 

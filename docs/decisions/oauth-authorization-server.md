@@ -7,11 +7,11 @@
 
 | | |
 | --- | --- |
-| **Status** | Decided, not yet applied |
+| **Status** | Decided and applied ([#317](https://github.com/fruggr/zendesk-mcp-server/pull/317)) |
 | **Date** | 2026-09-24 |
 | **Applies** | [#127](https://github.com/fruggr/zendesk-mcp-server/issues/127) — ships as a major release (3.0), after the SDK v2 migration ([#231](https://github.com/fruggr/zendesk-mcp-server/issues/231)) |
 | **Question** | How does a remote MCP client (claude.ai, ChatGPT, …) sign a user in when Zendesk offers neither discovery nor client registration? |
-| **Answer** | The server is the OAuth authorization server (AS), built on [`oidc-provider`](https://github.com/panva/node-oidc-provider). Zendesk is the upstream identity provider, through one confidential client. The server issues its own tokens and keeps the Zendesk ones server-side, in a pluggable store (Keyv). The default store is a file. |
+| **Answer** | The server is the OAuth authorization server (AS), built on [`oidc-provider`](https://github.com/panva/node-oidc-provider). Zendesk is the upstream identity provider, through the same public PKCE client the stdio flow already uses. The server issues its own tokens and keeps the Zendesk ones server-side, encrypted, in a file store (a pluggable backend is deferred). |
 
 ## Why the current design cannot stay
 
@@ -43,13 +43,14 @@
    ([Zendesk](https://developer.zendesk.com/documentation/api-basics/authentication/refresh-token/)).
    A 48 h re-login was judged too frequent.
 5. **This is a library, not a hosted service.** Anyone deploys it anywhere, so
-   storage has to be pluggable and chosen by configuration.
+   storage must need nothing but a file. Other backends can come later behind
+   the same small interface (see [Storage](#storage)).
 
 ## Options considered
 
 | Option | Verdict | Why |
 | --- | --- | --- |
-| **`oidc-provider` + pluggable store** | **Chosen** | Certified library, and the pattern the community converged on (below). Its one cost, a store, is inevitable for refresh. |
+| **`oidc-provider` + a store** | **Chosen** | Certified library, and the pattern the community converged on (below). Its one cost, a store, is inevitable for refresh. It is a file today (see [Storage](#storage)). |
 | `oidc-provider` with no refresh tokens, memory only | Rejected | Stateless in practice, but forces a re-login every ≤48 h (constraint 4). |
 | Stateless AS written in-house (JWE-wrapped Zendesk code and refresh token) | Rejected | Zendesk would enforce single use and rotation. But every endpoint, DCR, CIMD, consent and metadata would be ours (constraint 1). No reference MCP implementation hands a refresh token to the client. |
 | Relay in the style of [softeria/ms-365-mcp-server](https://github.com/softeria/ms-365-mcp-server) | Rejected | Zero storage only by cutting what the spec requires. Its `/register` returns `mcp-client-${Date.now()}` and stores nothing. `/token` returns the upstream token and refresh token to the client (passthrough). Read in its source. |
@@ -91,13 +92,26 @@ while #127 is open.
   generates the opaque value (a random `nanoid`) before the adapter sees it, and
   panva declines pluggable token formats
   ([discussion #1256](https://github.com/panva/node-oidc-provider/discussions/1256)).
-- **Refreshes are serialised per grant.** Both layers rotate, so two
-  concurrent refreshes spend the same Zendesk refresh token and the second one
-  fails. Clients do refresh concurrently: a ChatGPT bug once refreshed on every
-  tool call ([forum](https://community.openai.com/t/chatgpt-mcp-connector-refreshes-token-on-every-tool-call-and-doesnt-persist-sessions/1377210)),
+- **Zendesk refreshes are serialised per grant.** Both layers rotate, so two
+  concurrent refreshes would spend the same Zendesk refresh token and the second
+  would fail. Clients do refresh concurrently: a ChatGPT bug once refreshed on
+  every tool call ([forum](https://community.openai.com/t/chatgpt-mcp-connector-refreshes-token-on-every-tool-call-and-doesnt-persist-sessions/1377210)),
   and FastMCP tracks the same race in
-  [#4901](https://github.com/PrefectHQ/fastmcp/issues/4901). `rotateRefreshToken`
-  is set with that in mind.
+  [#4901](https://github.com/PrefectHQ/fastmcp/issues/4901).
+  - The lock wraps only the Zendesk refresh. It runs in `extraTokenClaims`,
+    when an access token is minted, and only once the Zendesk token is close to
+    expiry.
+  - Our own `/token` endpoint is **not** serialised. `oidc-provider` revokes the
+    whole grant when a consumed refresh token is presented again, so
+    serialising our endpoint would turn a benign parallel refresh into a
+    logout.
+  - `rotateRefreshToken` keeps its default: rotate every refresh for public
+    clients. A client that replays an old refresh token therefore signs its
+    user out. That is the OAuth 2.1 reuse-detection trade-off, accepted.
+- **Refresh tokens are issued without `offline_access`.** The library default
+  requires it, and MCP clients do not all ask for it. `expiresWithSession` is
+  off, since sessions live in memory and would otherwise take the tokens down
+  with them on a restart.
 - **Keys** are derived from one configured secret, never generated at startup.
   Otherwise every restart would invalidate every token. See
   [Keys and secrets](#keys-and-secrets).
@@ -105,9 +119,20 @@ while #127 is open.
 
 ### Upstream login
 
-- The `oidc-provider` login interaction redirects to Zendesk with the one
-  confidential client, and one redirect URI: `<public-url>/oauth/callback`.
+- The `oidc-provider` login interaction redirects to Zendesk with the same
+  public client the stdio flow uses (`ZENDESK_OAUTH_CLIENT_ID`). The server runs
+  PKCE itself and holds the verifier for the length of the login.
+  - Setup is one extra redirect URI on that client:
+    `<public-url>/oauth/callback`. Zendesk accepts `http://localhost` for local
+    runs.
+  - No confidential client and no client secret. A secret would only matter if
+    a stolen Zendesk refresh token could be used without it, and the store is
+    already encrypted.
 - The account is resolved with `/api/v2/users/me`, since Zendesk is not OIDC.
+- **Every authorization goes through Zendesk**, even with a live browser session,
+  and creates a fresh grant holding the Zendesk tokens of that sign-in. A grant
+  remembered by the session would carry no Zendesk tokens of its own. Zendesk
+  remembers its consent, so the extra round trip is a redirect.
 - The Zendesk access token is requested with its maximum lifetime (48 h). The
   refresh token is requested with a lifetime that fits constraint 4.
 
@@ -120,8 +145,15 @@ while #127 is open.
   keeps it for compatibility.
 - CIMD is experimental in `oidc-provider` 9, and draft updates ship in minor
   releases. The dependency is therefore pinned with `~`.
-- The `allowFetch` hook guards against SSRF: HTTPS only, and no private or
-  loopback addresses.
+- SSRF protection is built into `oidc-provider`'s fetch: special-use IPs are
+  refused at connect time (so DNS rebinding is covered), redirects are not
+  followed, and time and size are capped. `allowFetch` adds HTTPS on port 443
+  only.
+- Some CIMD documents (Claude Code, Zed) list loopback redirect URIs without
+  declaring `application_type: native`, so the library matches the port
+  exactly and rejects the random port the client picks. A document whose
+  redirect URIs are all loopback HTTP is treated as native. The fetch wrapper
+  that does it keeps the SSRF-guarded dispatcher.
 - `offline_access` goes in the AS metadata, because ChatGPT needs it to refresh.
   It stays out of the protected-resource metadata, where the spec says it SHOULD
   NOT appear.
@@ -149,7 +181,8 @@ Instead:
     clients whose redirects are HTTPS today (fetched 2026-09-24).
   - The skip goes through `loadExistingGrant`, which `oidc-provider` documents for
     pre-agreed consent.
-  - The remembered consent is tied to a hash of the client's `redirect_uris`.
+  - The remembered consent is tied to a hash of the account, the client and its
+    `redirect_uris`, persisted for 90 days: a changed document asks again.
 - **Everything else sees the MCP screen once per client**: DCR, unknown CIMD,
   and loopback redirect URIs. Loopback is the case the spec flags as
   impersonable. The screen names the client, the scopes and the redirect URI, per
@@ -157,15 +190,22 @@ Instead:
 
 ### Storage
 
-- **Keyv** is the abstraction. `--oauth-store <uri>` picks the backend by URL
-  scheme: `file://` (the default), `redis://`, `postgres://`, `sqlite://`,
-  `memory://` (dev and tests).
-- Each adapter is an optional peer dependency, imported only when its scheme is
-  asked for. `--oauth-store-adapter <package>` loads any third-party Keyv store.
+- **One file, no storage library.** `--oauth-store <uri>` takes `file://` (the
+  default) or `memory://` (dev and tests). The file store is ours: atomic writes
+  (tmp + rename), owner-only permissions, expired records dropped, and a refusal
+  to start on a corrupt file rather than a silent reset.
+- **Keyv was dropped.** It was first chosen for pluggable backends (Redis,
+  Postgres, SQLite), but its file backend, `keyv-file`, has none of the three
+  guarantees above: a crash can truncate the file, which it then reads as empty,
+  logging everyone out. With our own file store as the only backend, Keyv was a
+  pass-through, so it went, and its adapter loading with it.
+- **A backend added later** implements `RecordStore` (`get`, `set` with a TTL,
+  `delete`, in `src/auth/server/file-store.ts`) and nothing else: the sealing,
+  hashing and indexing sit above it.
 - **Short-lived models stay in memory** whatever the store: sessions,
   interactions, authorization codes. A restart then costs only an in-flight
   login.
-- **Single instance.** Keyv has no atomic get-and-delete, so single use relies
+- **Single instance.** The store has no atomic get-and-delete, so single use relies
   on an in-process lock per key. Running several replicas needs a store with
   atomic operations, which is out of scope.
 - **Reading the store yields nothing usable.**
@@ -175,6 +215,9 @@ Instead:
     provider stores tokens by hash too).
   - The adapter encrypts **the whole payload** at rest, not only the Zendesk
     tokens.
+  - A record read under an older key is re-encrypted with the current one.
+    Without that, dropping an old secret would also drop every DCR client,
+    since client records are never rewritten otherwise.
 
 ### Keys and secrets
 
@@ -186,8 +229,9 @@ Instead:
 - **`cookies.keys` defaults to `[]`.** Session, interaction and consent cookies
   would then go unsigned.
 
-So in HTTP mode the server **refuses to start** without its secret. It never
-leaves either value to the library's defaults.
+So in HTTP mode the server always has a master secret. It never leaves either
+value to the library's defaults: when no secret is supplied, it generates one
+and persists it (see [Input](#four-keys-one-secret)).
 
 #### Four keys, one secret
 
@@ -202,18 +246,27 @@ leaves either value to the library's defaults.
   `node:crypto`), with a distinct `info` label per purpose.
   - The Ed25519 key is derived the same way: its private key is, by definition, a
     32-byte random seed.
-  - The operator manages **one secret** besides the Zendesk client secret.
+  - The operator manages **one secret**. It belongs to the MCP server, not to
+    Zendesk, which is why its name carries no `ZENDESK_` prefix.
   - The alternative was a JWKS file, a symmetric key and cookie keys supplied
     separately. It is more conventional for the signing key, but it triples what
     has to be provisioned, rotated and kept in sync, for no security gain: all
     the keys fall together anyway if the host is compromised.
-- **Input.** Either `OAUTH_SERVER_SECRET` or `--oauth-secret-file <path>`.
-  - The secret is base64, at least 32 bytes of entropy. The server rejects a
-    shorter one.
-  - Generate it with `openssl rand -base64 32`.
-  - On Azure Container Apps it is a secret that references Key Vault.
+- **Input**, in order of precedence:
+  1. `OAUTH_MASTER_SECRET` or `--oauth-master-secret-file <path>`: base64, at
+     least 32 bytes of entropy. The server rejects a shorter one. Generate it
+     with `openssl rand -base64 32`. On Azure Container Apps it is a secret that
+     references Key Vault.
+  2. Otherwise, the file `oauth-master-secret` in the config directory.
+  3. Otherwise, the server generates 32 random bytes and writes them to that
+     file (mode 0600), and says so once in its logs. A local run needs no
+     setup.
+  - With `memory://`, a missing secret is generated in memory only: the store
+    does not survive a restart either.
 - **Custody.**
-  - The secret never sits on the store's volume.
+  - For a deployment, supply the secret from a secret manager. It should never
+    sit on the store's volume. The server warns when an auto-generated secret
+    shares a directory with a `file://` store, which is fine locally.
   - It is never logged, and never echoed in errors (ASCII-only messages on auth
     paths still apply).
 
@@ -238,16 +291,18 @@ leaves either value to the library's defaults.
   keeping the old secret.
   - Every token becomes invalid, every user signs in again, and the store is
     purged.
-  - Pair it with regenerating the Zendesk client secret, which revokes the
-    upstream tokens the store held.
+  - The Zendesk tokens the store held stay valid at Zendesk until they expire
+    or are revoked there. There is no client secret to regenerate, since the
+    client is public, so revoke them at Zendesk if the store may have leaked
+    too.
 
-#### Loss and dev mode
+#### Loss
 
 - **A lost secret means the same as an emergency rotation.** Tokens and store
   contents become unreadable, users sign in again, and the store is purged. There
   is no recovery path by design.
-- **Dev and tests only.** With `memory://` and `--dev`, the server generates an
-  ephemeral secret and says so on stderr.
+- **Losing the auto-generated file** is the same event. It is why a deployment
+  supplies its secret explicitly.
 
 ### Scope of the change
 
@@ -256,6 +311,22 @@ leaves either value to the library's defaults.
 - stdio is untouched: it keeps the browser PKCE flow in `token-store.ts`.
 - The end-user `requests` namespace is unaffected. It uses the same bearer path,
   and the bearer now resolves through the JWE.
+
+### Packaging
+
+- The HTTP-only packages (`oidc-provider` and its Koa stack, `jose`,
+  `@modelcontextprotocol/node` and Hono) are **optional peer dependencies**, not
+  dependencies. Most installs are stdio (`npx`, `bunx`), fetched again on every
+  cache miss: shipping them the HTTP stack would cost each one about 15 MB and
+  43 packages (35 MB instead of 50 MB, measured on the packed tarball) it never
+  loads. Sustainable-by-design: no bytes for a feature the user does not run.
+- The cost falls on HTTP deployments, which install the peers themselves (one
+  command, printed at startup when they are missing). A deployment is set up
+  once, usually in an image, so it absorbs that step far better than every stdio
+  launch would absorb the download.
+- `src/transports/http-peers.ts` lists them, a unit test keeps that list equal to
+  `package.json`, and CI checks on Node 20 that a plain install leaves them out
+  and that HTTP runs once they are added.
 
 ## Costs accepted
 

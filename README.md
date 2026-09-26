@@ -210,12 +210,15 @@ Something not working? See [Troubleshooting](docs/troubleshooting.md).
 > end-to-end against a real Zendesk tenant from every MCP client. Local stdio is
 > the supported path.
 
-You can also deploy a private remote MCP server for **one** Zendesk account,
-where every MCP client presents its **own** user's OAuth bearer in
-`Authorization:` and the server never sees a shared admin key. The full guide
-covers OAuth setup, `--public-url` behind a reverse proxy, per-platform config,
-the discovery endpoints, MCP client wiring, CORS and what stays the operator's
-job: **[docs/http-deployment.md](docs/http-deployment.md)**.
+You can also deploy a private remote MCP server for **one** Zendesk account.
+It is its own OAuth authorization server: web clients such as claude.ai and
+ChatGPT add it by URL and register themselves, each user signs in to Zendesk
+through it, and no shared admin key or per-client Zendesk setup is involved. Its
+packages install on top of the server, so stdio users never download them. The
+full guide covers that install, the one redirect URL to add to your Zendesk OAuth client, the
+master secret and grant store, `--public-url` behind a reverse proxy, trusted
+clients, MCP client wiring, CORS and what stays the operator's job:
+**[docs/http-deployment.md](docs/http-deployment.md)**.
 
 ## Tool surface
 
