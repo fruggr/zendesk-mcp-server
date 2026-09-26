@@ -27,12 +27,16 @@ export interface AuthorizeResult {
   code?: string;
   iss?: string;
   error?: string;
+  errorDescription?: string;
   consentShown: boolean;
   hops: string[];
   verifier: string;
 }
 
-const createCookieJar = () => {
+export type CookieJar = ReturnType<typeof createCookieJar>;
+
+/** A browser's cookies; pass one jar to several `authorize` calls to reuse its session. */
+export const createCookieJar = () => {
   const jar = new Map<string, string>();
   return {
     header: () => [...jar.entries()].map(([k, v]) => `${k}=${v}`).join('; '),
@@ -74,11 +78,15 @@ export const authorize = async (
     clientId: string;
     redirectUri: string;
     scope?: string;
-    resource?: string;
+    /** `null` leaves the parameter out, for the provider's default resource. */
+    resource?: string | null;
     deny?: boolean;
+    /** Extra authorization request parameters (`prompt`, ...). */
+    extra?: Record<string, string>;
+    jar?: CookieJar;
   },
 ): Promise<AuthorizeResult> => {
-  const jar = createCookieJar();
+  const jar = params.jar ?? createCookieJar();
   const verifier = randomBytes(32).toString('base64url');
   const start = new URL(`${baseUrl}/auth`);
   const query: Record<string, string> = {
@@ -89,7 +97,8 @@ export const authorize = async (
     state: 'client-state',
     code_challenge: createHash('sha256').update(verifier).digest('base64url'),
     code_challenge_method: 'S256',
-    resource: params.resource ?? `${baseUrl}/mcp`,
+    ...(params.resource === null ? {} : { resource: params.resource ?? `${baseUrl}/mcp` }),
+    ...params.extra,
   };
   for (const [key, value] of Object.entries(query)) start.searchParams.set(key, value);
 
@@ -123,6 +132,7 @@ export const authorize = async (
         code: next.searchParams.get('code') ?? undefined,
         iss: next.searchParams.get('iss') ?? undefined,
         error: next.searchParams.get('error') ?? undefined,
+        errorDescription: next.searchParams.get('error_description') ?? undefined,
         consentShown,
         hops,
         verifier,

@@ -7,6 +7,7 @@ import type { Config } from '../../config';
 import { type Logger, silentLogger } from '../../utils/logger';
 import { supportedScopes } from '../oauth-scopes';
 import { configDir } from '../token-persistence';
+import { createExpiringMap } from './expiring-map';
 import { createInteractionRoutes } from './interactions';
 import { deriveKeyRing, type KeyRing } from './keys';
 import { ACCESS_TOKEN_TTL_S, buildProvider } from './provider';
@@ -138,13 +139,17 @@ export const createAuthorizationServer = (
 
   // Grants revoked after a Zendesk 401: their still-unexpired access tokens are
   // refused until they would have expired anyway. In memory, like the sessions.
-  const revokedGrants = new Map<string, number>();
-  const isRevoked = (grantId: string): boolean => {
-    const until = revokedGrants.get(grantId);
-    if (until === undefined) return false;
-    if (until > Date.now()) return true;
-    revokedGrants.delete(grantId);
-    return false;
+  const revokedGrants = createExpiringMap<true>();
+
+  // Rejects on anything that is not one of our JWEs.
+  const readAccessToken = async (bearer: string): Promise<VerifiedAccessToken | undefined> => {
+    const { kid } = decodeProtectedHeader(bearer);
+    const keySet = ring.find((set) => set.accessToken.kid === kid);
+    // Stryker disable next-line ConditionalExpression: without it, reading the missing key set throws
+    // into the same undefined; the always-refuse sibling is killed.
+    if (!keySet) return undefined;
+    const { plaintext } = await compactDecrypt(bearer, keySet.accessToken.key);
+    return asVerified(JSON.parse(decoder.decode(plaintext)) as AccessTokenClaims, issuer, resource);
   };
 
   return {
@@ -157,6 +162,7 @@ export const createAuthorizationServer = (
       scopes_supported: supportedScopes(config.readOnly),
     },
     handle: async (req, res) => {
+      // Stryker disable next-line StringLiteral: a request reaching a node:http server always has req.url.
       const url = new URL(req.url ?? '/', issuer);
       if (url.pathname === '/oauth/callback' && req.method === 'GET') {
         interactions.upstreamCallback(res, url);
@@ -169,28 +175,14 @@ export const createAuthorizationServer = (
       await callback(req, res);
     },
     verifyAccessToken: async (bearer) => {
-      try {
-        const { kid } = decodeProtectedHeader(bearer);
-        const keySet = ring.find((set) => set.accessToken.kid === kid);
-        if (!keySet) return undefined;
-        const { plaintext } = await compactDecrypt(bearer, keySet.accessToken.key);
-        const verified = asVerified(
-          JSON.parse(decoder.decode(plaintext)) as AccessTokenClaims,
-          issuer,
-          resource,
-        );
-        return verified && !isRevoked(verified.grantId) ? verified : undefined;
-      } catch {
-        return undefined;
-      }
+      const verified = await readAccessToken(bearer).catch(() => undefined);
+      return verified && !revokedGrants.get(verified.grantId) ? verified : undefined;
     },
     // Never rejects: it runs fire-and-forget from a tool call's 401, where an
     // unhandled rejection would take the process down. The in-memory denial
     // lands first, so the grant's tokens stop working even if the store fails.
     revokeGrant: async (grantId) => {
-      const now = Date.now();
-      for (const [id, until] of revokedGrants) if (until <= now) revokedGrants.delete(id);
-      revokedGrants.set(grantId, now + ACCESS_TOKEN_TTL_S * 1000);
+      revokedGrants.set(grantId, true, ACCESS_TOKEN_TTL_S * 1000);
       try {
         const grant = await provider.Grant.find(grantId);
         await Promise.all([

@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { CompactEncrypt, exportJWK, SignJWT } from 'jose';
+import { CompactEncrypt, decodeJwt, decodeProtectedHeader, exportJWK, SignJWT } from 'jose';
 import { HttpResponse, http } from 'msw';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { deriveKeyRing } from '../../src/auth/server/keys';
@@ -15,6 +15,7 @@ import { makeConfig } from './harness';
 import {
   authorize,
   callMcp,
+  createCookieJar,
   DCR_REDIRECT,
   exchangeCode,
   refresh,
@@ -81,7 +82,10 @@ const cimdDocuments = async (): Promise<Record<string, unknown>> => ({
   },
 });
 
+const cimdRequests: string[] = [];
+
 const cimdFetch = async (input: string | URL | Request): Promise<Response> => {
+  cimdRequests.push(String(input));
   const doc = (await cimdDocuments())[String(input)];
   return doc ? Response.json(doc) : new Response('not found', { status: 404 });
 };
@@ -527,6 +531,260 @@ describe('HTTP authorization server', () => {
       const next = await refresh(base, clientId, tokens.body.refresh_token ?? '');
       expect(next.status).toBe(400);
       expect(next.body.error).toBe('invalid_grant');
+    });
+  });
+
+  describe('provider configuration', () => {
+    it('signs in to Zendesk again on every authorization, even with a live browser session', async () => {
+      await start();
+      const clientId = (await registerDcrClient(base)).body.client_id ?? '';
+      const jar = createCookieJar();
+      expect((await authorize(base, { clientId, redirectUri: DCR_REDIRECT, jar })).code).toEqual(
+        expect.any(String),
+      );
+      const again = await authorize(base, { clientId, redirectUri: DCR_REDIRECT, jar });
+      expect(again.code).toEqual(expect.any(String));
+      expect(again.hops).toContain('GET 302 /oauth/authorizations/new');
+      expect(zendesk.state.codeExchanges).toBe(2);
+      const silent = await authorize(base, {
+        clientId,
+        redirectUri: DCR_REDIRECT,
+        jar,
+        extra: { prompt: 'none' },
+      });
+      expect({ error: silent.error, description: silent.errorDescription }).toEqual({
+        error: 'interaction_required',
+        description: 'every authorization signs in to Zendesk again',
+      });
+    });
+
+    it('registers a DCR client as a public code-flow client with refresh by default', async () => {
+      await start();
+      const res = await fetch(`${base}/reg`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ redirect_uris: [DCR_REDIRECT] }),
+      });
+      const body = await res.json();
+      expect(res.status).toBe(201);
+      expect({
+        grant_types: body.grant_types,
+        response_types: body.response_types,
+        token_endpoint_auth_method: body.token_endpoint_auth_method,
+        id_token_signed_response_alg: body.id_token_signed_response_alg,
+      }).toMatchInlineSnapshot(`
+        {
+          "grant_types": [
+            "authorization_code",
+            "refresh_token",
+          ],
+          "id_token_signed_response_alg": "EdDSA",
+          "response_types": [
+            "code",
+          ],
+          "token_endpoint_auth_method": "none",
+        }
+      `);
+      const result = await authorize(base, { clientId: body.client_id, redirectUri: DCR_REDIRECT });
+      const tokens = await exchangeCode(base, body.client_id, DCR_REDIRECT, result);
+      expect(tokens.body.refresh_token).toEqual(expect.any(String));
+    });
+
+    it('advertises and accepts the code flow only', async () => {
+      await start();
+      const meta = await (await fetch(`${base}/.well-known/oauth-authorization-server`)).json();
+      expect(meta.response_types_supported).toEqual(['code']);
+      const { body } = await registerDcrClient(base, { response_types: ['code id_token'] });
+      expect(body.error).toBe('invalid_client_metadata');
+    });
+
+    const forwardedHttpsCookies = async () => {
+      const { body } = await registerDcrClient(base);
+      const res = await fetch(
+        `${base}/auth?client_id=${body.client_id}&redirect_uri=${encodeURIComponent(DCR_REDIRECT)}&response_type=code&scope=read&code_challenge=${'a'.repeat(43)}&code_challenge_method=S256`,
+        { redirect: 'manual', headers: { 'x-forwarded-proto': 'https' } },
+      );
+      return new Set(res.headers.getSetCookie().map((c) => /;\s*secure/i.test(c)));
+    };
+
+    it('trusts X-Forwarded-Proto behind an HTTPS public URL, so its cookies are Secure', async () => {
+      await start({ publicUrl: 'https://mcp.example.com' });
+      expect(await forwardedHttpsCookies()).toEqual(new Set([true]));
+    });
+
+    it('ignores X-Forwarded-Proto behind a plain HTTP public URL', async () => {
+      await start({ publicUrl: 'http://mcp.example.com' });
+      expect(await forwardedHttpsCookies()).toEqual(new Set([false]));
+    });
+
+    it('refuses a provider request from an origin outside the CORS allowlist', async () => {
+      await start({ corsOrigins: ['https://app.example'] });
+      const clientId = (await registerDcrClient(base)).body.client_id ?? '';
+      const res = await fetch(`${base}/token`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/x-www-form-urlencoded',
+          origin: 'https://evil.example',
+        },
+        body: new URLSearchParams({
+          grant_type: 'refresh_token',
+          client_id: clientId,
+          refresh_token: 'nope',
+        }),
+      });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({
+        error: 'invalid_request',
+        error_description: `origin https://evil.example not allowed for client: ${clientId}`,
+      });
+    });
+
+    it('renders an error it cannot send back to the client as an HTML page', async () => {
+      await start();
+      const res = await fetch(
+        `${base}/auth?client_id=unknown&response_type=code&redirect_uri=${encodeURIComponent(DCR_REDIRECT)}`,
+        { redirect: 'manual' },
+      );
+      expect(res.status).toBe(400);
+      expect(res.headers.get('content-type')).toBe('text/html; charset=utf-8');
+      expect(await res.text()).toMatchInlineSnapshot(
+        `"<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Sign-in failed</title></head><body><h1>Sign-in failed</h1><p>invalid_client: client is invalid</p></body></html>"`,
+      );
+    });
+
+    it('fetches a client metadata document over HTTPS on the default port only', async () => {
+      await start();
+      const fetched = async (clientId: string) => {
+        cimdRequests.length = 0;
+        await authorize(base, { clientId, redirectUri: 'https://tools.example.com/callback' });
+        return cimdRequests.length > 0;
+      };
+      expect(await fetched('https://tools.example.com:8443/oauth/client.json')).toBe(false);
+      expect(await fetched('http://tools.example.com/oauth/client.json')).toBe(false);
+      expect(await fetched('https://tools.example.com:443/oauth/client.json')).toBe(true);
+      expect(await fetched(UNKNOWN)).toBe(true);
+    });
+  });
+
+  describe('provider protocol', () => {
+    const form = (path: string, params: Record<string, string>) =>
+      fetch(`${base}${path}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded', connection: 'close' },
+        body: new URLSearchParams(params),
+      });
+
+    it('requires PKCE, from confidential clients too', async () => {
+      await start();
+      const refusal = async (client: string, redirectUri: string) => {
+        const res = await fetch(
+          `${base}/auth?client_id=${encodeURIComponent(client)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=read`,
+          { redirect: 'manual' },
+        );
+        const back = new URL(res.headers.get('location') ?? '', base);
+        return [back.searchParams.get('error'), back.searchParams.get('error_description')];
+      };
+      const expected = [
+        'invalid_request',
+        'Authorization Server policy requires PKCE to be used for this request',
+      ];
+      const clientId = (await registerDcrClient(base)).body.client_id ?? '';
+      expect(await refusal(clientId, DCR_REDIRECT)).toEqual(expected);
+      expect(await refusal(CHATGPT, CHATGPT_CALLBACK)).toEqual(expected);
+    });
+
+    it('defaults the resource to /mcp and issues for the granted one when the token request names none', async () => {
+      await start();
+      const clientId = (await registerDcrClient(base)).body.client_id ?? '';
+      const result = await authorize(base, {
+        clientId,
+        redirectUri: DCR_REDIRECT,
+        resource: null,
+      });
+      const res = await form('/token', {
+        grant_type: 'authorization_code',
+        client_id: clientId,
+        redirect_uri: DCR_REDIRECT,
+        code: result.code ?? '',
+        code_verifier: result.verifier,
+      });
+      const tokens = await res.json();
+      expect(res.status).toBe(200);
+      expect((await callMcp(base, tokens.access_token)).status).toBe(200);
+      const next = await form('/token', {
+        grant_type: 'refresh_token',
+        client_id: clientId,
+        refresh_token: tokens.refresh_token,
+      });
+      expect(next.status).toBe(200);
+      expect((await callMcp(base, (await next.json()).access_token)).status).toBe(200);
+    });
+
+    it('revokes a refresh token at the revocation endpoint', async () => {
+      await start();
+      const { clientId, tokens } = await signInWithDcr(base);
+      const res = await form('/token/revocation', {
+        client_id: clientId,
+        token: tokens.body.refresh_token ?? '',
+      });
+      expect(res.status).toBe(200);
+      expect((await refresh(base, clientId, tokens.body.refresh_token ?? '')).body.error).toBe(
+        'invalid_grant',
+      );
+    });
+
+    it('issues an ID token for the Zendesk account when openid is asked for', async () => {
+      await start();
+      const result = await authorize(base, {
+        clientId: CLAUDE,
+        redirectUri: CLAUDE_CALLBACK,
+        scope: 'openid read write',
+      });
+      const tokens = await tokenRequest(base, {
+        grant_type: 'authorization_code',
+        client_id: CLAUDE,
+        redirect_uri: CLAUDE_CALLBACK,
+        code: result.code ?? '',
+        code_verifier: result.verifier,
+      });
+      const idToken = (tokens.body as { id_token?: string }).id_token ?? '';
+      expect(decodeJwt(idToken)).toMatchObject({ sub: 'zendesk:9999', aud: CLAUDE, iss: base });
+      expect(decodeProtectedHeader(idToken).alg).toBe('EdDSA');
+    });
+
+    it('keeps an interaction ten minutes and a browser session twelve hours', async () => {
+      await start();
+      const clientId = (await registerDcrClient(base)).body.client_id ?? '';
+      const jar = createCookieJar();
+      const lifetimes = new Map<string, number>();
+      const record = jar.store;
+      jar.store = (res: Response) => {
+        for (const cookie of res.headers.getSetCookie()) {
+          const expires = /expires=([^;]+)/i.exec(cookie)?.[1];
+          if (expires) {
+            lifetimes.set(cookie.split('=')[0] ?? '', Date.parse(expires) - Date.now());
+          }
+        }
+        record(res);
+      };
+      await authorize(base, { clientId, redirectUri: DCR_REDIRECT, jar });
+      const minutes = (name: string) => Math.round((lifetimes.get(name) ?? 0) / 60_000);
+      expect(minutes('_interaction')).toBe(10);
+      expect(minutes('_session')).toBe(12 * 60);
+    });
+
+    it('narrows the grantable scopes to read under --read-only', async () => {
+      await start({ readOnly: true });
+      const meta = await (await fetch(`${base}/.well-known/oauth-authorization-server`)).json();
+      expect(meta.scopes_supported).toEqual(['read', 'offline_access', 'openid']);
+      const clientId = (await registerDcrClient(base)).body.client_id ?? '';
+      const result = await authorize(base, {
+        clientId,
+        redirectUri: DCR_REDIRECT,
+        scope: 'read write',
+      });
+      const tokens = await exchangeCode(base, clientId, DCR_REDIRECT, result);
+      expect(tokens.body.scope).toBe('read');
     });
   });
 

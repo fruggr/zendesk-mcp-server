@@ -5,6 +5,7 @@ import { type Logger, silentLogger } from '../../utils/logger';
 import { generateCodeChallenge, generateCodeVerifier } from '../browser-oauth';
 import { requestedScope } from '../oauth-scopes';
 import { renderConsentPage, renderErrorPage } from './consent';
+import { createExpiringMap } from './expiring-map';
 import type { SealedCollection } from './store';
 import { canSkipConsent } from './trusted-clients';
 import {
@@ -34,22 +35,6 @@ export interface InteractionDeps {
   readonly logger?: Logger | undefined;
 }
 
-const createPendingMap = <T>() => {
-  const entries = new Map<string, { value: T; expiresAt: number }>();
-  return {
-    set: (key: string, value: T) => {
-      const now = Date.now();
-      for (const [k, entry] of entries) if (entry.expiresAt <= now) entries.delete(k);
-      entries.set(key, { value, expiresAt: now + PENDING_TTL_MS });
-    },
-    take: (key: string): T | undefined => {
-      const entry = entries.get(key);
-      entries.delete(key);
-      return entry && entry.expiresAt > Date.now() ? entry.value : undefined;
-    },
-  };
-};
-
 const sendHtml = (res: ServerResponse, status: number, html: string): void => {
   res.writeHead(status, {
     'Content-Type': 'text/html; charset=utf-8',
@@ -75,6 +60,11 @@ export const consentMemoryKey = (
     .update(JSON.stringify([accountId, clientId, [...redirectUris].sort()]))
     .digest('base64url');
 
+// oidc-provider throws these on a missing or foreign interaction cookie: an
+// expired link, not a server fault.
+const isExpiredLink = (err: unknown): boolean =>
+  err instanceof Error && (err.name === 'SessionNotFound' || err.name === 'InvalidRequest');
+
 // Uids are nanoids; anything else did not come from oidc-provider.
 const UID = /^[\w-]{1,64}$/;
 
@@ -88,8 +78,8 @@ export const createInteractionRoutes = (deps: InteractionDeps) => {
   const { provider, upstream, issuer } = deps;
   const logger = deps.logger ?? silentLogger;
   const callbackUrl = `${issuer}/oauth/callback`;
-  const verifiers = createPendingMap<string>();
-  const upstreamTokens = createPendingMap<ZendeskTokenSet>();
+  const verifiers = createExpiringMap<string>();
+  const upstreamTokens = createExpiringMap<ZendeskTokenSet>();
 
   type Details = Awaited<ReturnType<Provider['interactionDetails']>>;
 
@@ -101,7 +91,7 @@ export const createInteractionRoutes = (deps: InteractionDeps) => {
 
   const startUpstreamLogin = (res: ServerResponse, uid: string): void => {
     const verifier = generateCodeVerifier();
-    verifiers.set(uid, verifier);
+    verifiers.set(uid, verifier, PENDING_TTL_MS);
     redirect(
       res,
       buildZendeskAuthorizeUrl(upstream, {
@@ -117,10 +107,9 @@ export const createInteractionRoutes = (deps: InteractionDeps) => {
     req: IncomingMessage,
     res: ServerResponse,
     details: Details,
+    { accountId, clientId }: { accountId: string; clientId: string },
     tokens: ZendeskTokenSet,
   ): Promise<void> => {
-    const accountId = String(details.session?.accountId);
-    const clientId = String(details.params['client_id']);
     const grant = new provider.Grant({ accountId, clientId });
     const missing = details.prompt.details as {
       missingOIDCScope?: string[];
@@ -171,7 +160,7 @@ export const createInteractionRoutes = (deps: InteractionDeps) => {
     if (skip) {
       const tokens = upstreamTokens.take(context.pendingKey);
       if (!tokens) return deny(req, res, 'The Zendesk sign-in expired. Try again.');
-      return approve(req, res, details, tokens);
+      return approve(req, res, details, context, tokens);
     }
     const missing = details.prompt.details as { missingResourceScopes?: Record<string, string[]> };
     const scopes = [...new Set(Object.values(missing.missingResourceScopes ?? {}).flat())];
@@ -209,7 +198,11 @@ export const createInteractionRoutes = (deps: InteractionDeps) => {
       );
       const identity = await fetchZendeskIdentity(upstream, tokens.accessToken);
       const accountId = `zendesk:${identity.id}`;
-      upstreamTokens.set(`${accountId}|${String(details.params['client_id'])}`, tokens);
+      upstreamTokens.set(
+        `${accountId}|${String(details.params['client_id'])}`,
+        tokens,
+        PENDING_TTL_MS,
+      );
       await finish(req, res, { login: { accountId } });
     } catch (err) {
       if (!isUpstreamAuthError(err)) throw err;
@@ -226,11 +219,13 @@ export const createInteractionRoutes = (deps: InteractionDeps) => {
     const tokens = upstreamTokens.take(context.pendingKey);
     if (!tokens) return deny(req, res, 'The Zendesk sign-in expired. Try again.');
     await deps.consentMemory.set(context.memoryKey, true, CONSENT_MEMORY_TTL_S);
-    return approve(req, res, details, tokens);
+    return approve(req, res, details, context, tokens);
   };
 
   const routes = async (req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> => {
-    const [, , uid = '', action] = url.pathname.split('/');
+    const segments = url.pathname.split('/');
+    // Stryker disable next-line StringLiteral: any default the UID pattern rejects gets the same 404.
+    const [, , uid = '', action] = segments;
     if (!UID.test(uid)) return sendHtml(res, 404, renderErrorPage('Not found', EXPIRED));
     if (req.method === 'GET' && action === undefined) return showInteraction(req, res, uid);
     if (req.method === 'GET' && action === 'callback')
@@ -246,7 +241,9 @@ export const createInteractionRoutes = (deps: InteractionDeps) => {
   return {
     /** `/oauth/callback`: the one redirect URI registered at Zendesk. */
     upstreamCallback: (res: ServerResponse, url: URL): void => {
-      const uid = url.searchParams.get('state') ?? '';
+      const state = url.searchParams.get('state');
+      // Stryker disable next-line StringLiteral: any default the UID pattern rejects gets the same 400.
+      const uid = state ?? '';
       if (!UID.test(uid)) {
         sendHtml(res, 400, renderErrorPage('Sign-in failed', EXPIRED));
         return;
@@ -262,10 +259,7 @@ export const createInteractionRoutes = (deps: InteractionDeps) => {
       try {
         await routes(req, res, url);
       } catch (err) {
-        // oidc-provider throws SessionNotFound & co. on a missing or foreign
-        // interaction cookie: that is an expired link, not a server fault.
-        const name = err instanceof Error ? err.name : '';
-        if (name !== 'SessionNotFound' && name !== 'InvalidRequest') throw err;
+        if (!isExpiredLink(err)) throw err;
         if (!res.headersSent) sendHtml(res, 400, renderErrorPage('Sign-in failed', EXPIRED));
       }
     },

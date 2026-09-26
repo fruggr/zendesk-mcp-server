@@ -1,4 +1,9 @@
-import Provider, { type Configuration, errors, interactionPolicy } from 'oidc-provider';
+import Provider, {
+  type Configuration,
+  type ErrorOut,
+  errors,
+  interactionPolicy,
+} from 'oidc-provider';
 import { renderErrorPage } from './consent';
 import type { KeyRing } from './keys';
 import { createCimdFetch, type Fetch } from './trusted-clients';
@@ -39,20 +44,27 @@ export interface ProviderOptions {
 // just happened in this very authorization through, or it would loop.
 const policyWithUpstreamLogin = () => {
   const policy = interactionPolicy.base();
-  policy
-    .get('login')
-    ?.checks.add(
-      new interactionPolicy.Check(
-        'upstream_login_required',
-        'every authorization signs in to Zendesk again',
-        (ctx) =>
-          ctx.oidc.result?.['login'] === undefined
-            ? interactionPolicy.Check.REQUEST_PROMPT
-            : interactionPolicy.Check.NO_NEED_TO_PROMPT,
-      ),
-    );
+  // Stryker disable next-line OptionalChaining: the base policy always has a login prompt.
+  policy.get('login')?.checks.add(
+    new interactionPolicy.Check(
+      // Stryker disable next-line StringLiteral: the reason only reaches prompt.reasons, which nothing reads.
+      'upstream_login_required',
+      'every authorization signs in to Zendesk again',
+      (ctx) =>
+        ctx.oidc.result?.['login'] === undefined
+          ? interactionPolicy.Check.REQUEST_PROMPT
+          : interactionPolicy.Check.NO_NEED_TO_PROMPT,
+    ),
+  );
   return policy;
 };
+
+/** The page oidc-provider shows when it cannot send the error back to the client. */
+export const providerErrorPage = (out: ErrorOut): string =>
+  renderErrorPage(
+    'Sign-in failed',
+    `${out.error}: ${out.error_description ?? 'the authorization request was rejected'}`,
+  );
 
 export const buildProvider = (options: ProviderOptions): Provider => {
   const { ring, resource } = options;
@@ -96,6 +108,7 @@ export const buildProvider = (options: ProviderOptions): Provider => {
       Session: SESSION_TTL_S,
     },
     features: {
+      // Stryker disable next-line ObjectLiteral,BooleanLiteral: our router takes every /interaction/ path first.
       devInteractions: { enabled: false },
       registration: { enabled: true },
       revocation: { enabled: true },
@@ -108,12 +121,17 @@ export const buildProvider = (options: ProviderOptions): Provider => {
         // library's fetch; this only pins the scheme and port.
         allowFetch: async (_ctx, clientId) => {
           const url = new URL(clientId);
-          return url.protocol === 'https:' && (url.port === '' || url.port === '443');
+          // Stryker disable next-line ConditionalExpression,BooleanLiteral: oidc-provider only fetches https:
+          // ids, so this is defence in depth; its always-refuse sibling is killed.
+          if (url.protocol !== 'https:') return false;
+          // WHATWG URL drops an explicit :443, so any port left is a non-default one.
+          return url.port === '';
         },
       },
       resourceIndicators: {
         enabled: true,
         defaultResource: () => resource,
+        // Stryker disable next-line BooleanLiteral: with one resource, the default names the one the grant holds.
         useGrantedResource: () => true,
         getResourceServerInfo: (_ctx, indicator) => {
           if (indicator !== resource) throw new errors.InvalidTarget();
@@ -137,13 +155,17 @@ export const buildProvider = (options: ProviderOptions): Provider => {
       },
     },
     extraTokenClaims: async (_ctx, token) => {
+      // Stryker disable next-line ConditionalExpression,LogicalOperator: only code-flow access tokens are minted
+      // here, each with its grant; the always-skip sibling is killed.
       if (token.kind !== 'AccessToken' || !token.grantId) return undefined;
       try {
         return { zd: await options.zendeskGrants.accessToken(token.grantId), gid: token.grantId };
       } catch (err) {
         if (isGrantUnavailableError(err)) {
+          // Stryker disable next-line ObjectLiteral: detail and cause only reach oidc-provider's debug log.
           // biome-ignore lint/style/useErrorCause: oidc-provider errors take the cause inside their one options argument, which the rule does not read.
           throw new errors.InvalidGrant({
+            // Stryker disable next-line StringLiteral: only reaches oidc-provider's debug log.
             detail: 'the Zendesk authorization behind this grant is no longer valid',
             cause: err,
           });
@@ -151,7 +173,12 @@ export const buildProvider = (options: ProviderOptions): Provider => {
         throw err;
       }
     },
-    findAccount: async (_ctx, sub) => ({ accountId: sub, claims: async () => ({ sub }) }),
+    findAccount: async (_ctx, sub) => ({
+      accountId: sub,
+      // Stryker disable next-line ArrowFunction,ObjectLiteral: the ID token's sub comes from accountId,
+      // and no other claim is ever released (no userinfo, no profile scope).
+      claims: async () => ({ sub }),
+    }),
     // A fresh grant per authorization, created by our consent step with the
     // Zendesk tokens of that very sign-in: never one remembered by the session.
     loadExistingGrant: async (ctx) => {
@@ -163,11 +190,9 @@ export const buildProvider = (options: ProviderOptions): Provider => {
       policy: policyWithUpstreamLogin(),
     },
     renderError: async (ctx, out) => {
+      // Stryker disable next-line StringLiteral: with the type cleared, koa infers html from the '<' body.
       ctx.type = 'html';
-      ctx.body = renderErrorPage(
-        'Sign-in failed',
-        `${out['error'] ?? 'error'}: ${out['error_description'] ?? 'the authorization request was rejected'}`,
-      );
+      ctx.body = providerErrorPage(out);
     },
   });
   provider.proxy = options.behindProxy;
