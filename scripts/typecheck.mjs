@@ -26,7 +26,7 @@
 // to TypeScript 6 (JS, under the `typescript-legacy` alias) — also the
 // automatic fallback for any other failure of the pass.
 //
-// Override the auto-detection with ZENDESK_MCP_TSC=native|legacy. `native` is
+// Override the auto-detection with TYPECHECK_TSC=native|legacy. `native` is
 // a pure compiler selection with zero filesystem side effects — under PRoot
 // it reproduces the raw upstream failure; the un-hardlink pass runs only on
 // auto-detection. Retire this shim and the `typescript-legacy` alias once
@@ -53,11 +53,11 @@ import { fileURLToPath } from 'node:url';
 // Explicit override, normalized so casing/whitespace variants ("Native",
 // "legacy\n") are honored. An unrecognized value warns and falls through to
 // auto-detection rather than being silently ignored.
-const rawForced = process.env.ZENDESK_MCP_TSC;
+const rawForced = process.env.TYPECHECK_TSC;
 const forced = rawForced?.trim().toLowerCase();
 if (rawForced && forced !== 'native' && forced !== 'legacy') {
   console.error(
-    `[typecheck] ignoring unrecognized ZENDESK_MCP_TSC=${JSON.stringify(rawForced)} (expected "native" or "legacy"); auto-detecting`,
+    `[typecheck] ignoring unrecognized TYPECHECK_TSC=${JSON.stringify(rawForced)} (expected "native" or "legacy"); auto-detecting`,
   );
 }
 
@@ -177,7 +177,7 @@ const ensureUnshared = () => {
 // publishes no @typescript/typescript-android-arm64, so Termux hits this):
 // the platform package is simply absent from disk and tsgo cannot launch.
 // Detected by resolving the platform package through typescript's own module
-// tree — the JS fallback is the only option there, whatever ZENDESK_MCP_TSC
+// tree — the JS fallback is the only option there, whatever TYPECHECK_TSC
 // says about un-hardlinking.
 const nativeUnavailable = () => {
   try {

@@ -63,7 +63,7 @@ so (and logs `oauth_callback_listen_failed`).
 Usually another instance of this server is signing in right now: the port is
 what keeps the two flows from overlapping. Finish that browser window, then
 retry the call — the port frees and the second flow starts. If an unrelated
-program holds the port, pick a free one with `ZENDESK_OAUTH_CALLBACK_PORT=<port>`
+program holds the port, pick a free one with `OAUTH_CALLBACK_PORT=<port>`
 (or `--callback-port <port>`), and register the matching
 `http://localhost:<port>/callback` redirect URL in your Zendesk OAuth client.
 
@@ -110,7 +110,7 @@ stale token. Only an expired or invalid refresh token triggers a new browser
 sign-in.
 
 If you still re-authenticate every time, check that the file is writable
-([`ZENDESK_TOKEN_FILE`](configuration.md#zendesk_token_file) to relocate it) and
+([`OAUTH_TOKEN_FILE`](configuration.md#oauth_token_file) to relocate it) and
 look for `token_persist_failed` in the logs.
 
 ## I signed in again after upgrading, and there is an old `<subdomain>.json`
@@ -138,7 +138,7 @@ token on every use, so whichever refreshes second is rejected and drops the
 shared record, costing you one sign-in. And a `--read-only` instance sharing a
 record with a read-write one *will* use the write-capable token in it: what
 bounds a read-only server to reads is having its own file, which pinning both to
-one [`ZENDESK_TOKEN_FILE`](configuration.md#zendesk_token_file) gives up. Give
+one [`OAUTH_TOKEN_FILE`](configuration.md#oauth_token_file) gives up. Give
 them separate files — or separate OAuth clients — if either matters.
 
 They can keep the same callback port, and should: one registered redirect URL

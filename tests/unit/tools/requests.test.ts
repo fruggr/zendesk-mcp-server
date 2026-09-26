@@ -994,7 +994,7 @@ describe('get_request', () => {
     );
     await expect(
       textOf('get_request', { request_id: 5001, include_comments: true }),
-    ).rejects.toThrow(/ZENDESK_MAX_COMMENT_PAGES/);
+    ).rejects.toThrow(/COMMENT_MAX_PAGES/);
   });
 
   // `users` is a documented sideload of this endpoint, so it is asked for by

@@ -139,7 +139,7 @@ Signing in needs a Zendesk OAuth client, so register one first (next section).
 2. Create a **public** client:
    - **Identifier**: `<your-subdomain>_zendesk` (or set `ZENDESK_OAUTH_CLIENT_ID`)
    - **Redirect URL**: `http://localhost:27439/callback` (change the port to match
-     `ZENDESK_OAUTH_CALLBACK_PORT` / `--callback-port` if you override it; Zendesk
+     `OAUTH_CALLBACK_PORT` / `--callback-port` if you override it; Zendesk
      accepts several redirect URLs, one per line)
 
 If the client restricts its **allowed scopes**, it needs `read` — plus `write`
@@ -151,7 +151,7 @@ window and returns the authorize URL in a tool message. The call does not block
 waiting for sign-in, so authenticate in the browser and then retry the request.
 The token is persisted to an owner-only file and reused across restarts, so you
 don't authenticate again every time your MCP client respawns the server (path
-and overrides: [`ZENDESK_TOKEN_FILE`](docs/configuration.md#zendesk_token_file)).
+and overrides: [`OAUTH_TOKEN_FILE`](docs/configuration.md#oauth_token_file)).
 Several instances can run side by side — a read-write one and a `--read-only`
 one, say — without trading credentials.
 
@@ -328,7 +328,7 @@ to turn each piece off: **[docs/help-center-context.md](docs/help-center-context
 
 The complete reference for the CLI flags (`--mode`, `--namespace`,
 `--read-only`, `--transport`, `--public-url`, and so on) and the environment
-variables (`ZENDESK_SUBDOMAIN`, `ZENDESK_TOKEN_FILE`, `PUBLIC_URL`, the
+variables (`ZENDESK_SUBDOMAIN`, `OAUTH_TOKEN_FILE`, `PUBLIC_URL`, the
 attachment-vision caps) lives in
 **[docs/configuration.md](docs/configuration.md)**. Every variable has its own
 anchor, so you can deep-link a specific setting.

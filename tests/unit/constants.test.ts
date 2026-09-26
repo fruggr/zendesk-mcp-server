@@ -38,24 +38,32 @@ describe('CHARACTER_LIMIT (positiveIntEnv)', () => {
     // Stubbed rather than left to the ambient environment: positiveIntEnv reads
     // the variable at import time, so a value set in the test process would
     // decide this assertion. Empty is also the case the shell produces with
-    // `ZENDESK_CHARACTER_LIMIT="$UNSET"`, and it must fall back too.
-    vi.stubEnv('ZENDESK_CHARACTER_LIMIT', '');
+    // `RESPONSE_CHARACTER_LIMIT="$UNSET"`, and it must fall back too.
+    vi.stubEnv('RESPONSE_CHARACTER_LIMIT', '');
     expect(await load()).toBe(25_000);
   });
 
   it('honors a lower override, which is what makes truncation testable', async () => {
-    vi.stubEnv('ZENDESK_CHARACTER_LIMIT', '500');
+    vi.stubEnv('RESPONSE_CHARACTER_LIMIT', '500');
     expect(await load()).toBe(500);
   });
 
   it('falls back to the default on a non-positive value', async () => {
-    vi.stubEnv('ZENDESK_CHARACTER_LIMIT', '0');
+    vi.stubEnv('RESPONSE_CHARACTER_LIMIT', '0');
     expect(await load()).toBe(25_000);
   });
 
   it('falls back to the default on a fractional value', async () => {
-    vi.stubEnv('ZENDESK_CHARACTER_LIMIT', '1.5');
+    vi.stubEnv('RESPONSE_CHARACTER_LIMIT', '1.5');
     expect(await load()).toBe(25_000);
+  });
+
+  it('still honors the legacy ZENDESK_CHARACTER_LIMIT', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.stubEnv('RESPONSE_CHARACTER_LIMIT', undefined);
+    vi.stubEnv('ZENDESK_CHARACTER_LIMIT', '500');
+    expect(await load()).toBe(500);
+    vi.restoreAllMocks();
   });
 });
 
@@ -75,21 +83,21 @@ describe('REORDER_CONFIRM_THRESHOLD (positiveIntEnv)', () => {
   });
 
   it('honors a valid positive integer', async () => {
-    vi.stubEnv('ZENDESK_REORDER_CONFIRM_THRESHOLD', '5');
+    vi.stubEnv('REORDER_CONFIRM_THRESHOLD', '5');
     expect(await load()).toBe(5);
   });
 
   it('falls back to the default on a fractional value', async () => {
-    vi.stubEnv('ZENDESK_REORDER_CONFIRM_THRESHOLD', '1.5');
+    vi.stubEnv('REORDER_CONFIRM_THRESHOLD', '1.5');
     expect(await load()).toBe(20);
   });
 
   it('falls back to the default on a non-numeric or non-positive value', async () => {
-    vi.stubEnv('ZENDESK_REORDER_CONFIRM_THRESHOLD', 'lots');
+    vi.stubEnv('REORDER_CONFIRM_THRESHOLD', 'lots');
     expect(await load()).toBe(20);
     // Re-evaluate the module a second time within this test with a new value.
     vi.resetModules();
-    vi.stubEnv('ZENDESK_REORDER_CONFIRM_THRESHOLD', '0');
+    vi.stubEnv('REORDER_CONFIRM_THRESHOLD', '0');
     expect(await load()).toBe(20);
   });
 });
@@ -112,22 +120,22 @@ describe('MAX_RESPONSE_BYTES (positiveIntEnv)', () => {
   });
 
   it('honors a valid positive integer', async () => {
-    vi.stubEnv('ZENDESK_MAX_RESPONSE_BYTES', String(512 * 1024));
+    vi.stubEnv('RESPONSE_MAX_BYTES', String(512 * 1024));
     expect(await load()).toBe(512 * 1024);
   });
 
   it('falls back to the default when empty or non-numeric', async () => {
-    vi.stubEnv('ZENDESK_MAX_RESPONSE_BYTES', '');
+    vi.stubEnv('RESPONSE_MAX_BYTES', '');
     expect(await load()).toBe(DEFAULT_BUDGET);
     vi.resetModules();
-    vi.stubEnv('ZENDESK_MAX_RESPONSE_BYTES', 'not-a-number');
+    vi.stubEnv('RESPONSE_MAX_BYTES', 'not-a-number');
     expect(await load()).toBe(DEFAULT_BUDGET);
   });
 
   // Lowering is the useful direction; raising would emit past what the transport
   // carries and break the client, where no guard of ours runs.
   it('clamps an override above the budget instead of obeying it', async () => {
-    vi.stubEnv('ZENDESK_MAX_RESPONSE_BYTES', String(50 * 1024 * 1024));
+    vi.stubEnv('RESPONSE_MAX_BYTES', String(50 * 1024 * 1024));
     expect(await load()).toBe(DEFAULT_BUDGET);
   });
 });

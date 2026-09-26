@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConfigSchema, DEFAULT_NAMESPACES, loadConfig, VALUE_FLAG_NAMES } from '../../src/config';
 
 // Cleared as one list: a suite that clears a subset only passes while the one before
@@ -8,17 +8,20 @@ const LOAD_CONFIG_ENV = [
   'ZENDESK_OAUTH_CLIENT_ID',
   'LOG_LEVEL',
   'TRANSPORT',
-  'HOST',
+  'LISTEN_HOST',
   'PORT',
   'PUBLIC_URL',
   'CORS_ORIGIN',
-  'ZENDESK_OAUTH_CALLBACK_PORT',
+  'OAUTH_CALLBACK_PORT',
   'HC_RESOURCE_SCHEME',
   'OAUTH_MASTER_SECRET',
   'OAUTH_MASTER_SECRET_FILE',
   'OAUTH_STORE',
   'OAUTH_STORE_ADAPTER',
   'OAUTH_TRUSTED_CLIENTS',
+  // Legacy names, still read until 3.0.0 (src/utils/env.ts).
+  'HOST',
+  'ZENDESK_OAUTH_CALLBACK_PORT',
 ] as const;
 
 const clearLoadConfigEnv = (): void => {
@@ -209,9 +212,9 @@ describe('loadConfig', () => {
       expect(config.port).toBe(8080);
     });
 
-    it('reads TRANSPORT/HOST/PORT from env when CLI omits them', () => {
+    it('reads TRANSPORT/LISTEN_HOST/PORT from env when CLI omits them', () => {
       process.env['TRANSPORT'] = 'http';
-      process.env['HOST'] = '0.0.0.0';
+      process.env['LISTEN_HOST'] = '0.0.0.0';
       process.env['PORT'] = '4000';
       const config = loadConfig(['mycompany']);
       expect(config.transport).toBe('http');
@@ -461,14 +464,14 @@ describe('loadConfig', () => {
       expect(config.callbackPort).toBe(51000);
     });
 
-    it('reads ZENDESK_OAUTH_CALLBACK_PORT from env', () => {
-      process.env['ZENDESK_OAUTH_CALLBACK_PORT'] = '52000';
+    it('reads OAUTH_CALLBACK_PORT from env', () => {
+      process.env['OAUTH_CALLBACK_PORT'] = '52000';
       const config = loadConfig(['mycompany']);
       expect(config.callbackPort).toBe(52000);
     });
 
     it('prefers --callback-port over the env var', () => {
-      process.env['ZENDESK_OAUTH_CALLBACK_PORT'] = '52000';
+      process.env['OAUTH_CALLBACK_PORT'] = '52000';
       const config = loadConfig(['mycompany', '--callback-port', '51000']);
       expect(config.callbackPort).toBe(51000);
     });
@@ -484,9 +487,46 @@ describe('loadConfig', () => {
       );
     });
 
-    it('rejects ZENDESK_OAUTH_CALLBACK_PORT env values that are not strictly numeric', () => {
-      process.env['ZENDESK_OAUTH_CALLBACK_PORT'] = '52000abc';
-      expect(() => loadConfig(['mycompany'])).toThrow(/Invalid ZENDESK_OAUTH_CALLBACK_PORT value/);
+    it('rejects OAUTH_CALLBACK_PORT env values that are not strictly numeric', () => {
+      process.env['OAUTH_CALLBACK_PORT'] = '52000abc';
+      expect(() => loadConfig(['mycompany'])).toThrow(/Invalid OAUTH_CALLBACK_PORT value/);
+    });
+
+    // The old names keep working until 3.0.0, and an error names the one the
+    // deployment set, not a variable it has never heard of.
+    describe('legacy names', () => {
+      beforeEach(() => {
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+      });
+      afterEach(() => {
+        vi.restoreAllMocks();
+      });
+
+      it('still reads ZENDESK_OAUTH_CALLBACK_PORT and HOST', () => {
+        process.env['ZENDESK_OAUTH_CALLBACK_PORT'] = '52000';
+        process.env['HOST'] = '127.0.0.1';
+        const config = loadConfig(['mycompany']);
+        expect(config.callbackPort).toBe(52000);
+        expect(config.host).toBe('127.0.0.1');
+      });
+
+      it('prefers the new name when both are set', () => {
+        process.env['ZENDESK_OAUTH_CALLBACK_PORT'] = '52000';
+        process.env['OAUTH_CALLBACK_PORT'] = '53000';
+        expect(loadConfig(['mycompany']).callbackPort).toBe(53000);
+      });
+
+      it('names the legacy variable when its value is invalid', () => {
+        process.env['ZENDESK_OAUTH_CALLBACK_PORT'] = '52000abc';
+        expect(() => loadConfig(['mycompany'])).toThrow(
+          /Invalid ZENDESK_OAUTH_CALLBACK_PORT value/,
+        );
+      });
+
+      it('names the legacy variable when it is empty', () => {
+        process.env['HOST'] = '';
+        expect(() => loadConfig(['mycompany'])).toThrow(/Empty HOST\./);
+      });
     });
   });
 
@@ -662,10 +702,10 @@ describe('loadConfig', () => {
       'ZENDESK_OAUTH_CLIENT_ID',
       'LOG_LEVEL',
       'TRANSPORT',
-      'HOST',
+      'LISTEN_HOST',
       'PORT',
       'PUBLIC_URL',
-      'ZENDESK_OAUTH_CALLBACK_PORT',
+      'OAUTH_CALLBACK_PORT',
       'HC_RESOURCE_SCHEME',
     ])('rejects an empty %s', (name) => {
       process.env[name] = '';
