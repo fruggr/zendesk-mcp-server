@@ -810,8 +810,10 @@ describe('HTTP authorization server', () => {
         tokens.body.refresh_token,
         next.body.refresh_token,
         clientId,
-        'zd-',
-        '9999',
+        // Long enough never to turn up by chance in base64url ciphertext.
+        'zd-access-',
+        'zd-refresh-',
+        'zendesk:',
       ]) {
         expect(raw).not.toContain(secret);
       }
