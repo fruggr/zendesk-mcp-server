@@ -184,15 +184,26 @@ export const createAuthorizationServer = (
         return undefined;
       }
     },
+    // Never rejects: it runs fire-and-forget from a tool call's 401, where an
+    // unhandled rejection would take the process down. The in-memory denial
+    // lands first, so the grant's tokens stop working even if the store fails.
     revokeGrant: async (grantId) => {
-      revokedGrants.set(grantId, Date.now() + ACCESS_TOKEN_TTL_S * 1000);
-      const grant = await provider.Grant.find(grantId);
-      await Promise.all([
-        grant?.destroy(),
-        provider.RefreshToken.adapter.revokeByGrantId(grantId),
-        zendeskGrants.remove(grantId),
-      ]);
-      logger.info('oauth_grant_revoked', { reason: 'zendesk_unauthorized' });
+      const now = Date.now();
+      for (const [id, until] of revokedGrants) if (until <= now) revokedGrants.delete(id);
+      revokedGrants.set(grantId, now + ACCESS_TOKEN_TTL_S * 1000);
+      try {
+        const grant = await provider.Grant.find(grantId);
+        await Promise.all([
+          grant?.destroy(),
+          provider.RefreshToken.adapter.revokeByGrantId(grantId),
+          zendeskGrants.remove(grantId),
+        ]);
+        logger.info('oauth_grant_revoked', { reason: 'zendesk_unauthorized' });
+      } catch (err) {
+        logger.warn('oauth_grant_revoke_failed', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
     },
   };
 };

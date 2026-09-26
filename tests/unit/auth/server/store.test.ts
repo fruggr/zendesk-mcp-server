@@ -240,6 +240,18 @@ describe('openStore', () => {
     await expect(openStore('sqlite:///tmp/x.sqlite')).rejects.toThrow('"@keyv/sqlite"');
   });
 
+  it('raises a backend failure instead of reading it as a missing record', async () => {
+    const pkg = join(dir, 'down-store.mjs');
+    writeFileSync(
+      pkg,
+      `export default class { constructor() { this.opts = {}; } on() { return this; }
+        async get() { throw new Error('backend down'); } async set() {} async delete() { return false; }
+        async clear() {} }`,
+    );
+    const store = await openStore('custom://down', pathToFileURL(pkg).href);
+    await expect(store.get('k')).rejects.toThrow('backend down');
+  });
+
   it('rejects an unknown scheme', async () => {
     await expect(openStore('ftp://x')).rejects.toThrow('Unsupported OAuth store scheme "ftp:".');
   });

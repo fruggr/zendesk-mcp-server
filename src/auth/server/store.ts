@@ -207,17 +207,22 @@ const SCHEME_PACKAGES: Readonly<Record<string, string>> = {
  * are built in; the other schemes import their `@keyv/*` package on demand, and
  * `--oauth-store-adapter` loads any third-party Keyv store for the URI.
  */
+// Keyv's default swallows a backend failure and answers "not found": a store
+// outage would then read as every grant being gone, and clients would drop
+// their tokens. Raised instead, it is a 500 the client retries.
+const keyvOver = (store?: KeyvStoreAdapter): Keyv =>
+  new Keyv({ ...(store ? { store } : {}), emitErrors: false, throwOnErrors: true });
+
 export const openStore = async (uri: string, adapterPackage?: string): Promise<Keyv> => {
-  if (adapterPackage)
-    return new Keyv({ store: constructStore(await importOptional(adapterPackage), uri) });
+  if (adapterPackage) return keyvOver(constructStore(await importOptional(adapterPackage), uri));
   const { protocol } = new URL(uri);
-  if (protocol === 'memory:') return new Keyv();
-  if (protocol === 'file:') return new Keyv({ store: createFileStore(fileURLToPath(uri)) });
+  if (protocol === 'memory:') return keyvOver();
+  if (protocol === 'file:') return keyvOver(createFileStore(fileURLToPath(uri)));
   const specifier = SCHEME_PACKAGES[protocol];
   if (!specifier) {
     throw new Error(
       `Unsupported OAuth store scheme "${protocol}". Use file://, memory://, redis://, postgres://, sqlite://, or --oauth-store-adapter.`,
     );
   }
-  return new Keyv({ store: constructStore(await importOptional(specifier), uri) });
+  return keyvOver(constructStore(await importOptional(specifier), uri));
 };
