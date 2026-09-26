@@ -100,7 +100,7 @@ const readCapped = async (response: Response): Promise<Uint8Array> => {
   return Buffer.concat(chunks);
 };
 
-type Fetch = (url: string | URL, options: RequestInit) => Promise<Response>;
+export type Fetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
 /**
  * Wrap oidc-provider's `fetch` so CIMD documents go through

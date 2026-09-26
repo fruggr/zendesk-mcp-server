@@ -1,9 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node';
-import { supportedScopes } from '../auth/oauth-scopes';
+import {
+  type AuthorizationServer,
+  prepareAuthorizationServer,
+  type VerifiedAccessToken,
+} from '../auth/server/authorization-server';
+import type { Fetch } from '../auth/server/trusted-clients';
 import type { Config } from '../config';
-import { getOAuthUrls } from '../constants';
 import { createMcpServer } from '../server';
 import { type Logger, silentLogger } from '../utils/logger';
 
@@ -120,12 +124,12 @@ const handleCorsPreflight = (
   return true;
 };
 
-// The canonical `resource` URL advertised in the OAuth metadata. Explicit
-// --public-url / PUBLIC_URL wins (operators behind a reverse proxy must set it),
-// then host:port when host is routable rather than the bind wildcard, then
-// host:port with a warning, since clients strict about RFC 8707 reject that
-// identifier.
-export const resolveResourceUrl = (config: Config, logger: Logger = silentLogger): string => {
+// The public base URL: our OAuth issuer, with the protected resource at
+// `<base>/mcp`. Explicit --public-url / PUBLIC_URL wins (operators behind a
+// reverse proxy must set it), then host:port when host is routable rather than
+// the bind wildcard, then host:port with a warning, since clients strict about
+// RFC 8707 reject that identifier.
+export const resolvePublicUrl = (config: Config, logger: Logger = silentLogger): string => {
   if (config.publicUrl) return config.publicUrl.replace(TRAILING_SLASHES, '');
   if (!WILDCARD_HOSTS.has(config.host)) {
     return `http://${config.host}:${config.port}`;
@@ -146,8 +150,8 @@ export const resolveResourceUrl = (config: Config, logger: Logger = silentLogger
 // with ERR_INVALID_CHAR (which would surface as a 500 instead of the
 // spec-required 401).
 const MISSING_BEARER_MESSAGE =
-  'Missing Authorization: Bearer <zendesk-oauth-token> header. ' +
-  'HTTP mode requires per-user OAuth 2.1 PKCE - obtain a token from Zendesk via your MCP client.';
+  'Missing or invalid access token. Sign in through this server: its OAuth ' +
+  'authorization server is named in the protected resource metadata.';
 
 export const extractBearer = (request: IncomingMessage): string | undefined => {
   const header = request.headers['authorization'];
@@ -156,52 +160,13 @@ export const extractBearer = (request: IncomingMessage): string | undefined => {
   return header.slice('bearer '.length).trim();
 };
 
-interface OAuthMetadata {
-  protectedResource: {
-    authorization_servers: string[];
-    resource: string;
-    bearer_methods_supported: string[];
-    scopes_supported: string[];
-  };
-  authorizationServer: {
-    issuer: string;
-    authorization_endpoint: string;
-    token_endpoint: string;
-    response_types_supported: string[];
-    grant_types_supported: string[];
-    code_challenge_methods_supported: string[];
-    token_endpoint_auth_methods_supported: string[];
-    scopes_supported: string[];
-  };
-}
-
-export const buildOAuthMetadata = (
-  config: Config,
-  logger: Logger = silentLogger,
-): OAuthMetadata => {
-  const { authorizeUrl, tokenUrl } = getOAuthUrls(config.subdomain);
-  const issuer = `https://${config.subdomain}.zendesk.com`;
-  const resource = resolveResourceUrl(config, logger);
-  const scopes = () => supportedScopes(config.readOnly);
-  return {
-    protectedResource: {
-      authorization_servers: [issuer],
-      resource,
-      bearer_methods_supported: ['header'],
-      scopes_supported: scopes(),
-    },
-    authorizationServer: {
-      issuer,
-      authorization_endpoint: authorizeUrl,
-      token_endpoint: tokenUrl,
-      response_types_supported: ['code'],
-      grant_types_supported: ['authorization_code', 'refresh_token'],
-      code_challenge_methods_supported: ['S256'],
-      token_endpoint_auth_methods_supported: ['none'],
-      scopes_supported: scopes(),
-    },
-  };
-};
+// RFC 9728 section 3.1: the metadata of `<base>/mcp` lives at
+// `<base>/.well-known/oauth-protected-resource/mcp`. The bare path is served
+// too, for clients that probe it first.
+const PROTECTED_RESOURCE_PATHS = [
+  '/.well-known/oauth-protected-resource/mcp',
+  '/.well-known/oauth-protected-resource',
+];
 
 const sendJson = (res: ServerResponse, status: number, body: unknown): void => {
   res.writeHead(status, { 'Content-Type': 'application/json' });
@@ -233,10 +198,10 @@ const failRequest = (res: ServerResponse, err: unknown): void => {
   if (!res.writableEnded) res.end();
 };
 
-const sendUnauthorized = (res: ServerResponse, resource: string): void => {
+const sendUnauthorized = (res: ServerResponse, issuer: string): void => {
   // RFC 6750 + MCP 2025-06-18: the WWW-Authenticate header points the client
   // at the resource metadata that bootstraps the OAuth discovery flow.
-  const wwwAuthenticate = `Bearer resource_metadata="${resource}/.well-known/oauth-protected-resource", error="invalid_token", error_description="${MISSING_BEARER_MESSAGE}"`;
+  const wwwAuthenticate = `Bearer resource_metadata="${issuer}${PROTECTED_RESOURCE_PATHS[0]}", error="invalid_token", error_description="${MISSING_BEARER_MESSAGE}"`;
   sendJsonRpcError(res, 401, -32000, MISSING_BEARER_MESSAGE, {
     'WWW-Authenticate': wwwAuthenticate,
   });
@@ -245,11 +210,13 @@ const sendUnauthorized = (res: ServerResponse, resource: string): void => {
 interface Session {
   transport: NodeStreamableHTTPServerTransport;
   /**
-   * Latest bearer presented for this session. Tool calls read through this
-   * object so a client that refreshes its Zendesk token mid-session has the
-   * fresh token used on the next call.
+   * The Zendesk token carried by the latest access token presented for this
+   * session. Tool calls read through this object, so a client that refreshes
+   * mid-session has the fresh token used on the next call.
    */
-  auth: { bearer: string };
+  auth: { zendeskToken: string; grantId: string };
+  /** The signed-in user the session was opened for: another user's token cannot drive it. */
+  subject: string;
   /** Epoch ms of the last request routed to this session (idle eviction). */
   lastActivityAt: number;
   close(): Promise<void>;
@@ -356,6 +323,8 @@ export interface HttpTransportOptions {
   sweepIntervalMs?: number;
   /** Request body cap override (tests use a small cap to stay cheap). */
   maxBodyBytes?: number;
+  /** Base fetch for CIMD documents (tests serve metadata documents from memory). */
+  cimdFetch?: Fetch;
 }
 
 export const startHttpTransport = async (
@@ -363,25 +332,29 @@ export const startHttpTransport = async (
   logger: Logger = silentLogger,
   options: HttpTransportOptions = {},
 ): Promise<HttpServerHandle> => {
-  const metadata = buildOAuthMetadata(config, logger);
+  // Secret and store first: a bad secret or store stops startup before the
+  // port is bound.
+  const buildAuthorizationServer = await prepareAuthorizationServer(config, logger);
+  let authorizationServer: AuthorizationServer | undefined;
   const sessions = new Map<string, Session>();
   const idleTimeoutMs = options.sessionIdleTimeoutMs ?? SESSION_IDLE_TIMEOUT_MS;
   const maxBodyBytes = options.maxBodyBytes ?? MAX_BODY_BYTES;
 
   // Route a request onto an already-established session, adopting the presented
-  // bearer (clients may have refreshed their Zendesk token mid-session).
-  // Returns false when the id names no live session, so the caller falls
-  // through to initialization; true means the response was already handled.
+  // token (clients refresh mid-session). Returns false when the id names no live
+  // session of this user, so the caller falls through to initialization; true
+  // means the response was already handled.
   const dispatchToSession = async (
     req: IncomingMessage,
     res: ServerResponse,
     sessionId: string,
-    bearer: string,
+    token: VerifiedAccessToken,
   ): Promise<boolean> => {
     const session = sessions.get(sessionId);
-    if (!session) return false;
+    if (!session || session.subject !== token.subject) return false;
 
-    session.auth.bearer = bearer;
+    session.auth.zendeskToken = token.zendeskAccessToken;
+    session.auth.grantId = token.grantId;
     session.lastActivityAt = Date.now();
     const body =
       req.method === 'POST'
@@ -395,21 +368,27 @@ export const startHttpTransport = async (
     return true;
   };
 
-  const handleMcpRequest = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+  const handleMcpRequest = async (
+    req: IncomingMessage,
+    res: ServerResponse,
+    as: AuthorizationServer,
+  ): Promise<void> => {
     // MCP 2025-06-18: the Authorization header is validated on EVERY request,
     // not only at session initialization — a session id alone is not a
-    // credential. An unauthenticated request gets a 401 + WWW-Authenticate
-    // that bootstraps the OAuth flow on the client side.
+    // credential. Only a token we issued for this resource is accepted (no
+    // passthrough); anything else gets a 401 + WWW-Authenticate that
+    // bootstraps the OAuth flow on the client side.
     const bearer = extractBearer(req);
-    if (!bearer) {
-      sendUnauthorized(res, metadata.protectedResource.resource);
+    const token = bearer ? await as.verifyAccessToken(bearer) : undefined;
+    if (!token) {
+      sendUnauthorized(res, as.issuer);
       return;
     }
 
     const sessionId =
       typeof req.headers['mcp-session-id'] === 'string' ? req.headers['mcp-session-id'] : undefined;
 
-    if (sessionId && (await dispatchToSession(req, res, sessionId, bearer))) return;
+    if (sessionId && (await dispatchToSession(req, res, sessionId, token))) return;
 
     if (req.method !== 'POST') {
       // Non-POST without a session ID can't initialize a new session.
@@ -423,17 +402,24 @@ export const startHttpTransport = async (
       return;
     }
 
-    // New session: the bearer is held in a per-session mutable cell read by
-    // the per-session McpServer's token source — no async-local storage
-    // needed because each session has its own server instance.
-    const auth = { bearer };
-    const server = createMcpServer(config, () => auth.bearer, logger);
+    // New session: the Zendesk token is held in a per-session mutable cell read
+    // by the per-session McpServer's token source — no async-local storage
+    // needed because each session has its own server instance. A Zendesk 401
+    // ends the grant, so the client's next request re-runs authorization.
+    const auth = { zendeskToken: token.zendeskAccessToken, grantId: token.grantId };
+    const server = createMcpServer(
+      config,
+      () => auth.zendeskToken,
+      logger,
+      () => void as.revokeGrant(auth.grantId),
+    );
     const transport = new NodeStreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
       onsessioninitialized: (newId) => {
         sessions.set(newId, {
           transport,
           auth,
+          subject: token.subject,
           lastActivityAt: Date.now(),
           close: async () => {
             await transport.close();
@@ -449,13 +435,27 @@ export const startHttpTransport = async (
     await transport.handleRequest(req, res, body.value);
   };
 
-  // GET endpoints answered straight from static metadata — the two RFC 9728 /
-  // RFC 8414 discovery documents plus the health probe. Everything else routes
-  // to /mcp or 404s.
-  const staticGetRoutes: Record<string, unknown> = {
-    '/.well-known/oauth-protected-resource': metadata.protectedResource,
-    '/.well-known/oauth-authorization-server': metadata.authorizationServer,
-    '/healthz': { status: 'ok', subdomain: config.subdomain },
+  const route = async (
+    req: IncomingMessage,
+    res: ServerResponse,
+    as: AuthorizationServer,
+  ): Promise<void> => {
+    const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
+    if (req.method === 'GET' && PROTECTED_RESOURCE_PATHS.includes(url.pathname)) {
+      sendJson(res, 200, as.protectedResourceMetadata);
+      return;
+    }
+    if (req.method === 'GET' && url.pathname === '/healthz') {
+      sendJson(res, 200, { status: 'ok', subdomain: config.subdomain });
+      return;
+    }
+    if (url.pathname === '/mcp') {
+      await handleMcpRequest(req, res, as);
+      return;
+    }
+    // Everything else is the authorization server: discovery, /auth, /token,
+    // /reg, /jwks, the interactions and the Zendesk callback.
+    await as.handle(req, res);
   };
 
   const requestListener = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
@@ -465,21 +465,11 @@ export const startHttpTransport = async (
       // with the response regardless of which handler ends it.
       if (handleCorsPreflight(req, res, config.corsOrigins)) return;
       applyCorsHeaders(req, res, config.corsOrigins);
-
-      const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
-
-      const staticRoute = req.method === 'GET' ? staticGetRoutes[url.pathname] : undefined;
-      if (staticRoute) {
-        sendJson(res, 200, staticRoute);
+      if (!authorizationServer) {
+        sendJsonRpcError(res, 503, -32000, 'Server is starting.');
         return;
       }
-      if (url.pathname === '/mcp') {
-        await handleMcpRequest(req, res);
-        return;
-      }
-
-      res.writeHead(404, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Not found', path: url.pathname }));
+      await route(req, res, authorizationServer);
     } catch (err) {
       failRequest(res, err);
     }
@@ -499,7 +489,17 @@ export const startHttpTransport = async (
 
   const addr = httpServer.address();
   const boundPort = typeof addr === 'object' && addr !== null ? addr.port : config.port;
-  logger.info('http_transport_ready', { host: config.host, port: boundPort });
+  // The issuer needs the bound port when none was configured (port 0 in tests).
+  authorizationServer = buildAuthorizationServer(
+    resolvePublicUrl({ ...config, port: boundPort }, logger),
+    (origin) => resolveAllowedOrigin(origin, config.corsOrigins) !== undefined,
+    { fetch: options.cimdFetch },
+  );
+  logger.info('http_transport_ready', {
+    host: config.host,
+    port: boundPort,
+    issuer: authorizationServer.issuer,
+  });
 
   const sweepIdleSessions = async (): Promise<void> => {
     const cutoff = Date.now() - idleTimeoutMs;

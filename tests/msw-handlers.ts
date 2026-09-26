@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { HttpResponse, http } from 'msw';
+import { HttpResponse, http, passthrough } from 'msw';
 
 const BASE = 'https://testsubdomain.zendesk.com/api/v2';
 const HC_BASE = 'https://testsubdomain.zendesk.com/api/v2/help_center';
@@ -756,6 +756,9 @@ export const oauthTokenHandler = http.post('https://testsubdomain.zendesk.com/oa
  * `/users/me` answers only for a live access token. Opt-in via
  * `mswServer.use(...mock.handlers)`.
  */
+/** Lets requests to a local test server through without an MSW warning. */
+export const localServerPassthrough = http.all(/^http:\/\/127\.0\.0\.1:\d+\//, () => passthrough());
+
 export const createZendeskOAuthMock = (options: { accessTtlSeconds?: number } = {}) => {
   const accessTtl = options.accessTtlSeconds ?? 172800;
   let serial = 0;

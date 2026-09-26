@@ -29,6 +29,8 @@ export interface ZendeskGrantsOptions {
   readonly logger?: Logger | undefined;
   readonly refresh?: typeof refreshZendeskTokens | undefined;
   readonly now?: (() => number) | undefined;
+  /** How long before Zendesk's expiry to refresh; at least our access-token lifetime. */
+  readonly refreshMarginMs?: number | undefined;
 }
 
 export const grantUnavailableError = (): Error =>
@@ -50,10 +52,11 @@ export const createZendeskGrants = (options: ZendeskGrantsOptions): ZendeskGrant
   const logger = options.logger ?? silentLogger;
   const refresh = options.refresh ?? refreshZendeskTokens;
   const now = options.now ?? Date.now;
+  const margin = options.refreshMarginMs ?? ZENDESK_REFRESH_MARGIN_MS;
   const withLock = createKeyLock();
 
   const needsRefresh = (tokens: ZendeskTokenSet): boolean =>
-    tokens.expiresAt !== undefined && tokens.expiresAt - now() <= ZENDESK_REFRESH_MARGIN_MS;
+    tokens.expiresAt !== undefined && tokens.expiresAt - now() <= margin;
 
   const refreshed = async (grantId: string, refreshToken: string): Promise<string> => {
     let fresh: ZendeskTokenSet;

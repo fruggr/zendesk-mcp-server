@@ -18,6 +18,7 @@
     "typecheck": "node scripts/typecheck.mjs",
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
+    "dev:http": "tsx src/index.ts --transport http --host 127.0.0.1 --port 3000 --public-url http://localhost:3000 --mode all --namespace tickets --namespace help_center --namespace users --namespace requests",
     "prepare": "npm run build && (lefthook install || true)",
     "prepublishOnly": "npm run build",
     "check": "node scripts/biome.mjs check --error-on-warnings .",

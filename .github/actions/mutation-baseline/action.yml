@@ -41,7 +41,7 @@ runs:
       id: key
       shell: bash
       env:
-        PREFIX: mutation-baseline-${{ hashFiles('pnpm-lock.yaml', 'package.json', 'stryker.config.mjs', 'vitest.config.ts', 'tests/setup.ts', 'tests/msw-handlers.ts', 'tests/integration/harness.ts', 'tests/integration/core-scenarios.ts', 'tests/integration/stdio-harness.ts', '.nvmrc') }}
+        PREFIX: mutation-baseline-${{ hashFiles('pnpm-lock.yaml', 'package.json', 'stryker.config.mjs', 'vitest.config.ts', 'tests/setup.ts', 'tests/msw-handlers.ts', 'tests/integration/harness.ts', 'tests/integration/core-scenarios.ts', 'tests/integration/stdio-harness.ts', 'tests/integration/http-harness.ts', 'tests/integration/oauth-client.ts', '.nvmrc') }}
       run: |
         echo "prefix=${PREFIX}-" >> "$GITHUB_OUTPUT"
         echo "exact=${PREFIX}-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"

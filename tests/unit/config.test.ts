@@ -14,6 +14,11 @@ const LOAD_CONFIG_ENV = [
   'CORS_ORIGIN',
   'ZENDESK_OAUTH_CALLBACK_PORT',
   'HC_RESOURCE_SCHEME',
+  'OAUTH_MASTER_SECRET',
+  'OAUTH_MASTER_SECRET_FILE',
+  'OAUTH_STORE',
+  'OAUTH_STORE_ADAPTER',
+  'OAUTH_TRUSTED_CLIENTS',
 ] as const;
 
 const clearLoadConfigEnv = (): void => {
@@ -288,6 +293,84 @@ describe('loadConfig', () => {
     });
   });
 
+  describe('authorization server settings', () => {
+    it('leaves every knob unset or at its default', () => {
+      const config = loadConfig(['mycompany']);
+      expect(config.oauthMasterSecret).toBeUndefined();
+      expect(config.oauthMasterSecretFile).toBeUndefined();
+      expect(config.oauthStore).toBeUndefined();
+      expect(config.oauthStoreAdapter).toBeUndefined();
+      expect(config.oauthTrustedClients).toEqual([]);
+      expect(config.defaultTrustedClients).toBe(true);
+    });
+
+    it('reads the master secret from OAUTH_MASTER_SECRET only, never from a flag', () => {
+      process.env['OAUTH_MASTER_SECRET'] = 'c2VjcmV0';
+      expect(loadConfig(['mycompany']).oauthMasterSecret).toBe('c2VjcmV0');
+      expect(() => loadConfig(['mycompany', '--oauth-master-secret', 'x'])).toThrow();
+    });
+
+    it('rejects an empty OAUTH_MASTER_SECRET instead of generating one', () => {
+      process.env['OAUTH_MASTER_SECRET'] = '';
+      expect(() => loadConfig(['mycompany'])).toThrow(
+        'Empty OAUTH_MASTER_SECRET. Set it to a value, or unset it entirely.',
+      );
+    });
+
+    it('prefers the flags over the env vars', () => {
+      process.env['OAUTH_MASTER_SECRET_FILE'] = '/env/secret';
+      process.env['OAUTH_STORE'] = 'redis://env:6379';
+      process.env['OAUTH_STORE_ADAPTER'] = 'env-adapter';
+      const config = loadConfig([
+        'mycompany',
+        '--oauth-master-secret-file',
+        '/flag/secret',
+        '--oauth-store',
+        'file:///flag/store.json',
+        '--oauth-store-adapter',
+        'flag-adapter',
+      ]);
+      expect(config.oauthMasterSecretFile).toBe('/flag/secret');
+      expect(config.oauthStore).toBe('file:///flag/store.json');
+      expect(config.oauthStoreAdapter).toBe('flag-adapter');
+    });
+
+    it('falls back to the env vars', () => {
+      process.env['OAUTH_MASTER_SECRET_FILE'] = '/env/secret';
+      process.env['OAUTH_STORE'] = 'redis://env:6379';
+      process.env['OAUTH_STORE_ADAPTER'] = 'env-adapter';
+      const config = loadConfig(['mycompany']);
+      expect(config.oauthMasterSecretFile).toBe('/env/secret');
+      expect(config.oauthStore).toBe('redis://env:6379');
+      expect(config.oauthStoreAdapter).toBe('env-adapter');
+    });
+
+    it('rejects a store that is not a URI', () => {
+      expect(() => loadConfig(['mycompany', '--oauth-store', './store.json'])).toThrow();
+    });
+
+    it('merges trusted clients from the repeatable flag and the comma list', () => {
+      process.env['OAUTH_TRUSTED_CLIENTS'] =
+        ' https://b.example/c.json , ,https://c.example/c.json';
+      const config = loadConfig([
+        'mycompany',
+        '--oauth-trusted-client',
+        'https://a.example/c.json',
+        '--no-default-trusted-clients',
+      ]);
+      expect(config.oauthTrustedClients).toEqual([
+        'https://a.example/c.json',
+        'https://b.example/c.json',
+        'https://c.example/c.json',
+      ]);
+      expect(config.defaultTrustedClients).toBe(false);
+    });
+
+    it('rejects a trusted client that is not a URL', () => {
+      expect(() => loadConfig(['mycompany', '--oauth-trusted-client', 'claude.ai'])).toThrow();
+    });
+  });
+
   describe('hcResourceScheme', () => {
     it('defaults to zendesk-hc', () => {
       const config = loadConfig(['mycompany']);
@@ -418,7 +501,7 @@ describe('loadConfig', () => {
 
     it('covers every value-taking flag declared in CLI_OPTIONS', () => {
       // Guards the parametrised cases below against silently shrinking to zero.
-      expect(valueFlags).toHaveLength(11);
+      expect(valueFlags).toHaveLength(15);
     });
 
     it.each(valueFlags)('rejects %s as the last argument (value forgotten)', (flag) => {
