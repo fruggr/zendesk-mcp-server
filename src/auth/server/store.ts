@@ -90,9 +90,9 @@ export const createSealedCollection = <T>(
   };
 };
 
-// Keyv has no atomic read-modify-write; the grant index is the only such
-// update, so it is serialised per key in-process (single instance, ADR).
-const createKeyLock = () => {
+// Keyv has no atomic read-modify-write, so such updates (the grant index, the
+// Zendesk refresh) are serialised per key in-process (single instance, ADR).
+export const createKeyLock = () => {
   const tails = new Map<string, Promise<unknown>>();
   return <R>(lockKey: string, fn: () => Promise<R>): Promise<R> => {
     const run = (tails.get(lockKey) ?? Promise.resolve()).then(fn, fn);
