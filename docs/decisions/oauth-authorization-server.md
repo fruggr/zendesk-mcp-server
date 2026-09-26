@@ -187,8 +187,11 @@ Instead:
 - **Keyv** is the abstraction. `--oauth-store <uri>` picks the backend by URL
   scheme: `file://` (the default), `redis://`, `postgres://`, `sqlite://`,
   `memory://` (dev and tests).
-- Each adapter is an optional peer dependency, imported only when its scheme is
-  asked for. `--oauth-store-adapter <package>` loads any third-party Keyv store.
+- `file://` is a small in-repo Keyv store: atomic writes (tmp + rename), owner-
+  only permissions, and a refusal to start on a corrupt file rather than a
+  silent reset. `keyv-file` was rejected for lacking all three.
+- Each other adapter is an optional peer dependency, imported only when its
+  scheme is asked for. `--oauth-store-adapter <package>` loads any third-party Keyv store.
 - **Short-lived models stay in memory** whatever the store: sessions,
   interactions, authorization codes. A restart then costs only an in-flight
   login.
