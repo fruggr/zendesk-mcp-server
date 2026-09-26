@@ -33,7 +33,7 @@ The `<company>` part of that address. In `https://acme.zendesk.com` it is
 `acme`. You'll need it in a moment. It is often, but not always, the company's
 own name — read it off the address bar rather than guessing.
 
-**3. Node.js 20 or later**, on your computer.
+**3. Node.js 22 or later**, on your computer.
 
 Check what you have by opening a terminal and typing:
 
@@ -41,7 +41,7 @@ Check what you have by opening a terminal and typing:
 node --version
 ```
 
-If that prints something like `v20.11.0` or higher, you're set. If it says the
+If that prints something like `v22.0.0` or higher, you're set. If it says the
 command isn't found, install it from [nodejs.org](https://nodejs.org) — the
 version they offer by default is fine.
 
