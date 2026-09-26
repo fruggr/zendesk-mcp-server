@@ -90,7 +90,7 @@ Two consequences, and they pull in opposite directions.
 at startup. `zendesk-mcp-server < /dev/null` now exits immediately, which is
 intended (there is no client on the other end) and is documented as a symptom in
 `troubleshooting.md`. It is also why `scripts/smoke-test.mjs` had to stop
-spawning with `stdio: ['ignore', …]` and the Node 20 tarball job in `ci.yml` had
+spawning with `stdio: ['ignore', …]` and the engines-floor tarball job in `ci.yml` had
 to hold stdin open: otherwise both would have quietly stopped testing that the
 server *runs* and started testing that it exits.
 
