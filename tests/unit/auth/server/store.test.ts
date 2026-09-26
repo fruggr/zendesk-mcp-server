@@ -13,6 +13,7 @@ import {
 import { deriveKeyRing } from '../../../../src/auth/server/keys';
 import {
   createAdapterFactory,
+  createKeyLock,
   createSealedCollection,
   openStore,
   PERSISTENT_MODELS,
@@ -461,5 +462,39 @@ describe('openStore', () => {
     expect(() => openStore(uri)).toThrow(
       new Error(`Unsupported OAuth store scheme "${scheme}". Use file:// or memory://.`),
     );
+  });
+});
+
+describe('createKeyLock', () => {
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it('keeps a later caller waiting on the holder, after an earlier one has settled', async () => {
+    const withLock = createKeyLock();
+    const order: string[] = [];
+    let releaseB: () => void = () => undefined;
+    const a = withLock('k', async () => {
+      order.push('a');
+    });
+    const b = withLock(
+      'k',
+      () =>
+        new Promise<void>((resolve) => {
+          order.push('b-start');
+          releaseB = () => {
+            order.push('b-end');
+            resolve();
+          };
+        }),
+    );
+    await a;
+    await tick();
+    const c = withLock('k', async () => {
+      order.push('c');
+    });
+    await tick();
+    expect(order).toEqual(['a', 'b-start']);
+    releaseB();
+    await Promise.all([b, c]);
+    expect(order).toEqual(['a', 'b-start', 'b-end', 'c']);
   });
 });
