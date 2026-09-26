@@ -312,6 +312,22 @@ and persists it (see [Input](#four-keys-one-secret)).
 - The end-user `requests` namespace is unaffected. It uses the same bearer path,
   and the bearer now resolves through the JWE.
 
+### Packaging
+
+- The HTTP-only packages (`oidc-provider` and its Koa stack, `jose`,
+  `@modelcontextprotocol/node` and Hono) are **optional peer dependencies**, not
+  dependencies. Most installs are stdio (`npx`, `bunx`), fetched again on every
+  cache miss: shipping them the HTTP stack would cost each one about 15 MB and
+  43 packages (35 MB instead of 50 MB, measured on the packed tarball) it never
+  loads. Sustainable-by-design: no bytes for a feature the user does not run.
+- The cost falls on HTTP deployments, which install the peers themselves (one
+  command, printed at startup when they are missing). A deployment is set up
+  once, usually in an image, so it absorbs that step far better than every stdio
+  launch would absorb the download.
+- `src/transports/http-peers.ts` lists them, a unit test keeps that list equal to
+  `package.json`, and CI checks on Node 20 that a plain install leaves them out
+  and that HTTP runs once they are added.
+
 ## Costs accepted
 
 - **Storage becomes part of the deployment.** A file on a mounted volume is

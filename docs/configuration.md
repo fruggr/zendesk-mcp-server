@@ -134,7 +134,8 @@ zendesk-mcp-server acme --read-only --namespace tickets
 # Cherry-pick specific tools
 zendesk-mcp-server acme --tool get_ticket --tool search_tickets --tool get_current_user
 
-# Remote HTTP, read-only Help Center surface
+# Remote HTTP, read-only Help Center surface (needs the optional HTTP
+# packages installed: docs/http-deployment.md#install)
 zendesk-mcp-server acme --transport http --port 8080 \
   --namespace help_center --read-only
 ```

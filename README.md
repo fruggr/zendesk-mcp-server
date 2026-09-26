@@ -213,8 +213,9 @@ Something not working? See [Troubleshooting](docs/troubleshooting.md).
 You can also deploy a private remote MCP server for **one** Zendesk account.
 It is its own OAuth authorization server: web clients such as claude.ai and
 ChatGPT add it by URL and register themselves, each user signs in to Zendesk
-through it, and no shared admin key or per-client Zendesk setup is involved. The
-full guide covers the one redirect URL to add to your Zendesk OAuth client, the
+through it, and no shared admin key or per-client Zendesk setup is involved. Its
+packages install on top of the server, so stdio users never download them. The
+full guide covers that install, the one redirect URL to add to your Zendesk OAuth client, the
 master secret and grant store, `--public-url` behind a reverse proxy, trusted
 clients, MCP client wiring, CORS and what stays the operator's job:
 **[docs/http-deployment.md](docs/http-deployment.md)**.

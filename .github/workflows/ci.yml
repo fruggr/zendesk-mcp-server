@@ -97,3 +97,27 @@ jobs:
           OUT=$(sleep 6 | env LOG_LEVEL=info timeout 5 zendesk-mcp-server smoke-test 2>&1 || true)
           echo "$OUT"
           echo "$OUT" | grep -q "stdio_transport_ready"
+
+      # The HTTP packages are optional peers: a plain install must leave them out
+      # (what stdio users download), and HTTP must then fail with the install hint.
+      - name: Verify the HTTP peers stay optional
+        run: |
+          set -euo pipefail
+          mkdir app && cd app && npm init -y > /dev/null
+          npm install ../*.tgz
+          for pkg in oidc-provider jose @modelcontextprotocol/node; do
+            if [ -e "node_modules/$pkg" ]; then echo "$pkg was installed"; exit 1; fi
+          done
+          OUT=$(env ZENDESK_SUBDOMAIN=smoke-test timeout 5 npx zendesk-mcp-server --transport http --port 0 2>&1 || true)
+          echo "$OUT"
+          echo "$OUT" | grep -q "npm install @fruggr/zendesk-mcp-server oidc-provider@"
+
+      - name: Verify HTTP runs once the peers are installed
+        working-directory: app
+        run: |
+          set -euo pipefail
+          CMD=$(node -e "const p=require('./node_modules/@fruggr/zendesk-mcp-server/package.json').peerDependencies;console.log(Object.entries(p).map(([n,r])=>n+'@'+r).join(' '))")
+          npm install $CMD
+          OUT=$(sleep 6 | env ZENDESK_SUBDOMAIN=smoke-test LOG_LEVEL=info OAUTH_STORE=memory:// timeout 5 npx zendesk-mcp-server --transport http --port 0 2>&1 || true)
+          echo "$OUT"
+          echo "$OUT" | grep -q "http_transport_ready"
