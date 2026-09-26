@@ -98,7 +98,7 @@ Three routes were considered:
 The preprocessor exists for one job: rewriting relative `extends` /
 `references` paths that would fall outside the sandbox once the project is
 copied. Our `tsconfig.json` extends *package names*
-(`@tsconfig/node20`, `@tsconfig/strictest`) and declares no project references,
+(`@tsconfig/node22`, `@tsconfig/strictest`) and declares no project references,
 so it has nothing to rewrite. When `project.files.get()` misses, the `typescript`
 import never happens and the run proceeds. The cost of the workaround here is
 therefore zero, and it is one line in `stryker.config.mjs`.
@@ -655,7 +655,7 @@ Only one of the four upstream headlines touches this repo:
 
 | Upstream change | Effect here |
 | --- | --- |
-| Requires Node.js 22+ | None. `.nvmrc` is 24 and every job that installs dev dependencies reads it. `smoke-node20` never installs them — it runs the packed tarball — so the published `engines: >=20` is untouched. |
+| Requires Node.js 22+ | None. `.nvmrc` is 24 and every job that installs dev dependencies reads it. `smoke-node-floor` never installs them — it runs the packed tarball — so the published `engines: >=22` is untouched. |
 | `empty-expression-mutator` | +37 mutants. The subject of the rest of this section. |
 | Babel 8 | None measurable: mutant counts per mutator are byte-identical to 9.6.1 outside the new one (17 mutators compared). |
 | Partial incremental report on unexpected exit | Latent. The baseline job still saves only `if: success()` — a partial baseline is exactly the stale-verdict problem [section 4](#the-baseline-can-go-stale-and-stryker-will-not-tell-you) exists to prevent, so the feature stays unused until there is a reason. |

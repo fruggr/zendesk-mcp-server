@@ -72,7 +72,7 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
-  smoke-node20:
+  smoke-node-floor:
     needs: build-and-test
     runs-on: ubuntu-latest
     steps:
@@ -82,11 +82,11 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 22
 
       - run: npm install -g ./*.tgz
 
-      - name: Verify tarball runs on Node 20
+      - name: Verify tarball runs on the engines floor (Node 22)
         run: |
           set -euo pipefail
           # `sleep` holds stdin open for the whole run. A step's stdin is

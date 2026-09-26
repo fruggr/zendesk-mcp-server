@@ -68,7 +68,7 @@
     "access": "public"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "packageManager": "pnpm@12.6.0+sha512.3ef68f951cb111ac204b4a5a16f0b2ddf0da56a96e0413e81d855d9f0b55ef926714709028e1cd00c405c2c5fb7b9e8ec4dc46777c805d0373c2f2ff00fd20ec",
   "dependencies": {
@@ -100,7 +100,7 @@
     "@semantic-release/release-notes-generator": "^14.1.1",
     "@stryker-mutator/core": "^10.0.0",
     "@stryker-mutator/vitest-runner": "^10.0.0",
-    "@tsconfig/node20": "^20.1.9",
+    "@tsconfig/node22": "^22.0.6",
     "@tsconfig/strictest": "^2.0.8",
     "@types/hast": "^3.0.4",
     "@types/node": "^22.15.0",

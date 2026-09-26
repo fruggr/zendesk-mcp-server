@@ -44,8 +44,8 @@ External contributions follow the same standard.
 | pnpm | 12 | [`package.json#packageManager`](package.json) (pinned with a corepack integrity hash) |
 
 The toolchain (Node 24 + pnpm 12) is used to build, lint, type-check and
-test the project. The **published package** still runs on Node 20+ (see
-`engines.node`); a dedicated CI job installs the packed tarball on Node 20
+test the project. The **published package** still runs on Node 22+ (see
+`engines.node`); a dedicated CI job installs the packed tarball on Node 22
 and runs the smoke test to keep that promise honest.
 
 The pnpm pin names one exact patch version, and
