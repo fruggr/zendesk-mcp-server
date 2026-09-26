@@ -9,7 +9,7 @@
 ## 0. Before coding
 
 - Re-read #127 live, and check that no other PR is open on it.
-- **Prerequisite: #231 (SDK v2 migration) is merged.** It ships separately as a
+- **Prerequisite: #231 (SDK v2 migration) is merged** (done, #315). It ships separately as a
   2.x minor, with no behaviour change. It swaps the HTTP transport for
   `NodeStreamableHTTPServerTransport` and keeps everything else. There is no
   beta channel.
@@ -23,6 +23,37 @@
 
 Each check answers a question the ADR assumes. Record the answer here before
 building on it.
+
+### Results (2026-09-26, `oidc-provider` 9.12.2, Node 20.20 and 22.22)
+
+The spike drove a scripted client against a fake Zendesk (single-use,
+rotating refresh tokens). Items 1–8 pass, 9 is local-only (see §6), 10 is
+observed in validation.
+
+| # | Answer |
+| --- | --- |
+| 1 | `provider.callback()` mounts in `node:http` next to `/mcp`, no Express. The RFC 8414 path `/.well-known/oauth-authorization-server` is served natively. |
+| 2 | Works. The interaction cookie is scoped to `/interaction/<uid>`, so `/oauth/callback` 302s to `/interaction/<uid>/callback` (state = uid). The consent prompt opens a **new** interaction uid: Zendesk tokens pending between login and consent are keyed by `accountId|clientId`. |
+| 3 | JWE via `resourceIndicators.getResourceServerInfo` (`jwt.encrypt` only, `dir` + `A256GCM`) with `extraTokenClaims`. The adapter sees no `AccessToken` write. The bearer check decrypts by `kid` and checks `iss`, `aud`, `exp`; a raw Zendesk bearer gets a 401. |
+| 4 | The `Grant` payload is closed (`IN_PAYLOAD`), so Zendesk tokens live in a separate `ZendeskTokens` record keyed by `grantId`. The Zendesk refresh runs in `extraTokenClaims` (documented hook), so no `registerGrantType`. |
+| 5 | Lock on the Zendesk refresh only: 5 parallel refreshes → 1 Zendesk refresh, 0 failures. Our `/token` must **not** be serialised: two parallel refreshes with the same RT both succeed (the grant forks), while a sequential replay of a consumed RT revokes the whole grant. `rotateRefreshToken` keeps its default (rotate every time for `none` clients). |
+| 6 | Codes and RTs go through `find` then `consume`. The race is benign (see 5); no adapter lock is needed. |
+| 7 | `ack: 'draft-02'`, built-in cache (`cacheDuration` 30 s–24 h). SSRF protection is built into the library fetch (special-use IPs refused at connect time, `redirect: manual`, 2.5 s timeout, 5 KB body cap): `allowFetch` only enforces HTTPS on 443. Trusted skip works by finishing the login with `consent.grantId`. Claude Code and Zed documents lack `application_type: native`, so a random loopback port is rejected; inferring `native` when every redirect URI is loopback HTTP fixes it. |
+| 8 | Keyv adapter with `keyv-file`: SHA-256 keys, whole-payload JWE, grant index for `revokeByGrantId`. The store file holds no raw token, no Zendesk token, no account id. Restart with the same secret keeps refresh working. Rotation `NEW,OLD` accepts old tokens; `NEW` alone rejects them **and drops DCR clients** (never rewritten), hence re-encryption on read. |
+| 9 | Not reachable from a cloud container. Local E2E covers Claude Code and a DCR client; claude.ai and ChatGPT come later on a deployed instance. `private_key_jwt` (ChatGPT-style document, RS256, `jwks_uri`) passes against a mocked document. |
+| 10 | To observe in validation. Zendesk browser sessions (8 h inactivity, 12 h max for team members on the fruggr account) are distinct from OAuth token lifetimes; whether they affect the tokens is unknown. |
+
+Configuration the library needs beyond the ADR:
+
+- `clientDefaults.id_token_signed_response_alg: 'EdDSA'`, since the only
+  signing key is Ed25519. Without it DCR fails.
+- `issueRefreshToken` checks only `client.grantTypeAllowed('refresh_token')`.
+  The default also requires `offline_access`.
+- `expiresWithSession: () => false`, or tokens die with the in-memory session.
+- `read` and `write` are listed in `scopes` (for the metadata) and are resource
+  scopes. The grant must carry both `addOIDCScope` and `addResourceScope`, or
+  consent loops.
+- `provider.proxy = true` behind a TLS-terminating proxy.
 
 1. `oidc-provider` 9.x mounted in the `node:http` server (`provider.callback()`)
    next to `/mcp`, with no Express.
@@ -46,8 +77,8 @@ building on it.
 8. Keyv adapter over `oidc-provider`'s adapter interface, with `file://`
    (`keyv-file`) as the default.
 9. End to end on claude.ai (CIMD), ChatGPT (CIMD with `offline_access`) and one
-   DCR-only client. The owner will provide the confidential Zendesk client
-   (redirect URI `<public-url>/oauth/callback`).
+   DCR-only client. The existing public Zendesk App is reused; add the redirect
+   URI `<public-url>/oauth/callback` to it.
 10. Zendesk token lifetimes: request `expires_in` at 48 h, and choose
     `refresh_token_expires_in` within 7–90 days.
 
@@ -125,6 +156,9 @@ again when the document changes.
 - **Config.**
   - `--oauth-trusted-client <url>` (repeatable) adds entries.
   - `--no-default-trusted-clients` drops the built-in seed.
+- **Deferred to #316**: the last-good copy, the 60 s failure cache, pinned
+  copies and the upkeep test below. The first version relies on the library's
+  cache.
 
 ### Upkeep
 
@@ -153,9 +187,11 @@ Then:
 - `src/transports/http.ts`: mount the AS, rewrite both discovery documents,
   replace passthrough with JWE validation plus an audience check, and keep the
   per-session bearer closure.
-- `src/config.ts`: add the new flags and env vars, including the confidential
-  client secret, the keys and the store. In HTTP mode, fail fast on a missing
-  secret or key.
+- `src/config.ts`: add the new flags and env vars. The Zendesk client stays
+  the shared `ZENDESK_OAUTH_CLIENT_ID` (public, PKCE); there is no client
+  secret. The master secret is `OAUTH_MASTER_SECRET` /
+  `--oauth-master-secret-file`, auto-generated and persisted when absent (ADR,
+  Keys and secrets). Fail fast on a supplied secret under 32 bytes.
 - ASCII-only messages on auth paths (`WWW-Authenticate`), per `AGENTS.md`.
 
 ## 4. Tests
@@ -179,9 +215,9 @@ Then:
 
 ## 5. Docs, in the same PR
 
-- `docs/http-deployment.md`: rewrite the Zendesk OAuth setup (one confidential
-  client, one redirect URI), the store and volume, the keys, and the trusted
-  clients. Drop the "Experimental" banner only once the end-to-end runs pass.
+- `docs/http-deployment.md`: rewrite the Zendesk OAuth setup (the same App as
+  stdio, plus one redirect URI), the store and volume, the master secret, and
+  the trusted clients. Drop the "Experimental" banner only once the end-to-end runs pass.
 - `docs/configuration.md`: the new flags.
 - `README.md`: fix the remote quick start. Keep the why/what only.
 - `docs/troubleshooting.md`: 401 and re-auth, store permissions, lost keys.
