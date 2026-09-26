@@ -29,8 +29,7 @@ const isWindows = process.platform === 'win32';
 
 const readSecretFile = (path: string): string | undefined => {
   try {
-    const raw = readFileSync(path, 'utf8').trim();
-    return raw.length > 0 ? raw : undefined;
+    return readFileSync(path, 'utf8').trim() || undefined;
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
     throw new Error(
@@ -43,7 +42,7 @@ const readSecretFile = (path: string): string | undefined => {
 const writeSecretFile = (path: string, value: string): void => {
   mkdirSync(dirname(path), { recursive: true });
   const tmp = `${path}.${process.pid}.tmp`;
-  writeFileSync(tmp, `${value}\n`, { encoding: 'utf8', mode: 0o600 });
+  writeFileSync(tmp, `${value}\n`, { mode: 0o600 });
   if (!isWindows) chmodSync(tmp, 0o600);
   renameSync(tmp, path);
 };

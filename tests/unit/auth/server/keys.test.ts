@@ -91,6 +91,42 @@ describe('deriveKeySet', () => {
     ).toBe(true);
   });
 
+  // A known-answer vector: any change to an HKDF label, a kid derivation or the
+  // key encoding would silently invalidate every deployed token and store record.
+  it('derives the documented known-answer vector for a fixed secret', () => {
+    const set = deriveKeySet(Buffer.alloc(32, 1));
+    expect({
+      signingJwk: set.signingJwk,
+      accessToken: {
+        kid: set.accessToken.kid,
+        key: set.accessToken.key.export().toString('base64url'),
+      },
+      atRest: { kid: set.atRest.kid, key: set.atRest.key.export().toString('base64url') },
+      cookieKey: set.cookieKey,
+    }).toMatchInlineSnapshot(`
+      {
+        "accessToken": {
+          "key": "m13aYSRv1Uk9iK_fw0HaoWfmO7qwgaWTBkaJhynCamE",
+          "kid": "D7fvv1P1jYrCGXry",
+        },
+        "atRest": {
+          "key": "ibZ56kdTrYaQ8-fQ2TGPzGDwceG7wI9PUqcN5x6baCc",
+          "kid": "vNprDu0_nz9j5y2L",
+        },
+        "cookieKey": "7Mr9-IiAKbb_LlDI70DITQIBBpmJOa5RVWDplX7HBDA",
+        "signingJwk": {
+          "alg": "EdDSA",
+          "crv": "Ed25519",
+          "d": "4BrpufJ0ES0ZU_PykGjfVAAyLrDX41Wb4jMwayyae8Y",
+          "kid": "gY0ipiwko1rBfA44",
+          "kty": "OKP",
+          "use": "sig",
+          "x": "JBd710Y36KSb5Kve5TyfXX1o1Bx4wRPujMvhb_Mpk1g",
+        },
+      }
+    `);
+  });
+
   it('derives 256-bit symmetric keys', () => {
     const set = deriveKeySet(Buffer.alloc(32, 1));
     expect(set.accessToken.key.symmetricKeySize).toBe(32);

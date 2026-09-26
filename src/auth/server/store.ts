@@ -42,18 +42,19 @@ const seal = (ring: KeyRing, value: unknown): Promise<string> =>
     .setProtectedHeader({ alg: 'dir', enc: 'A256GCM', kid: ring[0].atRest.kid })
     .encrypt(ring[0].atRest.key);
 
-const open = async <T>(ring: KeyRing, sealed: string): Promise<SealedRecord<T> | undefined> => {
-  try {
-    const { kid } = decodeProtectedHeader(sealed);
-    const keySet = ring.find((set) => set.atRest.kid === kid);
-    if (!keySet) return undefined;
-    const { plaintext } = await compactDecrypt(sealed, keySet.atRest.key);
-    return { value: JSON.parse(decoder.decode(plaintext)) as T, current: keySet === ring[0] };
-  } catch {
-    // Unknown kid, tampering or a foreign value: indistinguishable from absent.
-    return undefined;
-  }
+const unseal = async <T>(ring: KeyRing, sealed: string): Promise<SealedRecord<T> | undefined> => {
+  const { kid } = decodeProtectedHeader(sealed);
+  const keySet = ring.find((set) => set.atRest.kid === kid);
+  // Stryker disable next-line ConditionalExpression: without the guard the missing key throws
+  // into open's catch, which answers undefined all the same.
+  if (!keySet) return undefined;
+  const { plaintext } = await compactDecrypt(sealed, keySet.atRest.key);
+  return { value: JSON.parse(decoder.decode(plaintext)) as T, current: keySet === ring[0] };
 };
+
+// Unknown kid, tampering or a foreign value: indistinguishable from absent.
+const open = <T>(ring: KeyRing, sealed: string): Promise<SealedRecord<T> | undefined> =>
+  unseal<T>(ring, sealed).catch(() => undefined);
 
 const remainingTtlMs = (value: unknown): number | undefined => {
   const exp = (value as { exp?: unknown } | undefined)?.exp;
@@ -74,6 +75,8 @@ export const createSealedCollection = <T>(
   return {
     get: async (id) => {
       const sealed = await store.get<string>(key(id));
+      // Stryker disable next-line ConditionalExpression: open answers undefined for any value that
+      // is not a JWE, a missing one included.
       if (typeof sealed !== 'string') return undefined;
       const record = await open<T>(ring, sealed);
       if (record && !record.current) {
@@ -98,7 +101,10 @@ export const createKeyLock = () => {
     const run = (tails.get(lockKey) ?? Promise.resolve()).then(fn, fn);
     const tail = run.catch(() => undefined);
     tails.set(lockKey, tail);
+    // Stryker disable next-line BlockStatement: the cleanup only bounds memory; a settled tail
+    // left in the map chains the next call exactly like an empty slot.
     void tail.then(() => {
+      // Stryker disable next-line ConditionalExpression,CallExpression: as above, memory only.
       if (tails.get(lockKey) === tail) tails.delete(lockKey);
     });
     return run;
@@ -163,7 +169,8 @@ export const createAdapterFactory = (stores: AdapterStores, ring: KeyRing): Adap
       revokeByGrantId: (grantId) =>
         withLock(`${name}:${grantId}`, async () => {
           const index = await grantIndex.get(grantId);
-          await Promise.all((index?.ids ?? []).map((id) => records.delete(id)));
+          if (!index) return;
+          await Promise.all(index.ids.map((id) => records.delete(id)));
           await grantIndex.delete(grantId);
         }),
     };

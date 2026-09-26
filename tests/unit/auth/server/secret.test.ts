@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -11,15 +11,23 @@ const SHORT = Buffer.alloc(16, 9).toString('base64');
 
 const recordingLogger = () => {
   const events: [string, string][] = [];
+  const entries: [string, string, unknown][] = [];
+  const record = (level: string) => (e: string, fields?: unknown) => {
+    events.push([level, e]);
+    entries.push([level, e, fields]);
+  };
   const logger: Logger = {
-    debug: (e) => events.push(['debug', e]),
-    info: (e) => events.push(['info', e]),
-    warn: (e) => events.push(['warn', e]),
-    error: (e) => events.push(['error', e]),
+    debug: record('debug'),
+    info: record('info'),
+    warn: record('warn'),
+    error: record('error'),
     attachServer: vi.fn(),
   };
-  return { logger, events };
+  return { logger, events, entries };
 };
+
+const modeOf = (path: string) => (statSync(path).mode % 0o1000).toString(8);
+const onWindows = process.platform === 'win32';
 
 describe('resolveMasterSecret', () => {
   let dir: string;
@@ -103,6 +111,123 @@ describe('resolveMasterSecret', () => {
       logger,
     );
     expect(events).toContainEqual(['warn', 'oauth_master_secret_beside_store']);
+  });
+
+  it('reads the flag file with surrounding whitespace trimmed', () => {
+    const file = join(dir, 'provided');
+    writeFileSync(file, ` \t${VALID} \n`);
+    expect(resolveMasterSecret({ file, configDir: dir, storeUri: storeElsewhere() }).value).toBe(
+      VALID,
+    );
+  });
+
+  it('names the error code when a secret file exists but cannot be read', () => {
+    let error: unknown;
+    try {
+      resolveMasterSecret({ file: dir, configDir: dir, storeUri: storeElsewhere() });
+    } catch (err) {
+      error = err;
+    }
+    expect(error).toMatchObject({
+      message: 'Cannot read the OAuth master secret file (EISDIR).',
+      cause: { code: 'EISDIR' },
+    });
+  });
+
+  it('logs the ephemeral secret with its restart hint', () => {
+    const { logger, entries } = recordingLogger();
+    resolveMasterSecret({ configDir: dir, storeUri: 'memory://' }, logger);
+    expect(entries).toEqual([
+      [
+        'info',
+        'oauth_master_secret_ephemeral',
+        { hint: 'memory:// store: the secret and every grant are lost on restart.' },
+      ],
+    ]);
+  });
+
+  it('logs where it wrote a generated secret, creating the config dir, and only once', () => {
+    const configDir = join(dir, 'a', 'b');
+    const path = join(configDir, MASTER_SECRET_FILE_NAME);
+    const first = recordingLogger();
+    const generated = resolveMasterSecret({ configDir, storeUri: storeElsewhere() }, first.logger);
+    expect(first.entries).toEqual([['info', 'oauth_master_secret_generated', { path }]]);
+
+    const second = recordingLogger();
+    writeFileSync(path, `${generated.value}\n\n`);
+    expect(resolveMasterSecret({ configDir, storeUri: storeElsewhere() }, second.logger)).toEqual({
+      value: generated.value,
+      source: 'persisted',
+    });
+    expect(second.entries).toEqual([]);
+    expect(readFileSync(path, 'utf8')).toBe(`${generated.value}\n\n`);
+  });
+
+  it('warns, with a hint, when the secret shares a directory with the file store', () => {
+    const { logger, entries } = recordingLogger();
+    resolveMasterSecret(
+      { configDir: dir, storeUri: pathToFileURL(join(dir, 'oauth-store.json')).href },
+      logger,
+    );
+    expect(entries.filter(([level]) => level === 'warn')).toEqual([
+      [
+        'warn',
+        'oauth_master_secret_beside_store',
+        {
+          hint:
+            'The auto-generated master secret sits next to the file store: fine locally, but a ' +
+            'deployment should supply OAUTH_MASTER_SECRET from a secret manager instead.',
+        },
+      ],
+    ]);
+  });
+
+  it('persists a generated secret for a non-file store without comparing directories', () => {
+    const { logger, events } = recordingLogger();
+    const result = resolveMasterSecret(
+      { configDir: dir, storeUri: 'redis://localhost:6379' },
+      logger,
+    );
+    expect(result.source).toBe('generated');
+    expect(events).toEqual([['info', 'oauth_master_secret_generated']]);
+  });
+
+  // POSIX modes only mean something off Windows; the Windows branch is exercised by pretending.
+  describe.skipIf(onWindows)('file modes', () => {
+    // A crashed write leaves its temp file behind, and writeFileSync keeps an existing file's mode.
+    const leaveStaleTempFile = () => {
+      const tmp = `${join(dir, MASTER_SECRET_FILE_NAME)}.${process.pid}.tmp`;
+      writeFileSync(tmp, '');
+      chmodSync(tmp, 0o644);
+    };
+
+    it('resets a stale temp file to owner-only before renaming it', () => {
+      leaveStaleTempFile();
+      resolveMasterSecret({ configDir: dir, storeUri: storeElsewhere() });
+      expect(modeOf(join(dir, MASTER_SECRET_FILE_NAME))).toBe('600');
+    });
+
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform');
+    const loadAsWindows = async () => {
+      Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
+      try {
+        vi.resetModules();
+        return (await import('../../../../src/auth/server/secret')).resolveMasterSecret;
+      } finally {
+        if (platform) Object.defineProperty(process, 'platform', platform);
+      }
+    };
+
+    it('relies on the creation mode alone on Windows', async () => {
+      (await loadAsWindows())({ configDir: dir, storeUri: storeElsewhere() });
+      expect(modeOf(join(dir, MASTER_SECRET_FILE_NAME))).toBe('600');
+    });
+
+    it('skips the POSIX chmod on Windows', async () => {
+      leaveStaleTempFile();
+      (await loadAsWindows())({ configDir: dir, storeUri: storeElsewhere() });
+      expect(modeOf(join(dir, MASTER_SECRET_FILE_NAME))).toBe('644');
+    });
   });
 
   it('does not warn when the store lives elsewhere', () => {
