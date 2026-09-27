@@ -84,7 +84,6 @@ const asVerified = (
     typeof claims.exp === 'number' &&
     claims.exp * 1000 > Date.now() &&
     typeof claims.zd === 'string' &&
-    // Stryker disable next-line ConditionalExpression: Grant.find refuses a non-string id too; kept so the contract does not rest on it.
     typeof claims.gid === 'string';
   if (!valid) return undefined;
   return {
@@ -122,35 +121,11 @@ export const createAuthorizationServer = (
     });
   };
 
-  // Grants revoked here (a Zendesk 401, a replayed code): their still-unexpired
-  // access tokens are refused until they would have expired anyway, even if the
-  // store fails. In memory, like the sessions.
-  const revokedGrants = createExpiringMap<true>();
-
-  // Never rejects: it also runs fire-and-forget from a tool call's 401, where an
-  // unhandled rejection would take the process down.
-  const endGrant = async (grantId: string, reason: string): Promise<void> => {
-    revokedGrants.set(grantId, true, ACCESS_TOKEN_TTL_S * 1000);
-    try {
-      const grant = await provider.Grant.find(grantId);
-      await Promise.all([
-        grant?.destroy(),
-        provider.RefreshToken.adapter.revokeByGrantId(grantId),
-        zendeskGrants.remove(grantId),
-      ]);
-      logger.info('oauth_grant_revoked', { reason });
-    } catch (err) {
-      logRevokeFailure(err);
-    }
-  };
-
   const provider = buildProvider({
     issuer,
     resource,
     ring,
-    adapter: createAdapterFactory({ persistent }, ring, {
-      onReplay: (grantId) => endGrant(grantId, 'code_replay'),
-    }),
+    adapter: createAdapterFactory({ persistent }, ring),
     zendeskGrants,
     allowWrite: !config.readOnly,
     isAllowedOrigin: options.isAllowedOrigin,
@@ -179,6 +154,10 @@ export const createAuthorizationServer = (
     logger,
   });
   const callback = provider.callback();
+
+  // Grants revoked after a Zendesk 401: their still-unexpired access tokens are
+  // refused until they would have expired anyway. In memory, like the sessions.
+  const revokedGrants = createExpiringMap<true>();
 
   // Rejects on anything that is not one of our JWEs.
   const readAccessToken = async (bearer: string): Promise<VerifiedAccessToken | undefined> => {
@@ -215,19 +194,25 @@ export const createAuthorizationServer = (
     },
     verifyAccessToken: async (bearer) => {
       const verified = await readAccessToken(bearer).catch(() => undefined);
-      if (!verified || revokedGrants.get(verified.grantId)) return undefined;
-      // The grant, not only the token, must still exist: a revocation then
-      // holds across a restart, which empties the in-memory denial list.
-      // Fails closed: a store it cannot read accepts no token.
-      const grant = await provider.Grant.find(verified.grantId).catch((err: unknown) => {
-        logger.warn('oauth_grant_lookup_failed', {
-          error: err instanceof Error ? err.message : String(err),
-        });
-        return undefined;
-      });
-      return grant ? verified : undefined;
+      return verified && !revokedGrants.get(verified.grantId) ? verified : undefined;
     },
-    revokeGrant: (grantId) => endGrant(grantId, 'zendesk_unauthorized'),
+    // Never rejects: it runs fire-and-forget from a tool call's 401, where an
+    // unhandled rejection would take the process down. The in-memory denial
+    // lands first, so the grant's tokens stop working even if the store fails.
+    revokeGrant: async (grantId) => {
+      revokedGrants.set(grantId, true, ACCESS_TOKEN_TTL_S * 1000);
+      try {
+        const grant = await provider.Grant.find(grantId);
+        await Promise.all([
+          grant?.destroy(),
+          provider.RefreshToken.adapter.revokeByGrantId(grantId),
+          zendeskGrants.remove(grantId),
+        ]);
+        logger.info('oauth_grant_revoked', { reason: 'zendesk_unauthorized' });
+      } catch (err) {
+        logRevokeFailure(err);
+      }
+    },
   };
 };
 

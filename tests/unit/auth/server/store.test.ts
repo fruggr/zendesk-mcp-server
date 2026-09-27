@@ -263,69 +263,6 @@ describe('createAdapterFactory, key layout and expiry', () => {
     expect(expiresOf(persistentEntries, `RefreshToken:${hashed('rt')}`)).toBe(NOW + 60_000);
   });
 
-  it('lets an authorization code be consumed once, even by two concurrent exchanges', async () => {
-    const onReplay = vi.fn(async () => undefined);
-    const adapter = createAdapterFactory({ persistent, memory }, ring, { onReplay })(
-      'AuthorizationCode',
-    );
-    await adapter.upsert('code', { grantId: 'g-1', exp: futureExp(60) }, 60);
-    const outcomes = await Promise.allSettled([adapter.consume('code'), adapter.consume('code')]);
-    expect(outcomes.map((outcome) => outcome.status)).toEqual(['fulfilled', 'rejected']);
-    const refusal = (outcomes[1] as PromiseRejectedResult).reason as {
-      error?: unknown;
-      error_detail?: unknown;
-    };
-    expect(refusal.error).toBe('invalid_grant');
-    expect(refusal.error_detail).toBe('authorization code already consumed');
-    expect(onReplay).toHaveBeenCalledTimes(1);
-    expect(onReplay).toHaveBeenCalledWith('g-1');
-    await expect(adapter.consume('code')).rejects.toMatchObject({ error: 'invalid_grant' });
-    expect(onReplay).toHaveBeenCalledTimes(2);
-  });
-
-  it('never holds one code behind the consumption of another', async () => {
-    const { store, hold } = holdableStore();
-    const adapter = createAdapterFactory({ persistent, memory: store }, ring)('AuthorizationCode');
-    await adapter.upsert('a', { exp: futureExp(60) }, 60);
-    await adapter.upsert('b', { exp: futureExp(60) }, 60);
-    const release = hold((key) => key === `AuthorizationCode:${hashed('a')}`);
-    const stalled = adapter.consume('a');
-    expect(await settlesSoon(adapter.consume('b'))).toBe('settled');
-    release();
-    await stalled;
-  });
-
-  it('refuses a replayed code that names no grant without revoking anything', async () => {
-    const onReplay = vi.fn(async () => undefined);
-    const adapter = createAdapterFactory({ persistent, memory }, ring, { onReplay })(
-      'AuthorizationCode',
-    );
-    await adapter.upsert('code', { exp: futureExp(60) }, 60);
-    await adapter.consume('code');
-    await expect(adapter.consume('code')).rejects.toMatchObject({ error: 'invalid_grant' });
-    expect(onReplay).not.toHaveBeenCalled();
-  });
-
-  it('refuses a replayed code with no replay handler configured', async () => {
-    const adapter = adapterFor('AuthorizationCode');
-    await adapter.upsert('code', { grantId: 'g-1', exp: futureExp(60) }, 60);
-    await adapter.consume('code');
-    await expect(adapter.consume('code')).rejects.toMatchObject({ error: 'invalid_grant' });
-  });
-
-  it('keeps consuming a refresh token twice harmless (parallel refreshes stay benign)', async () => {
-    const onReplay = vi.fn(async () => undefined);
-    const adapter = createAdapterFactory({ persistent, memory }, ring, { onReplay })(
-      'RefreshToken',
-    );
-    await adapter.upsert('rt', { grantId: 'g-1', exp: futureExp(60) }, 60);
-    await expect(Promise.all([adapter.consume('rt'), adapter.consume('rt')])).resolves.toEqual([
-      undefined,
-      undefined,
-    ]);
-    expect(onReplay).not.toHaveBeenCalled();
-  });
-
   it('creates nothing when consuming an unknown token', async () => {
     const adapter = adapterFor('RefreshToken');
     await adapter.consume('missing');

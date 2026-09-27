@@ -142,8 +142,7 @@ Access tokens last one hour; refresh tokens up to 90 days, like Zendesk's own.
 The server refreshes the user's Zendesk token by itself when needed. If Zendesk
 rejects it (the user revoked the app, an admin revoked the token), the tool call
 fails with an authentication error and the client's next request gets a `401`,
-which makes it sign the user in again. That grant stays revoked across a
-restart. A Zendesk outage during a refresh does not end the grant by itself,
+which makes it sign the user in again. A Zendesk outage during a refresh does not end the grant by itself,
 but most MCP clients are public clients, whose refresh token is already spent by
 then: their retry is a replay, which signs the user out.
 

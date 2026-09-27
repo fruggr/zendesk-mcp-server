@@ -12,7 +12,6 @@ import {
 } from '../../../../src/auth/server/authorization-server';
 import { createMemoryStore, type RecordStore } from '../../../../src/auth/server/file-store';
 import { deriveKeyRing } from '../../../../src/auth/server/keys';
-import { createAdapterFactory } from '../../../../src/auth/server/store';
 import type { Config } from '../../../../src/config';
 import type { Logger } from '../../../../src/utils/logger';
 import { makeConfig } from '../../../integration/harness';
@@ -76,20 +75,6 @@ const forge = (issuer: string, claims: Record<string, unknown>) =>
   )
     .setProtectedHeader({ alg: 'dir', enc: 'A256GCM', kid: RING[0].accessToken.kid })
     .encrypt(RING[0].accessToken.key);
-
-/** Grants of ours in `store`, as oidc-provider would have saved them. */
-const withGrants = async (store: RecordStore, ...ids: string[]): Promise<RecordStore> => {
-  const grants = createAdapterFactory({ persistent: store }, RING)('Grant');
-  const exp = 4_000_000_000;
-  for (const jti of ids) {
-    await grants.upsert(
-      jti,
-      { kind: 'Grant', jti, accountId: 'zendesk:1', clientId: 'c-1', iat: 1, exp },
-      exp,
-    );
-  }
-  return store;
-};
 
 /** A store whose reads and deletes in one collection can be made to fail. */
 const faultyStore = () => {
@@ -167,7 +152,7 @@ describe('createAuthorizationServer', () => {
     afterEach(() => vi.restoreAllMocks());
 
     it('hands back what the token carries', async () => {
-      const as = build(await withGrants(createMemoryStore(), 'g-1'));
+      const as = build(createMemoryStore());
       const exp = Math.floor(Date.now() / 1000) + 60;
       expect(await as.verifyAccessToken(await forge(issuer, { exp }))).toEqual({
         zendeskAccessToken: 'zd-token',
@@ -183,7 +168,7 @@ describe('createAuthorizationServer', () => {
     });
 
     it('allows write only to a token whose scope names it', async () => {
-      const as = build(await withGrants(createMemoryStore(), 'g-1'));
+      const as = build(createMemoryStore());
       const canWrite = async (scope: unknown) =>
         (await as.verifyAccessToken(await forge(issuer, { scope })))?.canWrite;
       expect(await canWrite('read write')).toBe(true);
@@ -194,8 +179,7 @@ describe('createAuthorizationServer', () => {
     });
 
     it('rejects a token without a numeric expiry, a Zendesk token or a grant id', async () => {
-      const { logger, events } = recordingLogger();
-      const as = build(await withGrants(createMemoryStore(), 'g-1'), logger);
+      const as = build(createMemoryStore());
       for (const claims of [
         { exp: String(Math.floor(Date.now() / 1000) + 60) },
         { exp: undefined },
@@ -207,22 +191,10 @@ describe('createAuthorizationServer', () => {
       ]) {
         expect(await as.verifyAccessToken(await forge(issuer, claims))).toBeUndefined();
       }
-      expect(events).toEqual([]);
-    });
-
-    it('rejects a token whose grant no longer exists, or cannot be read', async () => {
-      const { persistent, faults } = faultyStore();
-      const { logger, events } = recordingLogger();
-      const as = build(await withGrants(persistent, 'g-1'), logger);
-      expect(await as.verifyAccessToken(await forge(issuer, { gid: 'g-2' }))).toBeUndefined();
-      expect(events).toEqual([]);
-      faults.failing = 'Grant';
-      expect(await as.verifyAccessToken(await forge(issuer, {}))).toBeUndefined();
-      expect(events).toEqual([['warn', 'oauth_grant_lookup_failed', { error: 'store down' }]]);
     });
 
     it('rejects a token from its expiry second on', async () => {
-      const as = build(await withGrants(createMemoryStore(), 'g-1'));
+      const as = build(createMemoryStore());
       const token = await forge(issuer, { exp: 2_000_000_000 });
       vi.spyOn(Date, 'now').mockReturnValue(2_000_000_000_000 - 1);
       expect(await as.verifyAccessToken(token)).toMatchObject({ expiresAt: 2_000_000_000 });
@@ -230,29 +202,16 @@ describe('createAuthorizationServer', () => {
       expect(await as.verifyAccessToken(token)).toBeUndefined();
     });
 
-    it('refuses a revoked grant, and only that grant, also after a restart', async () => {
-      const store = await withGrants(createMemoryStore(), 'g-1', 'g-2');
-      const as = build(store);
-      const revoked = await forge(issuer, { gid: 'g-1' });
-      await as.revokeGrant('g-1');
-      await as.revokeGrant('g-3');
-      expect(await as.verifyAccessToken(revoked)).toBeUndefined();
-      expect(await as.verifyAccessToken(await forge(issuer, { gid: 'g-2' }))).toMatchObject({
-        grantId: 'g-2',
-      });
-      expect(await build(store).verifyAccessToken(revoked)).toBeUndefined();
-    });
-
-    it('denies a revoked grant in memory for one access-token lifetime', async () => {
-      // The denial backs up the store: a grant id seen again in the store (a
-      // failed destroy) is still refused until its tokens would have expired.
-      const store = createMemoryStore();
-      const as = build(store);
+    it('refuses a revoked grant for one access-token lifetime, and only that grant', async () => {
+      const as = build(createMemoryStore());
       const revoked = await forge(issuer, { gid: 'g-1', exp: 2_000_000_000 });
+      const other = await forge(issuer, { gid: 'g-2', exp: 2_000_000_000 });
       const start = 1_900_000_000_000;
       vi.spyOn(Date, 'now').mockReturnValue(start);
       await as.revokeGrant('g-1');
-      await withGrants(store, 'g-1');
+      await as.revokeGrant('g-3');
+      expect(await as.verifyAccessToken(revoked)).toBeUndefined();
+      expect(await as.verifyAccessToken(other)).toMatchObject({ grantId: 'g-2' });
       vi.spyOn(Date, 'now').mockReturnValue(start + 3600 * 1000 - 1);
       expect(await as.verifyAccessToken(revoked)).toBeUndefined();
       vi.spyOn(Date, 'now').mockReturnValue(start + 3600 * 1000);
@@ -394,32 +353,6 @@ describe('createAuthorizationServer', () => {
           { error: 'store down', hint: REVOKE_HINT },
         ]),
       );
-    });
-
-    it('lets one of two concurrent exchanges of a code win, and ends the grant', async () => {
-      const { logger, events } = recordingLogger();
-      const as = await serve(createMemoryStore(), logger);
-      const clientId = (await registerDcrClient(base)).body.client_id ?? '';
-      const result = await authorize(base, { clientId, redirectUri: DCR_REDIRECT });
-      const exchanges = await Promise.all([
-        exchangeCode(base, clientId, DCR_REDIRECT, result),
-        exchangeCode(base, clientId, DCR_REDIRECT, result),
-      ]);
-      expect(exchanges.map((exchange) => exchange.status).sort()).toEqual([200, 400]);
-      expect(exchanges.find((exchange) => exchange.status === 400)?.body.error).toBe(
-        'invalid_grant',
-      );
-      // Whichever path caught the replay (ours or the provider's), the winner's
-      // tokens go with the grant.
-      const winner = exchanges.find((exchange) => exchange.status === 200)?.body;
-      await vi.waitFor(async () =>
-        expect(await as.verifyAccessToken(winner?.access_token ?? '')).toBeUndefined(),
-      );
-      expect((await refresh(base, clientId, winner?.refresh_token ?? '')).body.error).toBe(
-        'invalid_grant',
-      );
-      expect(events).toContainEqual(['info', 'oauth_grant_revoked', { reason: 'code_replay' }]);
-      expect(events.filter(([level]) => level === 'error')).toEqual([]);
     });
 
     it('answers a store failure while minting a token with a server error, and logs it', async () => {
