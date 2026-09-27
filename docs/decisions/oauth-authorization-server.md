@@ -68,16 +68,20 @@
 Most proxy servers issue their own tokens and keep the upstream token
 server-side. Examples:
 
-- Sentry keeps it in encrypted props in Workers KV;
-- FastMCP (Python) uses a key-value store;
-- the Azure APIM sample uses the APIM cache;
+- [Sentry](https://github.com/getsentry/sentry-mcp) keeps it in encrypted props
+  in Workers KV;
+- [FastMCP (Python)](https://gofastmcp.com/servers/auth/oauth-proxy) uses a
+  key-value store;
+- the [Azure APIM sample](https://github.com/azure-samples/remote-mcp-apim-functions-python)
+  uses the APIM cache;
 - [`tigrisdata/mcp-oidc-provider`](https://github.com/tigrisdata/mcp-oidc-provider)
-  pairs `oidc-provider` with Keyv.
+  pairs `oidc-provider` with Keyv, and notes that keys generated at startup
+  invalidate tokens on restart.
 
-Passthrough (softeria, mcp-use's `oauthProxy`) is the minority, and it breaks the
-spec. The full survey, with its sources, is at the end of
-[the implementation plan](../plans/127-oauth-authorization-server.md#community-survey-sources-behind-the-adr)
-while #127 is open.
+[csharp-sdk #1446](https://github.com/modelcontextprotocol/csharp-sdk/issues/1446)
+cites the same pattern as the reference ("encrypt and store upstream tokens
+server-side"). Passthrough (softeria, mcp-use's `oauthProxy`) is the minority,
+and it breaks the spec.
 
 ## The design
 
