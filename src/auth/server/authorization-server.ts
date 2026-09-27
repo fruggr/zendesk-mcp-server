@@ -113,11 +113,44 @@ export const createAuthorizationServer = (
     refreshMarginMs: ACCESS_TOKEN_TTL_S * 1000 + ZENDESK_REFRESH_MARGIN_MS,
   });
 
+  // A grant the store failed to delete is gone from this process, not from disk:
+  // a restart before the store's next successful write would bring it back.
+  const logRevokeFailure = (err: unknown): void => {
+    logger.error('oauth_grant_revoke_failed', {
+      error: err instanceof Error ? err.message : String(err),
+      hint: 'Revoked in this process only. Fix the store before restarting: its next successful write persists the removal.',
+    });
+  };
+
+  // Grants revoked here (a Zendesk 401, a replayed code): their still-unexpired
+  // access tokens are refused until they would have expired anyway, even if the
+  // store fails. In memory, like the sessions.
+  const revokedGrants = createExpiringMap<true>();
+
+  // Never rejects: it also runs fire-and-forget from a tool call's 401, where an
+  // unhandled rejection would take the process down.
+  const endGrant = async (grantId: string, reason: string): Promise<void> => {
+    revokedGrants.set(grantId, true, ACCESS_TOKEN_TTL_S * 1000);
+    try {
+      const grant = await provider.Grant.find(grantId);
+      await Promise.all([
+        grant?.destroy(),
+        provider.RefreshToken.adapter.revokeByGrantId(grantId),
+        zendeskGrants.remove(grantId),
+      ]);
+      logger.info('oauth_grant_revoked', { reason });
+    } catch (err) {
+      logRevokeFailure(err);
+    }
+  };
+
   const provider = buildProvider({
     issuer,
     resource,
     ring,
-    adapter: createAdapterFactory({ persistent }, ring),
+    adapter: createAdapterFactory({ persistent }, ring, {
+      onReplay: (grantId) => endGrant(grantId, 'code_replay'),
+    }),
     zendeskGrants,
     allowWrite: !config.readOnly,
     isAllowedOrigin: options.isAllowedOrigin,
@@ -132,11 +165,7 @@ export const createAuthorizationServer = (
   // The provider ends grants itself (a refresh-token replay, a revocation
   // request): the Zendesk tokens must go with them, not linger at rest.
   provider.on('grant.revoked', (_ctx, grantId: string) => {
-    zendeskGrants.remove(grantId).catch((err: unknown) => {
-      logger.warn('oauth_grant_revoke_failed', {
-        error: err instanceof Error ? err.message : String(err),
-      });
-    });
+    zendeskGrants.remove(grantId).catch(logRevokeFailure);
   });
 
   const interactions = createInteractionRoutes({
@@ -150,10 +179,6 @@ export const createAuthorizationServer = (
     logger,
   });
   const callback = provider.callback();
-
-  // Grants revoked after a Zendesk 401: their still-unexpired access tokens are
-  // refused until they would have expired anyway. In memory, like the sessions.
-  const revokedGrants = createExpiringMap<true>();
 
   // Rejects on anything that is not one of our JWEs.
   const readAccessToken = async (bearer: string): Promise<VerifiedAccessToken | undefined> => {
@@ -202,25 +227,7 @@ export const createAuthorizationServer = (
       });
       return grant ? verified : undefined;
     },
-    // Never rejects: it runs fire-and-forget from a tool call's 401, where an
-    // unhandled rejection would take the process down. The in-memory denial
-    // lands first, so the grant's tokens stop working even if the store fails.
-    revokeGrant: async (grantId) => {
-      revokedGrants.set(grantId, true, ACCESS_TOKEN_TTL_S * 1000);
-      try {
-        const grant = await provider.Grant.find(grantId);
-        await Promise.all([
-          grant?.destroy(),
-          provider.RefreshToken.adapter.revokeByGrantId(grantId),
-          zendeskGrants.remove(grantId),
-        ]);
-        logger.info('oauth_grant_revoked', { reason: 'zendesk_unauthorized' });
-      } catch (err) {
-        logger.warn('oauth_grant_revoke_failed', {
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-    },
+    revokeGrant: (grantId) => endGrant(grantId, 'zendesk_unauthorized'),
   };
 };
 

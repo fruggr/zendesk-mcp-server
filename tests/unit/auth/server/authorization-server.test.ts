@@ -44,6 +44,9 @@ const recordingLogger = () => {
   return { logger, events };
 };
 
+const REVOKE_HINT =
+  'Revoked in this process only. Fix the store before restarting: its next successful write persists the removal.';
+
 const RING = deriveKeyRing(Buffer.alloc(32, 7).toString('base64'));
 
 const build = (persistent: RecordStore, logger?: Logger, issuer = 'https://mcp.example.com') =>
@@ -137,7 +140,9 @@ describe('createAuthorizationServer', () => {
     faults.failing = 'Grant';
     const { logger, events } = recordingLogger();
     await expect(build(persistent, logger).revokeGrant('g-1')).resolves.toBeUndefined();
-    expect(events).toEqual([['warn', 'oauth_grant_revoke_failed', { error: 'store down' }]]);
+    expect(events).toEqual([
+      ['error', 'oauth_grant_revoke_failed', { error: 'store down', hint: REVOKE_HINT }],
+    ]);
   });
 
   it('logs a store failure that is not an Error as its string', async () => {
@@ -146,7 +151,9 @@ describe('createAuthorizationServer', () => {
     faults.error = 'socket closed' as unknown as Error;
     const { logger, events } = recordingLogger();
     await build(persistent, logger).revokeGrant('g-1');
-    expect(events).toEqual([['warn', 'oauth_grant_revoke_failed', { error: 'socket closed' }]]);
+    expect(events).toEqual([
+      ['error', 'oauth_grant_revoke_failed', { error: 'socket closed', hint: REVOKE_HINT }],
+    ]);
   });
 
   it('revokes a grant it does not know without failing', async () => {
@@ -382,11 +389,37 @@ describe('createAuthorizationServer', () => {
       await refresh(base, clientId, tokens.body.refresh_token ?? '');
       await vi.waitFor(() =>
         expect(events).toContainEqual([
-          'warn',
+          'error',
           'oauth_grant_revoke_failed',
-          { error: 'store down' },
+          { error: 'store down', hint: REVOKE_HINT },
         ]),
       );
+    });
+
+    it('lets one of two concurrent exchanges of a code win, and ends the grant', async () => {
+      const { logger, events } = recordingLogger();
+      const as = await serve(createMemoryStore(), logger);
+      const clientId = (await registerDcrClient(base)).body.client_id ?? '';
+      const result = await authorize(base, { clientId, redirectUri: DCR_REDIRECT });
+      const exchanges = await Promise.all([
+        exchangeCode(base, clientId, DCR_REDIRECT, result),
+        exchangeCode(base, clientId, DCR_REDIRECT, result),
+      ]);
+      expect(exchanges.map((exchange) => exchange.status).sort()).toEqual([200, 400]);
+      expect(exchanges.find((exchange) => exchange.status === 400)?.body.error).toBe(
+        'invalid_grant',
+      );
+      // Whichever path caught the replay (ours or the provider's), the winner's
+      // tokens go with the grant.
+      const winner = exchanges.find((exchange) => exchange.status === 200)?.body;
+      await vi.waitFor(async () =>
+        expect(await as.verifyAccessToken(winner?.access_token ?? '')).toBeUndefined(),
+      );
+      expect((await refresh(base, clientId, winner?.refresh_token ?? '')).body.error).toBe(
+        'invalid_grant',
+      );
+      expect(events).toContainEqual(['info', 'oauth_grant_revoked', { reason: 'code_replay' }]);
+      expect(events.filter(([level]) => level === 'error')).toEqual([]);
     });
 
     it('answers a store failure while minting a token with a server error, and logs it', async () => {

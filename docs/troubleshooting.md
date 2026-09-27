@@ -196,6 +196,15 @@ requires to contain a stolen token. A client that retries a refresh after a lost
 response, or refreshes from two places with the same token, signs its user out.
 Signing in again fixes it; if it recurs, report it to the client's maintainers.
 
+## HTTP: the log shows `oauth_grant_revoke_failed`
+
+The server ended a grant (Zendesk refused the user's token, or a code or refresh
+token was replayed) but could not delete it from the grant store. It is revoked
+in the running process, not on disk: a restart before the store's next
+successful write would bring it back, with its refresh token. Fix the store
+first (disk space, permissions on its directory), then restart. Any successful
+write persists the removal, since the store rewrites its whole file.
+
 ## HTTP: the sign-in page says the link expired
 
 The sign-in went through another browser than the one that started it, or took

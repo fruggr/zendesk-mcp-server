@@ -114,6 +114,12 @@ while #127 is open.
     already rotated our refresh token when the access token is minted, so the
     client's retry is a replay. A grant the provider ends that way (or on a
     revocation request) takes its Zendesk tokens with it (`grant.revoked`).
+- **An authorization code is single-use under concurrency too.** `oidc-provider`
+  checks `consumed` on the copy it found, then consumes it, so two concurrent
+  exchanges of one code would both win. The adapter consumes under a per-record
+  lock and refuses the second with `invalid_grant`, ending the grant (RFC 6749,
+  4.1.2). Refresh tokens keep the provider's behaviour: a parallel refresh with
+  one token is benign, not a replay.
 - **The granted scope narrows the tool surface.** A token without `write` gets
   the read tools only, like `--read-only`, and cannot drive a session opened
   with `write`.

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { CompactEncrypt, compactDecrypt, decodeProtectedHeader } from 'jose';
-import type { Adapter, AdapterFactory, AdapterPayload } from 'oidc-provider';
+import { type Adapter, type AdapterFactory, type AdapterPayload, errors } from 'oidc-provider';
 import { createFileStore, createMemoryStore, type RecordStore } from './file-store';
 import type { KeyRing } from './keys';
 
@@ -140,8 +140,23 @@ export interface AdapterStores {
   readonly memory?: RecordStore | undefined;
 }
 
+// oidc-provider checks `consumed` on the copy it found, then consumes: two
+// concurrent exchanges of one code would both pass. The adapter re-checks under
+// a lock. Refresh tokens keep the provider's behaviour: a parallel refresh is
+// benign (ADR, Tokens).
+const SINGLE_USE_MODELS: ReadonlySet<string> = new Set(['AuthorizationCode']);
+
+export interface AdapterOptions {
+  /** A single-use record was presented again: end its grant (RFC 6749, 4.1.2). */
+  readonly onReplay?: ((grantId: string) => Promise<void>) | undefined;
+}
+
 /** oidc-provider adapter factory over two stores, sealed with the at-rest key. */
-export const createAdapterFactory = (stores: AdapterStores, ring: KeyRing): AdapterFactory => {
+export const createAdapterFactory = (
+  stores: AdapterStores,
+  ring: KeyRing,
+  options: AdapterOptions = {},
+): AdapterFactory => {
   const memory = stores.memory ?? createMemoryStore();
   const withLock = createKeyLock();
 
@@ -172,15 +187,20 @@ export const createAdapterFactory = (stores: AdapterStores, ring: KeyRing): Adap
       },
       // Device flow is not enabled.
       findByUserCode: async () => undefined,
-      consume: async (id) => {
-        const payload = await records.get(id);
-        if (!payload) return;
-        await records.set(
-          id,
-          { ...payload, consumed: Math.floor(Date.now() / 1000) },
-          secondsUntil(payload.exp),
-        );
-      },
+      consume: (id) =>
+        withLock(`${name}:consume:${id}`, async () => {
+          const payload = await records.get(id);
+          if (!payload) return;
+          if (payload.consumed && SINGLE_USE_MODELS.has(name)) {
+            if (payload.grantId) await options.onReplay?.(payload.grantId);
+            throw new errors.InvalidGrant('authorization code already consumed');
+          }
+          await records.set(
+            id,
+            { ...payload, consumed: Math.floor(Date.now() / 1000) },
+            secondsUntil(payload.exp),
+          );
+        }),
       destroy: (id) => records.delete(id),
       revokeByGrantId: (grantId) =>
         withLock(`${name}:${grantId}`, async () => {
