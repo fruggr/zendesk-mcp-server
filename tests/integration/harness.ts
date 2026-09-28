@@ -20,8 +20,8 @@ export interface ConnectedClient {
 }
 
 /**
- * Transport-agnostic seam for the integration suite. Each transport (stdio
- * today, HTTP in a later PR) provides one implementation; the shared scenarios
+ * Transport-agnostic seam for the integration suite. Each transport (stdio,
+ * HTTP) provides one implementation; the shared scenarios
  * in `core-scenarios.ts` run against any harness unchanged.
  */
 export interface IntegrationHarness {

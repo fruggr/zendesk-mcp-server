@@ -21,6 +21,10 @@
       "env": {
         "ZENDESK_SUBDOMAIN": "fruggr"
       }
+    },
+    "zendesk-local-http": {
+      "type": "http",
+      "url": "http://localhost:3000/mcp"
     }
   }
 }

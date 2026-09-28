@@ -18,6 +18,7 @@
     "typecheck": "node scripts/typecheck.mjs",
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
+    "dev:http": "tsx src/index.ts --transport http --host 127.0.0.1 --port 3000 --public-url http://localhost:3000 --mode all --namespace tickets --namespace help_center --namespace users --namespace requests",
     "prepare": "npm run build && (lefthook install || true)",
     "prepublishOnly": "npm run build",
     "check": "node scripts/biome.mjs check --error-on-warnings .",
@@ -72,7 +73,6 @@
   },
   "packageManager": "pnpm@12.5.1+sha512.e3f305bc784a2bc89f5ad3b6138889470fae8d2af5f36b61216ec91c2c3d64089775f9de38aac331044ea40f245cb0d5666392dfdf65824e1907ef6a2c62de5f",
   "dependencies": {
-    "@modelcontextprotocol/node": "2.0.0",
     "@modelcontextprotocol/server": "2.0.0",
     "cheerio": "1.2.0",
     "hast-util-to-html": "9.0.5",
@@ -89,9 +89,26 @@
     "unified": "11.0.5",
     "zod": "4.6.5"
   },
+  "peerDependencies": {
+    "@modelcontextprotocol/node": "^2.0.0",
+    "jose": "^6.2.12",
+    "oidc-provider": "~9.12.2"
+  },
+  "peerDependenciesMeta": {
+    "@modelcontextprotocol/node": {
+      "optional": true
+    },
+    "jose": {
+      "optional": true
+    },
+    "oidc-provider": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@biomejs/biome": "2.5.13",
     "@modelcontextprotocol/client": "2.0.0",
+    "@modelcontextprotocol/node": "2.0.0",
     "@semantic-release/changelog": "^7.0.0",
     "@semantic-release/exec": "^7.1.0",
     "@semantic-release/git": "^11.0.0",
@@ -104,10 +121,13 @@
     "@tsconfig/strictest": "^2.0.8",
     "@types/hast": "^3.0.4",
     "@types/node": "^22.15.0",
+    "@types/oidc-provider": "9.12.1",
     "@vitest/coverage-v8": "^5.0.0",
     "conventional-changelog-conventionalcommits": "^10.2.1",
+    "jose": "6.2.12",
     "lefthook": "^2.1.10",
     "msw": "^2.12.13",
+    "oidc-provider": "~9.12.2",
     "semantic-release": "^25.0.3",
     "shx": "^0.4.0",
     "tsdown": "^0.23.0",

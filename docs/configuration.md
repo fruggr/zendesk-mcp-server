@@ -7,8 +7,10 @@ deep-link a specific setting (e.g.
 
 CLI flags generally take precedence over the matching environment variable. The
 one exception is `--cors-origin`, which is additive and *extends* `CORS_ORIGIN`
-rather than replacing it. The server uses per-user OAuth 2.1 PKCE on every
-transport; there is no static API-token mode (see
+rather than replacing it, and likewise `--oauth-trusted-client`, which extends
+`OAUTH_TRUSTED_CLIENTS`. Authentication is per-user OAuth 2.1 PKCE on every
+transport, through the same Zendesk OAuth client; there is no static API-token
+mode (see
 [What this server does *not* do](../README.md#what-this-server-does-not-do)).
 
 ## CLI reference
@@ -45,6 +47,17 @@ Options:
                           adds to the default allowlist of major web MCP
                           clients + localhost-any-port)
   --callback-port <port>  Local OAuth callback port for stdio (default 27439)
+  --oauth-master-secret-file <path>
+                          HTTP: file holding the authorization server's master
+                          secret (else OAUTH_MASTER_SECRET, else generated and
+                          persisted in the config dir)
+  --oauth-store <uri>     HTTP: grant store, file:// (default: a file in the
+                          config dir) or memory://
+  --oauth-trusted-client <url>
+                          HTTP: CIMD client id that skips the consent screen
+                          (repeatable; adds to claude.ai and ChatGPT)
+  --no-default-trusted-clients
+                          HTTP: drop the built-in trusted clients
   --dev                   Dev-only: expose a reload_tools tool that hot-reloads
                           edited tool code on demand (stdio only; see "Dev mode"
                           below)
@@ -121,7 +134,8 @@ zendesk-mcp-server acme --read-only --namespace tickets
 # Cherry-pick specific tools
 zendesk-mcp-server acme --tool get_ticket --tool search_tickets --tool get_current_user
 
-# Remote HTTP, read-only Help Center surface
+# Remote HTTP, read-only Help Center surface (needs the optional HTTP
+# packages installed: docs/http-deployment.md#install)
 zendesk-mcp-server acme --transport http --port 8080 \
   --namespace help_center --read-only
 ```
@@ -220,7 +234,9 @@ Zendesk subdomain (e.g. `acme` for `acme.zendesk.com`).
 ### `ZENDESK_OAUTH_CLIENT_ID`
 **Required:** no · **Default:** `<subdomain>_zendesk`
 
-OAuth client identifier.
+OAuth client identifier. The same public PKCE client serves both transports: in
+HTTP mode, add `<public-url>/oauth/callback` to its redirect URLs
+([setup](http-deployment.md#zendesk-oauth-setup)).
 
 ### `OAUTH_CALLBACK_PORT`
 **Required:** no · **Default:** `27439`
@@ -256,6 +272,32 @@ Public URL advertised in OAuth discovery metadata. See [Public URL](http-deploym
 **Required:** no · **Default:** none
 
 Comma-separated browser origins added to the default CORS allowlist.
+
+### `OAUTH_MASTER_SECRET`
+**Required:** no (recommended for a deployment) · **Default:** generated on first start and persisted as `oauth-master-secret` in the config dir
+
+The HTTP authorization server's master secret: base64, at least 32 bytes
+(`openssl rand -base64 32`), a comma-separated list newest first to rotate. It
+belongs to this server, not to Zendesk. No CLI flag carries the value, so it
+never shows in a process listing; `--oauth-master-secret-file` (or
+`OAUTH_MASTER_SECRET_FILE`) reads it from a file instead. See
+[Master secret and grant store](http-deployment.md#master-secret-and-grant-store).
+**HTTP only.**
+
+### `OAUTH_STORE`
+**Required:** no · **Default:** `file://<config dir>/oauth-store.json`
+
+Where grants, refresh tokens and registered clients are kept, encrypted (also
+`--oauth-store`): `file://<path>`, or `memory://` for tests. **HTTP only.**
+
+### `OAUTH_TRUSTED_CLIENTS`
+**Required:** no · **Default:** none (claude.ai and ChatGPT are built in)
+
+Comma-separated CIMD client ids that skip the consent screen, added to the
+built-in ones (also `--oauth-trusted-client`; `--no-default-trusted-clients`
+drops the built-in ones). See
+[Trusted clients and consent](http-deployment.md#trusted-clients-and-consent).
+**HTTP only.**
 
 ### `HC_RESOURCE_SCHEME`
 **Required:** no · **Default:** `zendesk-hc`

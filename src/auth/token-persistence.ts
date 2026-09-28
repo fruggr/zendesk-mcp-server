@@ -37,9 +37,9 @@ const appDirSegments = (): string[] => {
   return scoped?.[1] && scoped[2] ? [scoped[1], scoped[2]] : [name];
 };
 
-// OS config dir holding the token files, one per key: `%APPDATA%` on Windows,
+// OS config dir holding the token files (one per key) and the OAuth AS files: `%APPDATA%` on Windows,
 // `$XDG_CONFIG_HOME` (falling back to `~/.config`) elsewhere.
-const configDir = (): string => {
+export const configDir = (): string => {
   const segments = appDirSegments();
   if (isWindows) {
     const base = process.env['APPDATA'] ?? join(homedir(), 'AppData', 'Roaming');
