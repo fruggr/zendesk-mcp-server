@@ -2,18 +2,27 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { HTTP_PEERS, loadHttpTransport } from '../../../src/transports/http-peers';
 
+const pkg = JSON.parse(readFileSync('package.json', 'utf8')) as {
+  dependencies: Record<string, string>;
+  peerDependencies: Record<string, string>;
+  peerDependenciesMeta: Record<string, { optional?: boolean }>;
+  devDependencies: Record<string, string>;
+};
+
 const notFound = (message: string) =>
   Object.assign(new Error(message), { code: 'ERR_MODULE_NOT_FOUND' });
 
 describe('HTTP_PEERS', () => {
-  it('matches the optional peer dependencies declared in package.json', () => {
-    const pkg = JSON.parse(readFileSync('package.json', 'utf8')) as {
-      dependencies: Record<string, string>;
-      peerDependencies: Record<string, string>;
-      peerDependenciesMeta: Record<string, { optional?: boolean }>;
-      devDependencies: Record<string, string>;
-    };
-    expect(pkg.peerDependencies).toEqual(HTTP_PEERS);
+  it('is the peer dependency map of package.json', () => {
+    expect(HTTP_PEERS).toEqual(pkg.peerDependencies);
+    expect(Object.keys(HTTP_PEERS).sort()).toEqual([
+      '@modelcontextprotocol/node',
+      'jose',
+      'oidc-provider',
+    ]);
+  });
+
+  it('declares every peer optional, and installs it for development only', () => {
     for (const name of Object.keys(HTTP_PEERS)) {
       expect(pkg.peerDependenciesMeta[name]).toEqual({ optional: true });
       // Tests and `dev:http` need them; a regular dependency would ship them to stdio users.
@@ -40,11 +49,15 @@ describe('loadHttpTransport', () => {
         notFound("Cannot find package 'oidc-provider' imported from /app/dist/http-abc.js"),
       );
     const error = await loadHttpTransport(importer).catch((err: unknown) => err as Error);
-    expect(error.message).toMatchInlineSnapshot(`
-      "The HTTP transport needs optional packages that are not installed (missing: oidc-provider). Install them next to the server:
-        npm install @fruggr/zendesk-mcp-server oidc-provider@~9.12.2 jose@^6.2.12 @modelcontextprotocol/node@^2.0.0
-      stdio does not need them. See docs/http-deployment.md."
-    `);
+    // Versions come from package.json, so a dependency bump never touches this test.
+    const install = Object.entries(pkg.peerDependencies)
+      .map(([name, range]) => `${name}@${range}`)
+      .join(' ');
+    expect(error.message).toBe(
+      'The HTTP transport needs optional packages that are not installed (missing: oidc-provider). Install them next to the server:\n' +
+        `  npm install @fruggr/zendesk-mcp-server ${install}\n` +
+        'stdio does not need them. See docs/http-deployment.md.',
+    );
     expect(error.cause).toBeInstanceOf(Error);
   });
 

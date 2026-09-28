@@ -1,14 +1,12 @@
+import { peerDependencies } from '../../package.json';
+
 /**
  * Packages only the HTTP transport uses, shipped as optional peer dependencies so
- * a stdio install (npx, bunx) never downloads them. Kept equal to `package.json`
- * `peerDependencies` by a unit test. Rationale: docs/decisions/oauth-authorization-server.md
- * (Packaging).
+ * a stdio install (npx, bunx) never downloads them. Inlined from `package.json` at
+ * build time, so a version bump there is the only edit. Rationale:
+ * docs/decisions/oauth-authorization-server.md (Packaging).
  */
-export const HTTP_PEERS: Readonly<Record<string, string>> = {
-  'oidc-provider': '~9.12.2',
-  jose: '^6.2.12',
-  '@modelcontextprotocol/node': '^2.0.0',
-};
+export const HTTP_PEERS: Readonly<Record<string, string>> = peerDependencies;
 
 type HttpTransportModule = typeof import('./http');
 
