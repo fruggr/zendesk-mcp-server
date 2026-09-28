@@ -4,6 +4,7 @@ import { createServer, type Server, type ServerResponse } from 'node:http';
 import { release } from 'node:os';
 import open from 'open';
 import { DEFAULT_CALLBACK_PORT, getOAuthUrls } from '../constants';
+import { escapeHtml } from '../utils/html';
 import { type Logger, silentLogger } from '../utils/logger';
 import { requestedScope } from './oauth-scopes';
 
@@ -28,7 +29,7 @@ interface BrowserOAuthConfig {
   readOnly: boolean;
 }
 
-interface TokenResult {
+export interface TokenResult {
   access_token: string;
   refresh_token?: string;
   token_type: string;
@@ -60,20 +61,6 @@ const callbackPortInUseError = (port: number, cause: Error): Error =>
     ),
     { code: 'EADDRINUSE', cause },
   );
-
-/**
- * Escape a string for safe interpolation into HTML text/attribute context.
- * The local callback server echoes attacker-controllable values (the OAuth
- * `error_description` query param, token-exchange error bodies) back into the
- * browser response; without escaping these are a reflected-XSS sink.
- */
-const escapeHtml = (value: string): string =>
-  value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
 
 // Pages served back to the browser tab that completed (or failed) the flow.
 // ASCII only, like every other string on the auth path.
@@ -114,9 +101,9 @@ interface CallbackResolution {
   outcome: CallbackOutcome;
 }
 
-const generateCodeVerifier = (): string => randomBytes(32).toString('base64url');
+export const generateCodeVerifier = (): string => randomBytes(32).toString('base64url');
 
-const generateCodeChallenge = (verifier: string): string =>
+export const generateCodeChallenge = (verifier: string): string =>
   createHash('sha256').update(verifier).digest('base64url');
 
 /**

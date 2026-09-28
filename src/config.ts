@@ -147,6 +147,21 @@ export const ConfigSchema = z.object({
     )
     .default([]),
   callbackPort: z.number().int().min(1).max(65535).optional(),
+  /**
+   * HTTP only: the authorization server's master secret (`OAUTH_MASTER_SECRET`),
+   * or a file holding it. Both optional: when absent, one is generated and
+   * persisted in the config dir. Belongs to this server, not to Zendesk, hence
+   * no `ZENDESK_` prefix. Validated (length, base64) where it is used, so a
+   * value never reaches a schema error message.
+   */
+  oauthMasterSecret: z.string().optional(),
+  oauthMasterSecretFile: z.string().min(1).optional(),
+  /** HTTP only: the grant store URI; defaults to a file in the config dir. */
+  oauthStore: z.string().url().optional(),
+  /** HTTP only: CIMD client ids added to the consent-skip allowlist. */
+  oauthTrustedClients: z.array(z.string().url()).default([]),
+  /** HTTP only: whether the built-in allowlist (claude.ai, ChatGPT) applies. */
+  defaultTrustedClients: z.boolean().default(true),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -172,6 +187,10 @@ interface CliResult {
   publicUrl?: string;
   corsOrigins?: string[];
   callbackPort?: number;
+  oauthMasterSecretFile?: string;
+  oauthStore?: string;
+  oauthTrustedClients?: string[];
+  defaultTrustedClients?: boolean;
 }
 
 // Number.parseInt('8080abc', 10) === 8080 — a numeric prefix passes silently, so
@@ -225,6 +244,10 @@ const CLI_OPTIONS = {
   'public-url': { type: 'string' },
   'cors-origin': { type: 'string', multiple: true },
   'callback-port': { type: 'string' },
+  'oauth-master-secret-file': { type: 'string' },
+  'oauth-store': { type: 'string' },
+  'oauth-trusted-client': { type: 'string', multiple: true },
+  'no-default-trusted-clients': { type: 'boolean' },
   'read-only': { type: 'boolean' },
   'no-topology': { type: 'boolean' },
   'no-promoted-articles': { type: 'boolean' },
@@ -254,6 +277,9 @@ const FIELD_BY_FLAG = new Map<string, keyof CliResult>([
   ['host', 'host'],
   ['public-url', 'publicUrl'],
   ['cors-origin', 'corsOrigins'],
+  ['oauth-master-secret-file', 'oauthMasterSecretFile'],
+  ['oauth-store', 'oauthStore'],
+  ['oauth-trusted-client', 'oauthTrustedClients'],
 ]);
 
 // Standalone flags set a fixed value, which is why they cannot go through
@@ -264,6 +290,7 @@ const STANDALONE_EFFECTS = new Map<string, Partial<CliResult>>([
   ['no-promoted-articles', { promotedArticles: false }],
   ['dev', { dev: true }],
   ['print-tools', { printTools: true }],
+  ['no-default-trusted-clients', { defaultTrustedClients: false }],
 ]);
 
 const parseCliArgs = (args: string[]): CliResult => {
@@ -324,6 +351,12 @@ const parseCliArgs = (args: string[]): CliResult => {
   return result;
 };
 
+const splitList = (raw: string | undefined): string[] =>
+  (raw ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+
 interface TransportSettings {
   transport: string;
   host: string;
@@ -341,10 +374,7 @@ const resolveTransportSettings = (cli: CliResult): TransportSettings => {
   // transport — this list ADDS to them, never replaces them. Read directly, not
   // through requireNonEmptyEnv: as a list, an empty CORS_ORIGIN means "no extra
   // origins" rather than a misconfiguration.
-  const corsFromEnv = (process.env['CORS_ORIGIN'] ?? '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
+  const corsFromEnv = splitList(process.env['CORS_ORIGIN']);
 
   return {
     transport: cli.transport ?? requireNonEmptyEnv('TRANSPORT') ?? 'stdio',
@@ -354,6 +384,21 @@ const resolveTransportSettings = (cli: CliResult): TransportSettings => {
     corsOrigins: [...(cli.corsOrigins ?? []), ...corsFromEnv],
   };
 };
+
+// The authorization server's knobs (HTTP only), same precedence as the
+// transport settings. The secret has no CLI flag on purpose: a value on the
+// command line leaks into process listings, so it is an env var or a file.
+const resolveOAuthServerSettings = (cli: CliResult) => ({
+  oauthMasterSecret: requireNonEmptyEnv('OAUTH_MASTER_SECRET'),
+  oauthMasterSecretFile:
+    cli.oauthMasterSecretFile ?? requireNonEmptyEnv('OAUTH_MASTER_SECRET_FILE'),
+  oauthStore: cli.oauthStore ?? requireNonEmptyEnv('OAUTH_STORE'),
+  oauthTrustedClients: [
+    ...(cli.oauthTrustedClients ?? []),
+    ...splitList(readEnv('OAUTH_TRUSTED_CLIENTS').value),
+  ],
+  defaultTrustedClients: cli.defaultTrustedClients,
+});
 
 export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
   const cli = parseCliArgs(argv);
@@ -393,5 +438,6 @@ export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
     printTools: cli.printTools ?? false,
     callbackPort,
     ...resolveTransportSettings(cli),
+    ...resolveOAuthServerSettings(cli),
   });
 };
