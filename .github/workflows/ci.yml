@@ -110,7 +110,8 @@ jobs:
           done
           OUT=$(env ZENDESK_SUBDOMAIN=smoke-test timeout 5 npx zendesk-mcp-server --transport http --port 0 2>&1 || true)
           echo "$OUT"
-          echo "$OUT" | grep -q "npm install @fruggr/zendesk-mcp-server oidc-provider@"
+          PEERS=$(node -e "const p=require('./node_modules/@fruggr/zendesk-mcp-server/package.json').peerDependencies;console.log(Object.entries(p).map(([n,r])=>n+'@'+r).join(' '))")
+          echo "$OUT" | grep -qF "npm install @fruggr/zendesk-mcp-server $PEERS"
 
       - name: Verify HTTP runs once the peers are installed
         working-directory: app
