@@ -181,6 +181,8 @@ export const applySectionUpdate = (
     contentHeadings: contentSections.filter((s) => s.level > 0).length,
     // Heading-led content turns the intro into a heading section: the section count
     // can stay the same while index 0 changes meaning.
+    // Stryker disable next-line OptionalChaining: replaceSectionContent above already threw
+    // for an out-of-range index, so `target` is defined here; `?.` only satisfies the types.
     introLost: target?.level === 0 && (contentSections[0]?.level ?? 0) > 0,
   };
 };
