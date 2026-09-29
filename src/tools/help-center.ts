@@ -49,6 +49,7 @@ import {
   markdownToHtml,
   parseSections,
   type Section,
+  type StrippedHeading,
 } from '../utils/article-sections';
 import {
   formatArticle,
@@ -557,6 +558,48 @@ const assertReorderParamsCoherent = (
     throw new Error('reference_article_id must differ from article_id.');
   }
 };
+
+const structureWarning = (
+  contentHeadings: number,
+  introLost: boolean,
+  sectionIndex: number,
+  sectionsBefore: number,
+  sectionsAfter: number,
+): string[] => {
+  if (introLost) {
+    return [
+      `Warning: content starts with a heading, so the intro no longer exists and section [${sectionIndex}] is now a heading section (article: ${sectionsAfter} sections, was ${sectionsBefore}). Call get_article_outline before the next edit.`,
+    ];
+  }
+  if (contentHeadings > 0) {
+    return [
+      `Warning: content contains ${contentHeadings} heading(s) (h1-h3), so the article now has ${sectionsAfter} sections (was ${sectionsBefore}); indexes after [${sectionIndex}] shifted. Call get_article_outline before the next edit.`,
+    ];
+  }
+  return [];
+};
+
+const sectionUpdateNotes = (o: {
+  stripped: StrippedHeading | null;
+  contentHeadings: number;
+  introLost: boolean;
+  sectionIndex: number;
+  sectionsBefore: number;
+  sectionsAfter: number;
+}): string[] => [
+  ...(o.stripped
+    ? [
+        `Note: removed a leading <${o.stripped.tag}> "${o.stripped.text}" from content; the section heading is kept automatically and is not part of content.`,
+      ]
+    : []),
+  ...structureWarning(
+    o.contentHeadings,
+    o.introLost,
+    o.sectionIndex,
+    o.sectionsBefore,
+    o.sectionsAfter,
+  ),
+];
 
 export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
   const { subdomain, getToken } = ctx;
@@ -2311,7 +2354,9 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           body: newBody,
           stripped,
           contentHeadings,
+          introLost,
         } = applySectionUpdate(translation.body, section_index, newSectionHtml);
+        const sectionsBefore = parseSections(translation.body).length;
         const { translation: updated } = await helpCenterPut<{ translation: ZendeskTranslation }>(
           subdomain,
           token,
@@ -2325,16 +2370,14 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         const text = [
           `Section [${section_index}] "${headingLabel}" updated for article #${article_id} (${locale}).`,
           `New word count: ${newWordCount}.`,
-          ...(stripped
-            ? [
-                `Note: removed a leading <${stripped.tag}> "${stripped.text}" from content; the section heading is kept automatically and is not part of content.`,
-              ]
-            : []),
-          ...(contentHeadings > 0
-            ? [
-                `Warning: content contains ${contentHeadings} heading(s) (h1-h3), so the article now has ${updatedSections.length} sections (was ${parseSections(translation.body).length}); indexes after [${section_index}] shifted. Call get_article_outline before the next edit.`,
-              ]
-            : []),
+          ...sectionUpdateNotes({
+            stripped,
+            contentHeadings,
+            introLost,
+            sectionIndex: section_index,
+            sectionsBefore,
+            sectionsAfter: updatedSections.length,
+          }),
         ].join('\n');
         return { content: [{ type: 'text', text }] };
       },

@@ -291,6 +291,7 @@ describe('applySectionUpdate (issue #328)', () => {
       {
         "body": "<p>intro</p><h2>Related articles</h2><ul><li>new</li></ul>",
         "contentHeadings": 0,
+        "introLost": false,
         "stripped": {
           "tag": "h2",
           "text": "Related articles",
@@ -306,6 +307,29 @@ describe('applySectionUpdate (issue #328)', () => {
       body: replaceSectionContent(body, 1, '<p>new</p>'),
       stripped: null,
       contentHeadings: 0,
+      introLost: false,
+    });
+  });
+
+  describe('introLost', () => {
+    const body = '<p>intro</p><h2>A</h2><p>a</p>';
+
+    it('is set when heading-led content replaces the intro, whose count then stays put', () => {
+      const result = applySectionUpdate(body, 0, '<h2>X</h2><p>y</p>');
+      expect(result.introLost).toBe(true);
+      expect(parseSections(result.body)).toHaveLength(parseSections(body).length);
+    });
+
+    it('is not set when the new intro keeps text before its first heading', () => {
+      expect(applySectionUpdate(body, 0, '<p>t</p><h2>X</h2>').introLost).toBe(false);
+    });
+
+    it('is not set when the intro is simply emptied', () => {
+      expect(applySectionUpdate(body, 0, '').introLost).toBe(false);
+    });
+
+    it('is not set for a section that has its own heading', () => {
+      expect(applySectionUpdate(body, 1, '<h3>S</h3><p>x</p>').introLost).toBe(false);
     });
   });
 

@@ -163,16 +163,25 @@ export const applySectionUpdate = (
   html: string,
   sectionIndex: number,
   newHtml: string,
-): { body: string; stripped: StrippedHeading | null; contentHeadings: number } => {
+): {
+  body: string;
+  stripped: StrippedHeading | null;
+  contentHeadings: number;
+  introLost: boolean;
+} => {
   const target = parseSections(html)[sectionIndex];
   const { html: content, stripped } =
     target && target.level > 0
       ? stripLeadingDuplicateHeading(newHtml, target.heading)
       : { html: newHtml, stripped: null };
+  const contentSections = parseSections(content);
   return {
     body: replaceSectionContent(html, sectionIndex, content),
     stripped,
-    contentHeadings: parseSections(content).filter((s) => s.level > 0).length,
+    contentHeadings: contentSections.filter((s) => s.level > 0).length,
+    // Heading-led content turns the intro into a heading section: the section count
+    // can stay the same while index 0 changes meaning.
+    introLost: target?.level === 0 && (contentSections[0]?.level ?? 0) > 0,
   };
 };
 

@@ -1688,6 +1688,19 @@ describe('help center tools', () => {
         `);
       });
 
+      it('reports the lost intro rather than a shift when the section count stays put', async () => {
+        const puts = stubBody();
+        const text = await run({ section_index: 0, content: '<h2>Top</h2><p>y</p>' });
+        expect(puts).toEqual([
+          '<h2>Top</h2><p>y</p><h2>Related articles</h2><ul><li>old</li></ul>',
+        ]);
+        expect(text).toMatchInlineSnapshot(`
+          "Section [0] "Top" updated for article #5000 (en-us).
+          New word count: 1.
+          Warning: content starts with a heading, so the intro no longer exists and section [0] is now a heading section (article: 2 sections, was 2). Call get_article_outline before the next edit."
+        `);
+      });
+
       it('adds nothing to the response when content carries no heading', async () => {
         stubBody();
         const text = await run({ section_index: 1, content: '<p>one two</p>' });
