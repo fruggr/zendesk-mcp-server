@@ -331,6 +331,14 @@ describe('applySectionUpdate (issue #328)', () => {
     expect(result.contentHeadings).toBe(1);
   });
 
+  it('leaves a heading titled like the intro placeholder alone in the intro', () => {
+    // parseSections labels the intro "intro"; that is a label, not a heading to echo.
+    const body = '<p>intro</p><h2>A</h2><p>a</p>';
+    const result = applySectionUpdate(body, 0, '<h2>intro</h2><p>x</p>');
+    expect(result.stripped).toBeNull();
+    expect(result.contentHeadings).toBe(1);
+  });
+
   it('does not count a heading nested in another element, which is not a section', () => {
     const body = '<h2>A</h2><p>a</p>';
     expect(applySectionUpdate(body, 0, '<div><h2>x</h2></div>').contentHeadings).toBe(0);

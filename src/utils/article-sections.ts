@@ -144,7 +144,11 @@ export const stripLeadingDuplicateHeading = (
 ): { html: string; stripped: StrippedHeading | null } => {
   const match = LEADING_HEADING.exec(html);
   const tag = match?.[1];
+  // Stryker disable next-line LogicalOperator: `tag` is undefined exactly when `match` is
+  // null, so `!tag` only narrows the type for noUncheckedIndexedAccess.
   if (!match || !tag) return { html, stripped: null };
+  // Stryker disable next-line StringLiteral: group 2 always takes part in a match, so the
+  // fallback is unreachable and only satisfies noUncheckedIndexedAccess.
   const text = normalizeText(textOf(match[2] ?? ''));
   if (text !== normalizeText(sectionHeading)) return { html, stripped: null };
   return {
