@@ -46,6 +46,7 @@ import {
 import {
   applySectionUpdate,
   htmlToMarkdown,
+  type IntroLoss,
   markdownToHtml,
   parseSections,
   type Section,
@@ -561,12 +562,17 @@ const assertReorderParamsCoherent = (
 
 const structureWarning = (
   contentHeadings: number,
-  introLost: boolean,
+  introLost: IntroLoss,
   sectionIndex: number,
   sectionsBefore: number,
   sectionsAfter: number,
 ): string[] => {
-  if (introLost) {
+  if (introLost === 'empty') {
+    return [
+      `Warning: content is empty, so the intro no longer exists and every later section index moved down by one (article: ${sectionsAfter} sections, was ${sectionsBefore}). Call get_article_outline before the next edit.`,
+    ];
+  }
+  if (introLost === 'heading-led') {
     return [
       `Warning: content starts with a heading, so the intro no longer exists and section [${sectionIndex}] is now a heading section (article: ${sectionsAfter} sections, was ${sectionsBefore}). Call get_article_outline before the next edit.`,
     ];
@@ -582,7 +588,7 @@ const structureWarning = (
 const sectionUpdateNotes = (o: {
   stripped: StrippedHeading | null;
   contentHeadings: number;
-  introLost: boolean;
+  introLost: IntroLoss;
   sectionIndex: number;
   sectionsBefore: number;
   sectionsAfter: number;
@@ -2365,8 +2371,10 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         );
         const updatedSections = parseSections(updated.body);
         const updatedSection = updatedSections[section_index];
-        const newWordCount = updatedSection?.wordCount ?? 0;
-        const headingLabel = updatedSection?.heading ?? '(intro)';
+        // An emptied intro leaves nothing at [n]: the section now there is a later one.
+        const emptied = introLost === 'empty';
+        const newWordCount = emptied ? 0 : (updatedSection?.wordCount ?? 0);
+        const headingLabel = emptied ? '(intro)' : (updatedSection?.heading ?? '(intro)');
         const text = [
           `Section [${section_index}] "${headingLabel}" updated for article #${article_id} (${locale}).`,
           `New word count: ${newWordCount}.`,

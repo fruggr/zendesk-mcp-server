@@ -1701,6 +1701,17 @@ describe('help center tools', () => {
         `);
       });
 
+      it('reports an emptied intro, whose removal moves every later index down', async () => {
+        const puts = stubBody();
+        const text = await run({ section_index: 0, content: '' });
+        expect(puts).toEqual(['<h2>Related articles</h2><ul><li>old</li></ul>']);
+        expect(text).toMatchInlineSnapshot(`
+          "Section [0] "(intro)" updated for article #5000 (en-us).
+          New word count: 0.
+          Warning: content is empty, so the intro no longer exists and every later section index moved down by one (article: 1 sections, was 2). Call get_article_outline before the next edit."
+        `);
+      });
+
       it('adds nothing to the response when content carries no heading', async () => {
         stubBody();
         const text = await run({ section_index: 1, content: '<p>one two</p>' });

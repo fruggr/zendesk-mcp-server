@@ -157,6 +157,20 @@ export const stripLeadingDuplicateHeading = (
   };
 };
 
+export type IntroLoss = 'empty' | 'heading-led' | null;
+
+// The intro exists only while text precedes the first heading. Emptying it drops section
+// 0 and moves every later index down; heading-led content turns it into a heading
+// section, so the count can stay the same while index 0 changes meaning.
+const introLoss = (target: Section | undefined, contentSections: Section[]): IntroLoss => {
+  // Stryker disable next-line OptionalChaining: replaceSectionContent already threw for an
+  // out-of-range index before this runs, so `target` is defined; `?.` only satisfies the types.
+  if (target?.level !== 0) return null;
+  const first = contentSections[0];
+  if (!first) return 'empty';
+  return first.level > 0 ? 'heading-led' : null;
+};
+
 // Wraps `replaceSectionContent` with the guards a write needs. Only a heading-bearing
 // section can echo its own heading; in the intro a heading is a structure change.
 export const applySectionUpdate = (
@@ -167,7 +181,7 @@ export const applySectionUpdate = (
   body: string;
   stripped: StrippedHeading | null;
   contentHeadings: number;
-  introLost: boolean;
+  introLost: IntroLoss;
 } => {
   const target = parseSections(html)[sectionIndex];
   const { html: content, stripped } =
@@ -175,15 +189,12 @@ export const applySectionUpdate = (
       ? stripLeadingDuplicateHeading(newHtml, target.heading)
       : { html: newHtml, stripped: null };
   const contentSections = parseSections(content);
+  const body = replaceSectionContent(html, sectionIndex, content);
   return {
-    body: replaceSectionContent(html, sectionIndex, content),
+    body,
     stripped,
     contentHeadings: contentSections.filter((s) => s.level > 0).length,
-    // Heading-led content turns the intro into a heading section: the section count
-    // can stay the same while index 0 changes meaning.
-    // Stryker disable next-line OptionalChaining: replaceSectionContent above already threw
-    // for an out-of-range index, so `target` is defined here; `?.` only satisfies the types.
-    introLost: target?.level === 0 && (contentSections[0]?.level ?? 0) > 0,
+    introLost: introLoss(target, contentSections),
   };
 };
 
