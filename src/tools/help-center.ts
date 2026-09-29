@@ -44,10 +44,10 @@ import {
   type ReorderWrite,
 } from '../utils/article-order';
 import {
+  applySectionUpdate,
   htmlToMarkdown,
   markdownToHtml,
   parseSections,
-  replaceSectionContent,
   type Section,
 } from '../utils/article-sections';
 import {
@@ -2196,7 +2196,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: true,
       title: 'Get Article Section',
       description:
-        'Retrieve the content of a single section of an article in a given locale. Use get_article_outline first to discover section indexes. Default format="html" for round-trip safety. Pass format="markdown" only for human review — the Markdown representation is lossy on some structures (<pre> with <br>, tables with multi-<p> cells are kept as raw HTML to limit the damage, but do not round-trip markdown content back through update_article_section).',
+        'Retrieve the content of a single section of an article in a given locale. Use get_article_outline first to discover section indexes. Default format="html" for round-trip safety. Pass format="markdown" only for human review — the Markdown representation is lossy on some structures (<pre> with <br>, tables with multi-<p> cells are kept as raw HTML to limit the damage, but do not round-trip markdown content back through update_article_section). The "## [n] hN: ..." line at the top is a label, not part of the content.',
       inputSchema: z.object({
         article_id: z.number().int().describe(ARTICLE_ID_DESC),
         locale: z.string().describe('Locale of the body (e.g., "en-us", "fr")'),
@@ -2263,7 +2263,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: false,
       title: 'Update Article Section',
       description:
-        'Replace the content of a single section of an article in a given locale, keeping the rest of the body intact. The server fetches the current body, replaces the targeted section, and PUTs the full reconstructed body via the Translations API. Default format="html" for fidelity. Use format="markdown" only when you control the input and know it does not rely on structures that round-trip poorly (code blocks with line breaks, tables with multi-paragraph cells). The section heading is preserved and is NOT part of the replaced content.',
+        'Replace the body of one article section, heading excluded (the heading is kept as is), in a given locale, leaving the rest of the article intact. The server fetches the current body, replaces the targeted section, and PUTs the full reconstructed body via the Translations API. A leading heading in content that repeats the section heading is removed; any other h1-h3 in content creates new sections and shifts the later indexes (the response warns). section_index 0 is the heading-less intro, which exists only when the body has text before its first heading. Default format="html" for fidelity. Use format="markdown" only when you control the input and know it does not rely on structures that round-trip poorly (code blocks with line breaks, tables with multi-paragraph cells).',
       inputSchema: z.object({
         article_id: z.number().int().describe(ARTICLE_ID_DESC),
         locale: z.string().describe('Locale of the translation to update'),
@@ -2271,11 +2271,13 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           .number()
           .int()
           .min(0)
-          .describe('0-based index of the section to replace (see get_article_outline)'),
+          .describe(
+            '0-based index of the section to replace (see get_article_outline). 0 is the heading-less intro when the body has text before its first heading, otherwise the first heading.',
+          ),
         content: z
           .string()
           .describe(
-            'New content for the section (heading excluded). HTML by default, Markdown if format="markdown".',
+            'New content for the section (heading excluded: send neither the heading nor the "## [n] hN: ..." label line that get_article_section prints). HTML by default, Markdown if format="markdown".',
           ),
         format: z
           .enum(['html', 'markdown'])
@@ -2305,7 +2307,11 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           `/articles/${article_id}/translations/${locale}`,
         );
         const newSectionHtml = format === 'markdown' ? markdownToHtml(content) : content;
-        const newBody = replaceSectionContent(translation.body, section_index, newSectionHtml);
+        const {
+          body: newBody,
+          stripped,
+          contentHeadings,
+        } = applySectionUpdate(translation.body, section_index, newSectionHtml);
         const { translation: updated } = await helpCenterPut<{ translation: ZendeskTranslation }>(
           subdomain,
           token,
@@ -2319,6 +2325,16 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         const text = [
           `Section [${section_index}] "${headingLabel}" updated for article #${article_id} (${locale}).`,
           `New word count: ${newWordCount}.`,
+          ...(stripped
+            ? [
+                `Note: removed a leading <${stripped.tag}> "${stripped.text}" from content; the section heading is kept automatically and is not part of content.`,
+              ]
+            : []),
+          ...(contentHeadings > 0
+            ? [
+                `Warning: content contains ${contentHeadings} heading(s) (h1-h3), so the article now has ${updatedSections.length} sections (was ${parseSections(translation.body).length}); indexes after [${section_index}] shifted. Call get_article_outline before the next edit.`,
+              ]
+            : []),
         ].join('\n');
         return { content: [{ type: 'text', text }] };
       },

@@ -125,6 +125,53 @@ export const replaceSectionContent = (
     .join('');
 };
 
+export interface StrippedHeading {
+  tag: string;
+  text: string;
+}
+
+const LEADING_HEADING = /^\s*<(h[1-3])(?:\s[^>]*)?>([\s\S]*?)<\/\1\s*>/i;
+
+const normalizeText = (text: string): string => text.trim().split(WHITESPACE_RUN).join(' ');
+
+// The section heading is re-emitted around whatever `content` a caller sends, so a
+// caller that echoes the heading back (#328) would end up with it twice and split
+// the section in two. Sliced on the string, not re-serialised, to leave the rest
+// of the content byte for byte as sent.
+export const stripLeadingDuplicateHeading = (
+  html: string,
+  sectionHeading: string,
+): { html: string; stripped: StrippedHeading | null } => {
+  const match = LEADING_HEADING.exec(html);
+  const tag = match?.[1];
+  if (!match || !tag) return { html, stripped: null };
+  const text = normalizeText(textOf(match[2] ?? ''));
+  if (text !== normalizeText(sectionHeading)) return { html, stripped: null };
+  return {
+    html: html.slice(match[0].length).trimStart(),
+    stripped: { tag: tag.toLowerCase(), text },
+  };
+};
+
+// Wraps `replaceSectionContent` with the guards a write needs. Only a heading-bearing
+// section can echo its own heading; in the intro a heading is a structure change.
+export const applySectionUpdate = (
+  html: string,
+  sectionIndex: number,
+  newHtml: string,
+): { body: string; stripped: StrippedHeading | null; contentHeadings: number } => {
+  const target = parseSections(html)[sectionIndex];
+  const { html: content, stripped } =
+    target && target.level > 0
+      ? stripLeadingDuplicateHeading(newHtml, target.heading)
+      : { html: newHtml, stripped: null };
+  return {
+    body: replaceSectionContent(html, sectionIndex, content),
+    stripped,
+    contentHeadings: parseSections(content).filter((s) => s.level > 0).length,
+  };
+};
+
 // Keep structural HTML that markdown flattens lossily: <pre> with inline <br>
 // collapses to a single line, and <table> cells with multiple <p> break GFM
 // pipe tables. Leaving them as raw HTML is safer for round-trip.
