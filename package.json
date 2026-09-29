@@ -73,7 +73,7 @@
   },
   "packageManager": "pnpm@12.6.0+sha512.3ef68f951cb111ac204b4a5a16f0b2ddf0da56a96e0413e81d855d9f0b55ef926714709028e1cd00c405c2c5fb7b9e8ec4dc46777c805d0373c2f2ff00fd20ec",
   "dependencies": {
-    "@modelcontextprotocol/server": "2.0.0",
+    "@modelcontextprotocol/server": "2.1.0",
     "cheerio": "1.2.0",
     "hast-util-to-html": "9.0.5",
     "hast-util-to-mdast": "10.1.2",
@@ -107,8 +107,8 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.14",
-    "@modelcontextprotocol/client": "2.0.0",
-    "@modelcontextprotocol/node": "2.0.0",
+    "@modelcontextprotocol/client": "2.1.0",
+    "@modelcontextprotocol/node": "2.1.0",
     "@semantic-release/changelog": "^7.0.0",
     "@semantic-release/exec": "^7.1.0",
     "@semantic-release/git": "^11.0.0",
