@@ -58,12 +58,10 @@ describe('CHARACTER_LIMIT (positiveIntEnv)', () => {
     expect(await load()).toBe(25_000);
   });
 
-  it('still honors the legacy ZENDESK_CHARACTER_LIMIT', async () => {
-    vi.spyOn(console, 'error').mockImplementation(() => {});
+  it('ignores the legacy ZENDESK_CHARACTER_LIMIT removed in 3.0.0', async () => {
     vi.stubEnv('RESPONSE_CHARACTER_LIMIT', undefined);
     vi.stubEnv('ZENDESK_CHARACTER_LIMIT', '500');
-    expect(await load()).toBe(500);
-    vi.restoreAllMocks();
+    expect(await load()).toBe(25_000);
   });
 });
 

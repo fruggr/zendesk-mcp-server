@@ -59,7 +59,6 @@ describe('token-persistence', () => {
     failWrite = false;
     failDirChmod = false;
     delete process.env['OAUTH_TOKEN_FILE'];
-    delete process.env['ZENDESK_TOKEN_FILE'];
     delete process.env['XDG_CONFIG_HOME'];
     delete process.env['APPDATA'];
   });
@@ -71,25 +70,19 @@ describe('token-persistence', () => {
 
   // Like every single-value variable, empty is a misconfiguration rather than
   // "unset": falling back to the default file would silently ignore the intent.
-  it.each(['OAUTH_TOKEN_FILE', 'ZENDESK_TOKEN_FILE'])(
-    'rejects an empty %s, naming it',
-    async (name) => {
-      vi.spyOn(console, 'error').mockImplementation(() => {});
-      process.env[name] = '';
-      const { resolveTokenPath } = await importFresh();
-      expect(() => resolveTokenPath(KEY)).toThrow(
-        `Empty ${name}. Set it to a value, or unset it entirely.`,
-      );
-      vi.restoreAllMocks();
-    },
-  );
+  it('rejects an empty OAUTH_TOKEN_FILE, naming it', async () => {
+    process.env['OAUTH_TOKEN_FILE'] = '';
+    const { resolveTokenPath } = await importFresh();
+    expect(() => resolveTokenPath(KEY)).toThrow(
+      'Empty OAUTH_TOKEN_FILE. Set it to a value, or unset it entirely.',
+    );
+  });
 
-  it('still honors the legacy ZENDESK_TOKEN_FILE', async () => {
-    vi.spyOn(console, 'error').mockImplementation(() => {});
+  it('ignores the legacy ZENDESK_TOKEN_FILE removed in 3.0.0', async () => {
     process.env['ZENDESK_TOKEN_FILE'] = '/legacy/token.json';
     const { resolveTokenPath } = await importFresh();
-    expect(resolveTokenPath(KEY)).toBe('/legacy/token.json');
-    vi.restoreAllMocks();
+    expect(resolveTokenPath(KEY)).not.toBe('/legacy/token.json');
+    delete process.env['ZENDESK_TOKEN_FILE'];
   });
 
   it('resolves the path from OAUTH_TOKEN_FILE whatever the key', async () => {

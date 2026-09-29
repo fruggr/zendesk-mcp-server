@@ -212,8 +212,6 @@ const parsePort = (raw: string, label: string): number => {
 // with BAR unset both reach us as ''. Defaulting there boots a config that
 // disagrees with the deployment's intent, so fail naming it (#174). CORS_ORIGIN
 // is exempt — as a list, empty means "no extra origins".
-// Errors name the variable actually read, which is the legacy one when that
-// is what the deployment still sets (readEnv).
 const readNonEmptyEnv = (name: string): ReturnType<typeof readEnv> => {
   const env = readEnv(name);
   if (env.value === '') {
