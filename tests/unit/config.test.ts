@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ConfigSchema, DEFAULT_NAMESPACES, loadConfig, VALUE_FLAG_NAMES } from '../../src/config';
 
 // Cleared as one list: a suite that clears a subset only passes while the one before
@@ -18,7 +18,6 @@ const LOAD_CONFIG_ENV = [
   'OAUTH_MASTER_SECRET_FILE',
   'OAUTH_STORE',
   'OAUTH_TRUSTED_CLIENTS',
-  // Legacy names, still read until 3.0.0 (src/utils/env.ts).
   'HOST',
   'ZENDESK_OAUTH_CALLBACK_PORT',
 ] as const;
@@ -488,41 +487,16 @@ describe('loadConfig', () => {
       expect(() => loadConfig(['mycompany'])).toThrow(/Invalid OAUTH_CALLBACK_PORT value/);
     });
 
-    // The old names keep working until 3.0.0, and an error names the one the
-    // deployment set, not a variable it has never heard of.
-    describe('legacy names', () => {
-      beforeEach(() => {
-        vi.spyOn(console, 'error').mockImplementation(() => {});
-      });
-      afterEach(() => {
-        vi.restoreAllMocks();
-      });
-
-      it('still reads ZENDESK_OAUTH_CALLBACK_PORT and HOST', () => {
-        process.env['ZENDESK_OAUTH_CALLBACK_PORT'] = '52000';
-        process.env['HOST'] = '127.0.0.1';
-        const config = loadConfig(['mycompany']);
-        expect(config.callbackPort).toBe(52000);
-        expect(config.host).toBe('127.0.0.1');
-      });
-
-      it('prefers the new name when both are set', () => {
-        process.env['ZENDESK_OAUTH_CALLBACK_PORT'] = '52000';
-        process.env['OAUTH_CALLBACK_PORT'] = '53000';
-        expect(loadConfig(['mycompany']).callbackPort).toBe(53000);
-      });
-
-      it('names the legacy variable when its value is invalid', () => {
-        process.env['ZENDESK_OAUTH_CALLBACK_PORT'] = '52000abc';
-        expect(() => loadConfig(['mycompany'])).toThrow(
-          /Invalid ZENDESK_OAUTH_CALLBACK_PORT value/,
-        );
-      });
-
-      it('names the legacy variable when it is empty', () => {
-        process.env['HOST'] = '';
-        expect(() => loadConfig(['mycompany'])).toThrow(/Empty HOST\./);
-      });
+    // The pre-2.24 names were removed in 3.0.0: they must not leak into the config.
+    it('ignores the legacy ZENDESK_OAUTH_CALLBACK_PORT and HOST', () => {
+      process.env['ZENDESK_OAUTH_CALLBACK_PORT'] = '52000';
+      process.env['HOST'] = '10.9.8.7';
+      const legacy = loadConfig(['mycompany']);
+      delete process.env['ZENDESK_OAUTH_CALLBACK_PORT'];
+      delete process.env['HOST'];
+      const baseline = loadConfig(['mycompany']);
+      expect(legacy.callbackPort).toBe(baseline.callbackPort);
+      expect(legacy.host).toBe(baseline.host);
     });
   });
 

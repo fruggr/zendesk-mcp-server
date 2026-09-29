@@ -202,14 +202,12 @@ Three deliberate exceptions:
   guardrail instead of misrouting traffic, and refusing to boot over one would
   be the harsher failure.
 
-### Renamed variables
+### Removed variables
 
-`ZENDESK_*` now names only what describes the Zendesk side (the tenant, the
-OAuth client registered in it); the server's own knobs dropped the prefix, and
-`HOST` gained a qualifier. The old names still work until **3.0.0**: each one
-still set logs one `deprecated_env_var` warning on stderr the first time it is
-read, and when both names are set the new one wins. An empty or malformed value is reported
-under the name it was read from.
+`ZENDESK_*` names only what describes the Zendesk side (the tenant, the OAuth
+client registered in it); the server's own knobs dropped the prefix, and `HOST`
+gained a qualifier. The old names were removed in **3.0.0**: they are ignored.
+If you are upgrading from 2.x, rename them as follows.
 
 | Old name (removed in 3.0.0) | New name |
 |---|---|
@@ -224,6 +222,11 @@ under the name it was read from.
 | `ZENDESK_TICKET_FIELD_SCAN_MAX_PAGES` | [`TICKET_FIELD_SCAN_MAX_PAGES`](#ticket_field_scan_max_pages) |
 | `ZENDESK_REORDER_CONFIRM_THRESHOLD` | [`REORDER_CONFIRM_THRESHOLD`](#reorder_confirm_threshold) |
 | `ZENDESK_ARTICLE_RESOURCES_SCAN_MAX_PAGES` | [`ARTICLE_RESOURCES_SCAN_MAX_PAGES`](#article_resources_scan_max_pages) |
+
+Deployments that have not migrated their variables can stay on **2.24**, the
+transition release: it accepts both the old and the new names (an old name logs
+a one-time `deprecated_env_var` warning on stderr) and carries no other
+breaking change.
 
 ### `ZENDESK_SUBDOMAIN`
 **Required:** yes (or the CLI `<subdomain>` argument) · **Default:** none
