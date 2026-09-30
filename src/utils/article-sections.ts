@@ -140,7 +140,7 @@ const normalizeText = (text: string): string => text.trim().split(WHITESPACE_RUN
 // of the content byte for byte as sent.
 export const stripLeadingDuplicateHeading = (
   html: string,
-  sectionHeading: string,
+  target: Pick<Section, 'heading' | 'headingTag'>,
 ): { html: string; stripped: StrippedHeading | null } => {
   const match = LEADING_HEADING.exec(html);
   const tag = match?.[1];
@@ -150,10 +150,13 @@ export const stripLeadingDuplicateHeading = (
   // Stryker disable next-line StringLiteral: group 2 always takes part in a match, so the
   // fallback is unreachable and only satisfies noUncheckedIndexedAccess.
   const text = normalizeText(textOf(match[2] ?? ''));
-  if (text !== normalizeText(sectionHeading)) return { html, stripped: null };
+  // A same-titled heading of another level reads as a sub-heading, not an echo.
+  if (tag.toLowerCase() !== target.headingTag || text !== normalizeText(target.heading)) {
+    return { html, stripped: null };
+  }
   return {
     html: html.slice(match[0].length).trimStart(),
-    stripped: { tag: tag.toLowerCase(), text },
+    stripped: { tag: target.headingTag, text },
   };
 };
 
@@ -182,11 +185,13 @@ export const applySectionUpdate = (
   stripped: StrippedHeading | null;
   contentHeadings: number;
   introLost: IntroLoss;
+  sectionsBefore: number;
 } => {
-  const target = parseSections(html)[sectionIndex];
+  const sections = parseSections(html);
+  const target = sections[sectionIndex];
   const { html: content, stripped } =
     target && target.level > 0
-      ? stripLeadingDuplicateHeading(newHtml, target.heading)
+      ? stripLeadingDuplicateHeading(newHtml, target)
       : { html: newHtml, stripped: null };
   const contentSections = parseSections(content);
   const body = replaceSectionContent(html, sectionIndex, content);
@@ -195,6 +200,7 @@ export const applySectionUpdate = (
     stripped,
     contentHeadings: contentSections.filter((s) => s.level > 0).length,
     introLost: introLoss(target, contentSections),
+    sectionsBefore: sections.length,
   };
 };
 

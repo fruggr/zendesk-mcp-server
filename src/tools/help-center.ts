@@ -560,51 +560,46 @@ const assertReorderParamsCoherent = (
   }
 };
 
-const structureWarning = (
-  contentHeadings: number,
-  introLost: IntroLoss,
-  sectionIndex: number,
-  sectionsBefore: number,
-  sectionsAfter: number,
-): string[] => {
-  if (introLost === 'empty') {
-    return [
-      `Warning: content is empty, so the intro no longer exists and every later section index moved down by one (article: ${sectionsAfter} sections, was ${sectionsBefore}). Call get_article_outline before the next edit.`,
-    ];
-  }
-  if (introLost === 'heading-led') {
-    return [
-      `Warning: content starts with a heading, so the intro no longer exists and section [${sectionIndex}] is now a heading section (article: ${sectionsAfter} sections, was ${sectionsBefore}). Call get_article_outline before the next edit.`,
-    ];
-  }
-  if (contentHeadings > 0) {
-    return [
-      `Warning: content contains ${contentHeadings} heading(s) (h1-h3), so the article now has ${sectionsAfter} sections (was ${sectionsBefore}); indexes after [${sectionIndex}] shifted. Call get_article_outline before the next edit.`,
-    ];
-  }
-  return [];
-};
-
-const sectionUpdateNotes = (o: {
+interface SectionUpdateReport {
   stripped: StrippedHeading | null;
   contentHeadings: number;
   introLost: IntroLoss;
   sectionIndex: number;
   sectionsBefore: number;
   sectionsAfter: number;
-}): string[] => [
-  ...(o.stripped
+}
+
+const structureWarning = (r: SectionUpdateReport): string[] => {
+  if (r.introLost === 'empty') {
+    if (r.sectionsBefore === 1) {
+      return [
+        'Warning: content is empty and the intro was the only section, so the article body is now empty.',
+      ];
+    }
+    return [
+      `Warning: content is empty, so the intro no longer exists and every later section index moved down by one (article: ${r.sectionsAfter} sections, was ${r.sectionsBefore}). Call get_article_outline before the next edit.`,
+    ];
+  }
+  if (r.introLost === 'heading-led') {
+    return [
+      `Warning: content starts with a heading, so the intro no longer exists and section [${r.sectionIndex}] is now a heading section (article: ${r.sectionsAfter} sections, was ${r.sectionsBefore}). Call get_article_outline before the next edit.`,
+    ];
+  }
+  if (r.contentHeadings > 0) {
+    return [
+      `Warning: content contains ${r.contentHeadings} heading(s) (h1-h3), so the article now has ${r.sectionsAfter} sections (was ${r.sectionsBefore}); indexes after [${r.sectionIndex}] shifted. Call get_article_outline before the next edit.`,
+    ];
+  }
+  return [];
+};
+
+const sectionUpdateNotes = (r: SectionUpdateReport): string[] => [
+  ...(r.stripped
     ? [
-        `Note: removed a leading <${o.stripped.tag}> "${o.stripped.text}" from content; the section heading is kept automatically and is not part of content.`,
+        `Note: removed a leading <${r.stripped.tag}> "${r.stripped.text}" from content; the section heading is kept automatically and is not part of content.`,
       ]
     : []),
-  ...structureWarning(
-    o.contentHeadings,
-    o.introLost,
-    o.sectionIndex,
-    o.sectionsBefore,
-    o.sectionsAfter,
-  ),
+  ...structureWarning(r),
 ];
 
 export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
@@ -2361,8 +2356,8 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           stripped,
           contentHeadings,
           introLost,
+          sectionsBefore,
         } = applySectionUpdate(translation.body, section_index, newSectionHtml);
-        const sectionsBefore = parseSections(translation.body).length;
         const { translation: updated } = await helpCenterPut<{ translation: ZendeskTranslation }>(
           subdomain,
           token,

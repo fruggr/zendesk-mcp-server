@@ -182,12 +182,14 @@ describe('replaceSectionContent', () => {
   });
 });
 
+const h = (heading: string, headingTag = 'h2') => ({ heading, headingTag });
+
 describe('stripLeadingDuplicateHeading (issue #328)', () => {
   it('removes a leading heading that repeats the section heading', () => {
     expect(
       stripLeadingDuplicateHeading(
         '<h2>Related articles</h2>\n<ul><li>a</li></ul>',
-        'Related articles',
+        h('Related articles'),
       ),
     ).toMatchInlineSnapshot(`
       {
@@ -202,7 +204,7 @@ describe('stripLeadingDuplicateHeading (issue #328)', () => {
 
   it('keeps a leading heading whose text differs from the section heading', () => {
     const html = '<h2>Other</h2><p>x</p>';
-    expect(stripLeadingDuplicateHeading(html, 'Related articles')).toMatchInlineSnapshot(`
+    expect(stripLeadingDuplicateHeading(html, h('Related articles'))).toMatchInlineSnapshot(`
       {
         "html": "<h2>Other</h2><p>x</p>",
         "stripped": null,
@@ -210,8 +212,20 @@ describe('stripLeadingDuplicateHeading (issue #328)', () => {
     `);
   });
 
-  it('matches on text whatever the heading level', () => {
-    expect(stripLeadingDuplicateHeading('<h3>Setup</h3><p>x</p>', 'Setup')).toMatchInlineSnapshot(`
+  it('keeps a same-titled heading of another level, which reads as a sub-heading', () => {
+    const html = '<h3>Setup</h3><p>x</p>';
+    expect(stripLeadingDuplicateHeading(html, h('Setup'))).toMatchInlineSnapshot(`
+      {
+        "html": "<h3>Setup</h3><p>x</p>",
+        "stripped": null,
+      }
+    `);
+  });
+
+  it('strips a same-level heading whatever the case of its tag', () => {
+    expect(
+      stripLeadingDuplicateHeading('<H3>Setup</H3><p>x</p>', h('Setup', 'h3')),
+    ).toMatchInlineSnapshot(`
       {
         "html": "<p>x</p>",
         "stripped": {
@@ -226,7 +240,7 @@ describe('stripLeadingDuplicateHeading (issue #328)', () => {
     expect(
       stripLeadingDuplicateHeading(
         '  \n<h2> Related\n  articles </h2><p>x</p>',
-        'Related  articles',
+        h('Related  articles'),
       ).stripped,
     ).toMatchInlineSnapshot(`
       {
@@ -240,21 +254,21 @@ describe('stripLeadingDuplicateHeading (issue #328)', () => {
     expect(
       stripLeadingDuplicateHeading(
         '<h2 id="x">Fish &amp; <em>Chips</em></h2><p>y</p>',
-        'Fish & Chips',
+        h('Fish & Chips'),
       ).html,
     ).toBe('<p>y</p>');
   });
 
   it('is case sensitive, since a different case reads as an intended rename', () => {
     expect(
-      stripLeadingDuplicateHeading('<h2>related articles</h2><p>x</p>', 'Related articles')
+      stripLeadingDuplicateHeading('<h2>related articles</h2><p>x</p>', h('Related articles'))
         .stripped,
     ).toBeNull();
   });
 
   it('only looks at the very start of the content', () => {
     const html = '<p>x</p><h2>Setup</h2><p>y</p>';
-    expect(stripLeadingDuplicateHeading(html, 'Setup')).toMatchInlineSnapshot(`
+    expect(stripLeadingDuplicateHeading(html, h('Setup'))).toMatchInlineSnapshot(`
       {
         "html": "<p>x</p><h2>Setup</h2><p>y</p>",
         "stripped": null,
@@ -263,23 +277,23 @@ describe('stripLeadingDuplicateHeading (issue #328)', () => {
   });
 
   it('removes only the first of two identical leading headings', () => {
-    expect(stripLeadingDuplicateHeading('<h2>A</h2><h2>A</h2><p>x</p>', 'A').html).toBe(
+    expect(stripLeadingDuplicateHeading('<h2>A</h2><h2>A</h2><p>x</p>', h('A')).html).toBe(
       '<h2>A</h2><p>x</p>',
     );
   });
 
   it('only recognises h1 to h3, like parseSections', () => {
     const html = '<h4>Setup</h4><p>x</p>';
-    expect(stripLeadingDuplicateHeading(html, 'Setup').stripped).toBeNull();
+    expect(stripLeadingDuplicateHeading(html, h('Setup')).stripped).toBeNull();
   });
 
   it('returns an empty string when the content was only the heading', () => {
-    expect(stripLeadingDuplicateHeading('<h2>Setup</h2>', 'Setup').html).toBe('');
+    expect(stripLeadingDuplicateHeading('<h2>Setup</h2>', h('Setup')).html).toBe('');
   });
 
   it('leaves the rest of the content byte for byte untouched', () => {
     const rest = '<p class="a">x &amp; y</p><pre>a<br>b</pre>';
-    expect(stripLeadingDuplicateHeading(`<h2>Setup</h2>${rest}`, 'Setup').html).toBe(rest);
+    expect(stripLeadingDuplicateHeading(`<h2>Setup</h2>${rest}`, h('Setup')).html).toBe(rest);
   });
 });
 
@@ -292,6 +306,7 @@ describe('applySectionUpdate (issue #328)', () => {
         "body": "<p>intro</p><h2>Related articles</h2><ul><li>new</li></ul>",
         "contentHeadings": 0,
         "introLost": null,
+        "sectionsBefore": 2,
         "stripped": {
           "tag": "h2",
           "text": "Related articles",
@@ -308,7 +323,22 @@ describe('applySectionUpdate (issue #328)', () => {
       stripped: null,
       contentHeadings: 0,
       introLost: null,
+      sectionsBefore: 2,
     });
+  });
+
+  it('keeps a same-titled sub-heading of another level instead of deleting it', () => {
+    const body = '<h2>FAQ</h2><p>y</p>';
+    const result = applySectionUpdate(body, 0, '<h3>FAQ</h3><p>n</p>');
+    expect(result.body).toBe('<h2>FAQ</h2><h3>FAQ</h3><p>n</p>');
+    expect(result.stripped).toBeNull();
+    expect(result.contentHeadings).toBe(1);
+  });
+
+  it('reports how many sections the body had before the update', () => {
+    expect(
+      applySectionUpdate('<p>i</p><h2>A</h2><p>a</p><h2>B</h2>', 1, '<p>x</p>').sectionsBefore,
+    ).toBe(3);
   });
 
   describe('introLost', () => {

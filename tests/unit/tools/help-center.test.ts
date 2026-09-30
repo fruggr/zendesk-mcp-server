@@ -1624,11 +1624,11 @@ describe('help center tools', () => {
       const BODY = '<p>Intro</p><h2>Related articles</h2><ul><li>old</li></ul>';
 
       // Serves BODY and records the body the tool PUTs back.
-      const stubBody = () => {
+      const stubBody = (body = BODY) => {
         const puts: string[] = [];
         mswServer.use(
           http.get(`${HC_BASE}/articles/:id/translations/:locale`, () =>
-            HttpResponse.json({ translation: { ...MOCK_TRANSLATION, body: BODY } }),
+            HttpResponse.json({ translation: { ...MOCK_TRANSLATION, body } }),
           ),
           http.put(`${HC_BASE}/articles/:id/translations/:locale`, async ({ request }) => {
             const { translation } = (await request.json()) as { translation: { body: string } };
@@ -1709,6 +1709,33 @@ describe('help center tools', () => {
           "Section [0] "(intro)" updated for article #5000 (en-us).
           New word count: 0.
           Warning: content is empty, so the intro no longer exists and every later section index moved down by one (article: 1 sections, was 2). Call get_article_outline before the next edit."
+        `);
+      });
+
+      it('says the body is now empty when the emptied intro was the only section', async () => {
+        const puts = stubBody('<p>Just an intro</p>');
+        const text = await run({ section_index: 0, content: '' });
+        expect(puts).toEqual(['']);
+        expect(text).toMatchInlineSnapshot(`
+          "Section [0] "(intro)" updated for article #5000 (en-us).
+          New word count: 0.
+          Warning: content is empty and the intro was the only section, so the article body is now empty."
+        `);
+      });
+
+      it('keeps a same-titled heading of another level and warns instead of deleting it', async () => {
+        const puts = stubBody();
+        const text = await run({
+          section_index: 1,
+          content: '<h3>Related articles</h3><ul><li>x</li></ul>',
+        });
+        expect(puts).toEqual([
+          '<p>Intro</p><h2>Related articles</h2><h3>Related articles</h3><ul><li>x</li></ul>',
+        ]);
+        expect(text).toMatchInlineSnapshot(`
+          "Section [1] "Related articles" updated for article #5000 (en-us).
+          New word count: 0.
+          Warning: content contains 1 heading(s) (h1-h3), so the article now has 3 sections (was 2); indexes after [1] shifted. Call get_article_outline before the next edit."
         `);
       });
 
