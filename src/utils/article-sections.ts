@@ -174,8 +174,8 @@ const introLoss = (target: Section | undefined, contentSections: Section[]): Int
   return first.level > 0 ? 'heading-led' : null;
 };
 
-// Wraps `replaceSectionContent` with the guards a write needs. Only a heading-bearing
-// section can echo its own heading; in the intro a heading is a structure change.
+// Wraps `replaceSectionContent` with the guards a write needs. The intro has an empty
+// `headingTag`, so it never matches a leading heading: there a heading is a structure change.
 export const applySectionUpdate = (
   html: string,
   sectionIndex: number,
@@ -189,10 +189,9 @@ export const applySectionUpdate = (
 } => {
   const sections = parseSections(html);
   const target = sections[sectionIndex];
-  const { html: content, stripped } =
-    target && target.level > 0
-      ? stripLeadingDuplicateHeading(newHtml, target)
-      : { html: newHtml, stripped: null };
+  const { html: content, stripped } = target
+    ? stripLeadingDuplicateHeading(newHtml, target)
+    : { html: newHtml, stripped: null };
   const contentSections = parseSections(content);
   const body = replaceSectionContent(html, sectionIndex, content);
   return {

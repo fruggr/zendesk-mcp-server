@@ -409,6 +409,12 @@ describe('applySectionUpdate (issue #328)', () => {
     expect(applySectionUpdate(body, 0, '<div><h2>x</h2></div>').contentHeadings).toBe(0);
   });
 
+  it('keeps the out-of-range error even when the content leads with a heading', () => {
+    expect(() => applySectionUpdate('<h2>A</h2><p>1</p>', 4, '<h2>A</h2><p>x</p>')).toThrow(
+      'Section index 4 out of range (valid: 0-0)',
+    );
+  });
+
   it('keeps the out-of-range error of replaceSectionContent', () => {
     expect(() => applySectionUpdate('<h2>A</h2><p>1</p>', 4, '<p>x</p>')).toThrow(
       'Section index 4 out of range (valid: 0-0)',
