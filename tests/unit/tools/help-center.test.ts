@@ -1620,35 +1620,35 @@ describe('help center tools', () => {
       expect((parsed as { format: string }).format).toBe('html');
     });
 
+    const BODY = '<p>Intro</p><h2>Related articles</h2><ul><li>old</li></ul>';
+
+    // Serves BODY and records the body the tool PUTs back.
+    const stubBody = (body = BODY) => {
+      const puts: string[] = [];
+      mswServer.use(
+        http.get(`${HC_BASE}/articles/:id/translations/:locale`, () =>
+          HttpResponse.json({ translation: { ...MOCK_TRANSLATION, body } }),
+        ),
+        http.put(`${HC_BASE}/articles/:id/translations/:locale`, async ({ request }) => {
+          const { translation } = (await request.json()) as { translation: { body: string } };
+          puts.push(translation.body);
+          return HttpResponse.json({ translation: { ...MOCK_TRANSLATION, ...translation } });
+        }),
+      );
+      return puts;
+    };
+
+    const run = async (params: Record<string, unknown>) => {
+      const result = await findTool('update_article_section').handler({
+        article_id: 5000,
+        locale: 'en-us',
+        format: 'html',
+        ...params,
+      });
+      return result.content[0]?.text ?? '';
+    };
+
     describe('heading in content (issue #328)', () => {
-      const BODY = '<p>Intro</p><h2>Related articles</h2><ul><li>old</li></ul>';
-
-      // Serves BODY and records the body the tool PUTs back.
-      const stubBody = (body = BODY) => {
-        const puts: string[] = [];
-        mswServer.use(
-          http.get(`${HC_BASE}/articles/:id/translations/:locale`, () =>
-            HttpResponse.json({ translation: { ...MOCK_TRANSLATION, body } }),
-          ),
-          http.put(`${HC_BASE}/articles/:id/translations/:locale`, async ({ request }) => {
-            const { translation } = (await request.json()) as { translation: { body: string } };
-            puts.push(translation.body);
-            return HttpResponse.json({ translation: { ...MOCK_TRANSLATION, ...translation } });
-          }),
-        );
-        return puts;
-      };
-
-      const run = async (params: Record<string, unknown>) => {
-        const result = await findTool('update_article_section').handler({
-          article_id: 5000,
-          locale: 'en-us',
-          format: 'html',
-          ...params,
-        });
-        return result.content[0]?.text ?? '';
-      };
-
       it('does not duplicate the heading when content repeats it, and says so', async () => {
         const puts = stubBody();
         const text = await run({
@@ -1756,6 +1756,33 @@ describe('help center tools', () => {
         });
         expect(text).toContain('Note: removed a leading <h2> "Related articles"');
         expect(text).toContain('Warning: content contains 1 heading(s)');
+      });
+    });
+
+    describe('heading markup (issue #331)', () => {
+      const MARKED_BODY =
+        '<p>Intro</p><h2 id="faq" class="x">Fish &amp; <em>Chips</em></h2><p>old</p><h3>Sub</h3><p>tail</p>';
+
+      it('PUTs the other headings back with their attributes and inline markup', async () => {
+        const puts = stubBody(MARKED_BODY);
+        await run({ section_index: 2, content: '<p>new</p>' });
+        expect(puts).toEqual([
+          '<p>Intro</p><h2 id="faq" class="x">Fish &amp; <em>Chips</em></h2><p>old</p><h3>Sub</h3><p>new</p>',
+        ]);
+      });
+
+      it('keeps the heading of the edited section, also when a repeated heading is stripped', async () => {
+        const puts = stubBody(
+          '<p>Intro</p><h2 id="faq">Related articles</h2><ul><li>old</li></ul>',
+        );
+        const text = await run({
+          section_index: 1,
+          content: '<h2>Related articles</h2><ul><li>new</li></ul>',
+        });
+        expect(puts).toEqual([
+          '<p>Intro</p><h2 id="faq">Related articles</h2><ul><li>new</li></ul>',
+        ]);
+        expect(text).toContain('Note: removed a leading <h2> "Related articles"');
       });
     });
 

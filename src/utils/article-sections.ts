@@ -16,6 +16,7 @@ export interface Section {
   index: number;
   heading: string;
   headingTag: string;
+  headingHtml: string;
   level: number;
   html: string;
   wordCount: number;
@@ -47,6 +48,7 @@ export const parseSections = (html: string): Section[] => {
   const sections: Array<{
     heading: string;
     headingTag: string;
+    headingHtml: string;
     level: number;
     contentParts: string[];
   }> = [];
@@ -60,6 +62,7 @@ export const parseSections = (html: string): Section[] => {
       current = {
         heading: $(node).text().trim(),
         headingTag: tagName,
+        headingHtml: $.html(node),
         level,
         contentParts: [],
       };
@@ -83,6 +86,7 @@ export const parseSections = (html: string): Section[] => {
       index: 0,
       heading: 'intro',
       headingTag: '',
+      headingHtml: '',
       level: 0,
       html: introHtml,
       wordCount: countWords(textOf(introHtml)),
@@ -95,6 +99,7 @@ export const parseSections = (html: string): Section[] => {
       index: result.length,
       heading: s.heading,
       headingTag: s.headingTag,
+      headingHtml: s.headingHtml,
       level: s.level,
       html: sectionHtml,
       wordCount: countWords(textOf(sectionHtml)),
@@ -120,7 +125,7 @@ export const replaceSectionContent = (
     .map((section, idx) => {
       const content = idx === sectionIndex ? newHtml : section.html;
       if (section.level === 0) return content;
-      return `<${section.headingTag}>${section.heading}</${section.headingTag}>${content}`;
+      return `${section.headingHtml}${content}`;
     })
     .join('');
 };

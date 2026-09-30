@@ -182,6 +182,67 @@ describe('replaceSectionContent', () => {
   });
 });
 
+describe('heading markup is kept on update (issue #331)', () => {
+  const HTML =
+    '<p>intro</p><h2 id="setup" class="x">Fish &amp; <em>Chips</em></h2><p>old</p><h3>Sub &lt;i&gt;</h3><p>b</p>';
+
+  it('keeps attributes, inline markup and escaping of every heading', () => {
+    expect(replaceSectionContent(HTML, 1, '<p>new</p>')).toMatchInlineSnapshot(
+      `"<p>intro</p><h2 id="setup" class="x">Fish &amp; <em>Chips</em></h2><p>new</p><h3>Sub &lt;i&gt;</h3><p>b</p>"`,
+    );
+  });
+
+  it('leaves the headings alone whichever section is edited', () => {
+    const sections = parseSections(HTML);
+    for (const section of sections) {
+      expect(replaceSectionContent(HTML, section.index, section.html)).toBe(HTML);
+    }
+  });
+
+  it('keeps the heading of the edited section itself', () => {
+    expect(replaceSectionContent(HTML, 2, '<p>new</p>')).toMatchInlineSnapshot(
+      `"<p>intro</p><h2 id="setup" class="x">Fish &amp; <em>Chips</em></h2><p>old</p><h3>Sub &lt;i&gt;</h3><p>new</p>"`,
+    );
+  });
+
+  it('exposes the heading outer HTML, empty for the intro', () => {
+    expect(parseSections(HTML).map((s) => s.headingHtml)).toMatchInlineSnapshot(`
+      [
+        "",
+        "<h2 id="setup" class="x">Fish &amp; <em>Chips</em></h2>",
+        "<h3>Sub &lt;i&gt;</h3>",
+      ]
+    `);
+  });
+
+  it('keeps the text heading for the outline and translation comparison', () => {
+    expect(parseSections(HTML).map((s) => s.heading)).toEqual(['intro', 'Fish & Chips', 'Sub <i>']);
+  });
+
+  it('re-emits the heading as the parser serialises it, like the rest of the body', () => {
+    expect(replaceSectionContent('<H2 ID=a>Title</H2><p>x</p>', 0, '<p>y</p>')).toBe(
+      '<h2 id="a">Title</h2><p>y</p>',
+    );
+  });
+
+  it('leaves a heading nested in another element untouched', () => {
+    const html = '<h2 id="a">A</h2><div><h2 id="n">inner</h2></div><h2>B</h2><p>b</p>';
+    expect(replaceSectionContent(html, 1, '<p>nb</p>')).toBe(
+      '<h2 id="a">A</h2><div><h2 id="n">inner</h2></div><h2>B</h2><p>nb</p>',
+    );
+  });
+
+  it('keeps the original heading when a repeated heading is stripped from content', () => {
+    const { body, stripped } = applySectionUpdate(
+      '<h2 id="rel">Related</h2><ul><li>old</li></ul>',
+      0,
+      '<h2>Related</h2><ul><li>new</li></ul>',
+    );
+    expect(stripped).toEqual({ tag: 'h2', text: 'Related' });
+    expect(body).toBe('<h2 id="rel">Related</h2><ul><li>new</li></ul>');
+  });
+});
+
 const h = (heading: string, headingTag = 'h2') => ({ heading, headingTag });
 
 describe('stripLeadingDuplicateHeading (issue #328)', () => {
