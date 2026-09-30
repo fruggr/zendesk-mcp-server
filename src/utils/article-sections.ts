@@ -191,7 +191,9 @@ export const applySectionUpdate = (
   const target = sections[sectionIndex];
   const { html: content, stripped } = target
     ? stripLeadingDuplicateHeading(newHtml, target)
-    : { html: newHtml, stripped: null };
+    : // Stryker disable next-line ObjectLiteral: no target means an out-of-range index, which
+      // replaceSectionContent throws for below, so this fallback is never read.
+      { html: newHtml, stripped: null };
   const contentSections = parseSections(content);
   const body = replaceSectionContent(html, sectionIndex, content);
   return {
