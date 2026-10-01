@@ -225,6 +225,13 @@ describe('heading markup is kept on update (issue #331)', () => {
     );
   });
 
+  it('writes named entities as characters but keeps the ones that carry markup escaped', () => {
+    const html = '<h2>Caf&eacute; &copy; A&nbsp;B &lt;i&gt; &amp; &quot;q&quot;</h2><p>x</p>';
+    expect(replaceSectionContent(html, 0, '<p>y</p>')).toMatchInlineSnapshot(
+      `"<h2>Café © A&nbsp;B &lt;i&gt; &amp; "q"</h2><p>y</p>"`,
+    );
+  });
+
   it('leaves a heading nested in another element untouched', () => {
     const html = '<h2 id="a">A</h2><div><h2 id="n">inner</h2></div><h2>B</h2><p>b</p>';
     expect(replaceSectionContent(html, 1, '<p>nb</p>')).toBe(

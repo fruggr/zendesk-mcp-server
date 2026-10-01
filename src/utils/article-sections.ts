@@ -122,11 +122,7 @@ export const replaceSectionContent = (
   }
 
   return sections
-    .map((section, idx) => {
-      const content = idx === sectionIndex ? newHtml : section.html;
-      if (section.level === 0) return content;
-      return `${section.headingHtml}${content}`;
-    })
+    .map((section, idx) => `${section.headingHtml}${idx === sectionIndex ? newHtml : section.html}`)
     .join('');
 };
 
