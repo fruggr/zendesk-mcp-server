@@ -1622,7 +1622,6 @@ describe('help center tools', () => {
 
     const BODY = '<p>Intro</p><h2>Related articles</h2><ul><li>old</li></ul>';
 
-    // Serves BODY and records the body the tool PUTs back.
     const stubBody = (body = BODY) => {
       const puts: string[] = [];
       mswServer.use(
