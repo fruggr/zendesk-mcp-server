@@ -1654,7 +1654,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: false,
       title: 'Update Help Center Article',
       description:
-        'Update article metadata only (draft, promoted, labels, tags, visibility, section, sort position, etc.) and return the updated article. Does NOT update content (title, body) — use update_article_translation for that.',
+        'Update article metadata only (draft, promoted, labels (label_names), tags, visibility, section, sort position, etc.) and return the updated article. Does NOT update content (title, body) — use update_article_translation for that.',
       inputSchema: z.object({
         article_id: z
           .number()
@@ -2046,7 +2046,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: true,
       title: 'List Article Labels',
       description:
-        'List all article labels. Labels improve Help Center search ranking and are not visible to end users.',
+        'List all article labels. Labels improve Help Center search ranking and are not visible to end users. Attach them to an article through the label_names parameter of create_article or update_article.',
       inputSchema: z.object({}),
       annotations: {
         readOnlyHint: true,
