@@ -581,8 +581,8 @@ describe('formatAudit', () => {
     const result = formatAudit(MOCK_AUDIT_CHANGE, names) ?? '';
     expect(result).toContain('Agent Smith (100)');
     expect(result).toContain('**status**: new → open');
-    expect(result).toContain('**assignee**: (none) → Agent Smith (100)');
-    expect(result).toContain('**group**: (none) → Support (300)');
+    expect(result).toContain('**assignee** (assignee_id): (none) → Agent Smith (100)');
+    expect(result).toContain('**group** (group_id): (none) → Support (300)');
     expect(result).toContain('**tags**: +urgent');
     expect(result).toContain('Internal note added');
     // System noise and comment bodies are filtered out.
@@ -612,8 +612,8 @@ describe('formatAudit', () => {
 
   it('falls back to bare ids when names are unresolved', () => {
     const result = formatAudit(MOCK_AUDIT_CHANGE, { users: new Map(), groups: new Map() }) ?? '';
-    expect(result).toContain('**assignee**: (none) → 100');
-    expect(result).toContain('**group**: (none) → 300');
+    expect(result).toContain('**assignee** (assignee_id): (none) → 100');
+    expect(result).toContain('**group** (group_id): (none) → 300');
   });
 
   it('renders SLA-metric changes as minutes and summarises secondary events', () => {
@@ -702,8 +702,8 @@ describe('formatAudit — Create events', () => {
       - **status**: new
       - **priority**: urgent
       - **type**: incident
-      - **assignee**: Agent Smith (100)
-      - **group**: Support (300)
+      - **assignee** (assignee_id): Agent Smith (100)
+      - **group** (group_id): Support (300)
       - **subject**: Scanner is down
       - **tags**: urgent, scanner"
     `);
@@ -835,8 +835,8 @@ describe('formatAudit — Change events', () => {
       ),
     ).toMatchInlineSnapshot(`
       "### 2026-02-02T00:00:00Z — Agent Smith (100) via api
-      - **assignee**: (none) → Agent Smith (100)
-      - **group**: (none) → Support (300)"
+      - **assignee** (assignee_id): (none) → Agent Smith (100)
+      - **group** (group_id): (none) → Support (300)"
     `);
   });
 
@@ -897,7 +897,7 @@ describe('formatAudit — Change events', () => {
       ),
     ).toMatchInlineSnapshot(`
       "### 2026-02-02T00:00:00Z — Agent Smith (100) via api
-      - **assignee**: Agent Smith (100) → (none)"
+      - **assignee** (assignee_id): Agent Smith (100) → (none)"
     `);
   });
 
