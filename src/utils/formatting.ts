@@ -50,6 +50,9 @@ export const INPUT_NAME_OF = {
   'User segment': 'user_segment_id',
   Assignee: 'assignee_id',
   Form: 'form_id',
+  // Ticket history labels, read before undoing a change with update_ticket.
+  assignee: 'assignee_id',
+  group: 'group_id',
 } as const;
 
 const writable = (label: keyof typeof INPUT_NAME_OF): string =>
@@ -389,6 +392,11 @@ const AUDIT_FIELD_LABELS: Record<string, string> = {
   group_id: 'group',
 };
 
+const auditLabel = (field: string): string => {
+  const label = AUDIT_FIELD_LABELS[field] ?? field;
+  return label in INPUT_NAME_OF ? writable(label as keyof typeof INPUT_NAME_OF) : `**${label}**`;
+};
+
 // id -> display name maps resolved by the caller (batched user/group look-ups).
 export interface AuditNames {
   users: Map<number, string>;
@@ -427,7 +435,7 @@ const renderCreateEvent = (event: ZendeskAuditEvent, names: AuditNames): string 
     return tags.length > 0 ? `- **tags**: ${tags.join(', ')}` : null;
   }
   const value = renderAuditValue(field, event.value, names);
-  return value === '' ? null : `- **${AUDIT_FIELD_LABELS[field] ?? field}**: ${value}`;
+  return value === '' ? null : `- ${auditLabel(field)}: ${value}`;
 };
 
 // A post-creation Change: any field, rendered as before → after. Returns null
@@ -439,7 +447,7 @@ const renderChangeEvent = (event: ZendeskAuditEvent, names: AuditNames): string 
   const after = renderAuditValue(field, event.value, names);
   const before = renderAuditValue(field, event.previous_value, names);
   if (before === after) return null;
-  return `- **${AUDIT_FIELD_LABELS[field] ?? field}**: ${before || '(none)'} → ${after || '(none)'}`;
+  return `- ${auditLabel(field)}: ${before || '(none)'} → ${after || '(none)'}`;
 };
 
 const renderAuditEvent = (event: ZendeskAuditEvent, names: AuditNames): string | null => {

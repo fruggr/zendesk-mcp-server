@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createAllTools, type ToolContext } from '../../../src/tools';
 import {
   formatArticleSummary,
+  formatAudit,
   formatRequest,
   formatTicket,
   INPUT_NAME_OF,
@@ -59,6 +60,38 @@ const CASES = [
     writeTools: ['create_request'],
     notShown: ['subject', 'body', 'custom_fields', 'attachments'],
   },
+  {
+    // The history an agent reads before undoing a change: one Change event per
+    // field update_ticket can set.
+    formatter: 'formatAudit',
+    text:
+      formatAudit(
+        {
+          id: 1,
+          ticket_id: 1,
+          created_at: '2026-01-01T00:00:00Z',
+          author_id: 100,
+          events: [
+            ['status', 'open', 'new'],
+            ['priority', 'high', 'normal'],
+            ['type', 'problem', 'incident'],
+            ['assignee_id', 101, 100],
+            ['group_id', 301, 300],
+            ['subject', 'New', 'Old'],
+            ['tags', ['b'], ['a']],
+          ].map(([field_name, value, previous_value], id) => ({
+            id,
+            type: 'Change',
+            field_name: field_name as string,
+            value,
+            previous_value,
+          })),
+        },
+        { users: new Map(), groups: new Map() },
+      ) ?? '',
+    writeTools: ['update_ticket'],
+    notShown: ['ticket_id', 'custom_fields', 'followers', 'email_ccs'],
+  },
 ] as const;
 
 describe.each(CASES)('$formatter output names', ({ text, writeTools, notShown }) => {
@@ -100,6 +133,8 @@ describe('INPUT_NAME_OF', () => {
         "Permission group": "permission_group_id",
         "Section": "section_id",
         "User segment": "user_segment_id",
+        "assignee": "assignee_id",
+        "group": "group_id",
       }
     `);
   });
