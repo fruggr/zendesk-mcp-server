@@ -105,7 +105,7 @@ describe('formatTicket', () => {
     expect(formatTicket(MOCK_TICKET)).toMatchInlineSnapshot(`
       "## Ticket #1: Test ticket
       - **Status**: open | **Priority**: normal | **Type**: incident
-      - **Requester**: 200 | **Assignee**: 100
+      - **Requester**: 200 | **Assignee** (assignee_id): 100
       - **Tags**: test, mock
       - **Created**: 2026-01-01T00:00:00Z | **Updated**: 2026-01-02T00:00:00Z
 
@@ -126,7 +126,7 @@ describe('formatTicket', () => {
     ).toMatchInlineSnapshot(`
       "## Ticket #1: Test ticket
       - **Status**: open | **Priority**: none | **Type**: none
-      - **Requester**: 200 | **Assignee**: unassigned
+      - **Requester**: 200 | **Assignee** (assignee_id): unassigned
       - **Tags**: none
       - **Created**: 2026-01-01T00:00:00Z | **Updated**: 2026-01-02T00:00:00Z"
     `);
@@ -1011,10 +1011,10 @@ describe('formatArticle', () => {
     expect(formatArticle(MOCK_ARTICLE)).toMatchInlineSnapshot(`
       "## How to test (5000)
       - **Locale**: en-us | **Source locale**: en-us
-      - **Section**: 600 | **Draft**: false
-      - **Permission group**: 12001 | **User segment**: 15001
+      - **Section** (section_id): 600 | **Draft**: false
+      - **Permission group** (permission_group_id): 12001 | **User segment** (user_segment_id): 15001
       - **Position**: 0
-      - **Labels**: guide
+      - **Labels** (label_names): guide
       - **Created**: 2026-01-01T00:00:00Z | **Updated**: 2026-01-02T00:00:00Z
 
       <p>Testing guide</p>"
@@ -1029,10 +1029,10 @@ describe('formatArticleSummary', () => {
     ).toMatchInlineSnapshot(`
       "## How to test (5000)
       - **Locale**: en-us | **Source locale**: en-us
-      - **Section**: 600 | **Draft**: false
-      - **Permission group**: 12001 | **User segment**: 15001
+      - **Section** (section_id): 600 | **Draft**: false
+      - **Permission group** (permission_group_id): 12001 | **User segment** (user_segment_id): 15001
       - **Position**: 0
-      - **Labels**: guide, setup
+      - **Labels** (label_names): guide, setup
       - **Created**: 2026-01-01T00:00:00Z | **Updated**: 2026-01-02T00:00:00Z"
     `);
   });
@@ -1049,9 +1049,9 @@ describe('formatArticleSummary', () => {
     ).toMatchInlineSnapshot(`
       "## How to test (5000)
       - **Locale**: en-us | **Source locale**: en-us
-      - **Section**: 600 | **Draft**: false
+      - **Section** (section_id): 600 | **Draft**: false
       - **Promoted**: featured in its section — changing this requires Help Center admin (Guide admin) rights; set via update_article \`promoted\`.
-      - **Permission group**: 12001 | **User segment**: everyone (no segment)
+      - **Permission group** (permission_group_id): 12001 | **User segment** (user_segment_id): everyone (no segment)
       - **Created**: 2026-01-01T00:00:00Z | **Updated**: 2026-01-02T00:00:00Z"
     `);
   });
@@ -1423,7 +1423,7 @@ describe('formatRequest', () => {
     expect(formatRequest(MOCK_REQUEST)).toMatchInlineSnapshot(`
       "## Request #5001: The export button does nothing
       - **Status**: open | **Type**: incident | **Priority**: normal
-      - **Form**: 900
+      - **Form** (form_id): 900
       - **Can you mark it solved**: yes
       - **Submitted via**: web
       - **Created**: 2026-01-05T09:00:00Z | **Updated**: 2026-01-06T11:30:00Z
