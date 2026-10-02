@@ -457,6 +457,26 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         expect(textOf(result)).toContain('Test User');
       });
 
+      it('writes an article back through the input name its read output shows (#339)', async () => {
+        connected = await harness.connect(makeConfig({ mode: 'namespace' }));
+        const read = await connected.client.callTool({
+          name: 'zendesk_help_center',
+          arguments: { operation: 'get_article', params: { article_id: 5000 } },
+        });
+        const input = textOf(read).match(/\*\*Labels\*\* \(([a-z_]+)\)/)?.[1];
+        expect(input).toBe('label_names');
+
+        const write = await connected.client.callTool({
+          name: 'zendesk_help_center',
+          arguments: {
+            operation: 'update_article',
+            params: { article_id: 5000, [input as string]: ['guide', 'faq'] },
+          },
+        });
+        expect(write.isError).toBeFalsy();
+        expect(textOf(write)).toContain('- **Labels** (label_names): guide, faq');
+      });
+
       it('rejects an unknown parameter in "all" mode instead of silently dropping it (#100)', async () => {
         connected = await harness.connect(makeConfig({ mode: 'all' }));
         const result = await connected.client.callTool({
