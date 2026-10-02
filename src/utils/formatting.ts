@@ -40,6 +40,21 @@ export const truncateIfNeeded = (
   return `${text.slice(0, CHARACTER_LIMIT)}\n\n--- Response truncated (${text.length} chars, limit ${CHARACTER_LIMIT}). ${advice} ---`;
 };
 
+// Display label → the write-tool input that sets the field, where the two
+// names differ. Rendered as `**Label** (input)` so an agent writing back what it
+// just read uses the input's name, not a guess from the label (#339).
+export const INPUT_NAME_OF = {
+  Labels: 'label_names',
+  Section: 'section_id',
+  'Permission group': 'permission_group_id',
+  'User segment': 'user_segment_id',
+  Assignee: 'assignee_id',
+  Form: 'form_id',
+} as const;
+
+const writable = (label: keyof typeof INPUT_NAME_OF): string =>
+  `**${label}** (${INPUT_NAME_OF[label]})`;
+
 // Exported so a caller that prefixes its own title can assemble header + body
 // itself and truncate the whole thing once, instead of truncating through
 // formatList and then prepending a title the character budget never saw.
@@ -55,7 +70,7 @@ export const formatTicket = (ticket: ZendeskTicket): string =>
   [
     `## Ticket #${ticket.id}: ${ticket.subject}`,
     `- **Status**: ${ticket.status} | **Priority**: ${ticket.priority ?? 'none'} | **Type**: ${ticket.type ?? 'none'}`,
-    `- **Requester**: ${ticket.requester_id} | **Assignee**: ${ticket.assignee_id ?? 'unassigned'}`,
+    `- **Requester**: ${ticket.requester_id} | ${writable('Assignee')}: ${ticket.assignee_id ?? 'unassigned'}`,
     `- **Tags**: ${ticket.tags.length > 0 ? ticket.tags.join(', ') : 'none'}`,
     `- **Created**: ${ticket.created_at} | **Updated**: ${ticket.updated_at}`,
     ticket.description ? `\n${ticket.description}` : '',
@@ -291,7 +306,7 @@ export const formatRequest = (request: ZendeskRequest): string =>
     `- **Status**: ${request.status}${request.type ? ` | **Type**: ${request.type}` : ''}${
       request.priority ? ` | **Priority**: ${request.priority}` : ''
     }`,
-    request.ticket_form_id ? `- **Form**: ${request.ticket_form_id}` : '',
+    request.ticket_form_id ? `- ${writable('Form')}: ${request.ticket_form_id}` : '',
     // Stated in both directions on purpose: "no" is the answer to "can I close
     // this?", and leaving it implicit invites a pointless attempt that Zendesk
     // would accept with a 200 and silently ignore.
@@ -491,7 +506,7 @@ export const formatArticleSummary = (article: ZendeskArticle): string =>
   [
     `## ${article.title} (${article.id})`,
     `- **Locale**: ${article.locale} | **Source locale**: ${article.source_locale}`,
-    `- **Section**: ${article.section_id} | **Draft**: ${article.draft}`,
+    `- ${writable('Section')}: ${article.section_id} | **Draft**: ${article.draft}`,
     // Surface promoted status only when the article IS promoted, with the caveat
     // that changing it is admin-gated — so an editor doesn't try (and fail) to
     // toggle it. Non-promoted articles omit the line entirely (via filter(Boolean)).
@@ -500,11 +515,13 @@ export const formatArticleSummary = (article: ZendeskArticle): string =>
       : '',
     // Surface the visibility/edit IDs so an editor without Guide-admin rights can
     // reuse them (list_permission_groups / list_user_segments are admin-gated, #161).
-    `- **Permission group**: ${article.permission_group_id} | **User segment**: ${
+    `- ${writable('Permission group')}: ${article.permission_group_id} | ${writable('User segment')}: ${
       article.user_segment_id ?? 'everyone (no segment)'
     }`,
     typeof article.position === 'number' ? `- **Position**: ${article.position}` : '',
-    article.label_names.length > 0 ? `- **Labels**: ${article.label_names.join(', ')}` : '',
+    article.label_names.length > 0
+      ? `- ${writable('Labels')}: ${article.label_names.join(', ')}`
+      : '',
     `- **Created**: ${article.created_at} | **Updated**: ${article.updated_at}`,
   ]
     .filter(Boolean)
