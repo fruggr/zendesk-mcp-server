@@ -124,18 +124,11 @@ describe.each(CASES)('$formatter output names', ({ text, writeTools, notShown })
 });
 
 describe('INPUT_NAME_OF', () => {
-  it('pairs each display label with the input that sets it', () => {
-    expect(INPUT_NAME_OF).toMatchInlineSnapshot(`
-      {
-        "Assignee": "assignee_id",
-        "Form": "form_id",
-        "Labels": "label_names",
-        "Permission group": "permission_group_id",
-        "Section": "section_id",
-        "User segment": "user_segment_id",
-        "assignee": "assignee_id",
-        "group": "group_id",
-      }
-    `);
+  it('has no dead entry: every pair is rendered by a formatter above', () => {
+    const rendered = CASES.map((c) => c.text).join('\n');
+    const dead = Object.entries(INPUT_NAME_OF).filter(
+      ([label, input]) => !rendered.includes(`**${label}** (${input}):`),
+    );
+    expect(dead).toEqual([]);
   });
 });
