@@ -7,7 +7,7 @@ Reading this file biases the report. Stop now and read only `spec.md`.
 ## Expected values (verdict criteria)
 
 - **P1 — under the cap.** Every proxy description is ≤ 2048. At the time of
-  writing: `help_center` about 880, `single` about 1 400. Claude Code cuts
+  writing: `help_center` 877, `single` 1 266. Claude Code cuts
   longer descriptions (`docs/decisions/proxy-schema-surface.md`).
 - **P2 — names kept in the description.** The last line starts with
   `Operations: ` and lists comma-separated names. If it is missing, the builder
