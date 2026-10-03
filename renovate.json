@@ -37,6 +37,15 @@
       }
     ]
   },
+  "hostRules": [
+    {
+      "description": "Docker Hardened Images refuse anonymous pulls, so without this Renovate never sees a new base digest. Read-only token, stored in the Mend Developer Portal (repository credentials), the same Docker account as the DHI_USERNAME / DHI_TOKEN GitHub secrets.",
+      "matchHost": "dhi.io",
+      "hostType": "docker",
+      "username": "{{ secrets.DHI_USERNAME }}",
+      "password": "{{ secrets.DHI_TOKEN }}"
+    }
+  ],
   "packageRules": [
     {
       "description": "lockFileMaintenance updates are synthetic lockfile refreshes with no releaseTimestamp, so the inherited 5-day minimumReleaseAge can never be evaluated and Renovate raises a dashboard warning (and, from Renovate 42 on, would stop running lockfile maintenance entirely). Opt them out of the age gate, mirroring Renovate's own security:minimumReleaseAgeNpm preset. The supply-chain delay for the packages bumped here is still enforced natively by pnpm via minimumReleaseAge in pnpm-workspace.yaml.",
@@ -92,6 +101,23 @@
       "description": "TEMPORARY: pnpm >= 12.6.0 is broken on Termux/Android (lock_shared() not supported, pnpm/pnpm#16508), and CI on Linux cannot catch it. Remove this rule once a fixed release is out; Renovate then opens the normal pnpm update PR.",
       "matchDepNames": ["pnpm"],
       "allowedVersions": "<12.6.0"
+    },
+    {
+      "description": "The container base image (both FROM lines of the Dockerfile, one Docker Hardened Images tag pinned by digest). Digest bumps are DHI rebuilding the same tag, mostly for CVE fixes: batched weekly, auto-merged once the container smoke test passes, and release.yml republishes the latest release on the new base without cutting a release. A digest has no release timestamp, so the 5-day age gate is lifted for it, as for lockFileMaintenance. Tag changes (Node or Alpine version) change the runtime and are read by hand; majors already wait on the dashboard.",
+      "matchManagers": ["dockerfile"],
+      "matchUpdateTypes": ["digest"],
+      "groupName": "container base image",
+      "semanticCommitScope": "docker",
+      "schedule": ["* 0-7 * * 1"],
+      "timezone": "Europe/Paris",
+      "minimumReleaseAge": null,
+      "automerge": true
+    },
+    {
+      "matchManagers": ["dockerfile"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": false,
+      "addLabels": ["needs-review"]
     },
     {
       "matchManagers": ["github-actions"],

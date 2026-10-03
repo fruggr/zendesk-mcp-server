@@ -1,0 +1,10 @@
+# Allowlist: the build stage needs the lockfile inputs and the sources, nothing else.
+*
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!patches/
+!scripts/bundle-manifest.mjs
+!src/
+!tsconfig.json
+!tsdown.config.ts

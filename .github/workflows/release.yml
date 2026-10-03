@@ -28,6 +28,11 @@ jobs:
     # rather than hold the runner for the 6-hour default, which would also
     # outlive the App installation token minted below.
     timeout-minutes: 30
+    # Read by the image jobs below, which publish the container image.
+    outputs:
+      published: ${{ steps.released.outputs.published }}
+      version: ${{ steps.released.outputs.version }}
+      base-changed: ${{ steps.base.outputs.changed }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -151,6 +156,20 @@ jobs:
             echo "No release this run; skipping MCP registry publish."
           fi
 
+      # A push that changes only the Dockerfile's base image (Renovate's weekly
+      # digest bump) cuts no release, yet the published image should pick up the
+      # fixed base: the `republish` job below does that.
+      - name: Detect a base image change
+        id: base
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          if git diff --quiet "$BEFORE_SHA" "$GITHUB_SHA" -- Dockerfile; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
       # No server.json generation step: the manifest is version-controlled at
       # the repo root and semantic-release has already synced its `version`
       # (via @semantic-release/exec -> scripts/sync-server-json-version.mjs) and
@@ -199,3 +218,78 @@ jobs:
           done
           echo "MCP registry publish failed after $attempts attempts." >&2
           exit 1
+
+  # The container image of the release just cut: built from its tag, tested,
+  # then pushed, signed and attested (.github/actions/publish-image).
+  image:
+    needs: release
+    if: needs.release.outputs.published == 'true'
+    runs-on: ubuntu-latest
+    # Same boundary as the release job: only `main` can publish.
+    environment: release
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: v${{ needs.release.outputs.version }}
+          persist-credentials: false
+
+      - uses: ./.github/actions/publish-image
+        with:
+          version: ${{ needs.release.outputs.version }}
+          dhi-username: ${{ secrets.DHI_USERNAME }}
+          dhi-token: ${{ secrets.DHI_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+  # No release, but a new base image: rebuild the latest release on it and move
+  # its tags (X.Y.Z included) to the new digest. Only when the Dockerfile moved
+  # nothing but its FROM lines since that release; anything else waits for the
+  # next release, which builds from its own tree.
+  republish:
+    needs: release
+    if: needs.release.outputs.published != 'true' && needs.release.outputs.base-changed == 'true'
+    runs-on: ubuntu-latest
+    environment: release
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Put the new base under the latest release
+        id: base
+        run: |
+          set -euo pipefail
+          tag=$(git describe --tags --abbrev=0 --match 'v[0-9]*' HEAD)
+          other=$(git diff -U0 "$tag" HEAD -- Dockerfile | grep -E '^[+-]' | grep -vE '^(\+\+\+|---)' | grep -vE '^[+-]FROM ' || true)
+          if [ -n "$other" ]; then
+            echo "::notice::The Dockerfile changed beyond its base image since $tag; the next release publishes it."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # The release's tree in a worktree, so the tooling below stays HEAD's.
+          git worktree add --quiet "$RUNNER_TEMP/release" "$tag"
+          git show HEAD:Dockerfile > "$RUNNER_TEMP/release/Dockerfile"
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+          echo "context=$RUNNER_TEMP/release" >> "$GITHUB_OUTPUT"
+
+      - if: steps.base.outputs.ready == 'true'
+        uses: ./.github/actions/publish-image
+        with:
+          version: ${{ steps.base.outputs.version }}
+          context: ${{ steps.base.outputs.context }}
+          dhi-username: ${{ secrets.DHI_USERNAME }}
+          dhi-token: ${{ secrets.DHI_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
