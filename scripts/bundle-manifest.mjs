@@ -6,6 +6,7 @@
  * Rolldown actually bundled, not the lockfile, so a dev-only package never
  * appears and a bundled one is never missed.
  */
+import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -62,39 +63,50 @@ export const renderNotices = (packages) =>
 
 const purl = (name, version) => `pkg:npm/${name.replace(/^@/, '%40')}@${version}`;
 
-// No serialNumber or timestamp: the same sources must give the same bytes.
-export const renderSbom = (root, packages) =>
-  `${JSON.stringify(
-    {
-      bomFormat: 'CycloneDX',
-      specVersion: '1.6',
-      version: 1,
-      metadata: {
-        component: {
-          type: 'application',
-          'bom-ref': purl(root.name, root.version),
-          name: root.name,
-          version: root.version,
-          purl: purl(root.name, root.version),
-        },
+// A name-based (v5-shaped) UUID over the document itself: actions/attest needs a
+// serialNumber, and the same sources must still give the same bytes.
+const contentSerial = (body) => {
+  const hex = createHash('sha1').update(JSON.stringify(body)).digest('hex');
+  const variant = ((Number.parseInt(hex[16], 16) % 4) + 8).toString(16);
+  return `urn:uuid:${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-${variant}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+};
+
+// No timestamp: the same sources must give the same bytes.
+export const renderSbom = (root, packages) => {
+  const body = {
+    bomFormat: 'CycloneDX',
+    specVersion: '1.6',
+    version: 1,
+    metadata: {
+      component: {
+        type: 'application',
+        'bom-ref': purl(root.name, root.version),
+        name: root.name,
+        version: root.version,
+        purl: purl(root.name, root.version),
       },
-      components: [...packages].sort(byName).map((pkg) => ({
-        type: 'library',
-        'bom-ref': purl(pkg.name, pkg.version),
-        name: pkg.name,
-        version: pkg.version,
-        purl: purl(pkg.name, pkg.version),
-        // UNKNOWN is our fallback, not an SPDX expression: CycloneDX takes it as a name.
-        licenses: [
-          pkg.license === UNKNOWN_LICENSE
-            ? { license: { name: UNKNOWN_LICENSE } }
-            : { expression: pkg.license },
-        ],
-      })),
     },
+    components: [...packages].sort(byName).map((pkg) => ({
+      type: 'library',
+      'bom-ref': purl(pkg.name, pkg.version),
+      name: pkg.name,
+      version: pkg.version,
+      purl: purl(pkg.name, pkg.version),
+      // UNKNOWN is our fallback, not an SPDX expression: CycloneDX takes it as a name.
+      licenses: [
+        pkg.license === UNKNOWN_LICENSE
+          ? { license: { name: UNKNOWN_LICENSE } }
+          : { expression: pkg.license },
+      ],
+    })),
+  };
+  const { bomFormat, specVersion, ...rest } = body;
+  return `${JSON.stringify(
+    { bomFormat, specVersion, serialNumber: contentSerial(body), ...rest },
     null,
     2,
   )}\n`;
+};
 
 /** Rolldown plugin emitting both files next to the bundle. */
 export const bundleManifest = (root) => ({
