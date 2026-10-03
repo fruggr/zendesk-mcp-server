@@ -238,9 +238,18 @@ describe('createFileStore', () => {
   it('refuses a store whose directory is a file', () => {
     const blocker = join(dir, 'not-a-dir');
     writeFileSync(blocker, '');
-    expect(() => createFileStore(join(blocker, 'store.json'))).toThrow(
-      `Cannot write the OAuth store at ${join(blocker, 'store.json')} (ENOTDIR).`,
-    );
+    let error: unknown;
+    try {
+      createFileStore(join(blocker, 'store.json'));
+    } catch (err) {
+      error = err;
+    }
+    expect(error).toMatchObject({
+      message: expect.stringContaining(
+        `Cannot write the OAuth store at ${join(blocker, 'store.json')} (ENOTDIR).`,
+      ),
+      cause: { code: 'ENOTDIR', message: `${blocker} is not a directory` },
+    });
   });
 
   it('opens a store whose directory does not exist yet, creating nothing until the first write', () => {
