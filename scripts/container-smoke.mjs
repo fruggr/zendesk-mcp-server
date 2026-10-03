@@ -109,7 +109,10 @@ check(
   'stops with a clean, linked error without a master secret',
   missing.status !== 0 &&
     missing.stderr.includes('Set OAUTH_MASTER_SECRET') &&
-    missing.stderr.includes('https://github.com/fruggr/zendesk-mcp-server/blob/main/docs/') &&
+    // The whole message ends on the docs link, on the line it starts.
+    /^Cannot write .* See https:\/\/github\.com\/fruggr\/zendesk-mcp-server\/blob\/main\/docs\/http-deployment\.md#master-secret-and-grant-store$/m.test(
+      missing.stderr,
+    ) &&
     !/^\s+at /m.test(missing.stderr),
   missing.stderr,
 );
