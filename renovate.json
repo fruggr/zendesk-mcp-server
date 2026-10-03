@@ -103,21 +103,20 @@
       "allowedVersions": "<12.6.0"
     },
     {
-      "description": "The container base image (both FROM lines of the Dockerfile, one Docker Hardened Images tag pinned by digest). Digest bumps are DHI rebuilding the same tag, mostly for CVE fixes: batched weekly, auto-merged once the container smoke test passes, and release.yml republishes the latest release on the new base without cutting a release. A digest has no release timestamp, so the 5-day age gate is lifted for it, as for lockFileMaintenance. Tag changes (Node or Alpine version) change the runtime and are read by hand; majors already wait on the dashboard.",
+      "description": "The container base image: both FROM lines of the Dockerfile, one Docker Hardened Images tag pinned by digest, moved together in one weekly PR. Tags read <node major>-alpine<alpine version>[-dev], so this versioning makes a Node major a Renovate major (dashboard approval, like any major) and an Alpine release a minor or patch; the -dev suffix is a compatibility marker, never swapped for the runtime tag. Digest bumps (DHI rebuilding the same tag, mostly for CVE fixes) and Alpine updates are auto-merged once the container smoke test passes, and release.yml republishes the latest release on the new base without cutting a release.",
       "matchManagers": ["dockerfile"],
-      "matchUpdateTypes": ["digest"],
+      "versioning": "regex:^(?<major>\\d+)-alpine(?<minor>\\d+)\\.(?<patch>\\d+)(?<compatibility>-dev)?$",
       "groupName": "container base image",
       "semanticCommitScope": "docker",
       "schedule": ["* 0-7 * * 1"],
       "timezone": "Europe/Paris",
-      "minimumReleaseAge": null,
       "automerge": true
     },
     {
+      "description": "A digest has no release timestamp, so the 5-day age gate is lifted for it, as for lockFileMaintenance. Tag updates keep the gate.",
       "matchManagers": ["dockerfile"],
-      "matchUpdateTypes": ["minor", "patch"],
-      "automerge": false,
-      "addLabels": ["needs-review"]
+      "matchUpdateTypes": ["digest"],
+      "minimumReleaseAge": null
     },
     {
       "matchManagers": ["github-actions"],

@@ -26,6 +26,7 @@ ARG BASE_NAME=
 ARG BASE_DIGEST=
 LABEL org.opencontainers.image.title="zendesk-mcp-server" \
       org.opencontainers.image.description="Zendesk MCP server, HTTP transport (OAuth 2.1 authorization server included)." \
+      org.opencontainers.image.vendor="Fruggr" \
       org.opencontainers.image.source="https://github.com/fruggr/zendesk-mcp-server" \
       org.opencontainers.image.documentation="https://github.com/fruggr/zendesk-mcp-server/blob/main/docs/http-deployment.md#container" \
       org.opencontainers.image.licenses="MIT" \

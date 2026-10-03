@@ -49,8 +49,8 @@ that wraps `NodeStreamableHTTPServerTransport` next to its own OAuth authorizati
 server (`auth/server/`, on `oidc-provider`); HTTP builds a per-session `McpServer`
 so the user's Zendesk token is captured in the tools' closure — no shared state.
 `index.ts` imports each transport lazily, and `dist/` inlines every dependency
-(the package declares none): never statically import the HTTP stack or the stdio
-browser sign-in (`open`) from a module both transports load —
+(the package declares none): never statically import the HTTP stack, or a
+package only stdio needs (such as `open`), from a module both transports load —
 `tests/unit/module-graph.test.ts` pins it.
 
 **Tool modes** (chosen at startup by `--mode`): `all` (every tool individually),
