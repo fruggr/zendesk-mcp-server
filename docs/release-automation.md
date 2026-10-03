@@ -74,7 +74,11 @@ each new version automatically.
   `package.json`. The release commit therefore carries a clean one-line version
   diff, and `package.json` / `server.json` versions can never diverge. The
   MCP-registry publish step reads this committed, freshly-bumped file directly;
-  there is no generate-from-scratch step in the release job.
+  there is no generate-from-scratch step in the release job. The same
+  `prepareCmd` then runs `pnpm build` again: `dist/sbom.cdx.json` names the
+  package version, and `@semantic-release/npm` publishes `dist/` without
+  rebuilding it, so the build from before the bump would ship the previous
+  version.
 - **Ownership.** The registry proves npm ownership via the `mcpName` field in
   `package.json` (which the generator uses as the `server.json` `name`).
 - **Auth.** `mcp-publisher login github-oidc` reuses the workflow's
