@@ -4,12 +4,10 @@ import type { Config } from '../../src/config';
 import { filterTools } from '../../src/routing/registry';
 import {
   aggregateAnnotations,
-  buildOperationList,
   buildProxyDispatch,
   createMcpServer,
   createServerShell,
   registerToolset,
-  summarizeDescription,
 } from '../../src/server';
 import type { ToolAnnotations } from '../../src/tools/definitions';
 import { createAllTools } from '../../src/tools/index';
@@ -25,6 +23,7 @@ const ann = (overrides: Partial<ToolAnnotations> = {}): ToolAnnotations => ({
 interface RegisteredTool {
   description?: string;
   annotations?: ToolAnnotations;
+  inputSchema?: { shape: Record<string, { description?: string }> };
 }
 const introspect = (server: ReturnType<typeof createMcpServer>): Record<string, RegisteredTool> =>
   (server as unknown as { _registeredTools: Record<string, RegisteredTool> })._registeredTools;
@@ -112,6 +111,14 @@ describe('createMcpServer', () => {
     expect(description).toContain('get_article');
     expect(description).not.toContain('create_article');
     expect(description).not.toContain('update_article');
+
+    // The per-operation detail lives in the `operation` field, built from the
+    // same filtered set: signatures of the surviving operations only (#329).
+    const operationField =
+      introspect(server)['zendesk_help_center']?.inputSchema?.shape['operation']?.description ?? '';
+    expect(operationField).toContain('- get_article(article_id*');
+    expect(operationField).not.toMatch(/\(write\)$/m);
+    expect(operationField).not.toContain('create_article(');
   });
 
   it('namespace proxy dispatch rejects operations outside its scoped tools', async () => {
@@ -256,53 +263,6 @@ describe('aggregateAnnotations', () => {
       idempotentHint: true,
       openWorldHint: true,
     });
-  });
-});
-
-describe('summarizeDescription', () => {
-  it('returns the first sentence when the description has multiple sentences', () => {
-    expect(summarizeDescription('First. Second. Third.')).toBe('First.');
-  });
-
-  it('returns the whole string when there is no sentence delimiter', () => {
-    expect(summarizeDescription('One sentence only')).toBe('One sentence only');
-  });
-
-  it('preserves trailing period on the kept sentence', () => {
-    expect(summarizeDescription('Do X. Then Y.')).toBe('Do X.');
-  });
-
-  it('handles an empty string', () => {
-    expect(summarizeDescription('')).toBe('');
-  });
-});
-
-describe('buildOperationList', () => {
-  const sample = [
-    {
-      name: 'get_thing',
-      description: 'Retrieve a thing by ID. Lots more context that should be trimmed.',
-      readOnly: true,
-    },
-    {
-      name: 'update_thing',
-      description: 'Update a thing. Prefer update_thing_section for targeted edits.',
-      readOnly: false,
-    },
-  ];
-
-  it('uses only the first sentence of each description', () => {
-    const out = buildOperationList(sample);
-    expect(out).toContain('Retrieve a thing by ID.');
-    expect(out).not.toContain('Lots more context');
-    expect(out).toContain('Update a thing.');
-    expect(out).not.toContain('Prefer update_thing_section');
-  });
-
-  it('flags write operations with a (write) marker', () => {
-    const out = buildOperationList(sample);
-    expect(out).toMatch(/update_thing\*\*.*\(write\)/);
-    expect(out).not.toMatch(/get_thing\*\*.*\(write\)/);
   });
 });
 

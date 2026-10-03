@@ -54,7 +54,8 @@ How well the tools work together *as a set*. Four dimensions, weighted equally:
 ## Checklist for a new tool
 
 - Description leads with a **standalone first sentence**, because proxy modes
-  surface only that sentence (see `AGENTS.md` → Documentation maintenance).
+  surface only that sentence, next to the parameter names
+  (`docs/decisions/proxy-schema-surface.md`).
 - Every parameter has a meaningful `.describe()` (Parameter Semantics).
 - Description states side effects / mutations and what the tool returns
   (Behavioral Transparency), and when to use vs. avoid it (Usage Guidelines).

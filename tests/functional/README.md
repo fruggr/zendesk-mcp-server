@@ -65,7 +65,7 @@ Each scenario declares which channels it uses in its frontmatter (`channels`):
 
 ## Why `[RO]` isn't tested in mode `all`
 
-The `[RO]` prefix is added by `registerProxyTool` (`src/server.ts`) and only
+The `[RO]` prefix is added by `buildProxyDescription` (`src/routing/proxy-schema.ts`) and only
 applies to proxy descriptions in `namespace` / `single` modes. In `--mode all`,
 each tool is registered individually with its original description — there is
 no proxy to prefix. Scenarios 01 and 03 cover the prefix already; a 5th

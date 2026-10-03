@@ -19,3 +19,4 @@ raw + report artifacts.
 | 04-all-baseline        | OK      | 2026-06-06  |
 | 05-strict-params       | OK      | 2026-06-27  |
 | 06-requests-namespace  | PENDING | 2026-09-03  |
+| 07-proxy-param-names   | PENDING | 2026-10-03  |
