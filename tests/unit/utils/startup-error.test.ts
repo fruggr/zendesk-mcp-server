@@ -42,6 +42,9 @@ describe('createStartupError', () => {
   it('tells a startup error from any other error', () => {
     expect(isStartupError(new Error('boom'))).toBe(false);
     expect(isStartupError(Object.assign(new Error('x'), { name: 'StartupError' }))).toBe(false);
+    expect(
+      isStartupError(Object.assign(new Error('x'), { docs: STARTUP_DOCS.secretAndStore })),
+    ).toBe(false);
     expect(isStartupError({ name: 'StartupError', docs: 'x', message: 'x' })).toBe(false);
   });
 });

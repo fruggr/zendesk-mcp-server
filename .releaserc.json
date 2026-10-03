@@ -38,6 +38,7 @@
         "collapsedSummary": "🔧 Internal changes (chore, ci, build, refactor, tests, docs…)"
       }
     ],
+    "./scripts/security-release-analyzer.js",
     [
       "@semantic-release/changelog",
       {

@@ -29,13 +29,23 @@ semantic-release scans commits since the last release
         ├─ commit `fix: …`              → patch release
         ├─ commit `feat: …`             → minor release
         ├─ commit `BREAKING CHANGE`     → major release
-        └─ commit `chore(deps): …`      → ignored (no release)
+        ├─ commit `chore(deps): …`      → ignored (no release)…
+        └─ …unless HEAD fixes an advisory in a bundled package → patch release
         │
         ▼ (when a release was cut)
 Mirror the release into the official MCP registry
 ```
 
 The commit-type → release-level mapping lives in `.releaserc.json` (preset `conventionalcommits`).
+
+**Security releases for bundled packages.** `dist/` inlines every dependency, so a fix in one
+reaches users only through a release. Weekly batches and lockfile maintenance are `chore`
+commits and release nothing on their own. `scripts/security-release-analyzer.js` closes the gap:
+it runs `pnpm audit` on the last release's lockfile and on HEAD's, keeps only advisories against
+a package listed in `dist/sbom.cdx.json` (what the build bundled), and asks for a patch release
+when HEAD no longer carries one of them. The fixed advisories get a **Security** section in the
+release notes. A fixed advisory in a dev tool releases nothing, and an audit that cannot run
+(registry outage) logs a warning and leaves the decision to the commits.
 
 ## MCP registry publishing
 
@@ -227,7 +237,7 @@ Concrete examples:
 - Non-vuln patch of `qs` behind the `^6.15.3` override → **no PR**; the range still holds, so the resolved version moves with the next lockfile maintenance run.
 - Advisory against `qs` behind that same override → **no PR either**; a caret range is not a version, so the entry is skipped. Remediation is the next lockfile maintenance run, or raising the floor by hand.
 - Major of `qs` (out of the override range) → entry in the dashboard, manual approval required.
-- Lockfile maintenance, Tuesday and Friday before 8am (Europe/Paris) → PR `chore(deps): lock file maintenance` → auto-merge → no release. Picks up transitive updates whose parent ranges already allow the new version (e.g. a `^3.0.1`-ranged transitive moving from 3.1.0 to 3.1.2).
+- Lockfile maintenance, Tuesday and Friday before 8am (Europe/Paris) → PR `chore(deps): lock file maintenance` → auto-merge → no release, unless it fixes an advisory in a bundled package (then a patch release with a **Security** section). Picks up transitive updates whose parent ranges already allow the new version (e.g. a `^3.0.1`-ranged transitive moving from 3.1.0 to 3.1.2).
 
 ## Admin prerequisites (out-of-PR settings)
 

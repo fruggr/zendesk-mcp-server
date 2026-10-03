@@ -235,6 +235,14 @@ describe('createFileStore', () => {
     });
   });
 
+  it('refuses a store whose directory is a file', () => {
+    const blocker = join(dir, 'not-a-dir');
+    writeFileSync(blocker, '');
+    expect(() => createFileStore(join(blocker, 'store.json'))).toThrow(
+      `Cannot write the OAuth store at ${join(blocker, 'store.json')} (ENOTDIR).`,
+    );
+  });
+
   it('opens a store whose directory does not exist yet, creating nothing until the first write', () => {
     const nested = join(dir, 'volume', 'store.json');
     createFileStore(nested);

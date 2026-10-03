@@ -117,6 +117,7 @@ const assertWritable = (path: string): void => {
         }
         break;
       } catch (err) {
+        // Stryker disable next-line ConditionalExpression: the filesystem root always exists, so the climb never reaches it on ENOENT.
         if ((err as NodeJS.ErrnoException).code !== 'ENOENT' || dirname(dir) === dir) throw err;
         dir = dirname(dir);
       }
