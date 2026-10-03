@@ -4,7 +4,8 @@ description: >-
   by digest, sign it (cosign keyless) and attach provenance and SBOM
   attestations, and only then point its version tags at it. Shared by the release job and the base-image republish,
   so both publish exactly the same way. The caller needs packages: write,
-  id-token: write and attestations: write.
+  id-token: write, attestations: write and artifact-metadata: write (the last
+  lets actions/attest record the image as a storage record).
 
 inputs:
   version:
