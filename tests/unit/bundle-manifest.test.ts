@@ -29,6 +29,7 @@ describe('packageRoot', () => {
 const PACKAGES = [
   { name: 'zod', version: '4.6.5', license: 'MIT', licenseText: 'MIT License\n\nCopyright zod' },
   { name: '@scope/no-text', version: '1.0.0', license: 'ISC', licenseText: undefined },
+  { name: 'no-license', version: '2.0.0', license: 'UNKNOWN', licenseText: undefined },
 ];
 
 describe('renderNotices', () => {
@@ -41,6 +42,12 @@ describe('renderNotices', () => {
       ## @scope/no-text@1.0.0
 
       License: ISC
+
+      The package ships no license file; see its license identifier above.
+
+      ## no-license@2.0.0
+
+      License: UNKNOWN
 
       The package ships no license file; see its license identifier above.
 
@@ -78,6 +85,20 @@ describe('renderSbom', () => {
             "purl": "pkg:npm/%40scope/no-text@1.0.0",
             "type": "library",
             "version": "1.0.0",
+          },
+          {
+            "bom-ref": "pkg:npm/no-license@2.0.0",
+            "licenses": [
+              {
+                "license": {
+                  "name": "UNKNOWN",
+                },
+              },
+            ],
+            "name": "no-license",
+            "purl": "pkg:npm/no-license@2.0.0",
+            "type": "library",
+            "version": "2.0.0",
           },
           {
             "bom-ref": "pkg:npm/zod@4.6.5",

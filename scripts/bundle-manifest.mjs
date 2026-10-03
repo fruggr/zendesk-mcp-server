@@ -10,6 +10,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const NODE_MODULES = '/node_modules/';
+const UNKNOWN_LICENSE = 'UNKNOWN';
 const LICENSE_FILE = /^(licen[cs]e|copying)(\.|-|$)/i;
 
 /** Directory of the package a module id belongs to, or undefined for project and virtual modules. */
@@ -32,7 +33,7 @@ const describePackage = (dir) => {
   return {
     name: manifest.name,
     version: manifest.version,
-    license: typeof manifest.license === 'string' ? manifest.license : 'UNKNOWN',
+    license: typeof manifest.license === 'string' ? manifest.license : UNKNOWN_LICENSE,
     licenseText: readLicenseText(dir),
   };
 };
@@ -83,7 +84,12 @@ export const renderSbom = (root, packages) =>
         name: pkg.name,
         version: pkg.version,
         purl: purl(pkg.name, pkg.version),
-        licenses: [{ expression: pkg.license }],
+        // UNKNOWN is our fallback, not an SPDX expression: CycloneDX takes it as a name.
+        licenses: [
+          pkg.license === UNKNOWN_LICENSE
+            ? { license: { name: UNKNOWN_LICENSE } }
+            : { expression: pkg.license },
+        ],
       })),
     },
     null,

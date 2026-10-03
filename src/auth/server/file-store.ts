@@ -99,9 +99,9 @@ const persist = (path: string, entries: Map<string, StoredEntry>): void => {
   renameSync(tmp, path);
 };
 
-// The nearest existing ancestor of the store's directory must be a writable
-// directory: the first write creates the rest. Checked at startup, so a read-only
-// filesystem stops the server instead of failing the first user's sign-in.
+// The first write creates missing directories, so only the nearest existing one
+// must be writable. Checked at startup: a read-only filesystem stops the server
+// rather than failing the first user's sign-in.
 const assertWritable = (path: string): void => {
   let dir = dirname(path);
   try {
