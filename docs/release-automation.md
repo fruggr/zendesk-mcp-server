@@ -135,14 +135,14 @@ instead, and the canary gates that merge like any other.
 
 Two things decide what happens to an update: **which dependency it touches**, and whether it is
 a security fix. The semver level only refines those two. Everything auto-merged that is not a
-security fix arrives in one of two weekly batches.
+security fix arrives in the weekly batch.
 
 | Update kind                                                         | Vulnerability (security) | Non-vulnerability                |
 | ------------------------------------------------------------------- | ------------------------ | -------------------------------- |
 | **patch**, any `package.json` dependency                            | auto-merge, own PR       | auto-merge, weekly batch\*\*\*\* |
 | **minor** on `@modelcontextprotocol/*` or `zod`                     | manual review            | **manual review**, never batched\*\*\*\* |
 | **minor**, any other `package.json` dependency                      | manual review\*          | auto-merge, weekly batch         |
-| **major**, any dependency (prod and dev)                            | manual review\*\*         | dashboard approval               |
+| **major**, any dependency                                           | manual review\*\*         | dashboard approval               |
 | **patch / minor** on `pnpm` (`packageManager`)                      | auto-merge               | auto-merge, own PR               |
 | **patch / minor** on a `pnpm-workspace.yaml` `overrides` entry       | never proposed\*\*\*     | never proposed\*\*\*            |
 | `lockFileMaintenance` (Tuesday and Friday before 8am, Europe/Paris) | auto-merge               | auto-merge                       |
@@ -154,12 +154,12 @@ security fix arrives in one of two weekly batches.
 
 \*\*\* Both columns read that way for the same reason: the three overrides are caret ranges. Pin one to an exact version and it behaves like any other dependency. See **The overrides** below.
 
-\*\*\*\* The `@modelcontextprotocol/*` packages (production and dev alike) travel as one `mcp sdk` group, never split across the prod and dev batches: they release in lockstep over one shared `@modelcontextprotocol/core`, and a split bump would leave two copies of it in the lockfile.
+\*\*\*\* The `@modelcontextprotocol/*` packages travel as one `mcp sdk` group, never split: they release in lockstep over one shared `@modelcontextprotocol/core`, and a split bump would leave two copies of it in the lockfile.
 
-**The weekly batches.** Everything auto-merged and non-security is grouped into two PRs,
-`chore(deps): update prod dependencies` and `chore(deps): update dev dependencies`, opened
-Monday before 8am (Europe/Paris). Two groups and not one, so a broken dev bump does not hold
-back a production one. Monday and not the `lockFileMaintenance` window (Tuesday and Friday),
+**The weekly batch.** Everything auto-merged and non-security is grouped into one PR,
+`chore(deps): update dependencies`, opened Monday before 8am (Europe/Paris). One group, because
+`dist/` inlines every package and they are all devDependencies: no dependency type is left to
+split production from tooling. Monday and not the `lockFileMaintenance` window (Tuesday and Friday),
 because both rewrite `pnpm-lock.yaml` and overlapping windows cost a rebase cascade. A member
 that has not yet cleared the 5-day `minimumReleaseAge` is left out of the batch and joins the
 next one. The cost of batching is that one member breaking CI holds the whole batch open — the
@@ -213,15 +213,15 @@ check is not simply made required:
 
 Concrete examples:
 
-- Patch vulnerability in `open` (prod) → PR `fix(security): update open to X`, on its own, immediately → red and pending until the fix is 5 days old → auto-merge → patch release published.
-- Minor vulnerability in `open` (prod) → same PR and same wait → **manual review** → patch release published on merge.
-- Major vulnerability in `open` (prod) → PR opened too, labelled `needs-review` (the dashboard gate does not apply to advisories) → **manual review**.
-- Non-vuln patch update of `open` (prod) → joins `chore(deps): update prod dependencies` on Monday → auto-merge → no release on merge.
-- Minor update of `cheerio` (prod) → same batch → auto-merge → no release.
+- Patch vulnerability in `open` (bundled) → PR `fix(security): update open to X`, on its own, immediately → red and pending until the fix is 5 days old → auto-merge → patch release published.
+- Minor vulnerability in `open` (bundled) → same PR and same wait → **manual review** → patch release published on merge.
+- Major vulnerability in `open` (bundled) → PR opened too, labelled `needs-review` (the dashboard gate does not apply to advisories) → **manual review**.
+- Non-vuln patch update of `open` (bundled) → joins `chore(deps): update dependencies` on Monday → auto-merge → no release on merge.
+- Minor update of `cheerio` (bundled) → same batch → auto-merge → no release.
 - Minor update of `zod` → PR `chore(deps): update dependency zod to X`, on its own, as soon as it clears the age gate → **manual review** → no release on merge.
-- Patch update of `zod` → joins the prod batch like any other patch.
-- Minor update of `vitest` (devDep) → joins `chore(deps): update dev dependencies` → auto-merge → no release.
-- Major update of `vitest` (devDep) → entry in the dashboard, manual approval required.
+- Patch update of `zod` → joins the weekly batch like any other patch.
+- Minor update of `vitest` (tooling) → joins the same `chore(deps): update dependencies` batch → auto-merge → no release.
+- Major update of `vitest` (tooling) → entry in the dashboard, manual approval required.
 - Patch or minor bump of `pnpm` (via `packageManager` field) → PR `chore(deps): update pnpm to X`, on its own → auto-merge → no release. The corepack hash in `packageManager` is updated automatically by Renovate when the format is `pnpm@VERSION+sha512.HASH`. Since pnpm 12 records itself in `pnpm-lock.yaml` under `packageManagerDependencies`, such a PR also has to refresh the lockfile, or CI fails at `pnpm install --frozen-lockfile` with `ERR_PNPM_FROZEN_LOCKFILE_WITH_OUTDATED_LOCKFILE`. Whether Renovate does that for a bare `packageManager` bump is unverified, and it fails closed either way: the PR goes red at install and auto-merge cannot fire, the same shape as a security PR waiting out the age gate.
 - GitHub Action digest bump → PR `chore(deps): update actions/X` → manual review → no release.
 - Non-vuln patch of `qs` behind the `^6.15.3` override → **no PR**; the range still holds, so the resolved version moves with the next lockfile maintenance run.

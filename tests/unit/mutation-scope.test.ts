@@ -226,7 +226,10 @@ describe('the mutation baseline cache key', () => {
   // `tests/**/*.test.ts`, so nothing in that harness can change a verdict. It also
   // writes a report per scenario run, and hashing those would discard the baseline
   // (a ~1h cold run) every time someone records one.
-  const EXEMPT = 'tests/functional';
+  //
+  // `tests/dist/` is exempt for the same reason: `vitest.config.ts` excludes it,
+  // since it runs the built bundle through `vitest.dist.config.ts` instead.
+  const EXEMPT = new Set(['tests/functional', 'tests/dist']);
 
   // Every remaining file, whatever its extension — not just `.ts`. Filtering by
   // extension would pass today by coincidence and miss the case this exists to
@@ -234,7 +237,7 @@ describe('the mutation baseline cache key', () => {
   const suiteInputsUnder = (dir: string): string[] =>
     readdirSync(join(repoRoot, dir), { withFileTypes: true }).flatMap((entry) => {
       const rel = `${dir}/${entry.name}`;
-      if (rel === EXEMPT) return [];
+      if (EXEMPT.has(rel)) return [];
       if (entry.isDirectory()) return suiteInputsUnder(rel);
       return entry.name.endsWith('.test.ts') ? [] : [rel];
     });

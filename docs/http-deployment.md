@@ -34,17 +34,9 @@ every MCP client: they never talk to Zendesk directly.
 
 ## Install
 
-The HTTP transport's packages (`oidc-provider`, `jose`,
-`@modelcontextprotocol/node`) are optional peer dependencies, so a stdio install
-never downloads them. Install them next to the server, at the ranges of the
-package's `peerDependencies`. The server gives you the exact command: without
-them, `--transport http` stops at startup and prints an `npm install ...` line
-to copy. `npm view @fruggr/zendesk-mcp-server peerDependencies` lists the same
-ranges. Without a project, pass each one to `npx -y -p <package>@<range> ...`.
-
-Prefer a project install (or a container image): it is the path CI tests. A
-global one (`npm install -g`) starts too, but gives `@modelcontextprotocol/node`
-its own copy of the MCP SDK.
+The package carries everything the HTTP transport needs, so the stdio install
+works as is: `npm install @fruggr/zendesk-mcp-server` (or `npx -y
+@fruggr/zendesk-mcp-server ...`). Nothing else gets installed next to it.
 
 ## Run the server
 

@@ -63,6 +63,10 @@ jobs:
 
       - run: node scripts/smoke-test.mjs
 
+      # The built bundle, in its own process: what the tests above import from
+      # src/ is not what ships.
+      - run: pnpm exec vitest run --config vitest.dist.config.ts
+
       - run: pnpm pack --pack-destination .
 
       - uses: actions/upload-artifact@v7
@@ -98,27 +102,16 @@ jobs:
           echo "$OUT"
           echo "$OUT" | grep -q "stdio_transport_ready"
 
-      # The HTTP packages are optional peers: a plain install must leave them out
-      # (what stdio users download), and HTTP must then fail with the install hint.
-      - name: Verify the HTTP peers stay optional
+      # dist/ inlines every dependency: installing the tarball must add nothing
+      # else, and both transports must start from it alone.
+      - name: Verify the package installs no dependency and serves HTTP
         run: |
           set -euo pipefail
           mkdir app && cd app && npm init -y > /dev/null
           npm install ../*.tgz
-          for pkg in oidc-provider jose @modelcontextprotocol/node; do
-            if [ -e "node_modules/$pkg" ]; then echo "$pkg was installed"; exit 1; fi
-          done
-          OUT=$(env ZENDESK_SUBDOMAIN=smoke-test timeout 5 npx zendesk-mcp-server --transport http --port 0 2>&1 || true)
-          echo "$OUT"
-          PEERS=$(node -e "const p=require('./node_modules/@fruggr/zendesk-mcp-server/package.json').peerDependencies;console.log(Object.entries(p).map(([n,r])=>n+'@'+r).join(' '))")
-          echo "$OUT" | grep -qF "npm install @fruggr/zendesk-mcp-server $PEERS"
-
-      - name: Verify HTTP runs once the peers are installed
-        working-directory: app
-        run: |
-          set -euo pipefail
-          CMD=$(node -e "const p=require('./node_modules/@fruggr/zendesk-mcp-server/package.json').peerDependencies;console.log(Object.entries(p).map(([n,r])=>n+'@'+r).join(' '))")
-          npm install $CMD
+          EXTRA=$(npm ls --all --parseable | grep '/node_modules/' | grep -v '/node_modules/@fruggr/zendesk-mcp-server$' || true)
+          if [ -n "$EXTRA" ]; then echo "unexpected packages installed:"; echo "$EXTRA"; exit 1; fi
+          test -f node_modules/@fruggr/zendesk-mcp-server/dist/THIRD-PARTY-NOTICES.md
           OUT=$(sleep 6 | env ZENDESK_SUBDOMAIN=smoke-test LOG_LEVEL=info OAUTH_STORE=memory:// timeout 5 npx zendesk-mcp-server --transport http --port 0 2>&1 || true)
           echo "$OUT"
           echo "$OUT" | grep -q "http_transport_ready"

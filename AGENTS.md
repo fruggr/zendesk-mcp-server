@@ -48,9 +48,10 @@ Transports: stdio (SDK `StdioServerTransport`) plus a `node:http` HTTP transport
 that wraps `NodeStreamableHTTPServerTransport` next to its own OAuth authorization
 server (`auth/server/`, on `oidc-provider`); HTTP builds a per-session `McpServer`
 so the user's Zendesk token is captured in the tools' closure — no shared state.
-`index.ts` imports the HTTP transport lazily, and its packages are optional peers
-(`src/transports/http-peers.ts`): a stdio install never downloads them, so never
-import one outside the HTTP path.
+`index.ts` imports each transport lazily, and `dist/` inlines every dependency
+(the package declares none): never statically import the HTTP stack or the stdio
+browser sign-in (`open`) from a module both transports load —
+`tests/unit/module-graph.test.ts` pins it.
 
 **Tool modes** (chosen at startup by `--mode`): `all` (every tool individually),
 `namespace` (default — one proxy per namespace), `single` (one `zendesk` proxy).

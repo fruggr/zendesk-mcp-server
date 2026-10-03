@@ -31,6 +31,7 @@
     "test:mutation:diff": "node scripts/mutation-scope.mjs diff",
     "test:mutation:summary": "node scripts/mutation-scope.mjs summary",
     "test:smoke": "pnpm build && node scripts/smoke-test.mjs",
+    "test:dist": "pnpm build && vitest run --config vitest.dist.config.ts",
     "mcp:live": "tsx scripts/mcp-live.ts"
   },
   "keywords": [
@@ -72,43 +73,11 @@
     "node": ">=22"
   },
   "packageManager": "pnpm@12.5.1+sha512.e3f305bc784a2bc89f5ad3b6138889470fae8d2af5f36b61216ec91c2c3d64089775f9de38aac331044ea40f245cb0d5666392dfdf65824e1907ef6a2c62de5f",
-  "dependencies": {
-    "@modelcontextprotocol/server": "2.1.0",
-    "cheerio": "1.2.0",
-    "hast-util-to-html": "9.0.5",
-    "hast-util-to-mdast": "10.1.2",
-    "open": "11.0.4",
-    "rehype-parse": "9.0.1",
-    "rehype-raw": "7.0.0",
-    "rehype-remark": "10.0.1",
-    "rehype-stringify": "10.0.1",
-    "remark-gfm": "4.0.1",
-    "remark-parse": "11.0.0",
-    "remark-rehype": "11.1.2",
-    "remark-stringify": "11.0.0",
-    "unified": "11.0.5",
-    "zod": "4.6.5"
-  },
-  "peerDependencies": {
-    "@modelcontextprotocol/node": "^2.0.0",
-    "jose": "^6.2.12",
-    "oidc-provider": "~9.12.2"
-  },
-  "peerDependenciesMeta": {
-    "@modelcontextprotocol/node": {
-      "optional": true
-    },
-    "jose": {
-      "optional": true
-    },
-    "oidc-provider": {
-      "optional": true
-    }
-  },
   "devDependencies": {
     "@biomejs/biome": "2.5.14",
     "@modelcontextprotocol/client": "2.1.0",
     "@modelcontextprotocol/node": "2.1.0",
+    "@modelcontextprotocol/server": "2.1.0",
     "@semantic-release/changelog": "^7.0.0",
     "@semantic-release/exec": "^7.1.0",
     "@semantic-release/git": "^11.0.0",
@@ -123,17 +92,31 @@
     "@types/node": "^22.15.0",
     "@types/oidc-provider": "9.12.1",
     "@vitest/coverage-v8": "^5.0.0",
+    "cheerio": "1.2.0",
     "conventional-changelog-conventionalcommits": "^10.2.1",
+    "hast-util-to-html": "9.0.5",
+    "hast-util-to-mdast": "10.1.2",
     "jose": "6.2.12",
     "lefthook": "^2.1.10",
     "msw": "^2.12.13",
     "oidc-provider": "~9.12.2",
+    "open": "11.0.4",
+    "rehype-parse": "9.0.1",
+    "rehype-raw": "7.0.0",
+    "rehype-remark": "10.0.1",
+    "rehype-stringify": "10.0.1",
+    "remark-gfm": "4.0.1",
+    "remark-parse": "11.0.0",
+    "remark-rehype": "11.1.2",
+    "remark-stringify": "11.0.0",
     "semantic-release": "^25.0.3",
     "shx": "^0.4.0",
     "tsdown": "^0.23.0",
     "tsx": "^4.21.0",
     "typescript": "^7.0.0",
     "typescript-legacy": "npm:typescript@6.0.3",
-    "vitest": "^5.0.0"
+    "unified": "11.0.5",
+    "vitest": "^5.0.0",
+    "zod": "4.6.5"
   }
 }

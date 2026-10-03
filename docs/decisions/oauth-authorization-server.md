@@ -332,19 +332,24 @@ and persists it (see [Input](#four-keys-one-secret)).
 
 ### Packaging
 
-- The HTTP-only packages (`oidc-provider` and its Koa stack, `jose`,
-  `@modelcontextprotocol/node` and Hono) are **optional peer dependencies**, not
-  dependencies. Most installs are stdio (`npx`, `bunx`), fetched again on every
-  cache miss: shipping them the HTTP stack would cost each one about 15 MB and
-  43 packages (35 MB instead of 50 MB, measured on the packed tarball) it never
-  loads. Sustainable-by-design: no bytes for a feature the user does not run.
-- The cost falls on HTTP deployments, which install the peers themselves (one
-  command, printed at startup when they are missing). A deployment is set up
-  once, usually in an image, so it absorbs that step far better than every stdio
-  launch would absorb the download.
-- `src/transports/http-peers.ts` lists them, a unit test keeps that list equal to
-  `package.json`, and CI checks on the engines floor that a plain install leaves
-  them out and that HTTP runs once they are added.
+- `dist/` inlines every dependency, the HTTP stack included (`oidc-provider` and
+  its Koa stack, `jose`, `@modelcontextprotocol/node`, Hono). The published
+  package declares none, so an install downloads one tarball of about 1.2 MB.
+  That is less than either install had when the HTTP packages were optional peers
+  (35 MB for stdio, 50 MB with the peers), so no transport pays for the other.
+- Each transport is a chunk loaded on demand: a stdio start never parses the
+  authorization server, and an HTTP start never loads the browser sign-in or
+  `open` (`tests/unit/module-graph.test.ts`).
+- The bundle and the container image are the same artifact, and
+  `tests/dist/` runs it in its own process. `tsdown.config.ts` fails the build if
+  an import escapes it.
+- Inlined code carries its licenses: the build writes `dist/THIRD-PARTY-NOTICES.md`
+  and `dist/sbom.cdx.json` from the modules actually bundled
+  (`scripts/bundle-manifest.mjs`).
+- The cost: a dependency fix reaches users only through a release of this
+  package. Lockfile refreshes do not release on their own, so a fixed advisory in
+  a bundled package forces a patch release instead
+  (`scripts/security-release-analyzer.js`).
 
 ## Costs accepted
 
