@@ -98,9 +98,9 @@
       "automerge": true
     },
     {
-      "description": "TEMPORARY: pnpm >= 12.6.0 is broken on Termux/Android (lock_shared() not supported, pnpm/pnpm#16508), and CI on Linux cannot catch it. Remove this rule once a fixed release is out; Renovate then opens the normal pnpm update PR.",
+      "description": "TEMPORARY: pnpm 12.6.0 to 12.8.x are broken on Termux/Android (lock_shared() not supported, pnpm/pnpm#16508), fixed in 12.9.0; Linux CI cannot catch it. While the pin is still 12.5.1, the next bump must skip the broken range, so only >=12.9.0 is proposed. Remove this rule once packageManager is on 12.9.0 or later.",
       "matchDepNames": ["pnpm"],
-      "allowedVersions": "<12.6.0"
+      "allowedVersions": ">=12.9.0"
     },
     {
       "description": "The container base image: both FROM lines of the Dockerfile, one Docker Hardened Images tag pinned by digest, moved together in one weekly PR. Tags read <node major>-alpine<alpine version>[-dev], so this versioning makes a Node major a Renovate major (dashboard approval, like any major) and an Alpine release a minor or patch; the -dev suffix is a compatibility marker, never swapped for the runtime tag. Digest bumps (DHI rebuilding the same tag, mostly for CVE fixes) and Alpine updates are auto-merged once the container smoke test passes, and release.yml republishes the latest release on the new base without cutting a release.",
