@@ -341,7 +341,7 @@ and persists it (see [Input](#four-keys-one-secret)).
   authorization server, and an HTTP start never loads the browser sign-in or
   `open` (`tests/unit/module-graph.test.ts`).
 - The bundle and the container image are the same artifact, and
-  `tests/dist/` runs it in its own process. `tsdown.config.ts` fails the build if
+  `tests/bundle/` runs it in its own process. `tsdown.config.ts` fails the build if
   an import escapes it.
 - Inlined code carries its licenses: the build writes `dist/THIRD-PARTY-NOTICES.md`
   and `dist/sbom.cdx.json` from the modules actually bundled

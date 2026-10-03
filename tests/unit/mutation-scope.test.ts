@@ -227,9 +227,9 @@ describe('the mutation baseline cache key', () => {
   // writes a report per scenario run, and hashing those would discard the baseline
   // (a ~1h cold run) every time someone records one.
   //
-  // `tests/dist/` is exempt for the same reason: `vitest.config.ts` excludes it,
-  // since it runs the built bundle through `vitest.dist.config.ts` instead.
-  const EXEMPT = new Set(['tests/functional', 'tests/dist']);
+  // `tests/bundle/` is exempt for the same reason: `vitest.config.ts` excludes it,
+  // since it runs the built bundle through `vitest.bundle.config.ts` instead.
+  const EXEMPT = new Set(['tests/functional', 'tests/bundle']);
 
   // Every remaining file, whatever its extension — not just `.ts`. Filtering by
   // extension would pass today by coincidence and miss the case this exists to

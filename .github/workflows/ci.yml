@@ -65,7 +65,7 @@ jobs:
 
       # The built bundle, in its own process: what the tests above import from
       # src/ is not what ships.
-      - run: pnpm exec vitest run --config vitest.dist.config.ts
+      - run: pnpm exec vitest run --config vitest.bundle.config.ts
 
       - run: pnpm pack --pack-destination .
 

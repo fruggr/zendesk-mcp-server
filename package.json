@@ -31,7 +31,7 @@
     "test:mutation:diff": "node scripts/mutation-scope.mjs diff",
     "test:mutation:summary": "node scripts/mutation-scope.mjs summary",
     "test:smoke": "pnpm build && node scripts/smoke-test.mjs",
-    "test:dist": "pnpm build && vitest run --config vitest.dist.config.ts",
+    "test:bundle": "pnpm build && vitest run --config vitest.bundle.config.ts",
     "mcp:live": "tsx scripts/mcp-live.ts"
   },
   "keywords": [
