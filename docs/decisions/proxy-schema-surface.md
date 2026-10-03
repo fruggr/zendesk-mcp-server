@@ -42,6 +42,7 @@ All of it is built at registration from the filtered tools' real schemas (`src/r
 
 - **Parameter names in the tool description**: makes the truncation worse.
 - **`params` as a `oneOf` on `operation`**: 23 KB of schema for `help_center` and 52 KB in `single` mode, which undoes the point of the proxy modes. Client support for `oneOf` also varies.
+- **`(write)` markers on the `Operations:` line**: redundant with the proxy's annotations and the client's own tool permissions, so the description's space goes to guidance. They stay in the `operation` property, which has room.
 - **A `describe` operation**: costs a round trip and adds a mechanism. Kept as a follow-up if signatures alone prove too thin (types, enums).
 
 ## Guards against drift
