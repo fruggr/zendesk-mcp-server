@@ -136,6 +136,26 @@ describe('resolveMasterSecret', () => {
     expect(isStartupError(error)).toBe(true);
   });
 
+  it('names ENOTDIR for a --oauth-master-secret-file path under a regular file', () => {
+    const blocker = join(dir, 'not-a-dir');
+    writeFileSync(blocker, '');
+    let error: unknown;
+    try {
+      resolveMasterSecret({
+        file: join(blocker, 'secret'),
+        configDir: dir,
+        storeUri: storeElsewhere(),
+      });
+    } catch (err) {
+      error = err;
+    }
+    expect(isStartupError(error)).toBe(true);
+    expect(error).toMatchObject({
+      message: `Cannot read the OAuth master secret file (ENOTDIR). See ${STARTUP_DOCS.secretAndStore}`,
+      cause: { code: 'ENOTDIR' },
+    });
+  });
+
   it('stops with a startup error when the generated secret cannot be written', () => {
     // A regular file where the config dir should be: mkdir fails the same way
     // for root and non-root, unlike a chmod-based read-only directory.

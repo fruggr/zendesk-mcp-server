@@ -27,14 +27,17 @@ export interface MasterSecret {
 }
 
 const isWindows = process.platform === 'win32';
-const ABSENT = new Set(['ENOENT', 'ENOTDIR']);
+// The persisted secret's directory may sit under a file (a read-only or odd
+// config dir): that is "not generated yet", and the write that follows reports
+// it. A path the operator gave keeps its real error.
+const ABSENT_PERSISTED = new Set(['ENOENT', 'ENOTDIR']);
+const ABSENT_GIVEN = new Set(['ENOENT']);
 
-const readSecretFile = (path: string): string | undefined => {
+const readSecretFile = (path: string, absent: ReadonlySet<string>): string | undefined => {
   try {
     return readFileSync(path, 'utf8').trim() || undefined;
   } catch (err) {
-    // ENOTDIR: a path component is a file, so the secret file cannot exist either.
-    if (ABSENT.has(errnoCode(err))) return undefined;
+    if (absent.has(errnoCode(err))) return undefined;
     throw createStartupError(
       `Cannot read the OAuth master secret file (${errnoCode(err)}).`,
       STARTUP_DOCS.secretAndStore,
@@ -82,7 +85,7 @@ export const resolveMasterSecret = (
 
   if (input.value) return validated(input.value, 'env');
   if (input.file) {
-    const fromFlag = readSecretFile(input.file);
+    const fromFlag = readSecretFile(input.file, ABSENT_GIVEN);
     if (!fromFlag) throw new Error('The OAuth master secret file is missing or empty.');
     return validated(fromFlag, 'file-flag');
   }
@@ -96,7 +99,7 @@ export const resolveMasterSecret = (
   }
 
   const path = join(input.configDir, MASTER_SECRET_FILE_NAME);
-  const persisted = readSecretFile(path);
+  const persisted = readSecretFile(path, ABSENT_PERSISTED);
   const secret = persisted ? validated(persisted, 'persisted') : undefined;
   const result = secret ?? { value: generate(), source: 'generated' as const };
   if (!secret) {

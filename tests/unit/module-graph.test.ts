@@ -2,13 +2,15 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-// Static `import ... from` edges only: `import type` is erased and `import()` is
-// what defers a module to the transport that needs it.
-const STATIC_IMPORT = /^import\s+(?!type\s)(?:[^'"]*?\sfrom\s+)?['"]([^'"]+)['"]/gm;
+// Static `import`/`export ... from` edges only: `import type`/`export type` are
+// erased and `import()` is what defers a module to the transport that needs it.
+const STATIC_IMPORT =
+  /^(?:import\s+(?!type\s)(?:[^'"]*?\sfrom\s+)?|export\s+(?!type\s)[^'"]*?\sfrom\s+)['"]([^'"]+)['"]/gm;
 
+// A `.js` specifier names its `.ts` source, as TypeScript resolves it.
 const resolveLocal = (from: string, specifier: string): string | undefined => {
   if (!specifier.startsWith('.')) return undefined;
-  const base = resolve(dirname(from), specifier);
+  const base = resolve(dirname(from), specifier.replace(/\.js$/, ''));
   return [`${base}.ts`, join(base, 'index.ts')].find(existsSync);
 };
 

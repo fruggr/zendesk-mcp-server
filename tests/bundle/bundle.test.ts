@@ -82,7 +82,7 @@ const startHttpServer = (port: number, env: Record<string, string>): Promise<Sta
   });
 
 const stop = async (proc: ChildProcess | undefined): Promise<void> => {
-  if (!proc || proc.exitCode !== null) return;
+  if (!proc || proc.exitCode !== null || proc.signalCode !== null) return;
   const exited = new Promise((done) => proc.once('exit', done));
   proc.kill('SIGTERM');
   await exited;

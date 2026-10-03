@@ -65,7 +65,7 @@ const load = (path: string): Map<string, StoredEntry> => {
     // Stryker disable next-line StringLiteral: JSON.parse decodes a Buffer as UTF-8 all the same.
     raw = readFileSync(path, 'utf8');
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return new Map();
+    if (errnoCode(err) === 'ENOENT') return new Map();
     throw createStartupError(
       `Cannot read the OAuth store file (${errnoCode(err)}).`,
       STARTUP_DOCS.secretAndStore,
@@ -99,11 +99,6 @@ const persist = (path: string, entries: Map<string, StoredEntry>): void => {
   renameSync(tmp, path);
 };
 
-/**
- * The default store: one JSON file, written atomically on every change. Chosen
- * over `keyv-file`, whose plain `writeFile` can truncate the file on a crash and
- * whose loader then silently starts empty. Single process only (ADR, Storage).
- */
 // The nearest existing ancestor of the store's directory must be a writable
 // directory: the first write creates the rest. Checked at startup, so a read-only
 // filesystem stops the server instead of failing the first user's sign-in.
@@ -118,7 +113,7 @@ const assertWritable = (path: string): void => {
         break;
       } catch (err) {
         // Stryker disable next-line ConditionalExpression: the filesystem root always exists, so the climb never reaches it on ENOENT.
-        if ((err as NodeJS.ErrnoException).code !== 'ENOENT' || dirname(dir) === dir) throw err;
+        if (errnoCode(err) !== 'ENOENT' || dirname(dir) === dir) throw err;
         dir = dirname(dir);
       }
     }
@@ -133,6 +128,11 @@ const assertWritable = (path: string): void => {
   }
 };
 
+/**
+ * The default store: one JSON file, written atomically on every change. Chosen
+ * over `keyv-file`, whose plain `writeFile` can truncate the file on a crash and
+ * whose loader then silently starts empty. Single process only (ADR, Storage).
+ */
 export const createFileStore = (path: string): RecordStore => {
   assertWritable(path);
   const entries = load(path);
