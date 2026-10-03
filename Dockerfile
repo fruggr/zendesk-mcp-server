@@ -5,7 +5,7 @@
 # digest; Renovate moves them together, and release.yml republishes the image
 # when only these lines change.
 
-FROM dhi.io/node:24-alpine3.24-dev@sha256:0000000000000000000000000000000000000000000000000000000000000000 AS build
+FROM dhi.io/node:24-alpine3.24-dev@sha256:0b0cc56ea256e9733ae8813e29a67816f4ce15379f5de6de72d088945f981332 AS build
 WORKDIR /src
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY patches ./patches
@@ -18,7 +18,7 @@ COPY scripts/bundle-manifest.mjs ./scripts/
 COPY src ./src
 RUN pnpm build && mkdir /data
 
-FROM dhi.io/node:24-alpine3.24@sha256:0000000000000000000000000000000000000000000000000000000000000000
+FROM dhi.io/node:24-alpine3.24@sha256:732e532a85421f18219acffc899b0c41b2376d8f9ac47cf2d9e1ad35e014a957
 ARG VERSION=0.0.0
 LABEL org.opencontainers.image.title="zendesk-mcp-server" \
       org.opencontainers.image.description="Zendesk MCP server, HTTP transport (OAuth 2.1 authorization server included)." \

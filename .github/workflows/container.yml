@@ -40,15 +40,6 @@ jobs:
           username: ${{ secrets.DHI_USERNAME }}
           password: ${{ secrets.DHI_TOKEN }}
 
-      # TEMPORARY: resolve the base digests to pin in the Dockerfile (no local
-      # Docker to run this). Removed in the commit that pins them.
-      - name: Resolve the DHI base digests
-        run: |
-          for tag in 24-alpine3.24-dev 24-alpine3.24; do
-            digest=$(docker buildx imagetools inspect "dhi.io/node:$tag" --format '{{json .Manifest.Digest}}')
-            echo "dhi.io/node:$tag $digest" | tee -a "$GITHUB_STEP_SUMMARY"
-          done
-
       - uses: docker/build-push-action@v7
         with:
           context: .
