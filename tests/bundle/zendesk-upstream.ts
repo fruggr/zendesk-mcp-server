@@ -13,22 +13,20 @@ import { createZendeskOAuthMock, handlers } from '../msw-handlers';
 const upstream = setupServer(...createZendeskOAuthMock().handlers, ...handlers);
 upstream.listen({ onUnhandledRequest: 'bypass' });
 
-// The relay only ever reaches the mocked tenant: it takes a path, never a URL.
-const ZENDESK = 'https://testsubdomain.zendesk.com';
+// The test process needs one browser hop from the mock: Zendesk's authorize
+// page. The relay serves that route alone, to a constant URL; only the query
+// string comes from the request.
+const AUTHORIZE = 'https://testsubdomain.zendesk.com/oauth/authorizations/new';
 
 const relay = createServer(async (req, res) => {
-  const target = new URL(req.url ?? '/', ZENDESK);
-  if (target.origin !== ZENDESK) {
-    res.writeHead(400).end();
+  const incoming = new URL(req.url ?? '/', 'http://relay');
+  if (req.method !== 'GET' || incoming.pathname !== '/oauth/authorizations/new') {
+    res.writeHead(404).end();
     return;
   }
-  const chunks: Buffer[] = [];
-  for await (const chunk of req) chunks.push(chunk as Buffer);
-  const reply = await fetch(target, {
-    method: req.method ?? 'GET',
-    redirect: 'manual',
-    ...(chunks.length > 0 ? { body: Buffer.concat(chunks) } : {}),
-  });
+  const target = new URL(AUTHORIZE);
+  for (const [key, value] of incoming.searchParams) target.searchParams.append(key, value);
+  const reply = await fetch(target, { redirect: 'manual' });
   res.writeHead(reply.status, Object.fromEntries(reply.headers));
   res.end(Buffer.from(await reply.arrayBuffer()));
 });
