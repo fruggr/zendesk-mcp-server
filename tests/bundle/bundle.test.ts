@@ -91,7 +91,8 @@ const stop = async (proc: ChildProcess | undefined): Promise<void> => {
 // Browser hops to Zendesk go to the mock living in the server process.
 const relayZendesk = (relayPort: number) =>
   http.all(/^https:\/\/testsubdomain\.zendesk\.com\//, async ({ request }) => {
-    const target = `http://127.0.0.1:${relayPort}/?url=${encodeURIComponent(request.url)}`;
+    const { pathname, search } = new URL(request.url);
+    const target = `http://127.0.0.1:${relayPort}${pathname}${search}`;
     return fetch(bypass(new Request(target, { method: request.method, redirect: 'manual' })));
   });
 

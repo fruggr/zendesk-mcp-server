@@ -111,6 +111,29 @@ describe('the semantic-release plugin', () => {
     expect(audits).not.toHaveBeenCalled();
   });
 
+  it.each([
+    [
+      'an error report',
+      { error: { code: 'ERR_PNPM_AUDIT_BAD_RESPONSE', message: 'registry said 500' } },
+      'registry said 500',
+    ],
+    [
+      'an error without message',
+      { error: { code: 'ERR_PNPM_AUDIT_BAD_RESPONSE' } },
+      'ERR_PNPM_AUDIT_BAD_RESPONSE',
+    ],
+    ['a report without advisories', { metadata: {} }, 'no advisories in the report'],
+    ['a null advisories field', { advisories: null }, 'no advisories in the report'],
+  ])('never reads %s at HEAD as every advisory fixed', async (_, headReport, reason) => {
+    const plugin = analyzerWith({ 'v3.0.2': audit(advisory(1, 'cheerio')), HEAD: headReport });
+    const ctx = context('v3.0.2');
+    expect(await plugin.analyzeCommits({}, ctx)).toBeNull();
+    expect(ctx.logger.warn).toHaveBeenCalledWith(
+      `Security release check skipped: pnpm audit failed at HEAD: ${reason}`,
+    );
+    expect(await plugin.generateNotes({}, ctx)).toBe('');
+  });
+
   it('warns and asks for nothing when an audit cannot run', async () => {
     const plugin = createAnalyzer({
       readSbom: () => SBOM,

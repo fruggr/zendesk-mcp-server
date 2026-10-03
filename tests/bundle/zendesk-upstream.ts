@@ -13,8 +13,15 @@ import { createZendeskOAuthMock, handlers } from '../msw-handlers';
 const upstream = setupServer(...createZendeskOAuthMock().handlers, ...handlers);
 upstream.listen({ onUnhandledRequest: 'bypass' });
 
+// The relay only ever reaches the mocked tenant: it takes a path, never a URL.
+const ZENDESK = 'https://testsubdomain.zendesk.com';
+
 const relay = createServer(async (req, res) => {
-  const target = new URL(req.url ?? '/', 'http://relay').searchParams.get('url') ?? '';
+  const target = new URL(req.url ?? '/', ZENDESK);
+  if (target.origin !== ZENDESK) {
+    res.writeHead(400).end();
+    return;
+  }
   const chunks: Buffer[] = [];
   for await (const chunk of req) chunks.push(chunk as Buffer);
   const reply = await fetch(target, {

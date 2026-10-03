@@ -32,6 +32,18 @@ export const advisoriesOn = (report, names) =>
     ),
   );
 
+// A failed audit must never read as "no advisories": against a good report for
+// the last release, it would list every advisory as fixed and cut a bogus patch.
+// pnpm prints its own failures as `{"error": ...}` on stdout under --json.
+export const checkedReport = (report, ref) => {
+  if (report?.error || typeof report?.advisories !== 'object' || report.advisories === null) {
+    throw new Error(
+      `pnpm audit failed at ${ref}: ${report?.error?.message ?? report?.error?.code ?? 'no advisories in the report'}`,
+    );
+  }
+  return report;
+};
+
 export const fixedAdvisories = (before, after) =>
   [...before].filter(([id]) => !after.has(id)).map(([, advisory]) => advisory);
 
@@ -91,9 +103,10 @@ export const createAnalyzer = (io) => {
       try {
         const names = bundledNames(io.readSbom(cwd));
         const audit = io.audit ?? auditAt(cwd);
+        const reportAt = (ref) => checkedReport(audit(ref), ref);
         fixed = fixedAdvisories(
-          advisoriesOn(audit(lastRelease.gitTag), names),
-          advisoriesOn(audit('HEAD'), names),
+          advisoriesOn(reportAt(lastRelease.gitTag), names),
+          advisoriesOn(reportAt('HEAD'), names),
         );
       } catch (err) {
         logger.warn(`Security release check skipped: ${err.message}`);
