@@ -242,8 +242,10 @@ Prose and section headers are deliberately count-free (no per-section
 `(N tools)` or global tool totals) — don't reintroduce hardcoded counts, they
 only go stale. Exact counts still live where they're load-bearing: namespace
 counts in `tests/unit/routing/registry.test.ts` and the length assertions in
-`tests/unit/tools/*.test.ts` — update those. Proxy descriptions surface only the
-first sentence of a tool's description — keep it standalone. Changes to the
+`tests/unit/tools/*.test.ts` — update those. Proxies surface only a tool's first
+sentence and its parameter names, in the `operation` schema field, while the
+proxy description stays under the 2048-char client cap — keep the first sentence
+standalone. Limits and how to re-verify them: `docs/decisions/proxy-schema-surface.md`. Changes to the
 non-tool MCP surface (server `instructions`, `resources`, `prompts`) sync
 `docs/help-center-context.md` in the same PR — that's where the mechanics,
 per-flag toggles and request costs live; the `README.md` section is a short

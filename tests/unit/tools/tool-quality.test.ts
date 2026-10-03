@@ -119,7 +119,7 @@ describe('tool definition quality gate', () => {
             `   Glama "Contextual Completeness" (10%) & "Usage Guidelines" (20%): one sentence rarely\n` +
             `   states behaviour, side effects, or when to use vs. a sibling tool.\n` +
             `   Fix: add a second sentence on what it returns / affects and when to reach for it,\n` +
-            `   like ${DESC_EXEMPLAR}. Keep the first sentence standalone (proxy modes surface only it). See ${DOC}.`,
+            `   like ${DESC_EXEMPLAR}. Keep the first sentence standalone (proxy modes surface only it, in the operation field). See ${DOC}.`,
         );
       }
     }

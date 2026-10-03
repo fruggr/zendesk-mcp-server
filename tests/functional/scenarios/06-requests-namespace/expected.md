@@ -16,11 +16,13 @@ Reading this file biases the report. Stop now and read only `spec.md`.
 - **A3 — opt-in, positive.** `tools.length === 1`, name `zendesk_requests`.
   `--namespace` REPLACES the default set rather than adding to it, so the
   agent proxies must be gone here.
-- **A4 — operation count.** Exactly 7 `- **<name>**:` lines in the proxy
-  description (`buildOperationList` emits one per operation).
+- **A4 — operation count.** Exactly 7 `- <name>(<params>):` lines in the
+  description of the proxy's `operation` input property (`buildOperationList`
+  emits one per operation, #329); the tool description names the same 7 on its
+  `Operations:` line.
 - **A5 — operation names.** Set equality; order follows the factory and is not
   asserted.
-- **A6 — write markers.** Exactly 3 carry the ` (write)` suffix:
+- **A6 — write markers.** In the `operation` field, exactly 3 lines carry the ` (write)` suffix:
   `create_request`, `add_request_comment`, `mark_request_solved`. The four reads
   must not.
 - **A7 — strict schemas.** `additionalProperties: false` on all 7, including
@@ -33,7 +35,7 @@ Reading this file biases the report. Stop now and read only `spec.md`.
   means the wire serialization dropped what the Zod schema carried.
 - **A9 — audience disambiguation.** Each first sentence must scope the tool to
   the signed-in user's own requests. Only the first sentence is surfaced by a
-  namespace proxy (`summarizeDescription`), and these tools can be exposed
+  namespace proxy (`summarizeDescription`, in the `operation` field), and these tools can be exposed
   alongside `list_tickets` / `create_ticket` / `add_public_comment`, so an
   ambiguous opener is a real defect, not a style note.
 - **A10 — the phantom-solve disclosure.** Must say the operation is refused

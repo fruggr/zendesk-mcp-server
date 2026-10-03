@@ -258,6 +258,35 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         expect(names).not.toContain('get_current_user');
       });
 
+      it('hands a proxy its parameter names in the schema, under the description cap (#329)', async () => {
+        for (const readOnly of [false, true]) {
+          connected = await harness.connect(makeConfig({ mode: 'namespace', readOnly }));
+          const { tools } = await connected.client.listTools();
+          const proxy = tools.find((t) => t.name === 'zendesk_help_center');
+          const properties = proxy?.inputSchema.properties as
+            | Record<string, { description?: string }>
+            | undefined;
+          const operationField = properties?.['operation']?.description ?? '';
+
+          // Claude Code cuts tool descriptions past 2048 chars; the detail rides in
+          // the schema, which it passes whole.
+          expect(proxy?.description?.length).toBeLessThanOrEqual(2048);
+          expect(operationField).toContain(
+            '- get_article_section(article_id*, locale*, section_index*',
+          );
+          expect(properties?.['params']?.description).toContain('"operation"');
+          if (readOnly) {
+            expect(operationField).not.toContain('create_article(');
+          } else {
+            expect(operationField).toMatch(
+              /- create_article\([^)]*\blabel_names\b[^)]*\): .*\(write\)$/m,
+            );
+          }
+          await connected.close();
+          connected = undefined;
+        }
+      });
+
       it('stamps every input schema with the JSON Schema 2020-12 dialect and no execution block', async () => {
         for (const mode of ['all', 'namespace', 'single'] as const) {
           connected = await harness.connect(makeConfig({ mode }));

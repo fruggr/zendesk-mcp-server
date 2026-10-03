@@ -1,3 +1,17 @@
+## [3.0.3](https://github.com/fruggr/zendesk-mcp-server/compare/v3.0.2...v3.0.3) (2026-10-03)
+
+### Bug Fixes
+
+* **routing:** give proxies per-operation parameter names, keep their description under the client cap ([#343](https://github.com/fruggr/zendesk-mcp-server/issues/343)) ([b1bffa0](https://github.com/fruggr/zendesk-mcp-server/commit/b1bffa03343e743e2cf1180c78fbdb4de781c2b9)), closes [#329](https://github.com/fruggr/zendesk-mcp-server/issues/329), references [#333](https://github.com/fruggr/zendesk-mcp-server/issues/333) [#339](https://github.com/fruggr/zendesk-mcp-server/issues/339)
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Chores
+
+* **deps:** replace the pnpm <12.6.0 Renovate cap with >=12.9.0 ([#342](https://github.com/fruggr/zendesk-mcp-server/issues/342)) ([b0b07d1](https://github.com/fruggr/zendesk-mcp-server/commit/b0b07d1ad3db6c80da56735cd341f8dd404888c9)), references [pnpm/pnpm#16508](https://github.com/pnpm/pnpm/issues/16508)
+</details>
+
 ## [3.0.2](https://github.com/fruggr/zendesk-mcp-server/compare/v3.0.1...v3.0.2) (2026-10-02)
 
 ### Bug Fixes

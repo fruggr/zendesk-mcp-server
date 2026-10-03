@@ -14,6 +14,11 @@ import {
   topologyResourceUri,
 } from './guidance/instructions';
 import { createTopologyProvider } from './guidance/topology';
+import {
+  buildOperationFieldDescription,
+  buildProxyDescription,
+  PARAMS_FIELD_DESCRIPTION,
+} from './routing/proxy-schema';
 import { filterTools, groupByNamespace, NAMESPACE_LABELS } from './routing/registry';
 import type { ToolAnnotations, ToolResult } from './tools/definitions';
 import { createAllTools, type ToolDefinition } from './tools/index';
@@ -48,29 +53,11 @@ const runHandler = async (
   }
 };
 
-// Keep proxy descriptions compact: a proxy tool concatenates one line per
-// sub-operation, so only the first sentence of each tool description is
-// included. Clients still receive the full schema via the wrapped tool.
-export const summarizeDescription = (description: string): string => {
-  const idx = description.indexOf('. ');
-  if (idx === -1) return description;
-  return description.slice(0, idx + 1);
-};
-
-export const buildOperationList = (
-  tools: readonly Pick<ToolDefinition, 'name' | 'description' | 'readOnly'>[],
-): string =>
-  tools
-    .map(
-      (t) =>
-        `- **${t.name}**: ${summarizeDescription(t.description)}${t.readOnly ? '' : ' (write)'}`,
-    )
-    .join('\n');
-
 // A proxy aggregates N sub-operations. Hints follow the safest plausible
 // reading: readOnly/idempotent only if EVERY op is, destructive as soon as
 // ANY op is. openWorld is always true (we always hit Zendesk).
-// Mistral/Vibe ignore annotations entirely, hence the `[RO]` prefix below.
+// Clients that never show annotations to the model get the `[RO]` description
+// prefix instead.
 export const aggregateAnnotations = (
   tools: readonly Pick<ToolDefinition, 'annotations'>[],
 ): ToolAnnotations => ({
@@ -136,21 +123,17 @@ const registerProxyTool = (
   readOnlyMode: boolean,
   onUnauthorized: (() => void) | undefined,
 ): Removable => {
-  const operationNames = tools.map((t) => t.name);
-  const operationList = buildOperationList(tools);
   const annotations = aggregateAnnotations(tools);
-  const prefix = readOnlyMode ? '[RO] ' : '';
-
   const dispatch = buildProxyDispatch(tools, onUnauthorized);
 
   return server.registerTool(
     toolName,
     {
       title,
-      description: `${prefix}${title}. Specify the operation and its parameters.\n\nAvailable operations:\n${operationList}`,
+      description: buildProxyDescription({ title, tools, readOnly: readOnlyMode }),
       inputSchema: z.object({
-        operation: z.string().describe(`One of: ${operationNames.join(', ')}`),
-        params: z.record(z.string(), z.unknown()).default({}).describe('Operation parameters'),
+        operation: z.string().describe(buildOperationFieldDescription(tools)),
+        params: z.record(z.string(), z.unknown()).default({}).describe(PARAMS_FIELD_DESCRIPTION),
       }),
       annotations,
     },
