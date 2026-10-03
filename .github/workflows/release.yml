@@ -188,9 +188,11 @@ jobs:
         env:
           VERSION: ${{ steps.released.outputs.version }}
         run: |
-          # The registry validates by fetching the npm tarball; allow a few
-          # retries for npm propagation right after publish.
-          attempts=5
+          # The registry validates by fetching the npm tarball; allow for npm
+          # propagation right after publish. npm can hold a new version in
+          # "processing" for minutes (3.1.0 took over 100 s), so the backoff
+          # sums to about 4.5 minutes.
+          attempts=8
           for attempt in $(seq 1 "$attempts"); do
             if ./mcp-publisher publish; then
               echo "Published $VERSION to the MCP registry."
