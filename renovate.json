@@ -98,11 +98,6 @@
       "automerge": true
     },
     {
-      "description": "TEMPORARY: pnpm >= 12.6.0 is broken on Termux/Android (lock_shared() not supported, pnpm/pnpm#16508), and CI on Linux cannot catch it. Remove this rule once a fixed release is out; Renovate then opens the normal pnpm update PR.",
-      "matchDepNames": ["pnpm"],
-      "allowedVersions": "<12.6.0"
-    },
-    {
       "matchManagers": ["github-actions"],
       "automerge": false
     },
