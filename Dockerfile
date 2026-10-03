@@ -20,12 +20,18 @@ RUN pnpm build && mkdir /data
 
 FROM dhi.io/node:24-alpine3.24@sha256:732e532a85421f18219acffc899b0c41b2376d8f9ac47cf2d9e1ad35e014a957
 ARG VERSION=0.0.0
+# The FROM above, passed in by the publish action: release.yml compares it with
+# the Dockerfile's to know when the published image is on a stale base.
+ARG BASE_NAME=
+ARG BASE_DIGEST=
 LABEL org.opencontainers.image.title="zendesk-mcp-server" \
       org.opencontainers.image.description="Zendesk MCP server, HTTP transport (OAuth 2.1 authorization server included)." \
       org.opencontainers.image.source="https://github.com/fruggr/zendesk-mcp-server" \
       org.opencontainers.image.documentation="https://github.com/fruggr/zendesk-mcp-server/blob/main/docs/http-deployment.md#container" \
       org.opencontainers.image.licenses="MIT" \
-      org.opencontainers.image.version="${VERSION}"
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.base.name="${BASE_NAME}" \
+      org.opencontainers.image.base.digest="${BASE_DIGEST}"
 WORKDIR /app
 # package.json is read at runtime for the server's name and version.
 COPY --from=build /src/package.json ./

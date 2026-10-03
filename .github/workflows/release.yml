@@ -32,7 +32,6 @@ jobs:
     outputs:
       published: ${{ steps.released.outputs.published }}
       version: ${{ steps.released.outputs.version }}
-      base-changed: ${{ steps.base.outputs.changed }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -156,20 +155,6 @@ jobs:
             echo "No release this run; skipping MCP registry publish."
           fi
 
-      # A push that changes only the Dockerfile's base image (Renovate's weekly
-      # digest bump) cuts no release, yet the published image should pick up the
-      # fixed base: the `republish` job below does that.
-      - name: Detect a base image change
-        id: base
-        env:
-          BEFORE_SHA: ${{ github.event.before }}
-        run: |
-          if git diff --quiet "$BEFORE_SHA" "$GITHUB_SHA" -- Dockerfile; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          fi
-
       # No server.json generation step: the manifest is version-controlled at
       # the repo root and semantic-release has already synced its `version`
       # (via @semantic-release/exec -> scripts/sync-server-json-version.mjs) and
@@ -223,7 +208,9 @@ jobs:
   # then pushed, signed and attested (.github/actions/publish-image).
   image:
     needs: release
-    if: needs.release.outputs.published == 'true'
+    # always(): once npm has the version, it gets its image even if a later
+    # step of the release job (the MCP registry publish) failed.
+    if: always() && needs.release.outputs.published == 'true'
     runs-on: ubuntu-latest
     # Same boundary as the release job: only `main` can publish.
     environment: release
@@ -246,13 +233,15 @@ jobs:
           dhi-token: ${{ secrets.DHI_TOKEN }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-  # No release, but a new base image: rebuild the latest release on it and move
-  # its tags (X.Y.Z included) to the new digest. Only when the Dockerfile moved
-  # nothing but its FROM lines since that release; anything else waits for the
-  # next release, which builds from its own tree.
+  # No release this run: if the published image is on another base than the
+  # Dockerfile's, rebuild the latest release on the Dockerfile's base and move its
+  # tags (X.Y.Z included) to the new digest. Compared against the image itself, not
+  # against this push's diff, so a run dropped by the concurrency group is caught
+  # up by the next one. Only when the Dockerfile moved nothing but its FROM lines
+  # since that release; anything else waits for the next release.
   republish:
     needs: release
-    if: needs.release.outputs.published != 'true' && needs.release.outputs.base-changed == 'true'
+    if: needs.release.outputs.published != 'true'
     runs-on: ubuntu-latest
     environment: release
     timeout-minutes: 30
@@ -267,10 +256,29 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Put the new base under the latest release
         id: base
         run: |
           set -euo pipefail
+          wanted=$(grep -E '^FROM ' Dockerfile | tail -1 | awk '{print $2}')
+          wanted=${wanted#*@}
+          # buildx prints one config for a single-platform image, a map by
+          # platform for an index (the attestations make it one).
+          published=$(docker buildx imagetools inspect ghcr.io/fruggr/zendesk-mcp-server:latest \
+              --format '{{json .Image}}' 2>/dev/null \
+            | jq -r '(if has("config") then . else .["linux/amd64"] end).config.Labels["org.opencontainers.image.base.digest"] // ""' \
+            || true)
+          if [ "$published" = "$wanted" ]; then
+            echo "The published image already runs on $wanted."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           tag=$(git describe --tags --abbrev=0 --match 'v[0-9]*' HEAD)
           other=$(git diff -U0 "$tag" HEAD -- Dockerfile | grep -E '^[+-]' | grep -vE '^(\+\+\+|---)' | grep -vE '^[+-]FROM ' || true)
           if [ -n "$other" ]; then

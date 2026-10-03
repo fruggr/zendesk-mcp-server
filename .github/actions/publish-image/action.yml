@@ -60,13 +60,28 @@ runs:
           echo "EOF"
         } >> "$GITHUB_OUTPUT"
 
+    # The runtime stage's FROM (the last one), recorded as image labels.
+    - name: Read the runtime base image
+      id: base
+      shell: bash
+      env:
+        CONTEXT: ${{ inputs.context }}
+      run: |
+        set -euo pipefail
+        ref=$(grep -E '^FROM ' "$CONTEXT/Dockerfile" | tail -1 | awk '{print $2}')
+        echo "name=${ref%@*}" >> "$GITHUB_OUTPUT"
+        echo "digest=${ref#*@}" >> "$GITHUB_OUTPUT"
+
     # Built and tested locally first: a failing image never reaches the registry.
     - name: Build
       uses: docker/build-push-action@v7
       with:
         context: ${{ inputs.context }}
         platforms: linux/amd64
-        build-args: VERSION=${{ inputs.version }}
+        build-args: |
+          VERSION=${{ inputs.version }}
+          BASE_NAME=${{ steps.base.outputs.name }}
+          BASE_DIGEST=${{ steps.base.outputs.digest }}
         load: true
         tags: zendesk-mcp-server:candidate
         cache-from: type=gha
@@ -82,7 +97,10 @@ runs:
       with:
         context: ${{ inputs.context }}
         platforms: linux/amd64
-        build-args: VERSION=${{ inputs.version }}
+        build-args: |
+          VERSION=${{ inputs.version }}
+          BASE_NAME=${{ steps.base.outputs.name }}
+          BASE_DIGEST=${{ steps.base.outputs.digest }}
         push: true
         tags: ${{ steps.tags.outputs.list }}
         provenance: mode=max
