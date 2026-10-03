@@ -1,6 +1,6 @@
 import { delay, HttpResponse, http } from 'msw';
 import { describe, expect, it, vi } from 'vitest';
-import { generateCodeChallenge } from '../../../../src/auth/browser-oauth';
+import { generateCodeChallenge } from '../../../../src/auth/pkce';
 import {
   buildZendeskAuthorizeUrl,
   exchangeZendeskCode,

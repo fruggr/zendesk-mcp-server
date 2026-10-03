@@ -1,4 +1,3 @@
-import { createHash, randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { createServer, type Server, type ServerResponse } from 'node:http';
 import { release } from 'node:os';
@@ -7,6 +6,7 @@ import { DEFAULT_CALLBACK_PORT, getOAuthUrls } from '../constants';
 import { escapeHtml } from '../utils/html';
 import { type Logger, silentLogger } from '../utils/logger';
 import { requestedScope } from './oauth-scopes';
+import { generateCodeChallenge, generateCodeVerifier } from './pkce';
 
 const AUTH_TIMEOUT_MS = 5 * 60 * 1000;
 
@@ -100,11 +100,6 @@ interface CallbackResolution {
   html: string;
   outcome: CallbackOutcome;
 }
-
-export const generateCodeVerifier = (): string => randomBytes(32).toString('base64url');
-
-export const generateCodeChallenge = (verifier: string): string =>
-  createHash('sha256').update(verifier).digest('base64url');
 
 /**
  * Begin the OAuth 2.1 PKCE flow: start the local callback server, attempt to

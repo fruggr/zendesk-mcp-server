@@ -4,7 +4,6 @@
 import 'zod/compile';
 
 import type { McpServer } from '@modelcontextprotocol/server';
-import { createTokenStore } from './auth/token-store';
 import type { Config } from './config';
 import { loadConfig } from './config';
 import { startDevServer } from './dev/reload';
@@ -16,10 +15,15 @@ import { startStdioTransport } from './transports/stdio';
 import { createLogger, type Logger } from './utils/logger';
 import { installShutdown } from './utils/shutdown';
 
+type StdioTokenStore = ReturnType<typeof import('./auth/token-store').createTokenStore>;
+
 // OAuth mode — browser-based auth on first tool call. `invalidate` drops the
 // dead access token on a 401 so the next call refreshes/re-authenticates.
-const buildStdioTokenStore = (config: Config, logger: Logger) =>
-  createTokenStore(
+// Loaded on demand: the browser sign-in (and its `open` dependency) is stdio's
+// alone, so an HTTP server never loads it.
+const buildStdioTokenStore = async (config: Config, logger: Logger): Promise<StdioTokenStore> => {
+  const { createTokenStore } = await import('./auth/token-store');
+  return createTokenStore(
     {
       subdomain: config.subdomain,
       oauthClientId: config.oauthClientId,
@@ -28,13 +32,14 @@ const buildStdioTokenStore = (config: Config, logger: Logger) =>
     },
     logger,
   );
+};
 
 // Both stdio paths end with a server already connected to its transport; dev
 // mode wires `reload_tools` and connects on its own. Returning the server is
 // what lets the caller close it on shutdown.
 const connectStdio = async (
   config: Config,
-  tokenStore: ReturnType<typeof buildStdioTokenStore>,
+  tokenStore: StdioTokenStore,
   logger: Logger,
 ): Promise<McpServer> => {
   if (config.dev) {
@@ -61,7 +66,7 @@ const main = async (): Promise<void> => {
   const logger = createLogger(config.logLevel);
 
   if (config.transport === 'stdio') {
-    const tokenStore = buildStdioTokenStore(config, logger);
+    const tokenStore = await buildStdioTokenStore(config, logger);
     const server = await connectStdio(config, tokenStore, logger);
 
     // Installed *after* the transport is connected: the SDK's stdin `data`
