@@ -10,7 +10,7 @@ import {
   summarizeDescription,
   VERIFIED_SCHEMA_DESCRIPTION_LENGTH,
 } from '../../../src/routing/proxy-schema';
-import { filterTools, groupByNamespace } from '../../../src/routing/registry';
+import { filterTools, groupByNamespace, NAMESPACE_LABELS } from '../../../src/routing/registry';
 import { createAllTools } from '../../../src/tools/index';
 
 const byName = (a: string, b: string) => a.localeCompare(b);
@@ -152,12 +152,14 @@ describe('proxy surface budgets (real tool set)', () => {
   const tools = createAllTools({ subdomain: 'testsubdomain', getToken: () => 'test-token' });
   const proxies = (readOnly: boolean) => {
     const filtered = filterTools(tools, { readOnly, namespaces: [...Namespace.options] });
+    // Titles as `registerToolset` passes them: the title is part of the description.
     return [
       ...[...groupByNamespace(filtered)].map(([namespace, nsTools]) => ({
         name: namespace,
+        title: NAMESPACE_LABELS[namespace].title,
         tools: nsTools,
       })),
-      { name: 'single', tools: filtered },
+      { name: 'single', title: 'Zendesk', tools: filtered },
     ].map((proxy) => ({ ...proxy, readOnly }));
   };
   const cases = [...proxies(false), ...proxies(true)];
@@ -170,8 +172,8 @@ describe('proxy surface budgets (real tool set)', () => {
 
   it.each(cases)(
     '$name (readOnly: $readOnly) keeps its description under the client cap, name list included',
-    ({ name, tools: proxyTools, readOnly }) => {
-      const description = buildProxyDescription({ title: name, tools: proxyTools, readOnly });
+    ({ title, tools: proxyTools, readOnly }) => {
+      const description = buildProxyDescription({ title, tools: proxyTools, readOnly });
       expect(description.length).toBeLessThanOrEqual(MAX_TOOL_DESCRIPTION_LENGTH);
       // The fallback that drops the list exists so the cap can never be crossed;
       // reaching it today means the surface outgrew the format, which deserves a

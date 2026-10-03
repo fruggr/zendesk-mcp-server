@@ -36,7 +36,7 @@ Measured with `scripts/probe-mcp-description-cap.mjs` on Claude Code 2.1.287:
 | `operation` property | one line per operation: `- create_article(section_id*, title*, …, label_names): Create a new article in a section. (write)` | 4 884 / 9 828 |
 | `params` property | a pointer to those lines | short |
 
-All of it is built at registration from the filtered tools' real schemas (`src/routing/proxy-schema.ts`), so it follows `--read-only`, `--namespace` and `--tool`, and any config-dependent field (such as a per-brand `brand_id`). Required means "rejects `undefined`", the rule the strict parser applies. Nothing the old description said was dropped: the summaries moved from the tool description to the `operation` property.
+All of it is built at registration from the filtered tools' real schemas (`src/routing/proxy-schema.ts`), so it follows `--read-only`, `--namespace` and `--tool`, and any field a future tool adds. Required means "rejects `undefined`", the rule the strict parser applies. The summaries and `(write)` markers moved from the tool description to the `operation` property, still in the exposed schema; a client that ignores property descriptions sees only the operation names.
 
 ## Rejected
 

@@ -20,6 +20,11 @@ const argValue = (flag, fallback) => {
 };
 
 const length = Number(argValue('--length', '15000'));
+// A NaN or tiny length would pad nothing and report a false OK.
+if (!Number.isInteger(length) || length < 100) {
+  console.error('--length must be an integer of at least 100');
+  process.exit(2);
+}
 // Whole words only: a word cut mid-way reads to the model like a truncation.
 const pad = (n) => 'filler text '.repeat(Math.max(1, Math.round(n / 12))).trim();
 const MARKERS = {
