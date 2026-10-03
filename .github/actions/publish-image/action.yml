@@ -1,8 +1,8 @@
 name: Publish the container image
 description: >-
-  Build the image from the checked-out tree, smoke-test it, then push it to
-  ghcr.io with its version tags, sign it (cosign keyless) and attach provenance
-  and SBOM attestations. Shared by the release job and the base-image republish,
+  Build the image from the checked-out tree, smoke-test it, push it to ghcr.io
+  by digest, sign it (cosign keyless) and attach provenance and SBOM
+  attestations, and only then point its version tags at it. Shared by the release job and the base-image republish,
   so both publish exactly the same way. The caller needs packages: write,
   id-token: write and attestations: write.
 
@@ -91,7 +91,10 @@ runs:
       shell: bash
       run: node "$GITHUB_WORKSPACE/scripts/container-smoke.mjs" zendesk-mcp-server:candidate
 
-    - name: Push
+    # Untagged: the version tags move only once the digest is signed and
+    # attested, so a failed run leaves them on the last verified image, and the
+    # stale base it still carries makes release.yml's republish retry.
+    - name: Push by digest
       id: push
       uses: docker/build-push-action@v7
       with:
@@ -101,8 +104,7 @@ runs:
           VERSION=${{ inputs.version }}
           BASE_NAME=${{ steps.base.outputs.name }}
           BASE_DIGEST=${{ steps.base.outputs.digest }}
-        push: true
-        tags: ${{ steps.tags.outputs.list }}
+        outputs: type=image,name=${{ steps.tags.outputs.image }},push-by-digest=true,name-canonical=true,push=true
         provenance: mode=max
         sbom: true
         cache-from: type=gha
@@ -142,3 +144,16 @@ runs:
         subject-digest: ${{ steps.push.outputs.digest }}
         sbom-path: sbom.cdx.json
         push-to-registry: true
+
+    # imagetools copies the signed index as is, so every tag resolves to the
+    # digest the signature and attestations name.
+    - name: Point the version tags at the signed digest
+      shell: bash
+      env:
+        REF: ${{ steps.tags.outputs.image }}@${{ steps.push.outputs.digest }}
+        TAGS: ${{ steps.tags.outputs.list }}
+      run: |
+        set -euo pipefail
+        args=()
+        while read -r tag; do [[ -n "$tag" ]] && args+=(--tag "$tag"); done <<< "$TAGS"
+        docker buildx imagetools create "${args[@]}" "$REF"

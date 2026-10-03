@@ -87,7 +87,8 @@ docker run --read-only --cap-drop ALL --security-opt no-new-privileges \
   and no release is due, the latest release is rebuilt on it and its tags move
   to the new digest, `X.Y.Z` included. To pin, pin the digest.
 - **Verify what you pull.** Each image is signed keyless with cosign and carries
-  build provenance and an SBOM of the bundled packages:
+  build provenance and an SBOM of the bundled packages. A tag moves to a new
+  digest only once that digest is signed and attested:
 
 ```bash
 gh attestation verify oci://ghcr.io/fruggr/zendesk-mcp-server:3 --owner fruggr
