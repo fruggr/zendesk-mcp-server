@@ -15,6 +15,7 @@ import {
   createMemoryStore,
   type StoredEntry,
 } from '../../../../src/auth/server/file-store';
+import { isStartupError, STARTUP_DOCS } from '../../../../src/utils/startup-error';
 
 const modeOf = (path: string) => (statSync(path).mode % 0o1000).toString(8);
 const onWindows = process.platform === 'win32';
@@ -209,9 +210,35 @@ describe('createFileStore', () => {
       error = err;
     }
     expect(error).toMatchObject({
-      message: 'Cannot read the OAuth store file (EISDIR).',
+      message: `Cannot read the OAuth store file (EISDIR). See ${STARTUP_DOCS.secretAndStore}`,
       cause: { code: 'EISDIR' },
     });
+    expect(isStartupError(error)).toBe(true);
+  });
+
+  it('refuses a store it could never write, at startup rather than on the first sign-in', () => {
+    const blocker = join(dir, 'not-a-dir');
+    writeFileSync(blocker, '');
+    const unwritable = join(blocker, 'volume', 'store.json');
+    let error: unknown;
+    try {
+      createFileStore(unwritable);
+    } catch (err) {
+      error = err;
+    }
+    expect(isStartupError(error)).toBe(true);
+    expect(error).toMatchObject({
+      message:
+        `Cannot write the OAuth store at ${unwritable} (ENOTDIR). Point OAUTH_STORE (or --oauth-store) ` +
+        `at a writable directory, such as a mounted volume. See ${STARTUP_DOCS.secretAndStore}`,
+      cause: { code: 'ENOTDIR' },
+    });
+  });
+
+  it('opens a store whose directory does not exist yet, creating nothing until the first write', () => {
+    const nested = join(dir, 'volume', 'store.json');
+    createFileStore(nested);
+    expect(existsSync(join(dir, 'volume'))).toBe(false);
   });
 
   it('refuses a file that is not JSON instead of starting empty', () => {

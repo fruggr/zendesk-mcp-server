@@ -13,6 +13,7 @@ import { createAllTools } from './tools/index';
 import { startStdioTransport } from './transports/stdio';
 import { createLogger, type Logger } from './utils/logger';
 import { installShutdown } from './utils/shutdown';
+import { isStartupError } from './utils/startup-error';
 
 type StdioTokenStore = ReturnType<typeof import('./auth/token-store').createTokenStore>;
 
@@ -99,6 +100,9 @@ const main = async (): Promise<void> => {
 };
 
 main().catch((error) => {
-  console.error('Fatal error:', error);
+  // A misconfiguration the operator fixes: its message says how, and a stack
+  // trace would only bury it.
+  if (isStartupError(error)) console.error(error.message);
+  else console.error('Fatal error:', error);
   process.exit(1);
 });

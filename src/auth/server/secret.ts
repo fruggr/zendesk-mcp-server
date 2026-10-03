@@ -3,6 +3,7 @@ import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'n
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type Logger, silentLogger } from '../../utils/logger';
+import { createStartupError, errnoCode, STARTUP_DOCS } from '../../utils/startup-error';
 import { MIN_SECRET_BYTES, parseSecretList } from './keys';
 
 export const MASTER_SECRET_FILE_NAME = 'oauth-master-secret';
@@ -26,25 +27,39 @@ export interface MasterSecret {
 }
 
 const isWindows = process.platform === 'win32';
+const ABSENT = new Set(['ENOENT', 'ENOTDIR']);
 
 const readSecretFile = (path: string): string | undefined => {
   try {
     return readFileSync(path, 'utf8').trim() || undefined;
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
-    throw new Error(
-      `Cannot read the OAuth master secret file (${(err as NodeJS.ErrnoException).code}).`,
-      { cause: err },
+    // ENOTDIR: a path component is a file, so the secret file cannot exist either.
+    if (ABSENT.has(errnoCode(err))) return undefined;
+    throw createStartupError(
+      `Cannot read the OAuth master secret file (${errnoCode(err)}).`,
+      STARTUP_DOCS.secretAndStore,
+      err,
     );
   }
 };
 
+// A read-only root filesystem (a hardened container) lands here when no secret
+// was supplied: the fix is to supply one, which the message says.
 const writeSecretFile = (path: string, value: string): void => {
-  mkdirSync(dirname(path), { recursive: true });
-  const tmp = `${path}.${process.pid}.tmp`;
-  writeFileSync(tmp, `${value}\n`, { mode: 0o600 });
-  if (!isWindows) chmodSync(tmp, 0o600);
-  renameSync(tmp, path);
+  try {
+    mkdirSync(dirname(path), { recursive: true });
+    const tmp = `${path}.${process.pid}.tmp`;
+    writeFileSync(tmp, `${value}\n`, { mode: 0o600 });
+    if (!isWindows) chmodSync(tmp, 0o600);
+    renameSync(tmp, path);
+  } catch (err) {
+    throw createStartupError(
+      `Cannot write the generated OAuth master secret to ${path} (${errnoCode(err)}). ` +
+        'Set OAUTH_MASTER_SECRET or OAUTH_MASTER_SECRET_FILE from a secret manager instead.',
+      STARTUP_DOCS.secretAndStore,
+      err,
+    );
+  }
 };
 
 const storeDirectory = (storeUri: string): string | undefined =>

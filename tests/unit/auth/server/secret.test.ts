@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MASTER_SECRET_FILE_NAME, resolveMasterSecret } from '../../../../src/auth/server/secret';
 import type { Logger } from '../../../../src/utils/logger';
+import { isStartupError, STARTUP_DOCS } from '../../../../src/utils/startup-error';
 
 const VALID = Buffer.alloc(32, 9).toString('base64');
 const SHORT = Buffer.alloc(16, 9).toString('base64');
@@ -129,8 +130,30 @@ describe('resolveMasterSecret', () => {
       error = err;
     }
     expect(error).toMatchObject({
-      message: 'Cannot read the OAuth master secret file (EISDIR).',
+      message: `Cannot read the OAuth master secret file (EISDIR). See ${STARTUP_DOCS.secretAndStore}`,
       cause: { code: 'EISDIR' },
+    });
+    expect(isStartupError(error)).toBe(true);
+  });
+
+  it('stops with a startup error when the generated secret cannot be written', () => {
+    // A regular file where the config dir should be: mkdir fails the same way
+    // for root and non-root, unlike a chmod-based read-only directory.
+    const blocker = join(dir, 'not-a-dir');
+    writeFileSync(blocker, '');
+    const configDir = join(blocker, 'config');
+    let error: unknown;
+    try {
+      resolveMasterSecret({ configDir, storeUri: storeElsewhere() });
+    } catch (err) {
+      error = err;
+    }
+    expect(isStartupError(error)).toBe(true);
+    expect(error).toMatchObject({
+      message:
+        `Cannot write the generated OAuth master secret to ${join(configDir, MASTER_SECRET_FILE_NAME)} (ENOTDIR). ` +
+        `Set OAUTH_MASTER_SECRET or OAUTH_MASTER_SECRET_FILE from a secret manager instead. See ${STARTUP_DOCS.secretAndStore}`,
+      cause: { code: 'ENOTDIR' },
     });
   });
 
