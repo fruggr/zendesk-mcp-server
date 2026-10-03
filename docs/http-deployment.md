@@ -50,6 +50,52 @@ That is enough to start: the master secret is generated on first start and the
 grants are kept in a file, both in the config directory (next section). For a
 deployment, supply both explicitly.
 
+## Container
+
+Each release publishes `ghcr.io/fruggr/zendesk-mcp-server` with the same version
+as npm. It runs the same bundle, on a distroless
+[Docker Hardened Images](https://docs.docker.com/dhi/) Node base: no shell, no
+package manager, a non-root user (UID 1000).
+
+**What the image is for, and what it is not for.**
+
+- **HTTP only.** The image starts `--transport http` by default
+  (`TRANSPORT=http`). stdio in a container is not supported: use `npx` for that
+  ([#344](https://github.com/fruggr/zendesk-mcp-server/issues/344)).
+- **`linux/amd64` only**
+  ([#345](https://github.com/fruggr/zendesk-mcp-server/issues/345)).
+- No `HEALTHCHECK`: point your orchestrator's probes at `GET /healthz`.
+
+```bash
+docker run --read-only --cap-drop ALL --security-opt no-new-privileges \
+  -e OAUTH_MASTER_SECRET="$(cat /run/secrets/zendesk-mcp-master-secret)" \
+  -v zendesk-mcp-data:/data -p 3000:3000 \
+  ghcr.io/fruggr/zendesk-mcp-server:3 <your-subdomain> \
+  --public-url https://mcp.example.com
+```
+
+- **`/data` is the only writable path.** The grant store defaults to
+  `file:///data/oauth-store.json` (`OAUTH_STORE`), so mount a persistent volume
+  there. The root filesystem can stay read-only.
+- **The secret comes from the environment.** It never lives on `/data`, next to
+  the store (see [Master secret and grant store](#master-secret-and-grant-store)).
+  Without one, the container stops at startup with an error saying so, rather
+  than writing a secret it could not keep.
+- **One replica, same secret and store across redeploys**: a redeploy then logs
+  nobody out.
+- **Tags.** `X.Y.Z`, `X.Y`, `X` and `latest`. When the base image gets a fix
+  and no release is due, the latest release is rebuilt on it and its tags move
+  to the new digest, `X.Y.Z` included. To pin, pin the digest.
+- **Verify what you pull.** Each image is signed keyless with cosign and carries
+  build provenance and an SBOM of the bundled packages:
+
+```bash
+gh attestation verify oci://ghcr.io/fruggr/zendesk-mcp-server:3 --owner fruggr
+cosign verify ghcr.io/fruggr/zendesk-mcp-server:3 \
+  --certificate-identity-regexp '^https://github.com/fruggr/zendesk-mcp-server/' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
 ## Master secret and grant store
 
 The server signs and encrypts its own tokens, and encrypts what it stores, with
@@ -255,7 +301,7 @@ This server provides the MCP transport and the OAuth authorization server. The o
 - The master secret and the grant store: supply the secret from a secret manager, keep the store on a persistent volume, and keep the two apart (see [Master secret and grant store](#master-secret-and-grant-store)).
 - TLS termination. Put the server behind a reverse proxy like Caddy, nginx or Cloudflare Tunnel, which must forward `X-Forwarded-Proto` and `X-Forwarded-Host`: with an `https` public URL the server trusts them to build its endpoint URLs.
 - Network exposure and firewalling. The server binds `0.0.0.0` by default, so choose carefully.
-- Process supervision (systemd, Docker, fly.io, your hosting provider's runner). None is shipped here.
+- Process supervision: the [container image](#container) on an orchestrator (Azure Container Apps, Kubernetes, Cloud Run), or your own runner (systemd, fly.io).
 
 ## Stopping the server
 
