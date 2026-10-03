@@ -56,7 +56,8 @@ const runHandler = async (
 // A proxy aggregates N sub-operations. Hints follow the safest plausible
 // reading: readOnly/idempotent only if EVERY op is, destructive as soon as
 // ANY op is. openWorld is always true (we always hit Zendesk).
-// Mistral/Vibe ignore annotations entirely, hence the `[RO]` description prefix.
+// Clients that never show annotations to the model get the `[RO]` description
+// prefix instead.
 export const aggregateAnnotations = (
   tools: readonly Pick<ToolDefinition, 'annotations'>[],
 ): ToolAnnotations => ({

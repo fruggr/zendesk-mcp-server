@@ -56,7 +56,7 @@ export const buildProxyDescription = ({
   tools: readonly Pick<ProxyOperation, 'name'>[];
   readOnly: boolean;
 }): string => {
-  // `[RO]` leads because Mistral/Vibe ignore annotations entirely.
+  // `[RO]` leads for clients that never show annotations to the model.
   const head = `${readOnly ? '[RO] ' : ''}${title}. Specify the operation and its parameters. The "operation" field lists every operation with a one-line summary and the parameter names "params" accepts (* = required); an unknown parameter is rejected with the list of valid ones.`;
   const withNames = `${head}\n\nOperations: ${tools.map((t) => t.name).join(', ')}`;
   // Past the cap the name list goes, not the guidance: the `operation` field
