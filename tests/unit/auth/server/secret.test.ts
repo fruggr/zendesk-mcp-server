@@ -75,6 +75,35 @@ describe('resolveMasterSecret', () => {
     );
   });
 
+  it('reports a malformed or missing secret as a startup error linking the docs', () => {
+    const thrown = (input: Parameters<typeof resolveMasterSecret>[0]): unknown => {
+      try {
+        resolveMasterSecret(input);
+      } catch (err) {
+        return err;
+      }
+      return undefined;
+    };
+    const short = thrown({ value: SHORT, configDir: dir, storeUri: storeElsewhere() });
+    expect(isStartupError(short)).toBe(true);
+    expect(short).toMatchObject({
+      message:
+        'OAuth master secret must decode to at least 32 bytes of base64 ' +
+        `(generate one with: openssl rand -base64 32). See ${STARTUP_DOCS.secretAndStore}`,
+      cause: { message: expect.stringContaining('at least 32 bytes') },
+    });
+    const missing = thrown({
+      file: join(dir, 'absent'),
+      configDir: dir,
+      storeUri: storeElsewhere(),
+    });
+    expect(isStartupError(missing)).toBe(true);
+    expect(missing).toHaveProperty(
+      'message',
+      `The OAuth master secret file is missing or empty. See ${STARTUP_DOCS.secretAndStore}`,
+    );
+  });
+
   it('generates, persists with owner-only permissions, and reuses the secret on the next start', () => {
     const { logger, events } = recordingLogger();
     const first = resolveMasterSecret({ configDir: dir, storeUri: storeElsewhere() }, logger);

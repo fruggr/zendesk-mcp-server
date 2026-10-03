@@ -9,6 +9,9 @@ const DOCS_BASE = 'https://github.com/fruggr/zendesk-mcp-server/blob/main/docs/'
 /** Every docs section a startup error links to; a unit test checks each anchor exists. */
 export const STARTUP_DOCS = {
   secretAndStore: `${DOCS_BASE}http-deployment.md#master-secret-and-grant-store`,
+  invocation: `${DOCS_BASE}configuration.md#a-malformed-invocation-fails-at-startup`,
+  environment: `${DOCS_BASE}configuration.md#environment-variables`,
+  cliReference: `${DOCS_BASE}configuration.md#cli-reference`,
 } as const;
 
 export type StartupError = Error & { readonly docs: string };

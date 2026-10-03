@@ -110,6 +110,9 @@ shapes are rejected, each naming the knob at fault:
 | `--moed all` | an unknown flag. A typo is not silently ignored |
 | `mycompany extra` | a second positional argument, so one of them would be dropped |
 
+Each message is one line, with no stack trace, and ends with a link to the
+section of this page that covers it.
+
 Values are never echoed back in these messages, so an unsupported flag written
 as `--anything=<secret>` is reported by name alone, with the value withheld. For
 the flags that take a value, both `--flag value` and `--flag=value` work;

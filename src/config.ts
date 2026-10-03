@@ -1,6 +1,7 @@
 import { type ParseArgsConfig, parseArgs } from 'node:util';
 import * as z from 'zod/v4';
 import { readEnv } from './utils/env';
+import { createStartupError, STARTUP_DOCS } from './utils/startup-error';
 
 export const ToolMode = z.enum(['single', 'namespace', 'all']);
 export type ToolMode = z.infer<typeof ToolMode>;
@@ -203,7 +204,10 @@ const DIGITS_ONLY = /^\d+$/;
 
 const parsePort = (raw: string, label: string): number => {
   if (!DIGITS_ONLY.test(raw)) {
-    throw new Error(`Invalid ${label} value. Expected an integer 0-65535.`);
+    throw createStartupError(
+      `Invalid ${label} value. Expected an integer 0-65535.`,
+      label.startsWith('--') ? STARTUP_DOCS.invocation : STARTUP_DOCS.environment,
+    );
   }
   return Number(raw);
 };
@@ -215,7 +219,10 @@ const parsePort = (raw: string, label: string): number => {
 const readNonEmptyEnv = (name: string): ReturnType<typeof readEnv> => {
   const env = readEnv(name);
   if (env.value === '') {
-    throw new Error(`Empty ${env.name}. Set it to a value, or unset it entirely.`);
+    throw createStartupError(
+      `Empty ${env.name}. Set it to a value, or unset it entirely.`,
+      STARTUP_DOCS.environment,
+    );
   }
   return env;
 };
@@ -291,25 +298,43 @@ const STANDALONE_EFFECTS = new Map<string, Partial<CliResult>>([
   ['no-default-trusted-clients', { defaultTrustedClients: false }],
 ]);
 
+// parseArgs throws only for a malformed invocation, so every error it raises is one.
+const parseStrict = (args: string[]) => {
+  try {
+    return parseArgs({ args, options: CLI_OPTIONS, allowPositionals: true });
+  } catch (err) {
+    throw createStartupError((err as Error).message, STARTUP_DOCS.invocation, err);
+  }
+};
+
+// One line per startup error, so the schema's issues are joined rather than
+// printed as the ZodError's JSON.
+const validated = (input: unknown): Config => {
+  const result = ConfigSchema.safeParse(input);
+  if (result.success) return result.data;
+  throw createStartupError(
+    `${result.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join('; ')}.`,
+    STARTUP_DOCS.cliReference,
+    result.error,
+  );
+};
+
 const parseCliArgs = (args: string[]): CliResult => {
   // `strict` (the default) is what makes a malformed invocation fail at startup.
   // Node's messages already name the offending flag and never echo the value
-  // after an `=`, so they are surfaced as-is rather than re-wrapped.
-  const { values, positionals } = parseArgs({
-    args,
-    options: CLI_OPTIONS,
-    allowPositionals: true,
-  });
+  // after an `=`, so parseStrict keeps their text and only adds the docs link.
+  const { values, positionals } = parseStrict(args);
 
   // Dropping a second positional silently would be the worst outcome here:
   // `--namespace tickets help_center mycompany` takes `help_center` as the
   // subdomain and discards `mycompany` — wrong tenant, narrowed tool surface, no
   // diagnostic. Counted, never echoed.
   if (positionals.length > 1) {
-    throw new Error(
+    throw createStartupError(
       `Expected one positional argument (the subdomain), got ${positionals.length}. ` +
         'A repeatable flag has to be repeated (--namespace tickets --namespace ' +
         'help_center); it does not take a space-separated list.',
+      STARTUP_DOCS.invocation,
     );
   }
 
@@ -327,7 +352,10 @@ const parseCliArgs = (args: string[]): CliResult => {
     // and it used to be dropped and then consumed as the positional subdomain,
     // so startup failed with a misleading `ZENDESK_SUBDOMAIN is required`.
     if (Array.isArray(value) ? value.includes('') : value === '') {
-      throw new Error(`Empty value for --${flag}. Provide a value, or omit the flag.`);
+      throw createStartupError(
+        `Empty value for --${flag}. Provide a value, or omit the flag.`,
+        STARTUP_DOCS.invocation,
+      );
     }
 
     const effect = STANDALONE_EFFECTS.get(flag);
@@ -421,7 +449,7 @@ export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
   // empty is rejected by requireNonEmptyEnv. Format is schema-validated.
   const hcResourceScheme = cli.hcResourceScheme ?? requireNonEmptyEnv('HC_RESOURCE_SCHEME');
 
-  return ConfigSchema.parse({
+  return validated({
     subdomain,
     oauthClientId,
     logLevel: cli.logLevel ?? requireNonEmptyEnv('LOG_LEVEL') ?? 'info',

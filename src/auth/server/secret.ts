@@ -79,14 +79,23 @@ export const resolveMasterSecret = (
   logger: Logger = silentLogger,
 ): MasterSecret => {
   const validated = (value: string, source: MasterSecretSource): MasterSecret => {
-    parseSecretList(value);
+    try {
+      parseSecretList(value);
+    } catch (err) {
+      throw createStartupError((err as Error).message, STARTUP_DOCS.secretAndStore, err);
+    }
     return { value, source };
   };
 
   if (input.value) return validated(input.value, 'env');
   if (input.file) {
     const fromFlag = readSecretFile(input.file, ABSENT_GIVEN);
-    if (!fromFlag) throw new Error('The OAuth master secret file is missing or empty.');
+    if (!fromFlag) {
+      throw createStartupError(
+        'The OAuth master secret file is missing or empty.',
+        STARTUP_DOCS.secretAndStore,
+      );
+    }
     return validated(fromFlag, 'file-flag');
   }
 

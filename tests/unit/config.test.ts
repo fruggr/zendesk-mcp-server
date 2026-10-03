@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ConfigSchema, DEFAULT_NAMESPACES, loadConfig, VALUE_FLAG_NAMES } from '../../src/config';
+import { isStartupError, STARTUP_DOCS } from '../../src/utils/startup-error';
 
 // Cleared as one list: a suite that clears a subset only passes while the one before
 // it leaves the rest clean.
@@ -932,5 +933,101 @@ describe('CORS origin normalization', () => {
     // fails URL validation and one stray comma stops the server booting.
     process.env['CORS_ORIGIN'] = 'https://a.example.com, ';
     expect(loadConfig(['mycompany']).corsOrigins).toEqual(['https://a.example.com']);
+  });
+});
+
+describe('loadConfig startup errors', () => {
+  beforeEach(clearLoadConfigEnv);
+  afterEach(clearLoadConfigEnv);
+
+  // index.ts prints a startup error's message alone, so each one must carry its
+  // own docs link and never reach the operator as a stack trace.
+  const thrownBy = (argv: string[]): unknown => {
+    try {
+      loadConfig(argv);
+    } catch (err) {
+      return err;
+    }
+    return undefined;
+  };
+
+  it.each([
+    [
+      'a second positional argument',
+      ['mycompany', 'extra'],
+      'Expected one positional argument (the subdomain), got 2. A repeatable flag has to be ' +
+        'repeated (--namespace tickets --namespace help_center); it does not take a ' +
+        'space-separated list.',
+    ],
+    [
+      'an empty flag value',
+      ['mycompany', '--mode='],
+      'Empty value for --mode. Provide a value, or omit the flag.',
+    ],
+    [
+      'a malformed port flag',
+      ['mycompany', '--port', '80x'],
+      'Invalid --port value. Expected an integer 0-65535.',
+    ],
+  ])('links the invocation rules for %s', (_, argv, message) => {
+    const error = thrownBy(argv);
+    expect(isStartupError(error)).toBe(true);
+    expect(error).toHaveProperty('message', `${message} See ${STARTUP_DOCS.invocation}`);
+  });
+
+  it('wraps an unknown flag from parseArgs, keeping its message and cause', () => {
+    const error = thrownBy(['mycompany', '--moed', 'all']);
+    expect(isStartupError(error)).toBe(true);
+    expect(error).toMatchObject({
+      message: expect.stringMatching(/^Unknown option '--moed'\..* See https:\/\/\S+$/),
+      docs: STARTUP_DOCS.invocation,
+      cause: { code: 'ERR_PARSE_ARGS_UNKNOWN_OPTION' },
+    });
+  });
+
+  it.each([
+    [
+      'an empty variable',
+      'OAUTH_MASTER_SECRET',
+      '',
+      'Empty OAUTH_MASTER_SECRET. Set it to a value, or unset it entirely.',
+    ],
+    [
+      'a malformed port variable',
+      'PORT',
+      '80x',
+      'Invalid PORT value. Expected an integer 0-65535.',
+    ],
+  ])('links the environment rules for %s', (_, name, value, message) => {
+    process.env[name] = value;
+    const error = thrownBy(['mycompany']);
+    expect(isStartupError(error)).toBe(true);
+    expect(error).toHaveProperty('message', `${message} See ${STARTUP_DOCS.environment}`);
+  });
+
+  it('flattens schema issues into one line naming each field', () => {
+    const error = thrownBy(['mycompany', '--mode', 'nope', '--log-level', 'loud']);
+    expect(isStartupError(error)).toBe(true);
+    expect(error).toMatchObject({
+      message: expect.stringMatching(/^logLevel: .+; mode: .+\. See https:\/\/\S+$/),
+      docs: STARTUP_DOCS.cliReference,
+      cause: { name: 'ZodError' },
+    });
+    expect((error as Error).message).not.toMatch(/\n/);
+  });
+
+  it('names a list entry by its dotted path', () => {
+    expect(thrownBy(['mycompany', '--namespace', 'bogus'])).toHaveProperty(
+      'message',
+      'namespaces.0: Invalid option: expected one of "tickets"|"help_center"|"users"|"requests". ' +
+        `See ${STARTUP_DOCS.cliReference}`,
+    );
+  });
+
+  it('keeps a custom schema message as the operator reads it', () => {
+    expect(thrownBy([])).toHaveProperty(
+      'message',
+      `subdomain: ZENDESK_SUBDOMAIN is required. See ${STARTUP_DOCS.cliReference}`,
+    );
   });
 });
