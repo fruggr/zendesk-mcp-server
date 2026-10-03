@@ -252,8 +252,8 @@ describe('ticket tools', () => {
       // Actors resolved to name (id) via the batched show_many look-up.
       expect(text).toContain('User 200 (200)');
       expect(text).toContain('**status**: new → open');
-      expect(text).toContain('**assignee**: (none) → User 100 (100)');
-      expect(text).toContain('**group**: (none) → Group 300 (300)');
+      expect(text).toContain('**assignee** (assignee_id): (none) → User 100 (100)');
+      expect(text).toContain('**group** (group_id): (none) → Group 300 (300)');
       expect(text).toContain('**tags**: +urgent');
     });
 
@@ -295,8 +295,8 @@ describe('ticket tools', () => {
       const result = await tool.handler({ ticket_id: 1, page_size: 100 });
       const text = getAllText(result);
       expect(result.isError).toBeFalsy();
-      expect(text).toContain('**assignee**: (none) → 100');
-      expect(text).toContain('**group**: (none) → 300');
+      expect(text).toContain('**assignee** (assignee_id): (none) → 100');
+      expect(text).toContain('**group** (group_id): (none) → 300');
     });
 
     it('rewrites a 403 into actionable OAuth-scope guidance', async () => {

@@ -59,7 +59,7 @@ out every `write` tool before the proxies are built.
 | `list_user_segments` | List user segments (article visibility; requires Guide-admin / Help Center manager rights) | read |
 | `compare_translations` | Compare two locales of an article: target freshness (from updated_at), Zendesk `outdated` flag, structural verdict, and per-section presence status (word counts informational) | read |
 | `create_article` | Create a new article in a section | write |
-| `update_article` | Update article metadata (draft, promoted, labels, tags, visibility, section, sort position) | write |
+| `update_article` | Update article metadata (draft, promoted, labels as `label_names`, content tags as `content_tag_ids`, visibility as `permission_group_id` / `user_segment_id`, `section_id`, sort position) | write |
 | `reorder_article` | Move an article within its section (top/bottom/before/after), breaking position ties deterministically | write |
 | `archive_article` | Archive (soft-delete) an article; recoverable only via the Guide admin UI | write |
 | `create_article_translation` | Create a translation for an article | write |
