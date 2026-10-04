@@ -43,6 +43,17 @@ const UNKNOWN = 'https://tools.example.com/oauth/client.json';
 
 const chatgptKeys = generateKeyPairSync('rsa', { modulusLength: 2048 });
 
+const chatgptAssertion = (audience: string) =>
+  new SignJWT({})
+    .setProtectedHeader({ alg: 'RS256', kid: 'k1' })
+    .setIssuer(CHATGPT)
+    .setSubject(CHATGPT)
+    .setAudience(audience)
+    .setJti(randomUUID())
+    .setIssuedAt()
+    .setExpirationTime('1m')
+    .sign(chatgptKeys.privateKey);
+
 // The documents as fetched on 2026-09-24 (see the #127 plan), served from memory.
 const cimdDocuments = async (): Promise<Record<string, unknown>> => ({
   [CLAUDE]: {
@@ -341,15 +352,7 @@ describe('HTTP authorization server', () => {
       await start();
       const result = await authorize(base, { clientId: CHATGPT, redirectUri: CHATGPT_CALLBACK });
       expect(result.consentShown).toBe(false);
-      const assertion = await new SignJWT({})
-        .setProtectedHeader({ alg: 'RS256', kid: 'k1' })
-        .setIssuer(CHATGPT)
-        .setSubject(CHATGPT)
-        .setAudience(base)
-        .setJti(randomUUID())
-        .setIssuedAt()
-        .setExpirationTime('1m')
-        .sign(chatgptKeys.privateKey);
+      const assertion = await chatgptAssertion(base);
       const tokens = await tokenRequest(base, {
         grant_type: 'authorization_code',
         client_id: CHATGPT,
@@ -837,6 +840,57 @@ describe('HTTP authorization server', () => {
       expect(next.status).toBe(200);
       expect(cimdRequests).toContain(CLAUDE);
       expect((await callMcp(base, next.body.access_token)).status).toBe(200);
+    });
+
+    it('refreshes Claude Code and ChatGPT on their last good copies too', async () => {
+      await start({ oauthStore: fileStore() });
+      const loopback = 'http://127.0.0.1:53123/callback';
+      const code = await authorize(base, { clientId: CLAUDE_CODE, redirectUri: loopback });
+      const codeTokens = await exchangeCode(base, CLAUDE_CODE, loopback, code);
+      const gpt = await authorize(base, { clientId: CHATGPT, redirectUri: CHATGPT_CALLBACK });
+      const gptTokens = await tokenRequest(base, {
+        grant_type: 'authorization_code',
+        client_id: CHATGPT,
+        code: gpt.code ?? '',
+        redirect_uri: CHATGPT_CALLBACK,
+        code_verifier: gpt.verifier,
+        client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+        client_assertion: await chatgptAssertion(base),
+      });
+      await vi.waitFor(() =>
+        expect(storedKeys()).toEqual(
+          expect.arrayContaining([cimdKey(CLAUDE_CODE), cimdKey(CHATGPT)]),
+        ),
+      );
+      await restart({ oauthStore: fileStore() });
+      blockedDocuments.add(CLAUDE_CODE);
+      blockedDocuments.add(CHATGPT);
+      const codeNext = await refresh(base, CLAUDE_CODE, codeTokens.body.refresh_token ?? '');
+      expect(codeNext.status).toBe(200);
+      const gptNext = await tokenRequest(base, {
+        grant_type: 'refresh_token',
+        client_id: CHATGPT,
+        refresh_token: gptTokens.body.refresh_token ?? '',
+        client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+        client_assertion: await chatgptAssertion(base),
+      });
+      expect(gptNext.status).toBe(200);
+    });
+
+    it('never lets a copy served during an outage renew itself', async () => {
+      await start({ oauthStore: fileStore() });
+      const result = await authorize(base, { clientId: CLAUDE, redirectUri: CLAUDE_CALLBACK });
+      const tokens = await exchangeCode(base, CLAUDE, CLAUDE_CALLBACK, result);
+      await vi.waitFor(() => expect(storedKeys()).toContain(cimdKey(CLAUDE)));
+      const keptRecord = () =>
+        JSON.parse(readFileSync(join(dir, 'store', 'oauth-store.json'), 'utf8'))[cimdKey(CLAUDE)];
+      const before = keptRecord();
+      await restart({ oauthStore: fileStore() });
+      blockedDocuments.add(CLAUDE);
+      expect((await refresh(base, CLAUDE, tokens.body.refresh_token ?? '')).status).toBe(200);
+      // Give a renewal, if any, the time to land.
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(keptRecord()).toEqual(before);
     });
 
     it('keeps no document for a client that never got a token', async () => {

@@ -2,8 +2,10 @@ import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   CIMD_FETCH_HINT,
+  type CimdDocuments,
   type CimdLastGood,
   createCimdDocuments,
+  type GrantedClient,
   LAST_GOOD_TTL_S,
 } from '../../../../src/auth/server/cimd-documents';
 import { createMemoryStore } from '../../../../src/auth/server/file-store';
@@ -64,11 +66,17 @@ const setUp = (base: Fetch, lastGood = memoryLastGood().lastGood) => {
   return { cimd: createCimdDocuments(base, { lastGood, logger }), events };
 };
 
-// What oidc-provider does on a sign-in: fetch, accept the client, issue a token.
-const signIn = async (cimd: ReturnType<typeof createCimdDocuments>) => {
+// The client oidc-provider builds from a document it accepted.
+const clientOf = (document: Record<string, unknown>, cimd = true): GrantedClient => ({
+  clientId: String(document['client_id']),
+  ...(cimd && { clientIdMetadataDocument: true }),
+  metadata: () => document,
+});
+
+// What oidc-provider does on a sign-in: fetch the document, issue a token.
+const signIn = async (cimd: CimdDocuments) => {
   const res = await cimd.fetch(URL_, {});
-  cimd.accepted(URL_);
-  await cimd.granted(URL_);
+  await cimd.granted(clientOf(NATIVE));
   return res;
 };
 
@@ -82,7 +90,7 @@ beforeEach(() => vi.useFakeTimers({ now: NOW }));
 afterEach(() => vi.useRealTimers());
 
 describe('createCimdDocuments: keeping a copy', () => {
-  it('keeps a document once it was accepted and a token issued, for seven days', async () => {
+  it('keeps the validated document when a token is issued, for seven days', async () => {
     const { lastGood, records } = memoryLastGood();
     const { cimd } = setUp(sequence(ok), lastGood);
     const res = await signIn(cimd);
@@ -92,80 +100,44 @@ describe('createCimdDocuments: keeping a copy', () => {
     expect(LAST_GOOD_TTL_S).toBe(7 * 24 * 3600);
   });
 
-  it('keeps nothing for a client that was fetched but never got a token', async () => {
+  it('keeps nothing for a client registered otherwise (DCR)', async () => {
     const { lastGood, records } = memoryLastGood();
     const { cimd } = setUp(sequence(ok), lastGood);
-    await cimd.fetch(URL_, {});
-    cimd.accepted(URL_);
-    await cimd.granted('https://other.example/doc');
+    await cimd.granted(clientOf({ client_id: 'dcr-client', redirect_uris: [] }, false));
     expect(records.size).toBe(0);
   });
 
-  it('keeps nothing oidc-provider did not accept', async () => {
+  it('never renews a copy with a client the copy itself built', async () => {
     const { lastGood, records } = memoryLastGood();
-    const { cimd } = setUp(sequence(ok), lastGood);
-    await cimd.fetch(URL_, {});
-    await cimd.granted(URL_);
-    expect(records.size).toBe(0);
-  });
-
-  it('keeps a copy once per fetch, not on every token', async () => {
-    const { lastGood, records } = memoryLastGood();
-    const { cimd } = setUp(sequence(ok), lastGood);
+    const { cimd } = setUp(sequence(ok, status(403), ok), lastGood);
     await signIn(cimd);
-    records.clear();
-    cimd.accepted(URL_);
-    await cimd.granted(URL_);
-    expect(records.size).toBe(0);
+    vi.advanceTimersByTime(3600 * 1000);
+    await cimd.fetch(URL_, {});
+    await cimd.granted(clientOf(NATIVE));
+    expect(records.get(URL_)?.value.fetchedAt).toBe(NOW);
+    // Live again: the next token renews it.
+    await cimd.fetch(URL_, {});
+    await cimd.granted(clientOf(NATIVE));
+    expect(records.get(URL_)?.value.fetchedAt).toBe(NOW + 3600 * 1000);
   });
 
-  it.each([
-    ['another client_id', () => Response.json({ ...DOC, client_id: 'https://evil.example/doc' })],
-    ['a JWKS', () => Response.json({ keys: [] })],
-    ['a non-JSON body', () => new Response('not json')],
-    ['a 203', () => Response.json(DOC, { status: 203 })],
-  ])('keeps nothing from %s', async (_, response) => {
+  it('keeps the good copy when the host serves a document oidc-provider rejects', async () => {
     const { lastGood, records } = memoryLastGood();
-    const { cimd } = setUp(sequence(response), lastGood);
-    await signIn(cimd);
-    expect(records.size).toBe(0);
-  });
-
-  it('forgets the oldest pending documents past a hundred', async () => {
-    const { lastGood, records } = memoryLastGood();
-    const docAt = (i: number) => `https://c${i}.example/doc`;
+    const rejected = { ...DOC, client_secret: 'x' };
     const { cimd } = setUp(
-      async (input) =>
-        Response.json({ client_id: String(input), redirect_uris: ['https://x.example/cb'] }),
+      sequence(ok, () => Response.json(rejected), status(403)),
       lastGood,
     );
-    for (let i = 0; i <= 100; i++) await cimd.fetch(docAt(i), {});
-    // Fetched again, 1 is the newest: 101 pushes 2 out, not 1.
-    await cimd.fetch(docAt(1), {});
-    await cimd.fetch(docAt(101), {});
-    for (let i = 0; i <= 101; i++) cimd.accepted(docAt(i));
-    for (const i of [0, 1, 2, 3]) await cimd.granted(docAt(i));
-    expect([...records.keys()]).toEqual([docAt(1), docAt(3)]);
+    await signIn(cimd);
+    // The library rejects it: no client, no token.
+    await cimd.fetch(URL_, {});
+    // The next fetch fails, the copy is served, and the client built from it gets a token.
+    await cimd.fetch(URL_, {});
+    await cimd.granted(clientOf(NATIVE));
+    expect(records.get(URL_)?.value.document).toEqual(NATIVE);
   });
 
-  it('forgets the oldest accepted documents past a hundred', async () => {
-    const { lastGood, records } = memoryLastGood();
-    const docAt = (i: number) => `https://c${i}.example/doc`;
-    const { cimd } = setUp(
-      async (input) =>
-        Response.json({ client_id: String(input), redirect_uris: ['https://x.example/cb'] }),
-      lastGood,
-    );
-    for (let i = 0; i <= 100; i++) {
-      await cimd.fetch(docAt(i), {});
-      cimd.accepted(docAt(i));
-    }
-    await cimd.granted(docAt(0));
-    await cimd.granted(docAt(100));
-    expect([...records.keys()]).toEqual([docAt(100)]);
-  });
-
-  it('serves the live document when keeping its copy fails', async () => {
+  it('logs a failure to keep the copy, and carries on', async () => {
     const lastGood: SealedCollection<CimdLastGood> = {
       get: async () => undefined,
       set: async () => {

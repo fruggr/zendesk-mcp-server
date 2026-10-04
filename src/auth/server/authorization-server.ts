@@ -145,7 +145,7 @@ export const createAuthorizationServer = (
   // A token issued: a user signed in with this client, so its document is worth keeping.
   provider.on('grant.success', (ctx) => {
     // Stryker disable next-line ConditionalExpression: the token endpoint authenticates a client before it emits this.
-    if (ctx.oidc.client) void cimdDocuments.granted(ctx.oidc.client.clientId);
+    if (ctx.oidc.client) void cimdDocuments.granted(ctx.oidc.client);
   });
   provider.on('server_error', (_ctx, err) => {
     logger.error('oauth_server_error', { error: err.message });

@@ -126,10 +126,6 @@ export const buildProvider = (options: ProviderOptions): Provider => {
           // WHATWG URL drops an explicit :443, so any port left is a non-default one.
           return url.port === '';
         },
-        allowClient: async (_ctx, client) => {
-          options.cimdDocuments.accepted(client.clientId);
-          return true;
-        },
       },
       resourceIndicators: {
         enabled: true,

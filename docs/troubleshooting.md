@@ -236,6 +236,10 @@ Usual causes, by `status`:
   problem. These are usually short-lived, and the last good copy covers them.
 - **`200` with `error: not a client document`**: the host answered with
   something other than the document, such as a bot-protection page.
+- **A `url` that is not a `client_id`**: a URL the document names, such as the
+  `jwks_uri` of a client that signs its token requests (ChatGPT). No copy is
+  kept for those, but the client fails the same way, and the remedies are the
+  same.
 
 If `403`s persist, give the server an outbound IP with a clean reputation: a
 dedicated egress IP from your host, or an egress proxy

@@ -181,14 +181,15 @@ and it breaks the spec.
     fails with a `403`, `408`, `429`, `5xx` or a network error, or answers `200`
     with something other than the document (a bot-protection page). A `404`, a
     `410`, a redirect or another client error is never papered over.
-  - A copy is kept only once `oidc-provider` has accepted the document
-    (`allowClient`) **and** issued a token to that client (`grant.success`). The
-    first condition keeps a document the library rejects from replacing a good
-    copy. The second keeps an unauthenticated caller, who can make the server
-    fetch any `client_id` URL, from writing to the grant store.
+  - A copy is kept when a token is issued to the client (`grant.success`), from
+    the client `oidc-provider` built and validated (`client.metadata()`). A
+    document the library rejects therefore never becomes a copy, and an
+    unauthenticated caller, who can make the server fetch any `client_id` URL,
+    cannot write to the grant store.
   - The copy lives in the grant store for 7 days after it was last kept, so a
-    restart keeps it. A served copy carries `max-age=60`, so the host is tried
-    again every minute.
+    restart keeps it. A client built from a served copy never renews it, so an
+    outage cannot stretch those 7 days. A served copy carries `max-age=60`, so
+    the host is tried again every minute.
   - Every transient failure logs `oauth_client_fetch_failed` at `warn`, whether
     a copy was served or not; other failures log it at `debug`. The remedy for a
     blocked IP is an egress change; the copy only buys time.
