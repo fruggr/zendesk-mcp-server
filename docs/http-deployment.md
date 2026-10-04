@@ -164,8 +164,13 @@ Some document hosts sit behind bot protection that judges the requesting IP's
 reputation, and shared egress IPs of cloud providers sometimes fail it. For a
 client its users have signed in with, the server then keeps working on the last
 copy it kept, for up to 7 days, and logs `oauth_client_fetch_failed`. If that
-persists, give the server a dedicated egress IP or route it through an egress
-proxy ([troubleshooting](troubleshooting.md#http-the-log-shows-oauth_client_fetch_failed)).
+persists, give the server a dedicated egress IP, for example through a NAT
+gateway with a static IP
+([troubleshooting](troubleshooting.md#http-the-log-shows-oauth_client_fetch_failed)).
+
+The change has to happen at the network level. Document fetches go through
+`oidc-provider`'s own SSRF-guarded HTTP agent, which ignores `HTTPS_PROXY` and
+`NODE_USE_ENV_PROXY`, so an HTTP proxy set through the environment is not used.
 
 ## Public URL
 

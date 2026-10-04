@@ -241,10 +241,11 @@ Usual causes, by `status`:
   kept for those, but the client fails the same way, and the remedies are the
   same.
 
-If `403`s persist, give the server an outbound IP with a clean reputation: a
-dedicated egress IP from your host, or an egress proxy
-([Outbound access](http-deployment.md#outbound-access)). A restart does not
-help, and the last good copy runs out after 7 days.
+If `403`s persist, give the server an outbound IP with a clean reputation, such
+as a dedicated egress IP from your host or a NAT gateway with a static IP. It
+has to be a network-level change: an HTTP proxy set through `HTTPS_PROXY` is not
+used for these fetches ([Outbound access](http-deployment.md#outbound-access)).
+A restart does not help, and the last good copy runs out after 7 days.
 
 ## HTTP: the sign-in page says the link expired
 
