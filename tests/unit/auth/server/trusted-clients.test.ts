@@ -454,6 +454,44 @@ describe('createCimdFetch: the last good copy', () => {
     expect((await cimd(URL_, {})).status).toBe(403);
   });
 
+  it('names the cause of a network error', async () => {
+    const { logger, events } = recordingLogger();
+    const refused = () => {
+      throw new TypeError('fetch failed', { cause: new Error('getaddrinfo ENOTFOUND claude.ai') });
+    };
+    await expect(createCimdFetch(refused, { logger })(URL_, {})).rejects.toThrow('fetch failed');
+    await expect(createCimdFetch(() => Promise.reject('odd'), { logger })(URL_, {})).rejects.toBe(
+      'odd',
+    );
+    expect(events.map(([, , fields]) => (fields as { error: string }).error)).toEqual([
+      'fetch failed: getaddrinfo ENOTFOUND claude.ai',
+      'odd',
+    ]);
+  });
+
+  it('hands the failure on when reading the kept copy fails too', async () => {
+    const { logger, events } = recordingLogger();
+    const lastGood: SealedCollection<CimdLastGood> = {
+      get: async () => {
+        throw new Error('EIO');
+      },
+      set: async () => undefined,
+      delete: async () => undefined,
+    };
+    const failure = new Response('blocked', { status: 403 });
+    expect(await createCimdFetch(async () => failure, { lastGood, logger })(URL_, {})).toBe(
+      failure,
+    );
+    expect(events).toEqual([
+      ['warn', 'oauth_cimd_last_good_read_failed', { url: URL_, error: 'EIO' }],
+      [
+        'warn',
+        'oauth_client_fetch_failed',
+        { url: URL_, status: 403, fallback: 'none', hint: CIMD_FETCH_HINT },
+      ],
+    ]);
+  });
+
   it('serves the live document when keeping its copy fails', async () => {
     const { logger, events } = recordingLogger();
     const lastGood: SealedCollection<CimdLastGood> = {

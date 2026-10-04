@@ -134,7 +134,12 @@ const asClientDocument = (parsed: unknown): Record<string, unknown> | undefined 
     ? (parsed as Record<string, unknown>)
     : undefined;
 
-const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+// undici's "fetch failed" says nothing on its own: the cause names the DNS,
+// TLS or socket error.
+const messageOf = (err: unknown): string => {
+  if (!(err instanceof Error)) return String(err);
+  return err.cause instanceof Error ? `${err.message}: ${err.cause.message}` : err.message;
+};
 
 /**
  * Wrap oidc-provider's `fetch` so CIMD documents go through
@@ -157,12 +162,19 @@ export const createCimdFetch = (baseFetch: Fetch, options: CimdFetchOptions = {}
     }
   };
 
+  // A store that fails here must not turn a fetch failure into a server error.
+  const kept = (url: string): Promise<CimdLastGood | undefined> | undefined =>
+    lastGood?.get(url).catch((err: unknown) => {
+      logger?.warn('oauth_cimd_last_good_read_failed', { url, error: messageOf(err) });
+      return undefined;
+    });
+
   const fallBack = async (
     url: string,
     failure: { status: number } | { error: string },
     transient: boolean,
   ): Promise<Response | undefined> => {
-    const copy = transient ? await lastGood?.get(url) : undefined;
+    const copy = transient ? await kept(url) : undefined;
     logger?.warn('oauth_client_fetch_failed', {
       url,
       ...failure,
