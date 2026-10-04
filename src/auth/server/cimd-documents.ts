@@ -135,6 +135,7 @@ export const createCimdDocuments = (
     const copy = await kept(url);
     if (!copy) return response;
     report(url, { status: response.status, error: 'not a client document' }, copy);
+    // Stryker disable next-line OptionalChaining: createCimdFetch always rebuilds a 2xx body, so it is never null here.
     await response.body?.cancel();
     return serve(copy);
   };

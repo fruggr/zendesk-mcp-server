@@ -140,12 +140,12 @@ describe('createCimdDocuments: keeping a copy', () => {
       lastGood,
     );
     for (let i = 0; i <= 100; i++) await cimd.fetch(docAt(i), {});
+    // Fetched again, 1 is the newest: 101 pushes 2 out, not 1.
     await cimd.fetch(docAt(1), {});
+    await cimd.fetch(docAt(101), {});
     for (let i = 0; i <= 101; i++) cimd.accepted(docAt(i));
-    await cimd.granted(docAt(0));
-    await cimd.granted(docAt(1));
-    await cimd.granted(docAt(2));
-    expect([...records.keys()]).toEqual([docAt(1), docAt(2)]);
+    for (const i of [0, 1, 2, 3]) await cimd.granted(docAt(i));
+    expect([...records.keys()]).toEqual([docAt(1), docAt(3)]);
   });
 
   it('forgets the oldest accepted documents past a hundred', async () => {
@@ -201,6 +201,12 @@ describe('createCimdDocuments: serving the copy', () => {
     await signIn(cimd);
     await cimd.fetch(URL_, {});
     expect(cancel).toHaveBeenCalled();
+  });
+
+  it('serves the copy in place of a failure without a body', async () => {
+    const { cimd } = setUp(sequence(ok, () => new Response(null, { status: 503 })));
+    await signIn(cimd);
+    expect(await (await cimd.fetch(URL_, {})).json()).toEqual(NATIVE);
   });
 
   it('serves the copy on a network error, naming its cause', async () => {
@@ -278,9 +284,10 @@ describe('createCimdDocuments: serving the copy', () => {
     expect(await cimd.fetch(URL_, {})).toBe(failure);
     const { cimd: offline } = setUp(networkError);
     await expect(offline.fetch(URL_, {})).rejects.toThrow('fetch failed');
-    const { cimd: odd } = setUp(() => Promise.reject('odd'));
+    const { cimd: odd, events: oddEvents } = setUp(() => Promise.reject('odd'));
     await expect(odd.fetch(URL_, {})).rejects.toBe('odd');
     expect(events).toEqual([failed({ status: 403, fallback: 'none' })]);
+    expect(oddEvents).toEqual([failed({ error: 'odd', fallback: 'none' })]);
   });
 
   it('hands the failure on when reading the copy fails', async () => {
