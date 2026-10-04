@@ -177,14 +177,21 @@ and it breaks the spec.
   clients). A failed fetch then rejects the client, which signs its users out.
   Hosts' bot protection does return `403` to some cloud egress IPs (Claude Code:
   anthropics/claude-code#84263; Codex: cloudflare/workers-oauth-provider#333).
-  - The fetch wrapper keeps each document served at its own `client_id`, and
-    serves that copy when a later fetch fails with a `403`, `408`, `429`, `5xx`
-    or a network error. A `404`, a `410` or a redirect is never papered over.
-  - The copy lives in the grant store for 7 days after its last successful
-    fetch, so a restart keeps it. A served copy carries `max-age=60`, so the host
-    is tried again every minute.
-  - Every failure logs `oauth_client_fetch_failed`, whether a copy was served or
-    not. The remedy for a blocked IP is an egress change; the copy only buys time.
+  - The fetch wrapper serves a document's last good copy when a later fetch
+    fails with a `403`, `408`, `429`, `5xx` or a network error, or answers `200`
+    with something other than the document (a bot-protection page). A `404`, a
+    `410`, a redirect or another client error is never papered over.
+  - A copy is kept only once `oidc-provider` has accepted the document
+    (`allowClient`) **and** issued a token to that client (`grant.success`). The
+    first condition keeps a document the library rejects from replacing a good
+    copy. The second keeps an unauthenticated caller, who can make the server
+    fetch any `client_id` URL, from writing to the grant store.
+  - The copy lives in the grant store for 7 days after it was last kept, so a
+    restart keeps it. A served copy carries `max-age=60`, so the host is tried
+    again every minute.
+  - Every transient failure logs `oauth_client_fetch_failed` at `warn`, whether
+    a copy was served or not; other failures log it at `debug`. The remedy for a
+    blocked IP is an egress change; the copy only buys time.
   - **A deliberate deviation from a SHOULD**: the draft (§5.1) says to abort an
     authorization whose document fetch fails. It also lets the server set its own
     lower bound on the cache lifetime (§5.2): a 7-day bound would be compliant,

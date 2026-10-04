@@ -4,11 +4,9 @@ import Provider, {
   errors,
   interactionPolicy,
 } from 'oidc-provider';
-import type { Logger } from '../../utils/logger';
+import type { CimdDocuments } from './cimd-documents';
 import { renderErrorPage } from './consent';
 import type { KeyRing } from './keys';
-import type { SealedCollection } from './store';
-import { type CimdLastGood, createCimdFetch, type Fetch } from './trusted-clients';
 import { isGrantUnavailableError, type ZendeskGrants } from './zendesk-grant';
 
 // Our access tokens are short so a revocation at Zendesk (or of the grant)
@@ -37,11 +35,8 @@ export interface ProviderOptions {
   readonly isAllowedOrigin: (origin: string) => boolean;
   /** Trust `X-Forwarded-*` (a TLS-terminating proxy in front). */
   readonly behindProxy: boolean;
-  /** Base fetch for CIMD documents; tests inject one. oidc-provider's SSRF guard rides in its options. */
-  readonly fetch?: Fetch | undefined;
-  /** Last good copies of CIMD documents, served when a fetch fails. */
-  readonly cimdLastGood?: SealedCollection<CimdLastGood> | undefined;
-  readonly logger?: Logger | undefined;
+  /** Fetches CIMD documents. oidc-provider's SSRF guard rides in the options it passes. */
+  readonly cimdDocuments: CimdDocuments;
 }
 
 // Every authorization goes through Zendesk, even with a live browser session:
@@ -75,7 +70,6 @@ export const buildProvider = (options: ProviderOptions): Provider => {
   const { ring, resource } = options;
   const [current] = ring;
   const scopes = options.allowWrite ? RESOURCE_SCOPES.join(' ') : 'read';
-  const baseFetch = options.fetch ?? ((url, init) => globalThis.fetch(url, init));
 
   const provider = new Provider(options.issuer, {
     adapter: options.adapter,
@@ -84,10 +78,7 @@ export const buildProvider = (options: ProviderOptions): Provider => {
     jwks: { keys: ring.map((set) => set.signingJwk) },
     cookies: { keys: ring.map((set) => set.cookieKey) },
     clients: [],
-    fetch: createCimdFetch(baseFetch, {
-      lastGood: options.cimdLastGood,
-      logger: options.logger,
-    }),
+    fetch: options.cimdDocuments.fetch,
     scopes: options.allowWrite
       ? [...RESOURCE_SCOPES, 'offline_access']
       : ['read', 'offline_access'],
@@ -134,6 +125,10 @@ export const buildProvider = (options: ProviderOptions): Provider => {
           if (url.protocol !== 'https:') return false;
           // WHATWG URL drops an explicit :443, so any port left is a non-default one.
           return url.port === '';
+        },
+        allowClient: async (_ctx, client) => {
+          options.cimdDocuments.accepted(client.clientId);
+          return true;
         },
       },
       resourceIndicators: {

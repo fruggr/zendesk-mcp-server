@@ -6,6 +6,7 @@ import type { Config } from '../../config';
 import { type Logger, silentLogger } from '../../utils/logger';
 import { supportedScopes } from '../oauth-scopes';
 import { configDir } from '../token-persistence';
+import { type CimdLastGood, createCimdDocuments } from './cimd-documents';
 import { createExpiringMap } from './expiring-map';
 import type { RecordStore } from './file-store';
 import { createInteractionRoutes } from './interactions';
@@ -13,7 +14,7 @@ import { deriveKeyRing, type KeyRing } from './keys';
 import { ACCESS_TOKEN_TTL_S, buildProvider } from './provider';
 import { resolveMasterSecret } from './secret';
 import { createAdapterFactory, createSealedCollection, openStore } from './store';
-import { type CimdLastGood, type Fetch, trustedClientSet } from './trusted-clients';
+import { type Fetch, trustedClientSet } from './trusted-clients';
 import type { ZendeskTokenSet } from './upstream';
 import { createZendeskGrants, ZENDESK_REFRESH_MARGIN_MS } from './zendesk-grant';
 
@@ -121,6 +122,13 @@ export const createAuthorizationServer = (
     });
   };
 
+  const cimdDocuments = createCimdDocuments(
+    options.fetch ?? ((url, init) => globalThis.fetch(url, init)),
+    {
+      lastGood: createSealedCollection<CimdLastGood>(persistent, 'CimdDocument', ring),
+      logger,
+    },
+  );
   const provider = buildProvider({
     issuer,
     resource,
@@ -132,9 +140,12 @@ export const createAuthorizationServer = (
     // Only an HTTPS public URL implies a TLS-terminating proxy whose
     // X-Forwarded-* headers are to be trusted.
     behindProxy: config.publicUrl?.startsWith('https:') === true,
-    fetch: options.fetch,
-    cimdLastGood: createSealedCollection<CimdLastGood>(persistent, 'CimdDocument', ring),
-    logger,
+    cimdDocuments,
+  });
+  // A token issued: a user signed in with this client, so its document is worth keeping.
+  provider.on('grant.success', (ctx) => {
+    const clientId = ctx.oidc.client?.clientId;
+    if (clientId) void cimdDocuments.granted(clientId);
   });
   provider.on('server_error', (_ctx, err) => {
     logger.error('oauth_server_error', { error: err.message });

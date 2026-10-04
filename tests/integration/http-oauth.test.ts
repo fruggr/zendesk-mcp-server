@@ -12,7 +12,7 @@ import {
   SignJWT,
 } from 'jose';
 import { HttpResponse, http } from 'msw';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { deriveKeyRing } from '../../src/auth/server/keys';
 import type { Config } from '../../src/config';
 import { type HttpServerHandle, startHttpTransport } from '../../src/transports/http';
@@ -807,6 +807,12 @@ describe('HTTP authorization server', () => {
 
   describe('persistence and keys', () => {
     const fileStore = () => pathToFileURL(join(dir, 'store', 'oauth-store.json')).href;
+    const storedKeys = (): string[] => {
+      const path = join(dir, 'store', 'oauth-store.json');
+      return existsSync(path) ? Object.keys(JSON.parse(readFileSync(path, 'utf8'))) : [];
+    };
+    const cimdKey = (clientId: string) =>
+      `CimdDocument:${createHash('sha256').update(clientId).digest('base64url')}`;
 
     it('keeps users signed in across a restart with a file store and the same secret', async () => {
       await start({ oauthStore: fileStore() });
@@ -822,10 +828,8 @@ describe('HTTP authorization server', () => {
       await start({ oauthStore: fileStore() });
       const result = await authorize(base, { clientId: CLAUDE, redirectUri: CLAUDE_CALLBACK });
       const tokens = await exchangeCode(base, CLAUDE, CLAUDE_CALLBACK, result);
-      const stored = JSON.parse(readFileSync(join(dir, 'store', 'oauth-store.json'), 'utf8'));
-      expect(Object.keys(stored)).toContain(
-        `CimdDocument:${createHash('sha256').update(CLAUDE).digest('base64url')}`,
-      );
+      // Kept after the token is issued, off the request path.
+      await vi.waitFor(() => expect(storedKeys()).toContain(cimdKey(CLAUDE)));
       await restart({ oauthStore: fileStore() });
       blockedDocuments.add(CLAUDE);
       cimdRequests.length = 0;
@@ -833,6 +837,17 @@ describe('HTTP authorization server', () => {
       expect(next.status).toBe(200);
       expect(cimdRequests).toContain(CLAUDE);
       expect((await callMcp(base, next.body.access_token)).status).toBe(200);
+    });
+
+    it('keeps no document for a client that never got a token', async () => {
+      await start({ oauthStore: fileStore() });
+      await authorize(base, {
+        clientId: UNKNOWN,
+        redirectUri: 'https://tools.example.com/callback',
+      });
+      const result = await authorize(base, { clientId: CLAUDE, redirectUri: CLAUDE_CALLBACK });
+      expect(result.code).toEqual(expect.any(String));
+      expect(storedKeys().filter((key) => key.startsWith('CimdDocument:'))).toEqual([]);
     });
 
     it('turns a blocked client away when no copy of its document was ever kept', async () => {

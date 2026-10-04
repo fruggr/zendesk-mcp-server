@@ -214,12 +214,16 @@ document at every sign-in and every token refresh, at most every few minutes per
 client, and cannot accept the client without it. The client's users then see
 `invalid_client` when they sign in, or when they refresh, which signs them out.
 
-- **`fallback: last_good`**: the server served the last copy it fetched
-  successfully, `ageS` seconds old. Users notice nothing. The server keeps
-  that copy in the grant store for 7 days after its last successful fetch.
-- **`fallback: none`**: no copy to serve. The client was never fetched
-  successfully (or not in the last 7 days), or the host answered `404` or `410`,
-  which mean the document was withdrawn.
+- **`fallback: last_good`**: the server served the last copy it kept, `ageS`
+  seconds old, and users notice nothing. A copy is kept in the grant store once
+  a user of that client has signed in or refreshed, and lasts 7 days after the
+  last time it was kept.
+- **`fallback: none`**: no copy to serve. No user of that client has signed in
+  or refreshed in the last 7 days, or since a restart with a `memory://` store.
+
+A `404`, `410`, redirect or other client error from the document host means
+the document moved or was withdrawn: no copy is served, and it is logged at
+`debug` level only.
 
 Usual causes, by `status`:
 
@@ -230,6 +234,8 @@ Usual causes, by `status`:
   deployments never see it.
 - **`429`, `5xx` or `error`**: a rate limit, an outage at the host, or a network
   problem. These are usually short-lived, and the last good copy covers them.
+- **`200` with `error: not a client document`**: the host answered with
+  something other than the document, such as a bot-protection page.
 
 If `403`s persist, give the server an outbound IP with a clean reputation: a
 dedicated egress IP from your host, or an egress proxy

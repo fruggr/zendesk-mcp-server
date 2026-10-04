@@ -161,11 +161,11 @@ The server makes HTTPS requests to two kinds of hosts:
   that serves a CIMD client's metadata document, at sign-in and token refresh.
 
 Some document hosts sit behind bot protection that judges the requesting IP's
-reputation, and shared egress IPs of cloud providers sometimes fail it. The
-server then keeps working on the last copy it fetched, for up to 7 days, and
-logs `oauth_client_fetch_failed`. If that persists, give the server a dedicated
-egress IP or route it through an egress proxy
-([troubleshooting](troubleshooting.md#http-the-log-shows-oauth_client_fetch_failed)).
+reputation, and shared egress IPs of cloud providers sometimes fail it. For a
+client its users have signed in with, the server then keeps working on the last
+copy it kept, for up to 7 days, and logs `oauth_client_fetch_failed`. If that
+persists, give the server a dedicated egress IP or route it through an egress
+proxy ([troubleshooting](troubleshooting.md#http-the-log-shows-oauth_client_fetch_failed)).
 
 ## Public URL
 
