@@ -1,4 +1,4 @@
-import { generateKeyPairSync, randomUUID } from 'node:crypto';
+import { createHash, generateKeyPairSync, randomUUID } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -822,6 +822,10 @@ describe('HTTP authorization server', () => {
       await start({ oauthStore: fileStore() });
       const result = await authorize(base, { clientId: CLAUDE, redirectUri: CLAUDE_CALLBACK });
       const tokens = await exchangeCode(base, CLAUDE, CLAUDE_CALLBACK, result);
+      const stored = JSON.parse(readFileSync(join(dir, 'store', 'oauth-store.json'), 'utf8'));
+      expect(Object.keys(stored)).toContain(
+        `CimdDocument:${createHash('sha256').update(CLAUDE).digest('base64url')}`,
+      );
       await restart({ oauthStore: fileStore() });
       blockedDocuments.add(CLAUDE);
       cimdRequests.length = 0;

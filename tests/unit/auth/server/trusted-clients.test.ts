@@ -508,6 +508,27 @@ describe('createCimdFetch: the last good copy', () => {
     ]);
   });
 
+  it('keeps going without a logger when keeping or reading the copy fails', async () => {
+    const lastGood: SealedCollection<CimdLastGood> = {
+      get: async () => {
+        throw new Error('EIO');
+      },
+      set: async () => {
+        throw new Error('ENOSPC');
+      },
+      delete: async () => undefined,
+    };
+    const cimd = createCimdFetch(sequence(ok, status(403)), { lastGood });
+    expect((await cimd(URL_, {})).status).toBe(200);
+    expect((await cimd(URL_, {})).status).toBe(403);
+  });
+
+  it('says what failed and where to read on', () => {
+    expect(CIMD_FETCH_HINT).toMatchInlineSnapshot(
+      `"A client document could not be fetched: its client cannot sign in or refresh unless a last good copy is served. See https://github.com/fruggr/zendesk-mcp-server/blob/main/docs/troubleshooting.md#http-the-log-shows-oauth_client_fetch_failed"`,
+    );
+  });
+
   it('points the hint at a troubleshooting section that exists on main', () => {
     const [, link = ''] = CIMD_FETCH_HINT.match(/(https:\/\/\S+)/) ?? [];
     const { pathname, hash } = new URL(link);
