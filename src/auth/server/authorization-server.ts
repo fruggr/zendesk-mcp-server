@@ -13,7 +13,7 @@ import { deriveKeyRing, type KeyRing } from './keys';
 import { ACCESS_TOKEN_TTL_S, buildProvider } from './provider';
 import { resolveMasterSecret } from './secret';
 import { createAdapterFactory, createSealedCollection, openStore } from './store';
-import { type Fetch, trustedClientSet } from './trusted-clients';
+import { type CimdLastGood, type Fetch, trustedClientSet } from './trusted-clients';
 import type { ZendeskTokenSet } from './upstream';
 import { createZendeskGrants, ZENDESK_REFRESH_MARGIN_MS } from './zendesk-grant';
 
@@ -133,6 +133,8 @@ export const createAuthorizationServer = (
     // X-Forwarded-* headers are to be trusted.
     behindProxy: config.publicUrl?.startsWith('https:') === true,
     fetch: options.fetch,
+    cimdLastGood: createSealedCollection<CimdLastGood>(persistent, 'CimdDocument', ring),
+    logger,
   });
   provider.on('server_error', (_ctx, err) => {
     logger.error('oauth_server_error', { error: err.message });

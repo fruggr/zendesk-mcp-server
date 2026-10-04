@@ -151,6 +151,22 @@ their own domain, so the code cannot be diverted.
   The same HTTPS rules apply to it.
 - `--no-default-trusted-clients` drops the built-in entries.
 
+## Outbound access
+
+The server makes HTTPS requests to two kinds of hosts:
+
+- **Zendesk** (`<subdomain>.zendesk.com`), for sign-in, token refresh and every
+  tool call;
+- **client document hosts**: claude.ai and chatgpt.com, plus any other host
+  that serves a CIMD client's metadata document, at sign-in and token refresh.
+
+Some document hosts sit behind bot protection that judges the requesting IP's
+reputation, and shared egress IPs of cloud providers sometimes fail it. The
+server then keeps working on the last copy it fetched, for up to 7 days, and
+logs `oauth_client_fetch_failed`. If that persists, give the server a dedicated
+egress IP or route it through an egress proxy
+([troubleshooting](troubleshooting.md#http-the-log-shows-oauth_client_fetch_failed)).
+
 ## Public URL
 
 `--public-url` (or `PUBLIC_URL=…`) is the URL **clients use to reach you**. It's what gets advertised in the OAuth discovery metadata as the canonical resource identifier (RFC 8707). Behind a TLS reverse proxy (Azure App Service, Heroku, Fly.io, Cloudflare Tunnel, nginx, Caddy…) the bind host and the public URL differ, and a spec-compliant MCP client refuses the connection when the metadata advertises the wrong resource. Without it the server boots in a degraded mode and prints a warning.

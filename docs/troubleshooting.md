@@ -205,6 +205,37 @@ successful write would bring it back, with its refresh token. Fix the store
 first (disk space, permissions on its directory), then restart. Any successful
 write persists the removal, since the store rewrites its whole file.
 
+## HTTP: the log shows `oauth_client_fetch_failed`
+
+The server could not fetch a client's metadata document: the URL that serves as
+its `client_id` (for Claude Code,
+`https://claude.ai/oauth/claude-code-client-metadata`). The server fetches that
+document at every sign-in and every token refresh, at most every few minutes per
+client, and cannot accept the client without it. The client's users then see
+`invalid_client` when they sign in, or when they refresh, which signs them out.
+
+- **`fallback: last_good`**: the server served the last copy it fetched
+  successfully, `ageS` seconds old. Users notice nothing. The server keeps
+  that copy in the grant store for 7 days after its last successful fetch.
+- **`fallback: none`**: no copy to serve. The client was never fetched
+  successfully (or not in the last 7 days), or the host answered `404` or `410`,
+  which mean the document was withdrawn.
+
+Usual causes, by `status`:
+
+- **`403`**: the host's bot protection blocks the server's outbound IP. This
+  has been reported for Claude Code and Codex documents fetched from some cloud
+  providers' shared egress IPs. It depends on the IP's reputation, so it can
+  start or stop without any change on your side. It is uncommon: many
+  deployments never see it.
+- **`429`, `5xx` or `error`**: a rate limit, an outage at the host, or a network
+  problem. These are usually short-lived, and the last good copy covers them.
+
+If `403`s persist, give the server an outbound IP with a clean reputation: a
+dedicated egress IP from your host, or an egress proxy
+([Outbound access](http-deployment.md#outbound-access)). A restart does not
+help, and the last good copy runs out after 7 days.
+
 ## HTTP: the sign-in page says the link expired
 
 The sign-in went through another browser than the one that started it, or took

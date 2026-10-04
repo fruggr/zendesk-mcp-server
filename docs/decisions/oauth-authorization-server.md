@@ -171,6 +171,27 @@ and it breaks the spec.
   exactly and rejects the random port the client picks. A document whose
   redirect URIs are all loopback HTTP is treated as native. The fetch wrapper
   that does it keeps the SSRF-guarded dispatcher.
+- **A document's last good copy outlives a failed fetch.** Every authorization
+  and every refresh resolves the client's document, and `oidc-provider` caches it
+  in memory only, as long as its `Cache-Control` says (5 min for the known
+  clients). A failed fetch then rejects the client, which signs its users out.
+  Hosts' bot protection does return `403` to some cloud egress IPs (Claude Code:
+  anthropics/claude-code#84263; Codex: cloudflare/workers-oauth-provider#333).
+  - The fetch wrapper keeps each document served at its own `client_id`, and
+    serves that copy when a later fetch fails with a `403`, `408`, `429`, `5xx`
+    or a network error. A `404`, a `410` or a redirect is never papered over.
+  - The copy lives in the grant store for 7 days after its last successful
+    fetch, so a restart keeps it. A served copy carries `max-age=60`, so the host
+    is tried again every minute.
+  - Every failure logs `oauth_client_fetch_failed`, whether a copy was served or
+    not. The remedy for a blocked IP is an egress change; the copy only buys time.
+  - **A deliberate deviation from a SHOULD**: the draft (§5.1) says to abort an
+    authorization whose document fetch fails. It also lets the server set its own
+    lower bound on the cache lifetime (§5.2): a 7-day bound would be compliant,
+    and serving the copy only on failure is stricter than that. Error responses
+    are never kept (§5.2, MUST NOT).
+  - The cost: a `redirect_uri` that a client's owner removes keeps working for
+    up to 7 days while their host is unreachable from ours.
 - `offline_access` goes in the AS metadata, because ChatGPT needs it to refresh.
   It stays out of the protected-resource metadata, where the spec says it SHOULD
   NOT appear.
@@ -219,6 +240,9 @@ Instead:
 - **A backend added later** implements `RecordStore` (`get`, `set` with a TTL,
   `delete`, in `src/auth/server/file-store.ts`) and nothing else: the sealing,
   hashing and indexing sit above it.
+- **CIMD documents' last good copies** are a sealed collection of their own
+  (`CimdDocument`, keyed by `client_id`), next to the Zendesk tokens and the
+  consent memory, outside the `oidc-provider` adapter.
 - **Short-lived models stay in memory** whatever the store: sessions,
   interactions, authorization codes. A restart then costs only an in-flight
   login.

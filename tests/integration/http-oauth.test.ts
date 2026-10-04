@@ -90,9 +90,12 @@ const cimdDocuments = async (): Promise<Record<string, unknown>> => ({
 });
 
 const cimdRequests: string[] = [];
+// Documents whose host answers 403, as bot protection does to some egress IPs.
+const blockedDocuments = new Set<string>();
 
 const cimdFetch = async (input: string | URL | Request): Promise<Response> => {
   cimdRequests.push(String(input));
+  if (blockedDocuments.has(String(input))) return new Response('blocked', { status: 403 });
   const doc = (await cimdDocuments())[String(input)];
   return doc ? Response.json(doc) : new Response('not found', { status: 404 });
 };
@@ -136,6 +139,7 @@ describe('HTTP authorization server', () => {
   afterEach(async () => {
     await handle?.close();
     handle = undefined;
+    blockedDocuments.clear();
     rmSync(dir, { recursive: true, force: true });
   });
 
@@ -812,6 +816,27 @@ describe('HTTP authorization server', () => {
       const next = await refresh(base, clientId, tokens.body.refresh_token ?? '');
       expect(next.status).toBe(200);
       expect((await callMcp(base, next.body.access_token)).status).toBe(200);
+    });
+
+    it('refreshes on the last good copy when the document host blocks a restarted server', async () => {
+      await start({ oauthStore: fileStore() });
+      const result = await authorize(base, { clientId: CLAUDE, redirectUri: CLAUDE_CALLBACK });
+      const tokens = await exchangeCode(base, CLAUDE, CLAUDE_CALLBACK, result);
+      await restart({ oauthStore: fileStore() });
+      blockedDocuments.add(CLAUDE);
+      cimdRequests.length = 0;
+      const next = await refresh(base, CLAUDE, tokens.body.refresh_token ?? '');
+      expect(next.status).toBe(200);
+      expect(cimdRequests).toContain(CLAUDE);
+      expect((await callMcp(base, next.body.access_token)).status).toBe(200);
+    });
+
+    it('turns a blocked client away when no copy of its document was ever kept', async () => {
+      await start({ oauthStore: fileStore() });
+      blockedDocuments.add(CLAUDE);
+      const result = await authorize(base, { clientId: CLAUDE, redirectUri: CLAUDE_CALLBACK });
+      expect(result.code).toBeUndefined();
+      expect(result.error).toContain('invalid_client');
     });
 
     it('stores no raw token, no Zendesk token and no account id', async () => {

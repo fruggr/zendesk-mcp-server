@@ -4,9 +4,11 @@ import Provider, {
   errors,
   interactionPolicy,
 } from 'oidc-provider';
+import type { Logger } from '../../utils/logger';
 import { renderErrorPage } from './consent';
 import type { KeyRing } from './keys';
-import { createCimdFetch, type Fetch } from './trusted-clients';
+import type { SealedCollection } from './store';
+import { type CimdLastGood, createCimdFetch, type Fetch } from './trusted-clients';
 import { isGrantUnavailableError, type ZendeskGrants } from './zendesk-grant';
 
 // Our access tokens are short so a revocation at Zendesk (or of the grant)
@@ -37,6 +39,9 @@ export interface ProviderOptions {
   readonly behindProxy: boolean;
   /** Base fetch for CIMD documents; tests inject one. oidc-provider's SSRF guard rides in its options. */
   readonly fetch?: Fetch | undefined;
+  /** Last good copies of CIMD documents, served when a fetch fails. */
+  readonly cimdLastGood?: SealedCollection<CimdLastGood> | undefined;
+  readonly logger?: Logger | undefined;
 }
 
 // Every authorization goes through Zendesk, even with a live browser session:
@@ -79,7 +84,10 @@ export const buildProvider = (options: ProviderOptions): Provider => {
     jwks: { keys: ring.map((set) => set.signingJwk) },
     cookies: { keys: ring.map((set) => set.cookieKey) },
     clients: [],
-    fetch: createCimdFetch(baseFetch),
+    fetch: createCimdFetch(baseFetch, {
+      lastGood: options.cimdLastGood,
+      logger: options.logger,
+    }),
     scopes: options.allowWrite
       ? [...RESOURCE_SCOPES, 'offline_access']
       : ['read', 'offline_access'],

@@ -1,13 +1,21 @@
-import { describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createMemoryStore } from '../../../../src/auth/server/file-store';
+import { deriveKeyRing } from '../../../../src/auth/server/keys';
+import { createSealedCollection, type SealedCollection } from '../../../../src/auth/server/store';
 import {
+  CIMD_FETCH_HINT,
+  type CimdLastGood,
   canSkipConsent,
   createCimdFetch,
   DEFAULT_TRUSTED_CLIENTS,
   inferNativeApplication,
   isLoopbackHost,
   isSkipEligibleRedirect,
+  LAST_GOOD_TTL_S,
   trustedClientSet,
 } from '../../../../src/auth/server/trusted-clients';
+import type { Logger } from '../../../../src/utils/logger';
 
 const CLAUDE = 'https://claude.ai/oauth/mcp-oauth-client-metadata';
 const CLAUDE_CALLBACK = 'https://claude.ai/api/mcp/auth_callback';
@@ -247,5 +255,234 @@ describe('createCimdFetch', () => {
   it('copes with an empty body', async () => {
     const res = await createCimdFetch(async () => new Response(null))('https://x/doc', {});
     expect(await res.text()).toBe('');
+  });
+});
+
+describe('createCimdFetch: the last good copy', () => {
+  const URL_ = 'https://claude.ai/oauth/claude-code-client-metadata';
+  const DOC = {
+    client_id: URL_,
+    client_name: 'Claude Code',
+    redirect_uris: ['http://localhost/cb'],
+  };
+  const NOW = Date.UTC(2026, 9, 4, 12);
+
+  const memoryLastGood = () => {
+    const records = new Map<string, { value: CimdLastGood; ttl: number | undefined }>();
+    const lastGood: SealedCollection<CimdLastGood> = {
+      get: async (id) => records.get(id)?.value,
+      set: async (id, value, ttl) => {
+        records.set(id, { value, ttl });
+      },
+      delete: async (id) => {
+        records.delete(id);
+      },
+    };
+    return { lastGood, records };
+  };
+
+  const recordingLogger = () => {
+    const events: [string, string, unknown][] = [];
+    const record =
+      (level: string) =>
+      (event: string, fields?: unknown): void => {
+        events.push([level, event, fields]);
+      };
+    const logger: Logger = {
+      debug: () => undefined,
+      info: record('info'),
+      warn: record('warn'),
+      error: record('error'),
+      attachServer: vi.fn(),
+    };
+    return { logger, events };
+  };
+
+  // A fetch answering the document first, then whatever `next` says.
+  const sequence = (...steps: (() => Response)[]) => {
+    let index = 0;
+    return vi.fn(async () => {
+      const step = steps[Math.min(index++, steps.length - 1)] as () => Response;
+      return step();
+    });
+  };
+  const ok = () => Response.json(DOC, { headers: { 'cache-control': 'max-age=300' } });
+  const status = (code: number) => () => new Response('blocked', { status: code });
+  const networkError = () => {
+    throw new TypeError('fetch failed');
+  };
+
+  beforeEach(() => vi.useFakeTimers({ now: NOW }));
+  afterEach(() => vi.useRealTimers());
+
+  it('keeps a client document served at its own client_id, raw, for seven days', async () => {
+    const { lastGood, records } = memoryLastGood();
+    const res = await createCimdFetch(sequence(ok), { lastGood })(URL_, {});
+    expect(await res.json()).toEqual({ ...DOC, application_type: 'native' });
+    expect(records.get(URL_)).toEqual({ value: { document: DOC, fetchedAt: NOW }, ttl: 604800 });
+    expect(LAST_GOOD_TTL_S).toBe(7 * 24 * 3600);
+  });
+
+  it('keeps nothing that is not a client document of that very URL', async () => {
+    const { lastGood, records } = memoryLastGood();
+    const cimd = createCimdFetch(
+      sequence(
+        () => Response.json({ ...DOC, client_id: 'https://evil.example/doc' }),
+        () => Response.json({ keys: [] }),
+        () => new Response('not json'),
+        () => Response.json({ ...DOC, pad: 'x'.repeat(17 * 1024) }),
+      ),
+      { lastGood },
+    );
+    for (let i = 0; i < 4; i++) await cimd(URL_, {});
+    expect(records.size).toBe(0);
+  });
+
+  it.each([403, 408, 429, 500, 502, 503])(
+    'serves the last good copy on a %i, and says so',
+    async (code) => {
+      const { lastGood } = memoryLastGood();
+      const { logger, events } = recordingLogger();
+      const cimd = createCimdFetch(sequence(ok, status(code)), { lastGood, logger });
+      await cimd(URL_, {});
+      vi.advanceTimersByTime(3600 * 1000);
+      const res = await cimd(URL_, {});
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toBe('application/json');
+      expect(res.headers.get('cache-control')).toBe('max-age=60');
+      expect(await res.json()).toEqual({ ...DOC, application_type: 'native' });
+      expect(events).toEqual([
+        [
+          'warn',
+          'oauth_client_fetch_failed',
+          { url: URL_, status: code, fallback: 'last_good', ageS: 3600, hint: CIMD_FETCH_HINT },
+        ],
+      ]);
+    },
+  );
+
+  it('serves the last good copy on a network error', async () => {
+    const { lastGood } = memoryLastGood();
+    const { logger, events } = recordingLogger();
+    const cimd = createCimdFetch(sequence(ok, networkError), { lastGood, logger });
+    await cimd(URL_, {});
+    const res = await cimd(URL_, {});
+    expect(await res.json()).toEqual({ ...DOC, application_type: 'native' });
+    expect(events).toEqual([
+      [
+        'warn',
+        'oauth_client_fetch_failed',
+        { url: URL_, error: 'fetch failed', fallback: 'last_good', ageS: 0, hint: CIMD_FETCH_HINT },
+      ],
+    ]);
+  });
+
+  it.each([404, 410, 401, 400, 302])(
+    'never falls back on a %i: the document is gone or the request is wrong',
+    async (code) => {
+      const { lastGood } = memoryLastGood();
+      const { logger, events } = recordingLogger();
+      const failure = new Response('gone', { status: code });
+      const cimd = createCimdFetch(
+        sequence(ok, () => failure),
+        { lastGood, logger },
+      );
+      await cimd(URL_, {});
+      expect(await cimd(URL_, {})).toBe(failure);
+      expect(events).toEqual([
+        [
+          'warn',
+          'oauth_client_fetch_failed',
+          { url: URL_, status: code, fallback: 'none', hint: CIMD_FETCH_HINT },
+        ],
+      ]);
+    },
+  );
+
+  it('hands the failure on when no copy was ever kept', async () => {
+    const { lastGood } = memoryLastGood();
+    const { logger, events } = recordingLogger();
+    const failure = new Response('blocked', { status: 403 });
+    expect(await createCimdFetch(async () => failure, { lastGood, logger })(URL_, {})).toBe(
+      failure,
+    );
+    await expect(createCimdFetch(networkError, { lastGood, logger })(URL_, {})).rejects.toThrow(
+      'fetch failed',
+    );
+    expect(events).toEqual([
+      [
+        'warn',
+        'oauth_client_fetch_failed',
+        { url: URL_, status: 403, fallback: 'none', hint: CIMD_FETCH_HINT },
+      ],
+      [
+        'warn',
+        'oauth_client_fetch_failed',
+        { url: URL_, error: 'fetch failed', fallback: 'none', hint: CIMD_FETCH_HINT },
+      ],
+    ]);
+  });
+
+  it('logs a failure without a store, and keeps nothing', async () => {
+    const { logger, events } = recordingLogger();
+    const failure = new Response('blocked', { status: 503 });
+    expect(await createCimdFetch(async () => failure, { logger })(URL_, {})).toBe(failure);
+    expect(await (await createCimdFetch(sequence(ok), { logger })(URL_, {})).json()).toEqual({
+      ...DOC,
+      application_type: 'native',
+    });
+    expect(events).toEqual([
+      [
+        'warn',
+        'oauth_client_fetch_failed',
+        { url: URL_, status: 503, fallback: 'none', hint: CIMD_FETCH_HINT },
+      ],
+    ]);
+  });
+
+  it('forgets the copy seven days after the last successful fetch', async () => {
+    const lastGood = createSealedCollection<CimdLastGood>(
+      createMemoryStore(),
+      'CimdDocument',
+      deriveKeyRing(Buffer.alloc(32, 3).toString('base64')),
+    );
+    const cimd = createCimdFetch(sequence(ok, status(403)), { lastGood });
+    await cimd(URL_, {});
+    vi.advanceTimersByTime(LAST_GOOD_TTL_S * 1000 - 1);
+    expect((await cimd(URL_, {})).status).toBe(200);
+    vi.advanceTimersByTime(1);
+    expect((await cimd(URL_, {})).status).toBe(403);
+  });
+
+  it('serves the live document when keeping its copy fails', async () => {
+    const { logger, events } = recordingLogger();
+    const lastGood: SealedCollection<CimdLastGood> = {
+      get: async () => undefined,
+      set: async () => {
+        throw new Error('ENOSPC');
+      },
+      delete: async () => undefined,
+    };
+    const res = await createCimdFetch(sequence(ok), { lastGood, logger })(URL_, {});
+    expect((await res.json()).client_id).toBe(URL_);
+    expect(events).toEqual([
+      ['warn', 'oauth_cimd_last_good_store_failed', { url: URL_, error: 'ENOSPC' }],
+    ]);
+  });
+
+  it('points the hint at a troubleshooting section that exists on main', () => {
+    const [, link = ''] = CIMD_FETCH_HINT.match(/(https:\/\/\S+)/) ?? [];
+    const { pathname, hash } = new URL(link);
+    expect(pathname).toBe('/fruggr/zendesk-mcp-server/blob/main/docs/troubleshooting.md');
+    const anchors = [
+      ...readFileSync('docs/troubleshooting.md', 'utf8').matchAll(/^#{1,6} (.+)$/gm),
+    ].map(([, title = '']) =>
+      title
+        .toLowerCase()
+        .replace(/[^\w\- ]/g, '')
+        .replaceAll(' ', '-'),
+    );
+    expect(anchors).toContain(hash.slice(1));
+    expect(CIMD_FETCH_HINT).toMatch(/^[\x20-\x7e]+$/);
   });
 });
