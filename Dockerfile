@@ -5,7 +5,7 @@
 # digest; Renovate moves them together, and release.yml republishes the image
 # when only these lines change.
 
-FROM dhi.io/node:24-alpine3.24-dev@sha256:0b0cc56ea256e9733ae8813e29a67816f4ce15379f5de6de72d088945f981332 AS build
+FROM dhi.io/node:24-alpine3.24-dev@sha256:d5be02eb084358e15c3640b6eb803c961b40fe03501ecf5ec2dc25291f2ee857 AS build
 WORKDIR /src
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY patches ./patches
