@@ -27,6 +27,8 @@ export interface VerifiedAccessToken {
   readonly canWrite: boolean;
   /** Epoch seconds. */
   readonly expiresAt: number;
+  /** The token's `aud` when it is one string; `/mcp` compares it with its own resource. */
+  readonly resource: string | undefined;
 }
 
 export interface ProtectedResourceMetadata {
@@ -42,7 +44,7 @@ export interface AuthorizationServer {
   readonly protectedResourceMetadata: ProtectedResourceMetadata;
   /** Every route that is neither `/mcp`, the protected-resource metadata nor `/healthz`. */
   handle(req: IncomingMessage, res: ServerResponse): Promise<void>;
-  /** Our JWE, decrypted and checked (issuer, audience, expiry, revocation), or `undefined`. */
+  /** Our JWE, decrypted and checked (issuer, expiry, revocation), or `undefined`; the audience is the caller's to check. */
   verifyAccessToken(bearer: string): Promise<VerifiedAccessToken | undefined>;
   /** Zendesk refused this grant's token: end the grant so the client signs in again. */
   revokeGrant(grantId: string): Promise<void>;
@@ -73,15 +75,9 @@ interface AccessTokenClaims {
   gid?: unknown;
 }
 
-const asVerified = (
-  claims: AccessTokenClaims,
-  issuer: string,
-  resource: string,
-): VerifiedAccessToken | undefined => {
-  const audiences = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
+const asVerified = (claims: AccessTokenClaims, issuer: string): VerifiedAccessToken | undefined => {
   const valid =
     claims.iss === issuer &&
-    audiences.includes(resource) &&
     typeof claims.exp === 'number' &&
     claims.exp * 1000 > Date.now() &&
     typeof claims.zd === 'string' &&
@@ -94,6 +90,7 @@ const asVerified = (
     subject: String(claims.sub),
     canWrite: typeof claims.scope === 'string' && claims.scope.split(' ').includes('write'),
     expiresAt: claims.exp as number,
+    resource: typeof claims.aud === 'string' ? claims.aud : undefined,
   };
 };
 
@@ -182,7 +179,7 @@ export const createAuthorizationServer = (
     // into the same undefined; the always-refuse sibling is killed.
     if (!keySet) return undefined;
     const { plaintext } = await compactDecrypt(bearer, keySet.accessToken.key);
-    return asVerified(JSON.parse(decoder.decode(plaintext)) as AccessTokenClaims, issuer, resource);
+    return asVerified(JSON.parse(decoder.decode(plaintext)) as AccessTokenClaims, issuer);
   };
 
   return {

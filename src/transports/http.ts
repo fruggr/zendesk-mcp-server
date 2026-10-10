@@ -2,6 +2,12 @@ import { randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node';
 import {
+  type AuthInfo,
+  OAuthError,
+  OAuthErrorCode,
+  verifyBearerToken,
+} from '@modelcontextprotocol/server';
+import {
   type AuthorizationServer,
   prepareAuthorizationServer,
   type VerifiedAccessToken,
@@ -153,11 +159,41 @@ const MISSING_BEARER_MESSAGE =
   'Missing or invalid access token. Sign in through this server: its OAuth ' +
   'authorization server is named in the protected resource metadata.';
 
-export const extractBearer = (request: IncomingMessage): string | undefined => {
+/**
+ * The access token on this request, or `undefined` when it must be refused.
+ * The SDK parses the header and checks the audience against our `/mcp`
+ * resource (`expectedResource`); decrypting and every other claim stay with
+ * the authorization server.
+ */
+export const authenticate = async (
+  request: IncomingMessage,
+  as: Pick<AuthorizationServer, 'resource' | 'verifyAccessToken'>,
+): Promise<VerifiedAccessToken | undefined> => {
   const header = request.headers['authorization'];
-  if (typeof header !== 'string') return undefined;
-  if (!header.toLowerCase().startsWith('bearer ')) return undefined;
-  return header.slice('bearer '.length).trim();
+  const verifier = {
+    verifyAccessToken: async (bearer: string): Promise<AuthInfo> => {
+      const token = await as.verifyAccessToken(bearer);
+      if (!token) throw new OAuthError(OAuthErrorCode.InvalidToken, 'Invalid access token');
+      return {
+        token: bearer,
+        clientId: token.clientId,
+        scopes: [],
+        expiresAt: token.expiresAt,
+        ...(token.resource &&
+          URL.canParse(token.resource) && { resource: new URL(token.resource) }),
+        extra: { verified: token },
+      };
+    },
+  };
+  try {
+    const info = await verifyBearerToken(typeof header === 'string' ? header : undefined, {
+      verifier,
+      expectedResource: new URL(as.resource),
+    });
+    return info.extra?.['verified'] as VerifiedAccessToken;
+  } catch {
+    return undefined;
+  }
 };
 
 // RFC 9728 section 3.1: the metadata of `<base>/mcp` lives at
@@ -425,8 +461,7 @@ export const startHttpTransport = async (
     // credential. Only a token we issued for this resource is accepted (no
     // passthrough); anything else gets a 401 + WWW-Authenticate that
     // bootstraps the OAuth flow on the client side.
-    const bearer = extractBearer(req);
-    const token = bearer ? await as.verifyAccessToken(bearer) : undefined;
+    const token = await authenticate(req, as);
     if (!token) {
       sendUnauthorized(res, as.issuer);
       return;

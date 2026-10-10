@@ -161,10 +161,19 @@ describe('createAuthorizationServer', () => {
         subject: 'zendesk:1',
         canWrite: false,
         expiresAt: exp,
+        resource: `${issuer}/mcp`,
       });
-      expect(
-        await as.verifyAccessToken(await forge(issuer, { aud: ['https://x', `${issuer}/mcp`] })),
-      ).toMatchObject({ grantId: 'g-1' });
+    });
+
+    // The audience is checked by `/mcp` (the SDK's `expectedResource`), which
+    // needs it as one string: anything else is handed back as no resource.
+    it('hands back the audience only when it is one string', async () => {
+      const as = build(createMemoryStore());
+      const resourceOf = async (aud: unknown) =>
+        (await as.verifyAccessToken(await forge(issuer, { aud })))?.resource;
+      expect(await resourceOf('https://other.example/mcp')).toBe('https://other.example/mcp');
+      expect(await resourceOf([`${issuer}/mcp`])).toBeUndefined();
+      expect(await resourceOf(undefined)).toBeUndefined();
     });
 
     it('allows write only to a token whose scope names it', async () => {
@@ -186,7 +195,6 @@ describe('createAuthorizationServer', () => {
         { zd: 42 },
         { gid: undefined },
         { gid: 7 },
-        { aud: undefined },
         { iss: undefined },
       ]) {
         expect(await as.verifyAccessToken(await forge(issuer, claims))).toBeUndefined();
@@ -272,6 +280,7 @@ describe('createAuthorizationServer', () => {
         subject: 'zendesk:9999',
         canWrite: true,
         expiresAt: expect.any(Number),
+        resource: `${base}/mcp`,
       });
       const lifetime = (verified?.expiresAt ?? 0) - Date.now() / 1000;
       expect(lifetime).toBeGreaterThan(3500);

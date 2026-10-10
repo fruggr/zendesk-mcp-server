@@ -1,10 +1,11 @@
 import { request as httpRequest, type IncomingMessage } from 'node:http';
 import { HttpResponse, http } from 'msw';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { VerifiedAccessToken } from '../../../src/auth/server/authorization-server';
 import { type Config, Namespace } from '../../../src/config';
 import {
+  authenticate,
   DEFAULT_BROWSER_MCP_CLIENT_ORIGINS,
-  extractBearer,
   MAX_BODY_BYTES,
   resolveAllowedOrigin,
   resolvePublicUrl,
@@ -114,25 +115,46 @@ const initializeSession = async (port: number, authorization: string): Promise<s
   return sessionId;
 };
 
-describe('extractBearer', () => {
-  it('returns the token from a well-formed Bearer header', () => {
-    expect(extractBearer(mockRequest({ authorization: 'Bearer abc123' }))).toBe('abc123');
+describe('authenticate', () => {
+  const resource = 'https://mcp.example.com/mcp';
+  const verified = (aud: string | undefined): VerifiedAccessToken => ({
+    zendeskAccessToken: 'zd',
+    grantId: 'g-1',
+    clientId: 'c-1',
+    subject: 'zendesk:1',
+    canWrite: false,
+    expiresAt: Math.floor(Date.now() / 1000) + 60,
+    resource: aud,
+  });
+  const as = (aud: string | undefined) => ({
+    resource,
+    verifyAccessToken: async (bearer: string) => (bearer === 'good' ? verified(aud) : undefined),
+  });
+  const auth = (authorization: string | string[] | undefined, server = as(resource)) =>
+    authenticate(mockRequest(authorization === undefined ? {} : { authorization }), server);
+
+  it('returns the verified token from a well-formed Bearer header', async () => {
+    expect(await auth('Bearer good')).toEqual(verified(resource));
   });
 
-  it('matches Bearer case-insensitively', () => {
-    expect(extractBearer(mockRequest({ authorization: 'bearer xyz789' }))).toBe('xyz789');
+  it('matches Bearer case-insensitively', async () => {
+    expect(await auth('bearer good')).toMatchObject({ grantId: 'g-1' });
   });
 
-  it('returns undefined when the header is missing', () => {
-    expect(extractBearer(mockRequest({}))).toBeUndefined();
+  it('refuses a missing header, another scheme, or several Authorization headers', async () => {
+    expect(await auth(undefined)).toBeUndefined();
+    expect(await auth('Basic good')).toBeUndefined();
+    expect(await auth(['Bearer good', 'Bearer good'])).toBeUndefined();
   });
 
-  it('returns undefined when the header is not a Bearer token', () => {
-    expect(extractBearer(mockRequest({ authorization: 'Basic abc=' }))).toBeUndefined();
+  it('refuses a token the authorization server rejects', async () => {
+    expect(await auth('Bearer bad')).toBeUndefined();
   });
 
-  it('returns undefined when the header is an array (multiple Authorization headers)', () => {
-    expect(extractBearer(mockRequest({ authorization: ['Bearer a', 'Bearer b'] }))).toBeUndefined();
+  it('refuses a token whose audience is missing, unparsable or another resource', async () => {
+    expect(await auth('Bearer good', as(undefined))).toBeUndefined();
+    expect(await auth('Bearer good', as('not a url'))).toBeUndefined();
+    expect(await auth('Bearer good', as('https://other.example/mcp'))).toBeUndefined();
   });
 });
 

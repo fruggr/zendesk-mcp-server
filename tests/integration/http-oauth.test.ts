@@ -478,7 +478,7 @@ describe('HTTP authorization server', () => {
   });
 
   describe('access tokens', () => {
-    it('reject a raw Zendesk token (no passthrough), a foreign audience and an expired token', async () => {
+    it('reject a raw Zendesk token (no passthrough), a missing, foreign or extra audience and an expired token', async () => {
       await start();
       const { tokens } = await signInWithDcr(base);
       expect((await callMcp(base, tokens.body.access_token)).status).toBe(200);
@@ -514,6 +514,11 @@ describe('HTTP authorization server', () => {
           .encrypt(keys.accessToken.key);
       expect((await callMcp(base, await forge({}))).status).toBe(200);
       expect((await callMcp(base, await forge({ aud: 'https://other.example/mcp' }))).status).toBe(
+        401,
+      );
+      // The audience check is the SDK's (`expectedResource`): one audience, ours.
+      expect((await callMcp(base, await forge({ aud: undefined }))).status).toBe(401);
+      expect((await callMcp(base, await forge({ aud: [`${base}/mcp`, 'https://x'] }))).status).toBe(
         401,
       );
       expect((await callMcp(base, await forge({ iss: 'https://other.example' }))).status).toBe(401);
