@@ -89,9 +89,9 @@ and it breaks the spec.
 
 - **Access token**: a short-lived, encrypted JWT (JWE). Its audience is the
   canonical `/mcp` resource, and it carries the Zendesk access token.
-  `/mcp` leaves the audience check to the SDK's `verifyBearerToken`
-  (`expectedResource`), so `aud` must be that one string; decrypting and the
-  other claims stay ours.
+  `/mcp` leaves the audience and expiry checks to the SDK's
+  `verifyBearerToken` (`expectedResource`), so `aud` must be that one string;
+  decrypting and the other claims stay ours.
   `oidc-provider` does not persist JWT-format access tokens: `save()` writes
   nothing for them.
 - **Refresh token**: opaque, persisted. The grant holds the Zendesk refresh

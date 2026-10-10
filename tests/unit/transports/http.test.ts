@@ -142,6 +142,10 @@ describe('authenticate', () => {
     expect(await auth('bearer good')).toMatchObject({ grantId: 'g-1' });
   });
 
+  it('accepts several spaces between the scheme and the token', async () => {
+    expect(await auth('Bearer   good')).toMatchObject({ grantId: 'g-1' });
+  });
+
   it('refuses a missing header, another scheme, or several Authorization headers', async () => {
     expect(await auth(undefined)).toBeUndefined();
     expect(await auth('Basic good')).toBeUndefined();

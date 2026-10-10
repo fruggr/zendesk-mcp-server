@@ -159,11 +159,15 @@ const MISSING_BEARER_MESSAGE =
   'Missing or invalid access token. Sign in through this server: its OAuth ' +
   'authorization server is named in the protected resource metadata.';
 
+// The SDK splits the header on one space; RFC 6750 allows several between
+// scheme and token.
+const SPACES = / +/;
+
 /**
  * The access token on this request, or `undefined` when it must be refused.
  * The SDK parses the header and checks the audience against our `/mcp`
- * resource (`expectedResource`); decrypting and every other claim stay with
- * the authorization server.
+ * resource (`expectedResource`) and the expiry; decrypting and every other
+ * claim stay with the authorization server.
  */
 export const authenticate = async (
   request: IncomingMessage,
@@ -186,7 +190,8 @@ export const authenticate = async (
     },
   };
   try {
-    const info = await verifyBearerToken(typeof header === 'string' ? header : undefined, {
+    const normalized = typeof header === 'string' ? header.replace(SPACES, ' ') : undefined;
+    const info = await verifyBearerToken(normalized, {
       verifier,
       expectedResource: new URL(as.resource),
     });
