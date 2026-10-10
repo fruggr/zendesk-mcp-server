@@ -7,13 +7,12 @@ import { zendeskGet } from './zendesk-api';
  * host, not by an id in the path: a brand's Guide lives at
  * `https://<brand.subdomain>.zendesk.com/api/v2/help_center`. The allow-list
  * (`--brand-ids`) mixes ids and subdomains; both resolve to the subdomain here,
- * once per (account subdomain, id-or-subdomain) and cached: brands change
- * almost never, and every Help Center tool call would otherwise pay a
- * `GET /api/v2/brands` round-trip first.
+ * against one brand list fetched once and cached for BRAND_LIST_TTL_MS, so a
+ * Help Center call does not pay a `GET /api/v2/brands` round-trip each time.
  */
-const BRAND_SUBDOMAIN = /^[a-z0-9][a-z0-9-]*$/;
-
 export type BrandSubdomainResolver = (idOrSubdomain: string) => Promise<string>;
+
+const BRAND_SUBDOMAIN = /^[a-z0-9][a-z0-9-]*$/;
 
 /**
  * Fetch every brand of the account (cursor-paginated). `page[size]` is sent on
