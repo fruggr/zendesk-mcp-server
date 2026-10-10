@@ -728,12 +728,8 @@ const createListBrandsTool = (ctx: ToolContext): ToolDefinition[] => {
       },
       handler: async () => {
         const token = await getToken();
-        // Brands live on the account-wide Support API, never under the
-        // brand-scoped Help Center base — this call stays unscoped on purpose.
-        // The walk is shared with the brand resolver (stuck-cursor guard
-        // included) but deliberately NOT its cache: list_brands is the
-        // discovery surface, so it shows a fresh, complete, unfiltered listing
-        // even if the resolver's cache was primed by an earlier call.
+        // Account-wide Support API, so unscoped. Same walk as the resolver but
+        // not its cache: discovery must show a fresh, complete listing.
         const brands = await fetchAllBrands(subdomain, token);
         const visible = isAll
           ? brands
@@ -2356,7 +2352,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: true,
       title: 'List User Segments',
       description:
-        'List all user segments. User segments control article visibility (who can view). Use the ID when creating or updating articles. User segments are account-wide (shared across brands), so no brand_id is accepted.',
+        'List all user segments. User segments control article visibility (who can view). Use the ID when creating or updating articles.',
       inputSchema: z.object({}),
       annotations: {
         readOnlyHint: true,

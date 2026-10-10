@@ -61,9 +61,13 @@ describe('resolveBrand', () => {
 
     it('tolerates an unresolvable allow-list entry when the per-call brand is valid', async () => {
       // A typo'd or since-deleted entry must not break calls naming a valid brand.
+      // 'brand111' is no exact match for 111, so every entry is resolved and the
+      // failing 'typo' resolution is the one being tolerated.
       const flakyResolver = (s: string): Promise<string> =>
         s === 'typo' ? Promise.reject(new Error('Unknown brand "typo"')) : stubResolver(s);
-      await expect(resolveBrand(111, ['111', 'typo'], flakyResolver)).resolves.toBe('brand111');
+      await expect(resolveBrand(111, ['brand111', 'typo'], flakyResolver)).resolves.toBe(
+        'brand111',
+      );
     });
 
     it('short-circuits an exact id match before resolving allow-list entries', async () => {

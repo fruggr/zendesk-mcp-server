@@ -81,6 +81,18 @@ describe('help center tools', () => {
       expect(lacking).toEqual([]);
     });
 
+    it.each([
+      ['unset', undefined],
+      ['single-lock', ['424242']],
+    ])('no tool description mentions brands when --brand-ids is %s', (_mode, brandIds) => {
+      // Unset and single-lock promise the tool surface of a single-brand
+      // install: brand vocabulary there is noise an agent cannot act on.
+      const mentioning = createHelpCenterTools({ ...ctx, brandIds })
+        .filter((t) => /brand/i.test(t.description))
+        .map((t) => t.name);
+      expect(mentioning).toEqual([]);
+    });
+
     it('every brand-scoped tool has a REQUIRED brand_id field in multi mode', () => {
       const multiCtx: ToolContext = { ...ctx, brandIds: ['424242', '777777'] };
       const tools = createHelpCenterTools(multiCtx).filter(

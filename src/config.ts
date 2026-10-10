@@ -31,18 +31,11 @@ export const ConfigSchema = z.object({
   subdomain: z.string().min(1, 'ZENDESK_SUBDOMAIN is required'),
   oauthClientId: z.string().min(1),
   /**
-   * Restrict every Help Center operation (tools, topology resource, article
-   * resources) to an allow-list of brands on a multi-brand account. Entries are
-   * brand ids or brand subdomains (display names can contain commas and change;
-   * a subdomain is unique and is what the brand host is built from), or the
-   * special value 'all' for every brand of the account. One entry hard-locks
-   * the server to that brand; several (or 'all') expose `list_brands` and make
-   * the per-call `brand_id` parameter REQUIRED on every brand-scoped Help
-   * Center tool — no silent default. Unset targets the account default brand,
-   * byte-identical to a single-brand account. Resolution is lazy, on first use:
-   * startup validates the format only, an unknown id/subdomain fails on the
-   * first call that resolves it. Support-side namespaces (tickets, users,
-   * search) are account-wide and unaffected.
+   * Help Center brand allow-list (`--brand-ids`): brand ids or subdomains, or
+   * 'all'. Unset: account default brand, surface unchanged. One entry: hard
+   * lock, no `brand_id` field. Several or 'all': `list_brands` exposed and
+   * `brand_id` required on brand-scoped tools. Entries resolve lazily, on first
+   * use. Modes and rationale: docs/configuration.md.
    */
   brandIds: z.array(z.string().min(1)).min(1).optional(),
   logLevel: LogLevel,
