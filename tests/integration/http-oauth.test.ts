@@ -28,6 +28,7 @@ import {
   refresh,
   registerDcrClient,
   signInWithDcr,
+  type TokenResponse,
   tokenRequest,
 } from './oauth-client';
 
@@ -100,6 +101,25 @@ const cimdDocuments = async (): Promise<Record<string, unknown>> => ({
   },
 });
 
+/** The discovery fields these tests read; values stay `unknown` because only `expect` consumes them. */
+interface ServerMetadata {
+  issuer: unknown;
+  authorization_endpoint: unknown;
+  token_endpoint: unknown;
+  registration_endpoint: unknown;
+  client_id_metadata_document_supported: unknown;
+  authorization_response_iss_parameter_supported: unknown;
+  code_challenge_methods_supported: unknown;
+  grant_types_supported: unknown;
+  response_types_supported: unknown;
+  token_endpoint_auth_methods_supported: unknown;
+  scopes_supported: unknown;
+  userinfo_endpoint: unknown;
+  end_session_endpoint: unknown;
+}
+
+const metadataOf = async (res: Response) => (await res.json()) as ServerMetadata;
+
 const cimdRequests: string[] = [];
 // Documents whose host answers 403, as bot protection does to some egress IPs.
 const blockedDocuments = new Set<string>();
@@ -158,11 +178,11 @@ describe('HTTP authorization server', () => {
     it('advertises DCR, CIMD, RFC 9207 iss, PKCE S256 and the client auth methods ChatGPT needs', async () => {
       await start({ publicUrl: 'https://mcp.example.com' });
       // As a TLS-terminating reverse proxy in front would forward it.
-      const meta = await (
+      const meta = await metadataOf(
         await fetch(`${base}/.well-known/oauth-authorization-server`, {
           headers: { 'x-forwarded-proto': 'https', 'x-forwarded-host': 'mcp.example.com' },
-        })
-      ).json();
+        }),
+      );
       expect({
         issuer: meta.issuer,
         authorization_endpoint: meta.authorization_endpoint,
@@ -212,20 +232,22 @@ describe('HTTP authorization server', () => {
 
     it('narrows every advertised scope to read under --read-only', async () => {
       await start({ readOnly: true });
-      const prm = await (await fetch(`${base}/.well-known/oauth-protected-resource/mcp`)).json();
-      const meta = await (await fetch(`${base}/.well-known/oauth-authorization-server`)).json();
+      const prm = await metadataOf(await fetch(`${base}/.well-known/oauth-protected-resource/mcp`));
+      const meta = await metadataOf(await fetch(`${base}/.well-known/oauth-authorization-server`));
       expect(prm.scopes_supported).toEqual(['read']);
       expect(meta.scopes_supported).not.toContain('write');
     });
 
     it('serves the derived signing key, never the library development keys', async () => {
       await start();
-      const jwks = await (await fetch(`${base}/jwks`)).json();
+      const jwks = (await (await fetch(`${base}/jwks`)).json()) as {
+        keys: Array<{ kid: string; d?: unknown }>;
+      };
       expect(jwks.keys.map((k: { kid: string }) => k.kid)).toEqual([
         deriveKeyRing(OLD)[0].signingJwk.kid,
       ]);
       expect(jwks.keys[0]).toMatchObject({ kty: 'OKP', crv: 'Ed25519' });
-      expect(jwks.keys[0].d).toBeUndefined();
+      expect(jwks.keys[0]?.d).toBeUndefined();
     });
   });
 
@@ -585,7 +607,13 @@ describe('HTTP authorization server', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ redirect_uris: [DCR_REDIRECT] }),
       });
-      const body = await res.json();
+      const body = (await res.json()) as {
+        client_id: string;
+        grant_types: unknown;
+        response_types: unknown;
+        token_endpoint_auth_method: unknown;
+        id_token_signed_response_alg: unknown;
+      };
       expect(res.status).toBe(201);
       expect({
         grant_types: body.grant_types,
@@ -612,7 +640,7 @@ describe('HTTP authorization server', () => {
 
     it('advertises and accepts the code flow only', async () => {
       await start();
-      const meta = await (await fetch(`${base}/.well-known/oauth-authorization-server`)).json();
+      const meta = await metadataOf(await fetch(`${base}/.well-known/oauth-authorization-server`));
       expect(meta.response_types_supported).toEqual(['code']);
       const { body } = await registerDcrClient(base, { response_types: ['code id_token'] });
       expect(body.error).toBe('invalid_client_metadata');
@@ -728,16 +756,17 @@ describe('HTTP authorization server', () => {
         code: result.code ?? '',
         code_verifier: result.verifier,
       });
-      const tokens = await res.json();
+      const tokens = (await res.json()) as TokenResponse['body'];
       expect(res.status).toBe(200);
       expect((await callMcp(base, tokens.access_token)).status).toBe(200);
       const next = await form('/token', {
         grant_type: 'refresh_token',
         client_id: clientId,
-        refresh_token: tokens.refresh_token,
+        refresh_token: tokens.refresh_token ?? '',
       });
       expect(next.status).toBe(200);
-      expect((await callMcp(base, (await next.json()).access_token)).status).toBe(200);
+      const refreshed = (await next.json()) as TokenResponse['body'];
+      expect((await callMcp(base, refreshed.access_token)).status).toBe(200);
     });
 
     it('revokes a refresh token at the revocation endpoint', async () => {
@@ -795,7 +824,7 @@ describe('HTTP authorization server', () => {
 
     it('narrows the grantable scopes to read under --read-only', async () => {
       await start({ readOnly: true });
-      const meta = await (await fetch(`${base}/.well-known/oauth-authorization-server`)).json();
+      const meta = await metadataOf(await fetch(`${base}/.well-known/oauth-authorization-server`));
       expect(meta.scopes_supported).toEqual(['read', 'offline_access', 'openid']);
       const clientId = (await registerDcrClient(base)).body.client_id ?? '';
       const result = await authorize(base, {

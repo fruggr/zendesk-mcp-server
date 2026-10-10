@@ -14,8 +14,8 @@ const textOf = (result: { content?: Array<{ type: string; text?: string }> }): s
 const toolNames = (tools: Array<{ name: string }>): string[] => tools.map((t) => t.name);
 
 /** Text of a resources/read result, joined for easy asserts. */
-const resourceTextOf = (read: { contents?: Array<{ text?: unknown }> }): string =>
-  (read.contents ?? []).map((c) => (typeof c.text === 'string' ? c.text : '')).join('\n');
+const resourceTextOf = (read: { contents?: Array<{ text: string } | { blob: string }> }): string =>
+  (read.contents ?? []).map((c) => ('text' in c ? c.text : '')).join('\n');
 
 /**
  * Shared, transport-agnostic integration scenarios. Every assertion here goes
@@ -152,9 +152,7 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
       it('reads any article id as a Markdown resource', async () => {
         connected = await harness.connect(makeConfig());
         const read = await connected.client.readResource({ uri: 'zendesk-hc://article/5001' });
-        const text = (read.contents ?? [])
-          .map((c) => (typeof c.text === 'string' ? c.text : ''))
-          .join('\n');
+        const text = resourceTextOf(read);
 
         expect(text).toContain('(5001)');
         expect(text).toContain('Testing guide'); // body converted from HTML
@@ -293,7 +291,9 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
           const { tools } = await connected.client.listTools();
           expect(tools.length).toBeGreaterThan(0);
           for (const tool of tools) {
-            expect(tool.inputSchema.$schema).toBe('https://json-schema.org/draft/2020-12/schema');
+            expect(tool.inputSchema['$schema']).toBe(
+              'https://json-schema.org/draft/2020-12/schema',
+            );
             expect(tool.execution).toBeUndefined();
           }
           await connected.close();

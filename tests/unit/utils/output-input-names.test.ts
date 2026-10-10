@@ -25,7 +25,7 @@ const inputsOf = (name: string): string[] => {
 const normalise = (label: string) => label.toLowerCase().replaceAll(' ', '_');
 
 const shownFields = (text: string) =>
-  [...text.matchAll(/\*\*([^*]+)\*\*(?: \(([a-z_]+)\))?:/g)].map(([, label, input]) => ({
+  [...text.matchAll(/\*\*([^*]+)\*\*(?: \(([a-z_]+)\))?:/g)].map(([, label = '', input]) => ({
     label,
     input,
   }));

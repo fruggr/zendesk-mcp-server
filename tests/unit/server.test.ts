@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { describe, expect, it } from 'vitest';
-import type { Config } from '../../src/config';
+import { type Config, ConfigSchema } from '../../src/config';
 import { filterTools } from '../../src/routing/registry';
 import {
   aggregateAnnotations,
@@ -28,7 +28,7 @@ interface RegisteredTool {
 const introspect = (server: ReturnType<typeof createMcpServer>): Record<string, RegisteredTool> =>
   (server as unknown as { _registeredTools: Record<string, RegisteredTool> })._registeredTools;
 
-const baseConfig: Config = {
+const baseConfig: Config = ConfigSchema.parse({
   subdomain: 'testsubdomain',
   oauthClientId: 'test_zendesk',
   logLevel: 'info',
@@ -38,7 +38,7 @@ const baseConfig: Config = {
   host: '0.0.0.0',
   port: 3000,
   corsOrigins: [],
-};
+});
 
 const getToken = () => 'test-token';
 

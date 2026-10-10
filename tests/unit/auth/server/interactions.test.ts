@@ -540,7 +540,8 @@ describe('createInteractionRoutes', () => {
 
     it('refuses a confirmation without a session instead of failing', async () => {
       const { routes } = build();
-      fake.details = { ...consentPrompt(DCR, DCR_REDIRECT), session: undefined };
+      const { session, ...withoutSession } = consentPrompt(DCR, DCR_REDIRECT);
+      fake.details = withoutSession;
       await post(routes, '/interaction/uid-1/confirm');
       expect(fake.finished[0]?.[0]).toMatchObject({ error: 'access_denied' });
     });

@@ -16,6 +16,7 @@ import {
   withTranslationsSideload,
 } from '../../msw-handlers';
 import { mswServer } from '../../setup';
+import { firstText } from '../../tool-result';
 
 const ctx: ToolContext = { subdomain: 'testsubdomain', getToken: () => 'test-token' };
 const HC_BASE = 'https://testsubdomain.zendesk.com/api/v2/help_center';
@@ -37,7 +38,7 @@ describe('help center tools', () => {
       mswServer.use(promotedArticlesHandler);
       const tool = findTool('list_promoted_articles');
       const result = await tool.handler({});
-      const text = result.content[0]?.text ?? '';
+      const text = firstText(result) ?? '';
 
       expect(text).toContain('Featured guide'); // promoted (5001)
       expect(text).toContain('5001');
@@ -51,7 +52,7 @@ describe('help center tools', () => {
       // The default /articles handler returns a single non-promoted article.
       const tool = findTool('list_promoted_articles');
       const result = await tool.handler({});
-      expect(result.content[0]?.text).toContain('No promoted articles');
+      expect(firstText(result)).toContain('No promoted articles');
     });
 
     it('flags truncation and the API cost when the scan hits the page cap', async () => {
@@ -66,7 +67,7 @@ describe('help center tools', () => {
       );
       const tool = findTool('list_promoted_articles');
       const result = await tool.handler({});
-      const text = result.content[0]?.text ?? '';
+      const text = firstText(result) ?? '';
       expect(text).toMatch(/cap|omitted|missing/i);
       expect(text).toMatch(/Zendesk API request/i); // surfaces the cost to the LLM
     });
@@ -85,7 +86,7 @@ describe('help center tools', () => {
       );
       const tool = findTool('list_promoted_articles');
       const result = await tool.handler({});
-      const text = result.content[0]?.text ?? '';
+      const text = firstText(result) ?? '';
       expect(text).not.toMatch(/cap/i); // not truncated
       expect(text).toContain('2 Zendesk API requests');
     });
@@ -95,13 +96,13 @@ describe('help center tools', () => {
     it('searches articles', async () => {
       const tool = findTool('search_articles');
       const result = await tool.handler({ query: 'testing', per_page: 100, page: 1 });
-      expect(result.content[0]?.text).toContain('How to test');
+      expect(firstText(result)).toContain('How to test');
     });
 
     it('does not include article body', async () => {
       const tool = findTool('search_articles');
       const result = await tool.handler({ query: 'testing', per_page: 100, page: 1 });
-      expect(result.content[0]?.text).not.toContain('Testing guide');
+      expect(firstText(result)).not.toContain('Testing guide');
     });
   });
 
@@ -125,21 +126,21 @@ describe('help center tools', () => {
     it('returns article with translations list', async () => {
       const tool = findTool('get_article');
       const result = await tool.handler({ article_id: 5000 });
-      expect(result.content[0]?.text).toContain('How to test');
-      expect(result.content[0]?.text).toContain('Available translations');
-      expect(result.content[0]?.text).toContain('fr');
+      expect(firstText(result)).toContain('How to test');
+      expect(firstText(result)).toContain('Available translations');
+      expect(firstText(result)).toContain('fr');
     });
 
     it('supports locale parameter', async () => {
       const tool = findTool('get_article');
       const result = await tool.handler({ article_id: 5000, locale: 'fr' });
-      expect(result.content[0]?.text).toContain('5000');
+      expect(firstText(result)).toContain('5000');
     });
 
     it('does not show the large-article hint on small articles', async () => {
       const tool = findTool('get_article');
       const result = await tool.handler({ article_id: 5000 });
-      expect(result.content[0]?.text).not.toContain('get_article_outline');
+      expect(firstText(result)).not.toContain('get_article_outline');
     });
 
     it('prepends a hint pointing to get_article_outline on large articles (by size)', async () => {
@@ -152,8 +153,8 @@ describe('help center tools', () => {
       );
       const tool = findTool('get_article');
       const result = await tool.handler({ article_id: 5000 });
-      expect(result.content[0]?.text).toContain('get_article_outline');
-      expect(result.content[0]?.text).toContain('update_article_section');
+      expect(firstText(result)).toContain('get_article_outline');
+      expect(firstText(result)).toContain('update_article_section');
     });
 
     it('prepends a hint pointing to get_article_outline on multi-section articles', async () => {
@@ -169,7 +170,7 @@ describe('help center tools', () => {
       );
       const tool = findTool('get_article');
       const result = await tool.handler({ article_id: 5000 });
-      expect(result.content[0]?.text).toContain('get_article_outline');
+      expect(firstText(result)).toContain('get_article_outline');
     });
   });
 
@@ -191,7 +192,7 @@ describe('help center tools', () => {
     it('lists categories', async () => {
       const tool = findTool('list_categories');
       const result = await tool.handler({ page_size: 25 });
-      expect(result.content[0]?.text).toContain('General');
+      expect(firstText(result)).toContain('General');
     });
   });
 
@@ -199,13 +200,13 @@ describe('help center tools', () => {
     it('lists sections', async () => {
       const tool = findTool('list_sections');
       const result = await tool.handler({ page_size: 25 });
-      expect(result.content[0]?.text).toContain('FAQ');
+      expect(firstText(result)).toContain('FAQ');
     });
 
     it('filters by category_id', async () => {
       const tool = findTool('list_sections');
       const result = await tool.handler({ category_id: 800, page_size: 25 });
-      expect(result.content[0]?.text).toContain('FAQ');
+      expect(firstText(result)).toContain('FAQ');
     });
   });
 
@@ -213,33 +214,33 @@ describe('help center tools', () => {
     it('lists articles', async () => {
       const tool = findTool('list_articles');
       const result = await tool.handler({ page_size: 25 });
-      expect(result.content[0]?.text).toContain('How to test');
+      expect(firstText(result)).toContain('How to test');
     });
 
     it('does not include article body', async () => {
       const tool = findTool('list_articles');
       const result = await tool.handler({ page_size: 25 });
-      expect(result.content[0]?.text).not.toContain('Testing guide');
+      expect(firstText(result)).not.toContain('Testing guide');
     });
 
     it('filters by section_id', async () => {
       const tool = findTool('list_articles');
       const result = await tool.handler({ section_id: 600, page_size: 25 });
-      expect(result.content[0]?.text).toContain('How to test');
+      expect(firstText(result)).toContain('How to test');
     });
 
     it('filters by locale', async () => {
       const tool = findTool('list_articles');
       const result = await tool.handler({ locale: 'fr', page_size: 25 });
-      expect(result.content[0]?.text).toContain('How to test');
+      expect(firstText(result)).toContain('How to test');
     });
 
     it('includes translation locales when include_translations is true', async () => {
       const tool = findTool('list_articles');
       const result = await tool.handler({ page_size: 25, include_translations: true });
-      expect(result.content[0]?.text).toContain('Translations');
-      expect(result.content[0]?.text).toContain('fr');
-      expect(result.content[0]?.text).toContain('en-us');
+      expect(firstText(result)).toContain('Translations');
+      expect(firstText(result)).toContain('fr');
+      expect(firstText(result)).toContain('en-us');
     });
 
     it('supports sort_by and sort_order', async () => {
@@ -249,7 +250,7 @@ describe('help center tools', () => {
         sort_by: 'created_at',
         sort_order: 'desc',
       });
-      expect(result.content[0]?.text).toContain('How to test');
+      expect(firstText(result)).toContain('How to test');
     });
   });
 
@@ -257,14 +258,14 @@ describe('help center tools', () => {
     it('lists translations for an article', async () => {
       const tool = findTool('list_article_translations');
       const result = await tool.handler({ article_id: 5000 });
-      expect(result.content[0]?.text).toContain('fr');
-      expect(result.content[0]?.text).toContain('Comment tester');
+      expect(firstText(result)).toContain('fr');
+      expect(firstText(result)).toContain('Comment tester');
     });
 
     it('does not include translation body', async () => {
       const tool = findTool('list_article_translations');
       const result = await tool.handler({ article_id: 5000 });
-      expect(result.content[0]?.text).not.toContain('Guide de test');
+      expect(firstText(result)).not.toContain('Guide de test');
     });
 
     it('says the listing cannot be narrowed rather than advising pagination', async () => {
@@ -282,7 +283,7 @@ describe('help center tools', () => {
         ),
       );
       const tool = findTool('list_article_translations');
-      const text = (await tool.handler({ article_id: 5000 })).content[0]?.text ?? '';
+      const text = firstText(await tool.handler({ article_id: 5000 })) ?? '';
       expect(text).toContain('list_article_translations takes only article_id');
       expect(text).not.toContain('Use pagination or filters');
     });
@@ -298,8 +299,8 @@ describe('help center tools', () => {
         body: '<p>Guide</p>',
         draft: false,
       });
-      expect(result.content[0]?.text).toContain('Translation created');
-      expect(result.content[0]?.text).toContain('"fr"');
+      expect(firstText(result)).toContain('Translation created');
+      expect(firstText(result)).toContain('"fr"');
     });
   });
 
@@ -311,7 +312,7 @@ describe('help center tools', () => {
         locale: 'fr',
         title: 'Updated title',
       });
-      expect(result.content[0]?.text).toContain('Translation updated');
+      expect(firstText(result)).toContain('Translation updated');
     });
   });
 
@@ -367,7 +368,7 @@ describe('help center tools', () => {
       findTool(node.listTool).handler({ [node.idParam]: node.nodeId, ...extra });
 
     it('reports each locale with its localized name, description state and draft state', async () => {
-      const text = (await call()).content[0]?.text ?? '';
+      const text = firstText(await call()) ?? '';
       expect(text).toContain(`Translation: en-us (${node.sourceTranslationId})`);
       expect(text).toContain(`Translation: fr (${node.targetTranslationId})`);
       // `title` is the localized NAME here, not an article title — the rendering
@@ -384,7 +385,7 @@ describe('help center tools', () => {
           HttpResponse.json({ translations: [{ ...node.fixture, body: '' }] }),
         ),
       );
-      expect((await call()).content[0]?.text).toContain('**Description**: empty');
+      expect(firstText(await call())).toContain('**Description**: empty');
     });
 
     it('surfaces the draft flag of an unpublished translation', async () => {
@@ -395,7 +396,7 @@ describe('help center tools', () => {
           }),
         ),
       );
-      expect((await call()).content[0]?.text).toContain('**Draft**: true');
+      expect(firstText(await call())).toContain('**Draft**: true');
     });
   });
 
@@ -456,10 +457,10 @@ describe('help center tools', () => {
         // Creating publishes by default, so the node is actually reachable.
         draft: false,
       });
-      expect(result.content[0]?.text).toContain(
+      expect(firstText(result)).toContain(
         `Translation created for ${node.level} #${node.nodeId} in "de"`,
       );
-      expect(result.content[0]?.text).toContain('(published)');
+      expect(firstText(result)).toContain('(published)');
     });
 
     it('defaults the description to empty on creation rather than omitting it', async () => {
@@ -497,10 +498,10 @@ describe('help center tools', () => {
       expect(writes[0]?.method).toBe('PUT');
       // Publishing a draft must not blank the existing name or description.
       expect(writes[0]?.payload).toEqual({ draft: false });
-      expect(result.content[0]?.text).toContain(
+      expect(firstText(result)).toContain(
         `Translation updated for ${node.level} #${node.nodeId} in "fr"`,
       );
-      expect(result.content[0]?.text).toContain('(published)');
+      expect(firstText(result)).toContain('(published)');
     });
 
     it('clears the description when an empty string is passed explicitly', async () => {
@@ -533,7 +534,7 @@ describe('help center tools', () => {
         ),
       );
       const result = await write({ locale: 'fr', draft: true });
-      expect(result.content[0]?.text).toContain('(draft, not visible to end users)');
+      expect(firstText(result)).toContain('(draft, not visible to end users)');
     });
   });
 
@@ -668,7 +669,7 @@ describe('help center tools', () => {
     it('tells a missing translation apart from an unpublished draft', async () => {
       seedTree([600, 601, 602], [800, 801]);
       const result = await findTool('find_translation_gaps').handler({ locale: 'fr' });
-      const text = result.content[0]?.text ?? '';
+      const text = firstText(result) ?? '';
       expect(text).toContain('# Translation gaps — "fr"');
       expect(text).toContain('**Section 600** (600) — draft translation (not published)');
       expect(text).toContain('**Section 601** (601) — no translation');
@@ -683,14 +684,14 @@ describe('help center tools', () => {
     it('reports the number of nodes actually scanned per level', async () => {
       seedTree([600, 601, 602], [800, 801]);
       const result = await findTool('find_translation_gaps').handler({ locale: 'fr' });
-      expect(result.content[0]?.text).toContain('## Sections (3 scanned)');
-      expect(result.content[0]?.text).toContain('## Categories (2 scanned)');
+      expect(firstText(result)).toContain('## Sections (3 scanned)');
+      expect(firstText(result)).toContain('## Categories (2 scanned)');
     });
 
     it('says so positively when nothing is missing', async () => {
       seedTree([602], [800]);
       const result = await findTool('find_translation_gaps').handler({ locale: 'fr' });
-      const text = result.content[0]?.text ?? '';
+      const text = firstText(result) ?? '';
       expect(text).toContain(
         'No gaps: all 1 category/ies and 1 section(s) scanned have a published "fr" translation',
       );
@@ -726,7 +727,7 @@ describe('help center tools', () => {
         locale: 'fr',
         category_id: 801,
       });
-      const text = result.content[0]?.text ?? '';
+      const text = firstText(result) ?? '';
       // The scoped category is read on its own, not filtered out of a listing that
       // could omit it entirely — and both scoped paths carry the sideload too.
       expect(paths).toContain('/api/v2/help_center/categories/801?include=translations');
@@ -756,7 +757,7 @@ describe('help center tools', () => {
         ),
       );
       const result = await findTool('find_translation_gaps').handler({ locale: 'fr' });
-      const text = result.content[0]?.text ?? '';
+      const text = firstText(result) ?? '';
       expect(text).toContain('## Categories (1 scanned)');
       expect(text).toContain('## Sections (0 scanned)');
       expect(text).toContain('2 other node(s) could not be classified');
@@ -766,7 +767,7 @@ describe('help center tools', () => {
     it('does not claim an empty level is fully translated', async () => {
       seedTree([], [800]);
       const result = await findTool('find_translation_gaps').handler({ locale: 'fr' });
-      const text = result.content[0]?.text ?? '';
+      const text = firstText(result) ?? '';
       expect(text).toContain('## Sections (0 scanned)');
       expect(text).toContain('_(none to scan at this level)_');
       expect(text).not.toContain('every one scanned has a published translation\n\n_(none to');
@@ -775,7 +776,7 @@ describe('help center tools', () => {
     it('warns when the audited locale is not active, instead of crying gap', async () => {
       seedTree([600], [800]);
       const result = await findTool('find_translation_gaps').handler({ locale: 'es' });
-      const text = result.content[0]?.text ?? '';
+      const text = firstText(result) ?? '';
       // MOCK_LOCALES is en-us + fr.
       expect(text).toContain('"es" is not an active locale');
       expect(text).toContain('en-us, fr');
@@ -785,7 +786,7 @@ describe('help center tools', () => {
     it('does not warn for an active locale spelled with a different case', async () => {
       seedTree([600], [800]);
       const result = await findTool('find_translation_gaps').handler({ locale: 'FR' });
-      expect(result.content[0]?.text).not.toContain('is not an active locale');
+      expect(firstText(result)).not.toContain('is not an active locale');
     });
 
     it('audits a whole tree without a single per-node request', async () => {
@@ -797,7 +798,7 @@ describe('help center tools', () => {
         [800, 801],
       );
       const result = await findTool('find_translation_gaps').handler({ locale: 'fr' });
-      const text = result.content[0]?.text ?? '';
+      const text = firstText(result) ?? '';
       expect(calls).toEqual([]);
       expect(text).toContain('## Sections (61 scanned)');
       expect(text).toContain('## Categories (2 scanned)');
@@ -837,7 +838,7 @@ describe('help center tools', () => {
       seedTree([600], [800]);
       const result = await findTool('find_translation_gaps').handler({ locale: 'fr' });
       expect(calls).toEqual([]);
-      expect(result.content[0]?.text).toContain(
+      expect(firstText(result)).toContain(
         '**Section 600** (600) — draft translation (not published)',
       );
     });
@@ -866,7 +867,7 @@ describe('help center tools', () => {
         ),
       );
       const result = await findTool('find_translation_gaps').handler({ locale: 'fr' });
-      const text = result.content[0]?.text ?? '';
+      const text = firstText(result) ?? '';
       expect(text).not.toContain('no translation');
       expect(text).toContain('## Sections (0 scanned)');
       expect(text).toContain('came back without the `translations` sideload');
@@ -884,7 +885,7 @@ describe('help center tools', () => {
         ),
       );
       const result = await findTool('find_translation_gaps').handler({ locale: 'fr' });
-      expect(result.content[0]?.text).toContain('only the first page of each was considered');
+      expect(firstText(result)).toContain('only the first page of each was considered');
     });
 
     it('matches the sideloaded locale whatever casing the caller passed', async () => {
@@ -893,7 +894,7 @@ describe('help center tools', () => {
       // (case-insensitive) stayed mute. Section 602 has a published `fr` one.
       seedTree([602], [800]);
       const result = await findTool('find_translation_gaps').handler({ locale: 'FR' });
-      const text = result.content[0]?.text ?? '';
+      const text = firstText(result) ?? '';
       expect(text).not.toContain('(602)');
       expect(text).toContain('No gaps');
     });
@@ -922,7 +923,7 @@ describe('help center tools', () => {
         ),
       );
       const result = await findTool('find_translation_gaps').handler({ locale: 'fr' });
-      expect(result.content[0]?.text).not.toContain('(600)');
+      expect(firstText(result)).not.toContain('(600)');
     });
   });
 
@@ -930,8 +931,8 @@ describe('help center tools', () => {
     it('lists permission groups', async () => {
       const tool = findTool('list_permission_groups');
       const result = await tool.handler({});
-      expect(result.content[0]?.text).toContain('Editors');
-      expect(result.content[0]?.text).toContain('12001');
+      expect(firstText(result)).toContain('Editors');
+      expect(firstText(result)).toContain('12001');
     });
 
     it('explains the Guide-admin requirement (and the fallback) on a 403', async () => {
@@ -963,7 +964,7 @@ describe('help center tools', () => {
         draft: true,
         promoted: false,
       });
-      expect(result.content[0]?.text).toContain('Article #5000 created');
+      expect(firstText(result)).toContain('Article #5000 created');
     });
   });
 
@@ -971,19 +972,18 @@ describe('help center tools', () => {
     it('updates an article', async () => {
       const tool = findTool('update_article');
       const result = await tool.handler({ article_id: 5000, draft: false });
-      expect(result.content[0]?.text).toContain('Article #5000 updated');
+      expect(firstText(result)).toContain('Article #5000 updated');
     });
 
     it('forwards position to reposition the article within its section', async () => {
       const tool = findTool('update_article');
       const result = await tool.handler({ article_id: 5000, position: 7 });
-      expect(result.content[0]?.text).toContain('**Position**: 7');
+      expect(firstText(result)).toContain('**Position**: 7');
     });
 
     it('documents how to move an article to the end of its section', () => {
       const tool = findTool('update_article');
-      const field = (tool.inputSchema as { shape: { position: { description?: string } } }).shape
-        .position;
+      const field = tool.inputSchema.shape['position'] as { description?: string };
       expect(field.description).toContain('P + 1');
       expect(tool.inputSchema.parse({ article_id: 5000, position: 3 })).toMatchObject({
         position: 3,
@@ -1077,8 +1077,8 @@ describe('help center tools', () => {
       ]);
       const result = await findTool('reorder_article').handler({ article_id: 1, target: 'bottom' });
       expect(writes).toEqual([{ id: 1, position: 3 }]);
-      expect(result.content[0]?.text).toContain('moved to bottom');
-      expect(result.content[0]?.text).toContain('1 article repositioned');
+      expect(firstText(result)).toContain('moved to bottom');
+      expect(firstText(result)).toContain('1 article repositioned');
     });
 
     it('moves an article before a reference using an existing gap (single write)', async () => {
@@ -1093,7 +1093,7 @@ describe('help center tools', () => {
         reference_article_id: 2,
       });
       expect(writes).toEqual([{ id: 3, position: 1 }]);
-      expect(result.content[0]?.text).toContain('before article #2');
+      expect(firstText(result)).toContain('before article #2');
     });
 
     it('breaks ties to move a tied article to the top (the #134 case)', async () => {
@@ -1110,7 +1110,7 @@ describe('help center tools', () => {
         { id: 2, position: 2 },
         { id: 3, position: 3 },
       ]);
-      expect(result.content[0]?.text).toContain('moved to top');
+      expect(firstText(result)).toContain('moved to top');
     });
 
     it('renumbers the section contiguously when normalize is true', async () => {
@@ -1138,7 +1138,7 @@ describe('help center tools', () => {
       ]);
       const result = await findTool('reorder_article').handler({ article_id: 1, target: 'top' });
       expect(writes).toEqual([]);
-      expect(result.content[0]?.text).toContain('already positioned');
+      expect(firstText(result)).toContain('already positioned');
     });
 
     it('detects an auto-sorted section after writing and returns guidance', async () => {
@@ -1154,8 +1154,8 @@ describe('help center tools', () => {
       );
       const result = await findTool('reorder_article').handler({ article_id: 3, target: 'top' });
       expect(writes.length).toBeGreaterThan(0); // writes were attempted
-      expect(result.content[0]?.text).toContain('sorted automatically');
-      expect(result.content[0]?.text).toContain('Order articles by');
+      expect(firstText(result)).toContain('sorted automatically');
+      expect(firstText(result)).toContain('Order articles by');
     });
 
     it('refuses a large reorder without confirm, then proceeds with confirm', async () => {
@@ -1163,7 +1163,7 @@ describe('help center tools', () => {
       const tool = findTool('reorder_article');
       const refused = await tool.handler({ article_id: 25, target: 'top' });
       expect(seeded.writes).toEqual([]); // nothing written
-      expect(refused.content[0]?.text).toContain('above the safety threshold');
+      expect(firstText(refused)).toContain('above the safety threshold');
 
       const seeded2 = seedSection(600, seq(25, 0));
       const done = await findTool('reorder_article').handler({
@@ -1172,7 +1172,7 @@ describe('help center tools', () => {
         confirm: true,
       });
       expect(seeded2.writes.length).toBe(24); // 24 siblings bumped, id 25 stays at 0
-      expect(done.content[0]?.text).toContain('moved to top');
+      expect(firstText(done)).toContain('moved to top');
     });
 
     it('short-circuits an auto-sorted section up front without writing, at any size', async () => {
@@ -1189,7 +1189,7 @@ describe('help center tools', () => {
       );
       const result = await findTool('reorder_article').handler({ article_id: 3, target: 'top' });
       expect(writes).toEqual([]); // refused before any write, even though it's a small reorder
-      expect(result.content[0]?.text).toContain('sorted automatically');
+      expect(firstText(result)).toContain('sorted automatically');
     });
 
     it('reports how far it got and that a re-run is safe when a write fails midway', async () => {
@@ -1273,7 +1273,7 @@ describe('help center tools', () => {
     it('archives the article when confirm is true', async () => {
       const tool = findTool('archive_article');
       const result = await tool.handler({ article_id: 5000, confirm: true });
-      expect(result.content[0]?.text).toContain('Article #5000 archived');
+      expect(firstText(result)).toContain('Article #5000 archived');
     });
 
     it('refuses without archiving when confirm is false', async () => {
@@ -1307,7 +1307,7 @@ describe('help center tools', () => {
     it('lists content tags sorted by name ascending, spanning past the old cap', async () => {
       const tool = findTool('list_content_tags');
       const result = await tool.handler({ sort_by: 'name', sort_order: 'asc', page_size: 30 });
-      const text = result.content[0]?.text ?? '';
+      const text = firstText(result) ?? '';
       expect(text).toContain('scanner');
       expect(text).toContain('ct_001');
       // The tags #132 could not confirm are now enumerable, and the listing
@@ -1319,7 +1319,7 @@ describe('help center tools', () => {
     it('reverses order for descending sort', async () => {
       const tool = findTool('list_content_tags');
       const result = await tool.handler({ sort_by: 'name', sort_order: 'desc', page_size: 30 });
-      const text = result.content[0]?.text ?? '';
+      const text = firstText(result) ?? '';
       expect(text.indexOf('mistral')).toBeLessThan(text.indexOf('ai'));
     });
 
@@ -1331,7 +1331,7 @@ describe('help center tools', () => {
         sort_order: 'asc',
         page_size: 30,
       });
-      const text = result.content[0]?.text ?? '';
+      const text = firstText(result) ?? '';
       expect(text).toContain('mistral');
       expect(text).not.toContain('scanner');
     });
@@ -1340,7 +1340,7 @@ describe('help center tools', () => {
       mswServer.use(manyContentTagsHandler);
       const tool = findTool('list_content_tags');
       const result = await tool.handler({ sort_by: 'name', sort_order: 'asc', page_size: 1 });
-      const text = result.content[0]?.text ?? '';
+      const text = firstText(result) ?? '';
       expect(text).toContain('More available');
       expect(text).toContain('next-page-cursor');
     });
@@ -1352,7 +1352,7 @@ describe('help center tools', () => {
       expect(() => tool.inputSchema.parse({ page_size: 31 })).toThrow();
       expect(tool.inputSchema.parse({ page_size: 30 })).toMatchObject({ page_size: 30 });
       // Default is the endpoint's max, not the shared 100 that used to leak in.
-      expect(tool.inputSchema.parse({}).page_size).toBe(30);
+      expect(tool.inputSchema.parse({})['page_size']).toBe(30);
     });
   });
 
@@ -1360,8 +1360,8 @@ describe('help center tools', () => {
     it('creates a content tag', async () => {
       const tool = findTool('create_content_tag');
       const result = await tool.handler({ name: 'accessibility' });
-      expect(result.content[0]?.text).toContain('Content tag created');
-      expect(result.content[0]?.text).toContain('accessibility');
+      expect(firstText(result)).toContain('Content tag created');
+      expect(firstText(result)).toContain('accessibility');
     });
   });
 
@@ -1369,7 +1369,7 @@ describe('help center tools', () => {
     it('lists article labels', async () => {
       const tool = findTool('list_labels');
       const result = await tool.handler({});
-      expect(result.content[0]?.text).toContain('getting-started');
+      expect(firstText(result)).toContain('getting-started');
     });
 
     it('states it takes no parameters rather than advising pagination when truncating', async () => {
@@ -1387,7 +1387,7 @@ describe('help center tools', () => {
         ),
       );
       const tool = findTool('list_labels');
-      const text = (await tool.handler({})).content[0]?.text ?? '';
+      const text = firstText(await tool.handler({})) ?? '';
       expect(text).toContain('list_labels takes no parameters');
       expect(text).not.toContain('Use pagination or filters');
     });
@@ -1397,8 +1397,8 @@ describe('help center tools', () => {
     it('lists user segments', async () => {
       const tool = findTool('list_user_segments');
       const result = await tool.handler({});
-      expect(result.content[0]?.text).toContain('Signed-in users');
-      expect(result.content[0]?.text).toContain('15001');
+      expect(firstText(result)).toContain('Signed-in users');
+      expect(firstText(result)).toContain('15001');
     });
 
     it('explains the Guide-admin requirement (and the fallback) on a 403', async () => {
@@ -1423,8 +1423,8 @@ describe('help center tools', () => {
     it('lists attachments for an article', async () => {
       const tool = findTool('list_article_attachments');
       const result = await tool.handler({ article_id: 5000 });
-      expect(result.content[0]?.text).toContain('screenshot.png');
-      expect(result.content[0]?.text).toContain('20001');
+      expect(firstText(result)).toContain('screenshot.png');
+      expect(firstText(result)).toContain('20001');
     });
 
     it('reports an explicit message when the article has no attachments', async () => {
@@ -1435,7 +1435,7 @@ describe('help center tools', () => {
       );
       const tool = findTool('list_article_attachments');
       const result = await tool.handler({ article_id: 5000 });
-      expect(result.content[0]?.text).toBe('No attachments found on article #5000.');
+      expect(firstText(result)).toBe('No attachments found on article #5000.');
     });
   });
 
@@ -1467,8 +1467,8 @@ describe('help center tools', () => {
         file_base64: btoa('fake content'),
         content_type: 'application/pdf',
       });
-      expect(result.content[0]?.text).toContain('Attachment created');
-      expect(result.content[0]?.text).toContain('screenshot.png');
+      expect(firstText(result)).toContain('Attachment created');
+      expect(firstText(result)).toContain('screenshot.png');
     });
   });
 
@@ -1476,7 +1476,7 @@ describe('help center tools', () => {
     it('returns compact outline with sections and available translations', async () => {
       const tool = findTool('get_article_outline');
       const result = await tool.handler({ article_id: 5000 });
-      const text = result.content[0]?.text ?? '';
+      const text = firstText(result) ?? '';
       expect(text).toContain('Outline — Article #5000');
       expect(text).toContain('Intro');
       expect(text).toContain('Setup');
@@ -1488,7 +1488,7 @@ describe('help center tools', () => {
     it('flags outdated translations', async () => {
       const tool = findTool('get_article_outline');
       const result = await tool.handler({ article_id: 5000 });
-      expect(result.content[0]?.text).toContain('(outdated)');
+      expect(firstText(result)).toContain('(outdated)');
     });
   });
 
@@ -1544,7 +1544,7 @@ describe('help center tools', () => {
         section_index: 1,
         format: 'markdown',
       });
-      const text = result.content[0]?.text ?? '';
+      const text = firstText(result) ?? '';
       expect(text).toContain('Setup');
       expect(text).toContain('one two three four');
       expect(text).toContain('Format: markdown');
@@ -1558,7 +1558,7 @@ describe('help center tools', () => {
         section_index: 1,
         format: 'html',
       });
-      const text = result.content[0]?.text ?? '';
+      const text = firstText(result) ?? '';
       expect(text).toContain('<p>');
       expect(text).toContain('Format: html');
     });
@@ -1591,7 +1591,7 @@ describe('help center tools', () => {
         content: 'un deux trois',
         format: 'markdown',
       });
-      const text = result.content[0]?.text ?? '';
+      const text = firstText(result) ?? '';
       expect(text).toContain('Section [1]');
       expect(text).toContain('updated for article #5000');
       expect(text).toContain('(fr)');
@@ -1606,7 +1606,7 @@ describe('help center tools', () => {
         content: '<p>Nouveau contenu</p>',
         format: 'html',
       });
-      expect(result.content[0]?.text).toContain('updated for article #5000');
+      expect(firstText(result)).toContain('updated for article #5000');
     });
 
     it('defaults format to "html" for round-trip safety', () => {
@@ -1644,7 +1644,7 @@ describe('help center tools', () => {
         format: 'html',
         ...params,
       });
-      return result.content[0]?.text ?? '';
+      return firstText(result) ?? '';
     };
 
     describe('heading in content (issue #328)', () => {
@@ -1811,7 +1811,7 @@ describe('help center tools', () => {
         source_locale: 'en-us',
         target_locale: 'fr',
       });
-      const text = result.content[0]?.text ?? '';
+      const text = firstText(result) ?? '';
       expect(text).toContain('Translation diff');
       expect(text).toContain('| Idx | Heading | Status');
       expect(text).toContain('Setup');
@@ -1827,7 +1827,7 @@ describe('help center tools', () => {
         source_locale: 'en-us',
         target_locale: 'fr',
       });
-      const text = result.content[0]?.text ?? '';
+      const text = firstText(result) ?? '';
       expect(text).toContain('| 1 | Setup | ok |');
       expect(text).not.toContain('different');
     });
@@ -1855,7 +1855,7 @@ describe('help center tools', () => {
         source_locale: 'en-us',
         target_locale: 'fr',
       });
-      const text = result.content[0]?.text ?? '';
+      const text = firstText(result) ?? '';
       expect(text).toContain('Freshness');
       expect(text.toLowerCase()).toContain('behind');
     });
@@ -1869,7 +1869,7 @@ describe('help center tools', () => {
         source_locale: 'en-us',
         target_locale: 'fr',
       });
-      const text = result.content[0]?.text ?? '';
+      const text = firstText(result) ?? '';
       expect(text).toMatch(/Freshness[^\n]*up to date/i);
     });
 
@@ -1881,7 +1881,7 @@ describe('help center tools', () => {
         source_locale: 'fr',
         target_locale: 'en-us',
       });
-      const text = result.content[0]?.text ?? '';
+      const text = firstText(result) ?? '';
       expect(text).toContain('outdated flag');
       expect(text.toLowerCase()).toContain('yes');
     });
@@ -1896,7 +1896,7 @@ describe('help center tools', () => {
         source_locale: 'fr',
         target_locale: 'EN-US',
       });
-      const text = result.content[0]?.text ?? '';
+      const text = firstText(result) ?? '';
       expect(text).toContain('outdated flag');
       expect(text.toLowerCase()).toContain('yes');
       expect(text).not.toContain('unknown');
@@ -1920,7 +1920,7 @@ describe('help center tools', () => {
         source_locale: 'en-us',
         target_locale: 'fr',
       });
-      const text = result.content[0]?.text ?? '';
+      const text = firstText(result) ?? '';
       expect(text).toMatch(/Outdated[^\n]*unknown/i);
     });
 
@@ -1931,7 +1931,7 @@ describe('help center tools', () => {
         source_locale: 'en-us',
         target_locale: 'fr',
       });
-      const text = result.content[0]?.text ?? '';
+      const text = firstText(result) ?? '';
       expect(text).toMatch(/Outdated[^\n]*\bno\b/i);
     });
 
@@ -1943,7 +1943,7 @@ describe('help center tools', () => {
         source_locale: 'en-us',
         target_locale: 'de',
       });
-      const text = result.content[0]?.text ?? '';
+      const text = firstText(result) ?? '';
       expect(text).toContain('| 1 | Setup | missing |');
       expect(text.toLowerCase()).toContain('mismatch');
     });
@@ -1955,7 +1955,7 @@ describe('help center tools', () => {
         source_locale: 'de',
         target_locale: 'en-us',
       });
-      const text = result.content[0]?.text ?? '';
+      const text = firstText(result) ?? '';
       expect(text).toContain('| 1 | Setup | extra |');
     });
 

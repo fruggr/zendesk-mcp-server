@@ -145,7 +145,7 @@ describe('createZendeskGrants', () => {
       refusal(429),
       new Error('socket hang up'),
     ]) {
-      const refresh = vi.fn(async () => {
+      const refresh = vi.fn(async (): Promise<ZendeskTokenSet> => {
         throw failure;
       });
       const { grants, records, now } = setup(refresh);

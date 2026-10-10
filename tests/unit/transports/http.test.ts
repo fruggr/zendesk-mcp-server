@@ -1,7 +1,7 @@
 import { request as httpRequest, type IncomingMessage } from 'node:http';
 import { HttpResponse, http } from 'msw';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Config } from '../../../src/config';
+import { type Config, ConfigSchema } from '../../../src/config';
 import {
   DEFAULT_BROWSER_MCP_CLIENT_ORIGINS,
   extractBearer,
@@ -26,7 +26,7 @@ import {
 } from '../../msw-handlers';
 import { mswServer } from '../../setup';
 
-const baseConfig = {
+const baseConfig: Config = ConfigSchema.parse({
   subdomain: 'testsubdomain',
   oauthClientId: 'test_zendesk',
   logLevel: 'error',
@@ -41,7 +41,7 @@ const baseConfig = {
   oauthMasterSecret: Buffer.alloc(32, 4).toString('base64'),
   oauthTrustedClients: [],
   defaultTrustedClients: true,
-} as Config;
+});
 
 // Zendesk's OAuth endpoints mocked statefully, local requests let through.
 const mockZendeskOAuth = () => {

@@ -68,8 +68,8 @@ describe('jitless: the server behaves identically with compilation stood down', 
     const byName = (a: string, b: string) => a.localeCompare(b);
     expect(Object.keys(json.properties).sort(byName)).toEqual(['include_comments', 'ticket_id']);
     expect([...json.required].sort(byName)).toEqual(['include_comments', 'ticket_id']);
-    expect(json.properties.ticket_id?.type).toBe('integer');
-    expect(json.properties.include_comments?.type).toBe('boolean');
+    expect(json.properties['ticket_id']?.type).toBe('integer');
+    expect(json.properties['include_comments']?.type).toBe('boolean');
     for (const [name, prop] of Object.entries(json.properties)) {
       expect(prop.description, `${name} lost its description`).toBeTruthy();
     }

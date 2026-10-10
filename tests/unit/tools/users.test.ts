@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ToolContext } from '../../../src/tools/definitions';
 import { createUserTools } from '../../../src/tools/users';
+import { firstText } from '../../tool-result';
 
 const ctx: ToolContext = { subdomain: 'testsubdomain', getToken: () => 'test-token' };
 
@@ -20,9 +21,9 @@ describe('user tools', () => {
     it('returns the authenticated user', async () => {
       const tool = findTool('get_current_user');
       const result = await tool.handler({});
-      expect(result.content[0]?.text).toContain('Test User');
-      expect(result.content[0]?.text).toContain('test@example.com');
-      expect(result.content[0]?.text).toContain('admin');
+      expect(firstText(result)).toContain('Test User');
+      expect(firstText(result)).toContain('test@example.com');
+      expect(firstText(result)).toContain('admin');
     });
 
     it('has all readOnly tools', () => {
@@ -37,7 +38,7 @@ describe('user tools', () => {
     it('searches users', async () => {
       const tool = findTool('search_users');
       const result = await tool.handler({ query: 'test', per_page: 100, page: 1 });
-      expect(result.content[0]?.text).toContain('Test User');
+      expect(firstText(result)).toContain('Test User');
     });
   });
 
@@ -45,7 +46,7 @@ describe('user tools', () => {
     it('gets user by id', async () => {
       const tool = findTool('get_user');
       const result = await tool.handler({ user_id: 9999 });
-      expect(result.content[0]?.text).toContain('Test User');
+      expect(firstText(result)).toContain('Test User');
     });
   });
 
@@ -53,7 +54,7 @@ describe('user tools', () => {
     it('gets organization by id', async () => {
       const tool = findTool('get_organization');
       const result = await tool.handler({ organization_id: 400 });
-      expect(result.content[0]?.text).toContain('Test Org');
+      expect(firstText(result)).toContain('Test Org');
     });
   });
 
@@ -61,7 +62,7 @@ describe('user tools', () => {
     it('lists organizations', async () => {
       const tool = findTool('list_organizations');
       const result = await tool.handler({ page_size: 25 });
-      expect(result.content[0]?.text).toContain('Test Org');
+      expect(firstText(result)).toContain('Test Org');
     });
   });
 });
