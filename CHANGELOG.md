@@ -1,3 +1,23 @@
+## [3.3.0](https://github.com/fruggr/zendesk-mcp-server/compare/v3.2.1...v3.3.0) (2026-10-10)
+
+### Features
+
+* **help-center:** multi-brand support ([#365](https://github.com/fruggr/zendesk-mcp-server/issues/365)) ([1d25b72](https://github.com/fruggr/zendesk-mcp-server/commit/1d25b725c1e154d9668108aa6684472308e8a7b0)), references [#333](https://github.com/fruggr/zendesk-mcp-server/issues/333) [#333](https://github.com/fruggr/zendesk-mcp-server/issues/333) [#48](https://github.com/fruggr/zendesk-mcp-server/issues/48)
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Chores
+
+* **deps:** lock file maintenance ([#359](https://github.com/fruggr/zendesk-mcp-server/issues/359)) ([b3fb149](https://github.com/fruggr/zendesk-mcp-server/commit/b3fb14992a495803d812143f8ea3bfb2dc9315bd))
+* **deps:** update pnpm to v12.9.0 ([#357](https://github.com/fruggr/zendesk-mcp-server/issues/357)) ([15767c2](https://github.com/fruggr/zendesk-mcp-server/commit/15767c2d344c479a61abcb314ff61dcece750f81))
+* **deps:** update pnpm to v12.9.1 ([#358](https://github.com/fruggr/zendesk-mcp-server/issues/358)) ([26f82e1](https://github.com/fruggr/zendesk-mcp-server/commit/26f82e1db2a68d10865388a63b10c6ec4c99ab26))
+
+### Continuous Integration
+
+* move CodeQL to advanced setup so fork PRs get the required check ([a6e408a](https://github.com/fruggr/zendesk-mcp-server/commit/a6e408a75fcdbcfde70b23bb7bb35354639ea4f1))
+</details>
+
 ## [3.2.1](https://github.com/fruggr/zendesk-mcp-server/compare/v3.2.0...v3.2.1) (2026-10-07)
 
 ### Bug Fixes

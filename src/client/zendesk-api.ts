@@ -153,6 +153,11 @@ export const zendeskPut = <T>(
   return executeRequest<T>(url, token, { method: 'PUT', body });
 };
 
+// The five helpCenter* helpers take the EFFECTIVE subdomain: the account's for
+// the default brand, the resolved brand's own subdomain for a brand-scoped
+// call (brands are only ever <subdomain>.zendesk.com — see
+// getHelpCenterBaseUrl). There is deliberately no separate brand-host
+// parameter.
 export const helpCenterGet = <T>(
   subdomain: string,
   token: string,

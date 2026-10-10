@@ -30,6 +30,14 @@ export type Transport = z.infer<typeof Transport>;
 export const ConfigSchema = z.object({
   subdomain: z.string().min(1, 'ZENDESK_SUBDOMAIN is required'),
   oauthClientId: z.string().min(1),
+  /**
+   * Help Center brand allow-list (`--brand-ids`): brand ids or subdomains, or
+   * 'all'. Unset: account default brand, surface unchanged. One entry: hard
+   * lock, no `brand_id` field. Several or 'all': `list_brands` exposed and
+   * `brand_id` required on brand-scoped tools. Entries resolve lazily, on first
+   * use. Modes and rationale: docs/configuration.md.
+   */
+  brandIds: z.array(z.string().min(1)).min(1).optional(),
   logLevel: LogLevel,
   mode: ToolMode,
   readOnly: z.boolean(),
@@ -60,14 +68,12 @@ export const ConfigSchema = z.object({
   topology: z.boolean().default(true),
   /**
    * Whether to PRE-LIST the promoted ("featured") Help Center articles: the
-   * `<scheme>://article/{id}` resource's `list` callback (which scans `/articles`
-   * to enumerate the promoted set for `resources/list`) AND the
-   * `list_promoted_articles` tool. On by default; an operator disables the
-   * pre-listing with `--no-promoted-articles` (e.g. on a very large Help Center
-   * where scanning is costly) so the server issues zero preloading requests. This
-   * does NOT disable reading a known article by id (`<scheme>://article/{id}` stays
-   * registered) — that is cheap and on-demand. Only ever active when the
-   * `help_center` namespace itself is active.
+   * article resource's `list` callback, which scans `/articles` to enumerate the
+   * promoted set for `resources/list`. On by default; `--no-promoted-articles`
+   * turns it off (e.g. on a very large or multi-brand Help Center) so the server
+   * issues zero preloading requests. Reading a known article by id and the
+   * on-demand `list_promoted_articles` tool stay available. Only ever active
+   * when the `help_center` namespace itself is active.
    */
   promotedArticles: z.boolean().default(true),
   /**
@@ -172,6 +178,7 @@ interface CliResult {
   // unconditionally: `exactOptionalPropertyTypes` would otherwise force a guard
   // that reads as behaviour but only ever satisfies the type checker.
   subdomain?: string | undefined;
+  brandIds?: string;
   mode?: string;
   readOnly?: boolean;
   namespaces?: string[];
@@ -234,11 +241,49 @@ const portEnv = (name: string): number | undefined => {
   return env.value === undefined ? undefined : parsePort(env.value, env.name);
 };
 
+/**
+ * Split a raw `--brand-ids` / `ZENDESK_BRAND_IDS` value into its entries.
+ * Comma-separated, entries trimmed; an empty entry (from `a,,b`, a leading/
+ * trailing comma, or a whitespace-only value) is a misconfiguration, not an
+ * ignored blank: it fails at startup naming the knob. Format validation only —
+ * whether an id/subdomain exists is decided lazily, on first use (no token is
+ * available at startup on either transport).
+ */
+const parseBrandIds = (raw: string | undefined): string[] | undefined => {
+  if (raw === undefined) return undefined;
+  const entries = raw.split(',').map((entry) => entry.trim());
+  if (entries.some((entry) => entry.length === 0)) {
+    throw createStartupError(
+      'Invalid --brand-ids / ZENDESK_BRAND_IDS value: empty entry. ' +
+        'Expected a comma-separated list of brand ids or subdomains, or "all".',
+      STARTUP_DOCS.environment,
+    );
+  }
+  // 'all' is matched case-insensitively: 'ALL' is the flag written in caps, not
+  // a brand literally named ALL. Every other entry is lowercased too: Zendesk
+  // subdomains are lowercase by construction, and normalising here keeps the
+  // downstream exact-string checks (schema gate, allow-list, list_brands
+  // filtering) from ever seeing a casing the resolver would accept but the
+  // string compares would not.
+  const normalized = entries.map((entry) => entry.toLowerCase());
+  if (normalized.length > 1 && normalized.includes('all')) {
+    throw createStartupError(
+      'Invalid --brand-ids / ZENDESK_BRAND_IDS value: "all" cannot be combined with brand ids or subdomains.',
+      STARTUP_DOCS.environment,
+    );
+  }
+  // De-duplicate after trim, preserving order: 'A,A' is one brand named twice,
+  // and without collapsing it the two entries would resolve to multi mode —
+  // exposing list_brands and requiring a per-call brand_id — for a single brand.
+  return [...new Set(normalized)];
+};
+
 // The whole CLI surface as one declarative table: `parseArgs` derives the
 // unknown-flag, missing-value and stray-value rejections from it, so those
 // guarantees cannot drift per flag. Adding a flag is one entry here.
 const CLI_OPTIONS = {
   mode: { type: 'string' },
+  'brand-ids': { type: 'string' },
   namespace: { type: 'string', multiple: true },
   tool: { type: 'string', multiple: true },
   'log-level': { type: 'string' },
@@ -373,6 +418,8 @@ const parseCliArgs = (args: string[]): CliResult => {
   if (values['callback-port'] !== undefined) {
     result.callbackPort = parsePort(values['callback-port'], '--callback-port');
   }
+  // Stryker disable next-line ConditionalExpression: assigning `brandIds: undefined` for an absent flag is observably identical — the only read is `cli.brandIds ?? env`, which treats a missing key and undefined the same.
+  if (values['brand-ids'] !== undefined) result.brandIds = values['brand-ids'];
 
   return result;
 };
@@ -444,6 +491,7 @@ export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
   const namespaces = cli.namespaces ?? (cli.tools?.length ? [...Namespace.options] : undefined);
 
   const callbackPort = cli.callbackPort ?? portEnv('OAUTH_CALLBACK_PORT');
+  const brandIds = cli.brandIds ?? requireNonEmptyEnv('ZENDESK_BRAND_IDS');
 
   // Unset leaves this undefined so the schema default (`zendesk-hc`) applies;
   // empty is rejected by requireNonEmptyEnv. Format is schema-validated.
@@ -452,6 +500,7 @@ export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
   return validated({
     subdomain,
     oauthClientId,
+    brandIds: parseBrandIds(brandIds),
     logLevel: cli.logLevel ?? requireNonEmptyEnv('LOG_LEVEL') ?? 'info',
     mode,
     readOnly: cli.readOnly ?? false,

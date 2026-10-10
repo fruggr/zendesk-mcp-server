@@ -130,7 +130,11 @@ describe('createMcpServer', () => {
     // caller could invoke `zendesk_tickets` with operation="get_article" and
     // dispatch a help-center handler. Each proxy must scope dispatch to its
     // own operations. We exercise the pure helper directly.
-    const allTools = createAllTools({ subdomain: 'x', getToken });
+    const allTools = createAllTools({
+      subdomain: 'x',
+      resolveBrandSubdomain: () => Promise.resolve(''),
+      getToken,
+    });
     const ticketsTools = filterTools(allTools, {
       readOnly: false,
       namespaces: ['tickets'],
@@ -153,7 +157,11 @@ describe('createMcpServer', () => {
     // `per_page` was silently stripped and page_size defaulted to 100, returning
     // a large unpaginated page. Strict validation must reject it loudly and point
     // at the valid parameter names.
-    const allTools = createAllTools({ subdomain: 'x', getToken });
+    const allTools = createAllTools({
+      subdomain: 'x',
+      resolveBrandSubdomain: () => Promise.resolve(''),
+      getToken,
+    });
     const ticketsTools = filterTools(allTools, { readOnly: false, namespaces: ['tickets'] });
     const dispatch = buildProxyDispatch(ticketsTools, undefined);
 
@@ -273,7 +281,11 @@ describe('aggregateAnnotations', () => {
 describe('registerToolset atomicity', () => {
   it('rolls back partial registration when a later tool fails to register', () => {
     const server = createServerShell(baseConfig);
-    const [first] = createAllTools({ subdomain: baseConfig.subdomain, getToken });
+    const [first] = createAllTools({
+      subdomain: baseConfig.subdomain,
+      resolveBrandSubdomain: () => Promise.resolve(''),
+      getToken,
+    });
     if (!first) throw new Error('expected at least one tool');
 
     // Two definitions sharing a name: the second registerTool throws

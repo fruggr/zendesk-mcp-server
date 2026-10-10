@@ -3,7 +3,11 @@ import type { ToolContext } from '../../../src/tools/definitions';
 import { createUserTools } from '../../../src/tools/users';
 import { firstText } from '../../tool-result';
 
-const ctx: ToolContext = { subdomain: 'testsubdomain', getToken: () => 'test-token' };
+const ctx: ToolContext = {
+  subdomain: 'testsubdomain',
+  resolveBrandSubdomain: () => Promise.resolve(''),
+  getToken: () => 'test-token',
+};
 
 const findTool = (name: string) => {
   const tools = createUserTools(ctx);

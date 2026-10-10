@@ -28,7 +28,11 @@ const connect = async (server: Awaited<ReturnType<typeof createServerShell>>) =>
 describe('dev-mode tool reload', () => {
   it('swaps the exposed toolset in place and notifies the client', async () => {
     const config = makeConfig({ mode: 'all' });
-    const ctx = { subdomain: config.subdomain, getToken };
+    const ctx = {
+      subdomain: config.subdomain,
+      resolveBrandSubdomain: () => Promise.resolve(''),
+      getToken,
+    };
     const server = createServerShell(config);
     const params = { config, getToken };
 
@@ -121,7 +125,11 @@ describe('dev-mode tool reload', () => {
 
   it('restores the previous generation when re-registration fails', async () => {
     const config = makeConfig({ mode: 'all' });
-    const ctx = { subdomain: config.subdomain, getToken };
+    const ctx = {
+      subdomain: config.subdomain,
+      resolveBrandSubdomain: () => Promise.resolve(''),
+      getToken,
+    };
     // A reload whose fresh definitions collide on name: registering the second
     // copy throws mid-way, which must trigger a restore of the last-good set.
     const [dup] = createAllTools(ctx);

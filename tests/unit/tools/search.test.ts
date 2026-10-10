@@ -3,7 +3,11 @@ import type { ToolContext } from '../../../src/tools/definitions';
 import { createSearchTools } from '../../../src/tools/search';
 import { firstText } from '../../tool-result';
 
-const ctx: ToolContext = { subdomain: 'testsubdomain', getToken: () => 'test-token' };
+const ctx: ToolContext = {
+  subdomain: 'testsubdomain',
+  resolveBrandSubdomain: () => Promise.resolve(''),
+  getToken: () => 'test-token',
+};
 
 describe('search tools', () => {
   it('creates 1 tool', () => {

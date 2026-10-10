@@ -4,7 +4,11 @@ import { filterTools, groupByNamespace, NAMESPACE_LABELS } from '../../../src/ro
 import type { ToolContext } from '../../../src/tools/definitions';
 import { createAllTools } from '../../../src/tools/index';
 
-const ctx: ToolContext = { subdomain: 'testsubdomain', getToken: () => 'token' };
+const ctx: ToolContext = {
+  subdomain: 'testsubdomain',
+  resolveBrandSubdomain: () => Promise.resolve(''),
+  getToken: () => 'token',
+};
 const allTools = createAllTools(ctx);
 
 describe('filterTools', () => {
@@ -49,24 +53,6 @@ describe('filterTools', () => {
   it('combines readOnly + namespace', () => {
     const filtered = filterTools(allTools, { readOnly: true, namespaces: ['help_center'] });
     expect(filtered.every((t) => t.readOnly && t.namespace === 'help_center')).toBe(true);
-  });
-});
-
-describe('filterTools promotedArticles gate', () => {
-  it('keeps list_promoted_articles when the flag is unset or true', () => {
-    const unset = filterTools(allTools, { readOnly: false });
-    const on = filterTools(allTools, { readOnly: false, promotedArticles: true });
-    expect(unset.some((t) => t.name === 'list_promoted_articles')).toBe(true);
-    expect(on.some((t) => t.name === 'list_promoted_articles')).toBe(true);
-  });
-
-  it('drops only that tool when the flag is false', () => {
-    const off = filterTools(allTools, { readOnly: false, promotedArticles: false });
-    expect(off.some((t) => t.name === 'list_promoted_articles')).toBe(false);
-    expect(off).toHaveLength(allTools.length - 1);
-    // Reading a known article by id is unaffected; only the scan-backed
-    // listing goes away.
-    expect(off.some((t) => t.name === 'get_article')).toBe(true);
   });
 });
 

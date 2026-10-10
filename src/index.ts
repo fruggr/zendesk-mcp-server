@@ -58,7 +58,14 @@ const main = async (): Promise<void> => {
   // tool definitions are pure — auth only fires inside a handler — so this
   // never needs a credential or a network call.
   if (config.printTools) {
-    const tools = createAllTools({ subdomain: config.subdomain, getToken: () => '' });
+    const tools = createAllTools({
+      subdomain: config.subdomain,
+      brandIds: config.brandIds,
+      // --print-tools never invokes a handler, so the resolver is never called;
+      // a stub satisfies the context without a credential or a network call.
+      resolveBrandSubdomain: () => Promise.resolve(''),
+      getToken: () => '',
+    });
     console.log(renderToolSurface(config, tools));
     return;
   }

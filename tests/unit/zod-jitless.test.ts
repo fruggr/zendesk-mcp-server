@@ -19,7 +19,11 @@ import { createStrictParamsParser } from '../../src/utils/validation';
 z.config({ jitless: true });
 afterAll(() => z.config({ jitless: false }));
 
-const ctx: ToolContext = { subdomain: 'testsubdomain', getToken: () => 'test-token' };
+const ctx: ToolContext = {
+  subdomain: 'testsubdomain',
+  resolveBrandSubdomain: () => Promise.resolve(''),
+  getToken: () => 'test-token',
+};
 
 const isCompiled = (schema: z.ZodType): boolean =>
   Boolean(

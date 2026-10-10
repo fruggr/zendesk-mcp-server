@@ -7,6 +7,7 @@ import { isStartupError, STARTUP_DOCS } from '../../src/utils/startup-error';
 const LOAD_CONFIG_ENV = [
   'ZENDESK_SUBDOMAIN',
   'ZENDESK_OAUTH_CLIENT_ID',
+  'ZENDESK_BRAND_IDS',
   'LOG_LEVEL',
   'TRANSPORT',
   'LISTEN_HOST',
@@ -77,6 +78,121 @@ describe('loadConfig', () => {
   it('parses --read-only flag', () => {
     const config = loadConfig(['mycompany', '--read-only']);
     expect(config.readOnly).toBe(true);
+  });
+
+  it('leaves brandIds unset by default (the account default brand)', () => {
+    const config = loadConfig(['mycompany']);
+    expect(config.brandIds).toBeUndefined();
+  });
+
+  it('parses --brand-ids as a single-entry list', () => {
+    const config = loadConfig(['mycompany', '--brand-ids', '123456']);
+    expect(config.brandIds).toEqual(['123456']);
+  });
+
+  it('parses --brand-ids as a comma-separated list of ids and subdomains', () => {
+    const config = loadConfig(['mycompany', '--brand-ids', '123456,support,7890']);
+    expect(config.brandIds).toEqual(['123456', 'support', '7890']);
+  });
+
+  it("parses --brand-ids 'all'", () => {
+    const config = loadConfig(['mycompany', '--brand-ids', 'all']);
+    expect(config.brandIds).toEqual(['all']);
+  });
+
+  it('trims whitespace around entries', () => {
+    const config = loadConfig(['mycompany', '--brand-ids', ' 123456 , support ']);
+    expect(config.brandIds).toEqual(['123456', 'support']);
+  });
+
+  it('rejects an empty entry in --brand-ids', () => {
+    expect(() => loadConfig(['mycompany', '--brand-ids', '123456,,support'])).toThrow(
+      /empty entry/i,
+    );
+    // Pin the whole message: it is the operator's only hint at the accepted
+    // shape (ids or subdomains, or "all"), so the guidance must not regress.
+    expect(() => loadConfig(['mycompany', '--brand-ids', '123456,,support'])).toThrow(
+      /comma-separated list of brand ids or subdomains, or "all"/,
+    );
+  });
+
+  it.each([
+    ['an empty entry', '123456,,support'],
+    ['"all" mixed with brands', 'all,support'],
+  ])('reports %s in --brand-ids as a startup error linking the docs', (_case, value) => {
+    let error: unknown;
+    try {
+      loadConfig(['mycompany', '--brand-ids', value]);
+    } catch (err) {
+      error = err;
+    }
+    expect(isStartupError(error)).toBe(true);
+    expect((error as Error).message).toMatch(/^Invalid --brand-ids \/ ZENDESK_BRAND_IDS value: /);
+    expect((error as Error).message.endsWith(` See ${STARTUP_DOCS.environment}`)).toBe(true);
+  });
+
+  it('rejects --brand-ids with only commas', () => {
+    expect(() => loadConfig(['mycompany', '--brand-ids', ',,'])).toThrow();
+  });
+
+  it('reads ZENDESK_BRAND_IDS from env', () => {
+    process.env['ZENDESK_BRAND_IDS'] = '123456,support';
+    const config = loadConfig(['mycompany']);
+    expect(config.brandIds).toEqual(['123456', 'support']);
+  });
+
+  it('lets --brand-ids win over ZENDESK_BRAND_IDS', () => {
+    process.env['ZENDESK_BRAND_IDS'] = '111111';
+    const config = loadConfig(['mycompany', '--brand-ids', '222222']);
+    expect(config.brandIds).toEqual(['222222']);
+  });
+
+  it("matches 'all' case-insensitively, so 'ALL' is not a single-brand lock on a brand named ALL", () => {
+    // 'ALL' written in caps is the flag, not a brand literally named ALL — it
+    // must resolve to the all-brands mode, not to a one-entry allow-list.
+    expect(loadConfig(['mycompany', '--brand-ids', 'ALL']).brandIds).toEqual(['all']);
+    expect(loadConfig(['mycompany', '--brand-ids', 'All']).brandIds).toEqual(['all']);
+  });
+
+  it("rejects 'ALL' combined with other entries, like lowercase 'all'", () => {
+    expect(() => loadConfig(['mycompany', '--brand-ids', 'ALL,123456'])).toThrow(
+      /cannot be combined/,
+    );
+  });
+
+  it('lowercases subdomain entries, so a capitalised one matches its brand', () => {
+    // Zendesk subdomains are lowercase by construction and the resolver matches
+    // case-insensitively, but everything downstream (list_brands filtering, the
+    // allow-list short-circuit) compares strings exactly — normalise at parse
+    // time so 'Support' and 'support' are the same entry everywhere.
+    expect(loadConfig(['mycompany', '--brand-ids', 'Support,DOCS']).brandIds).toEqual([
+      'support',
+      'docs',
+    ]);
+    // Ids are digit strings: lowercasing is a no-op on them.
+    expect(loadConfig(['mycompany', '--brand-ids', '123456']).brandIds).toEqual(['123456']);
+  });
+
+  it('de-duplicates entries after trim, so A,A collapses to a single-brand lock', () => {
+    // 'A,A' names ONE brand twice; without collapsing, two entries would mean
+    // multi mode (list_brands exposed, per-call brand_id required) for a single
+    // brand. Order is preserved for the surviving entries.
+    expect(loadConfig(['mycompany', '--brand-ids', 'support,support']).brandIds).toEqual([
+      'support',
+    ]);
+    expect(loadConfig(['mycompany', '--brand-ids', 'support, docs ,support']).brandIds).toEqual([
+      'support',
+      'docs',
+    ]);
+  });
+
+  it('rejects an empty ZENDESK_BRAND_IDS', () => {
+    process.env['ZENDESK_BRAND_IDS'] = '';
+    expect(() => loadConfig(['mycompany'])).toThrow('Empty ZENDESK_BRAND_IDS');
+  });
+
+  it('rejects a whitespace-only --brand-ids', () => {
+    expect(() => loadConfig(['mycompany', '--brand-ids', '   '])).toThrow();
   });
 
   it('enables the topology context by default', () => {
@@ -512,7 +628,7 @@ describe('loadConfig', () => {
 
     it('covers every value-taking flag declared in CLI_OPTIONS', () => {
       // Guards the parametrised cases below against silently shrinking to zero.
-      expect(valueFlags).toHaveLength(14);
+      expect(valueFlags).toHaveLength(15);
     });
 
     it.each(valueFlags)('rejects %s as the last argument (value forgotten)', (flag) => {

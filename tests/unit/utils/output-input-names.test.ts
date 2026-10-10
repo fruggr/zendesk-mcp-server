@@ -13,7 +13,11 @@ import { MOCK_ARTICLE, MOCK_REQUEST, MOCK_TICKET } from '../../msw-handlers';
 // must reach it under that input's name — shown as-is, or annotated
 // `**Label** (input_name)` when the display label differs.
 
-const ctx: ToolContext = { subdomain: 'testsubdomain', getToken: () => 'test-token' };
+const ctx: ToolContext = {
+  subdomain: 'testsubdomain',
+  resolveBrandSubdomain: () => Promise.resolve(''),
+  getToken: () => 'test-token',
+};
 const tools = createAllTools(ctx);
 
 const inputsOf = (name: string): string[] => {

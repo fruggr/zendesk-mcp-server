@@ -7,7 +7,11 @@ import { createAllTools, type ToolContext } from '../../../src/tools';
 // `60% mean + 40% MIN`. Failure messages teach the fixer the intent and never
 // name the mechanical pass condition.
 
-const ctx: ToolContext = { subdomain: 'testsubdomain', getToken: () => 'test-token' };
+const ctx: ToolContext = {
+  subdomain: 'testsubdomain',
+  resolveBrandSubdomain: () => Promise.resolve(''),
+  getToken: () => 'test-token',
+};
 const tools = createAllTools(ctx);
 
 // Exemplars already in the tree that clear the bar — point fixers at these.

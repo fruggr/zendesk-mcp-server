@@ -5,6 +5,7 @@ import {
   formatArticle,
   formatArticleSummary,
   formatAudit,
+  formatBrand,
   formatCategory,
   formatComment,
   formatFieldValue,
@@ -34,6 +35,7 @@ import {
   MOCK_AUDIT_CHANGE,
   MOCK_AUDIT_CREATE,
   MOCK_AUDIT_NOISE,
+  MOCK_BRAND,
   MOCK_CATEGORY,
   MOCK_COMMENT,
   MOCK_MACRO,
@@ -1110,6 +1112,26 @@ describe('formatSection', () => {
     );
     expect(formatSection({ ...MOCK_SECTION, description: '' })).toMatchInlineSnapshot(
       `"- **FAQ** (600) — Category: 800 — No description"`,
+    );
+  });
+});
+
+describe('formatBrand', () => {
+  it('flags the default brand and leaves the flag off a non-default one', () => {
+    expect(formatBrand(MOCK_BRAND)).toMatchInlineSnapshot(
+      `"- **Main brand** (360001234567) — https://testsubdomain.zendesk.com — default"`,
+    );
+    expect(formatBrand({ ...MOCK_BRAND, default: false })).toMatchInlineSnapshot(
+      `"- **Main brand** (360001234567) — https://testsubdomain.zendesk.com"`,
+    );
+  });
+
+  it('flags an inactive brand, alone and together with the default flag', () => {
+    expect(formatBrand({ ...MOCK_BRAND, active: false })).toMatchInlineSnapshot(
+      `"- **Main brand** (360001234567) — https://testsubdomain.zendesk.com — default — inactive"`,
+    );
+    expect(formatBrand({ ...MOCK_BRAND, default: false, active: false })).toMatchInlineSnapshot(
+      `"- **Main brand** (360001234567) — https://testsubdomain.zendesk.com — inactive"`,
     );
   });
 });

@@ -14,7 +14,11 @@ import {
 import { mswServer } from '../../setup';
 
 const BASE = 'https://testsubdomain.zendesk.com/api/v2';
-const ctx: ToolContext = { subdomain: 'testsubdomain', getToken: () => 'test-token' };
+const ctx: ToolContext = {
+  subdomain: 'testsubdomain',
+  resolveBrandSubdomain: () => Promise.resolve(''),
+  getToken: () => 'test-token',
+};
 
 const findTool = (name: string) => {
   const tool = createRequestTools(ctx).find((t) => t.name === name);

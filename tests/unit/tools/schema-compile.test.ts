@@ -8,7 +8,11 @@ import { createStrictParamsParser } from '../../../src/utils/validation';
 // fast path cannot model comes back unchanged, silently uncovered; `{ strict: true }`
 // turns that into a thrown error. See docs/decisions/zod-compile.md.
 
-const ctx: ToolContext = { subdomain: 'testsubdomain', getToken: () => 'test-token' };
+const ctx: ToolContext = {
+  subdomain: 'testsubdomain',
+  resolveBrandSubdomain: () => Promise.resolve(''),
+  getToken: () => 'test-token',
+};
 const tools = createAllTools(ctx);
 
 // The shim records `bag.fallbackRun` when (and only when) it has installed a compiled fast

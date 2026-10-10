@@ -149,7 +149,11 @@ describe('buildProxyDescription', () => {
 // edit here. Rationale and how to re-verify the limits:
 // docs/decisions/proxy-schema-surface.md.
 describe('proxy surface budgets (real tool set)', () => {
-  const tools = createAllTools({ subdomain: 'testsubdomain', getToken: () => 'test-token' });
+  const tools = createAllTools({
+    subdomain: 'testsubdomain',
+    resolveBrandSubdomain: () => Promise.resolve(''),
+    getToken: () => 'test-token',
+  });
   const proxies = (readOnly: boolean) => {
     const filtered = filterTools(tools, { readOnly, namespaces: [...Namespace.options] });
     // Titles as `registerToolset` passes them: the title is part of the description.

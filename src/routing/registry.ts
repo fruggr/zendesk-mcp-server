@@ -1,19 +1,10 @@
 import type { Namespace } from '../config';
-import { LIST_PROMOTED_ARTICLES_TOOL } from '../guidance/article-resources';
 import type { ToolDefinition } from '../tools/definitions';
 
 export interface FilterOptions {
   readOnly: boolean;
   namespaces?: Namespace[] | undefined;
   tools?: string[] | undefined;
-  /**
-   * Mirrors `config.promotedArticles`. When explicitly false
-   * (`--no-promoted-articles`), `list_promoted_articles` is dropped: that
-   * listing must make ZERO Zendesk calls, and gating only the resource `list`
-   * callback would leave the tool callable and still scanning. `!== false` so a
-   * hand-built config without the field keeps the default-on behaviour.
-   */
-  promotedArticles?: boolean | undefined;
 }
 
 /**
@@ -29,9 +20,6 @@ export const filterTools = (allTools: ToolDefinition[], options: FilterOptions):
     if (options.readOnly && !tool.readOnly) return false;
     if (options.namespaces?.length && !options.namespaces.includes(tool.namespace)) return false;
     if (options.tools?.length && !options.tools.includes(tool.name)) return false;
-    if (options.promotedArticles === false && tool.name === LIST_PROMOTED_ARTICLES_TOOL) {
-      return false;
-    }
     return true;
   });
 

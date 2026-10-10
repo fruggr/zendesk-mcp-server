@@ -21,6 +21,8 @@ import { extractPaginationMeta } from '../utils/pagination';
 /** Aggregated, auto-discoverable structure of a Help Center instance. */
 export interface TopologyData {
   subdomain: string;
+  /** Allowed brands when the server was started with --brand-ids; unset = account default. */
+  brandIds?: string[];
   locales: ZendeskLocalesResponse;
   categories: ZendeskCategory[];
   sections: ZendeskSection[];
@@ -65,18 +67,30 @@ const tolerate403 = async <T>(
  * and sections are each capped at one max-size page; `sectionsHasMore` /
  * `categoriesHasMore` signal a Help Center too large to enumerate inline.
  */
-export const fetchTopology = async (subdomain: string, token: string): Promise<TopologyData> => {
+export const fetchTopology = async (
+  subdomain: string,
+  token: string,
+  brandIds?: string[],
+  brandSubdomain?: string,
+): Promise<TopologyData> => {
   const pageParams = { 'page[size]': String(MAX_PAGE_SIZE) };
+  // The Help Center calls below take the EFFECTIVE subdomain: the brand's own
+  // when the topology is pinned to one (its <sub>.zendesk.com host serves only
+  // that brand's tree), the account's otherwise. The account-wide calls further
+  // down keep the account subdomain.
+  const hcSubdomain = brandSubdomain ?? subdomain;
   const [locales, categoriesRes, sectionsRes, segments, perms, meRes] = await Promise.all([
-    helpCenterGet<ZendeskLocalesResponse>(subdomain, token, '/locales'),
+    helpCenterGet<ZendeskLocalesResponse>(hcSubdomain, token, '/locales'),
     helpCenterGet<ZendeskListResponse<ZendeskCategory>>(
-      subdomain,
+      hcSubdomain,
       token,
       '/categories',
       pageParams,
     ),
-    helpCenterGet<ZendeskListResponse<ZendeskSection>>(subdomain, token, '/sections', pageParams),
+    helpCenterGet<ZendeskListResponse<ZendeskSection>>(hcSubdomain, token, '/sections', pageParams),
     // Admin-gated: degrade to empty on 403 rather than failing the whole resource.
+    // User segments are ACCOUNT-WIDE (shared across brands — the endpoint has no
+    // brand dimension), so this one is deliberately NOT brand-scoped.
     tolerate403(
       helpCenterGet<{ user_segments: ZendeskUserSegment[] }>(subdomain, token, '/user_segments'),
       { user_segments: [] },
@@ -96,6 +110,9 @@ export const fetchTopology = async (subdomain: string, token: string): Promise<T
   const sections = sectionsRes.sections ?? [];
   return {
     subdomain,
+    // Spread rather than assign: exactOptionalPropertyTypes forbids writing an
+    // explicit `undefined` into an optional field.
+    ...(brandIds === undefined ? {} : { brandIds }),
     locales,
     categories,
     sections,
@@ -165,10 +182,26 @@ const renderAdminSection = (items: string[], denied: boolean, deniedNote: string
 
 /** Render the topology as a compact Markdown document for the LLM context. */
 export const formatTopology = (data: TopologyData): string => {
+  // A configured allow-list pins the tree to its FIRST brand; the header names
+  // it and, when several brands are allowed, lists the whole set so the caller
+  // knows which brand_id values the tools accept.
+  let brandNote: string;
+  let allowedBrandsLine: string[] = [];
+  if (data.brandIds === undefined) {
+    brandNote = '';
+  } else if (data.brandIds.length === 1 && data.brandIds[0] === 'all') {
+    brandNote = ' (all brands; tree below: account default)';
+  } else if (data.brandIds.length === 1) {
+    brandNote = ` (brand ${data.brandIds[0]})`;
+  } else {
+    brandNote = ` (brand ${data.brandIds[0]})`;
+    allowedBrandsLine = ['', `**Allowed brands**: ${data.brandIds.join(', ')}`];
+  }
   const text = [
-    `# Zendesk Help Center topology — ${data.subdomain}`,
+    `# Zendesk Help Center topology — ${data.subdomain}${brandNote}`,
     '',
     `**Your access**: ${data.currentUser.name} (id ${data.currentUser.id}), role "${data.currentUser.role}".`,
+    ...allowedBrandsLine,
     '',
     '## Locales',
     `- Default: ${data.locales.default_locale}`,
@@ -216,6 +249,8 @@ export const createTopologyProvider = (
   getToken: () => string | Promise<string>,
   subdomain: string,
   onUnauthorized?: () => void,
+  brandIds?: string[],
+  resolveBrandSubdomain: () => Promise<string | undefined> = () => Promise.resolve(undefined),
 ): TopologyProvider => {
   let cached: { at: number; promise: Promise<string> } | undefined;
 
@@ -225,8 +260,8 @@ export const createTopologyProvider = (
       if (cached && now - cached.at < TOPOLOGY_TTL_MS) return cached.promise;
 
       const promise = (async () => {
-        const token = await getToken();
-        return formatTopology(await fetchTopology(subdomain, token));
+        const [token, brandSubdomain] = await Promise.all([getToken(), resolveBrandSubdomain()]);
+        return formatTopology(await fetchTopology(subdomain, token, brandIds, brandSubdomain));
       })().catch((err: unknown) => {
         cached = undefined;
         if (onUnauthorized && err instanceof ZendeskApiError && err.status === 401) {

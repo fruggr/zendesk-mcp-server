@@ -4,7 +4,11 @@ import { renderToolSurface } from '../../../src/routing/print';
 import type { ToolContext, ToolDefinition } from '../../../src/tools/definitions';
 import { createAllTools } from '../../../src/tools/index';
 
-const ctx: ToolContext = { subdomain: 'testsubdomain', getToken: () => 'token' };
+const ctx: ToolContext = {
+  subdomain: 'testsubdomain',
+  resolveBrandSubdomain: () => Promise.resolve(''),
+  getToken: () => 'token',
+};
 const allTools = createAllTools(ctx);
 
 const makeConfig = (overrides: Partial<Config> = {}): Config =>
@@ -88,10 +92,9 @@ describe('renderToolSurface', () => {
     expect(out).not.toContain('write_thing');
   });
 
-  // The point of this output is that it matches the running server, so it has
-  // to honour every filter registerToolset honours -- including this one, which
-  // used to be applied only at registration.
-  it('drops list_promoted_articles when the pre-listing is disabled', () => {
+  // --no-promoted-articles gates the resource pre-listing, not the tool: the
+  // printed surface, like the running server, still lists it.
+  it('keeps list_promoted_articles when the pre-listing is disabled', () => {
     const enabled = renderToolSurface(
       makeConfig({ mode: 'all', namespaces: ['help_center'] }),
       allTools,
@@ -102,7 +105,7 @@ describe('renderToolSurface', () => {
       makeConfig({ mode: 'all', namespaces: ['help_center'], promotedArticles: false }),
       allTools,
     );
-    expect(disabled).not.toContain('list_promoted_articles');
+    expect(disabled).toContain('list_promoted_articles');
   });
 
   it('renders single mode as one proxy wrapping every operation', () => {

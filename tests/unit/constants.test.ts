@@ -8,10 +8,16 @@ describe('getBaseUrl', () => {
 });
 
 describe('getHelpCenterBaseUrl', () => {
-  it('builds the Help Center API base URL', () => {
+  it('builds the Help Center API base URL from the subdomain it is given', () => {
     expect(getHelpCenterBaseUrl('mycompany')).toBe(
       'https://mycompany.zendesk.com/api/v2/help_center',
     );
+  });
+
+  it('builds the brand-scoped URL from the BRAND subdomain, passed as the same argument', () => {
+    // Brands are only ever <subdomain>.zendesk.com, so the brand's subdomain IS
+    // the argument — there is no separate brand-host parameter.
+    expect(getHelpCenterBaseUrl('brand1')).toBe('https://brand1.zendesk.com/api/v2/help_center');
   });
 });
 
