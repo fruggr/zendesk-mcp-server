@@ -297,6 +297,16 @@ The account-wide Guide tools (`list_permission_groups`, `list_content_tags`,
 brand dimension (user segments are shared across brands). Everywhere else
 `brand_id` accepts a brand id **or** its subdomain.
 
+**Cost with several brands.** The promoted-article pre-listing scans every
+brand in scope: up to
+[`ARTICLE_RESOURCES_SCAN_MAX_PAGES`](#article_resources_scan_max_pages)
+requests per brand (20 by default) on each `resources/list`, cached a few
+minutes per session. With `all` or more than ~3 brands, and especially on a
+shared HTTP deployment where every session scans on its own, start the server
+with `--no-promoted-articles` or lower that cap. Articles stay readable on
+demand by URI; `--no-promoted-articles` also removes the
+`list_promoted_articles` tool.
+
 ### `OAUTH_CALLBACK_PORT`
 **Required:** no · **Default:** `27439`
 
