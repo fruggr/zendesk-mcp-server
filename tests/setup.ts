@@ -12,6 +12,6 @@ export const mswServer = setupServer(...handlers);
 
 // 'warn' instead of 'error': OAuth and integration tests make requests
 // to local Express servers that MSW doesn't need to intercept
-beforeAll(() => mswServer.listen({ onUnhandledRequest: 'warn' }));
+beforeAll(() => mswServer.listen({ onUnhandledFrame: 'warn' }));
 afterEach(() => mswServer.resetHandlers());
 afterAll(() => mswServer.close());
