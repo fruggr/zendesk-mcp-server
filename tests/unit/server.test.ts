@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { describe, expect, it } from 'vitest';
-import { type Config, ConfigSchema } from '../../src/config';
+import { type Config, ConfigSchema, Namespace } from '../../src/config';
 import { filterTools } from '../../src/routing/registry';
 import {
   aggregateAnnotations,
@@ -38,6 +38,10 @@ const baseConfig: Config = ConfigSchema.parse({
   host: '0.0.0.0',
   port: 3000,
   corsOrigins: [],
+  // Every namespace (requests included) and no topology: the surface these
+  // tests were written against, which the schema defaults would narrow.
+  namespaces: Namespace.options,
+  topology: false,
 });
 
 const getToken = () => 'test-token';

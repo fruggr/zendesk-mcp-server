@@ -116,9 +116,7 @@ describe('help center tools', () => {
         ),
       );
       const tool = findTool('get_article');
-      const text = tool
-        .handler({ article_id: 5000 })
-        .then((r) => (r.content[0] as { text: string }).text);
+      const text = tool.handler({ article_id: 5000 }).then(firstText);
       await expect(text).resolves.toContain('get_article_section');
       await expect(text).resolves.not.toContain('Use pagination or filters');
     });
@@ -558,9 +556,7 @@ describe('help center tools', () => {
         ),
       );
       const tool = findTool('find_translation_gaps');
-      const text = (
-        (await tool.handler({ locale: 'fr', category_id: 800 })).content[0] as { text: string }
-      ).text;
+      const text = firstText(await tool.handler({ locale: 'fr', category_id: 800 }));
       expect(text).toContain('Response truncated');
       expect(text).toContain('section listing is incomplete');
       expect(text).toContain('list_sections');
@@ -585,9 +581,7 @@ describe('help center tools', () => {
         ),
       );
       const tool = findTool('find_translation_gaps');
-      const text = (
-        (await tool.handler({ locale: 'fr', category_id: 800 })).content[0] as { text: string }
-      ).text;
+      const text = firstText(await tool.handler({ locale: 'fr', category_id: 800 }));
       expect(text).toContain('Response truncated');
       expect(text).toContain('already scoped to one category');
       expect(text).not.toContain('narrow the audit to one branch');
@@ -613,7 +607,7 @@ describe('help center tools', () => {
         ),
       );
       const tool = findTool('find_translation_gaps');
-      const text = ((await tool.handler({ locale: 'fr' })).content[0] as { text: string }).text;
+      const text = firstText(await tool.handler({ locale: 'fr' }));
       expect(text).toContain('Response truncated');
       expect(text).toContain('category_id');
       expect(text).not.toContain('Use pagination or filters');
@@ -1517,7 +1511,7 @@ describe('help center tools', () => {
         section_index: 0,
         format: 'html',
       });
-      const text = (result.content[0] as { text: string }).text;
+      const text = firstText(result);
       expect(text).toContain('format="markdown"');
       expect(text).not.toContain('Use pagination or filters');
     });
@@ -1531,7 +1525,7 @@ describe('help center tools', () => {
         section_index: 0,
         format: 'markdown',
       });
-      const text = (result.content[0] as { text: string }).text;
+      const text = firstText(result);
       expect(text).toContain('this single section already exceeds the limit');
       expect(text).not.toContain('Use pagination or filters');
     });

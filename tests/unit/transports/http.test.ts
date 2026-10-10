@@ -1,7 +1,7 @@
 import { request as httpRequest, type IncomingMessage } from 'node:http';
 import { HttpResponse, http } from 'msw';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { type Config, ConfigSchema } from '../../../src/config';
+import { type Config, ConfigSchema, Namespace } from '../../../src/config';
 import {
   DEFAULT_BROWSER_MCP_CLIENT_ORIGINS,
   extractBearer,
@@ -36,6 +36,10 @@ const baseConfig: Config = ConfigSchema.parse({
   host: '127.0.0.1',
   port: 0,
   corsOrigins: [],
+  // Every namespace (requests included) and no topology: the surface these
+  // tests were written against, which the schema defaults would narrow.
+  namespaces: Namespace.options,
+  topology: false,
   // In memory, with a fixed secret: nothing is written to the config dir.
   oauthStore: 'memory://',
   oauthMasterSecret: Buffer.alloc(32, 4).toString('base64'),

@@ -18,7 +18,7 @@ import {
   ticketWithSubscribersHandler,
 } from '../../msw-handlers';
 import { mswServer } from '../../setup';
-import { firstText } from '../../tool-result';
+import { allTextOf, firstText, textAt } from '../../tool-result';
 
 const ctx: ToolContext = { subdomain: 'testsubdomain', getToken: () => 'test-token' };
 
@@ -46,12 +46,6 @@ const captureShowMany = (): URLSearchParams[] => {
   );
   return seen;
 };
-
-const getAllText = (result: { content: Array<{ type: string; text?: string }> }): string =>
-  result.content
-    .filter((c) => c.type === 'text')
-    .map((b) => (b as { text: string }).text)
-    .join('\n');
 
 describe('ticket tools', () => {
   it('creates 18 tools (search_tickets lives here; the unified search is elsewhere)', () => {
@@ -194,14 +188,14 @@ describe('ticket tools', () => {
         }),
       );
       const tool = findTool('get_ticket');
-      const text = getAllText(await tool.handler({ ticket_id: 1, include_comments: true }));
+      const text = allTextOf(await tool.handler({ ticket_id: 1, include_comments: true }));
       expect(text).toContain('Sideloaded Agent (9999)');
       expect(showManyCalls).toBe(0);
     });
 
     it('resolves comment authors to names rather than raw ids', async () => {
       const tool = findTool('get_ticket');
-      const text = getAllText(await tool.handler({ ticket_id: 1, include_comments: true }));
+      const text = allTextOf(await tool.handler({ ticket_id: 1, include_comments: true }));
       expect(text).toContain('### Public comment (id 3000) by User 9999 (9999)');
     });
 
@@ -214,7 +208,7 @@ describe('ticket tools', () => {
         ),
       );
       const tool = findTool('get_ticket');
-      const text = getAllText(await tool.handler({ ticket_id: 1, include_comments: true }));
+      const text = allTextOf(await tool.handler({ ticket_id: 1, include_comments: true }));
       expect(text).toContain('Response truncated');
       expect(text).toContain('list_ticket_comments');
       expect(text).toContain('sort_order');
@@ -232,7 +226,7 @@ describe('ticket tools', () => {
         ),
       );
       const tool = findTool('get_ticket');
-      const text = getAllText(await tool.handler({ ticket_id: 1, include_comments: false }));
+      const text = allTextOf(await tool.handler({ ticket_id: 1, include_comments: false }));
       expect(text).toContain('Response truncated');
       expect(text).toContain('takes no pagination or filter parameters');
       expect(text).not.toContain('Use pagination or filters');
@@ -248,7 +242,7 @@ describe('ticket tools', () => {
     it('renders a chronological timeline with resolved actor names', async () => {
       const tool = findTool('get_ticket_history');
       const result = await tool.handler({ ticket_id: 1, page_size: 100 });
-      const text = getAllText(result);
+      const text = allTextOf(result);
       expect(text).toContain('Change history for ticket #1');
       // Actors resolved to name (id) via the batched show_many look-up.
       expect(text).toContain('User 200 (200)');
@@ -260,7 +254,7 @@ describe('ticket tools', () => {
 
     it('shows comment presence without leaking comment bodies', async () => {
       const tool = findTool('get_ticket_history');
-      const text = getAllText(await tool.handler({ ticket_id: 1, page_size: 100 }));
+      const text = allTextOf(await tool.handler({ ticket_id: 1, page_size: 100 }));
       expect(text).toContain('Public comment added');
       expect(text).toContain('Internal note added');
       expect(text).not.toContain('Initial request body');
@@ -269,7 +263,7 @@ describe('ticket tools', () => {
 
     it('filters out system-noise events and all-noise audits', async () => {
       const tool = findTool('get_ticket_history');
-      const text = getAllText(await tool.handler({ ticket_id: 1, page_size: 100 }));
+      const text = allTextOf(await tool.handler({ ticket_id: 1, page_size: 100 }));
       // The Notification/Push audit (author 999) produces no block.
       expect(text).not.toContain('email sent');
       expect(text).not.toContain('999');
@@ -278,7 +272,7 @@ describe('ticket tools', () => {
     it('surfaces the pagination cursor when more audits remain', async () => {
       mswServer.use(auditsMorePageHandler);
       const tool = findTool('get_ticket_history');
-      const text = getAllText(await tool.handler({ ticket_id: 1, page_size: 1 }));
+      const text = allTextOf(await tool.handler({ ticket_id: 1, page_size: 1 }));
       expect(text).toContain('More available');
       expect(text).toContain('next-audit-cursor');
     });
@@ -294,7 +288,7 @@ describe('ticket tools', () => {
       );
       const tool = findTool('get_ticket_history');
       const result = await tool.handler({ ticket_id: 1, page_size: 100 });
-      const text = getAllText(result);
+      const text = allTextOf(result);
       expect(result['isError']).toBeFalsy();
       expect(text).toContain('**assignee** (assignee_id): (none) → 100');
       expect(text).toContain('**group** (group_id): (none) → 300');
@@ -317,7 +311,7 @@ describe('ticket tools', () => {
         ),
       );
       const tool = findTool('get_ticket_history');
-      const text = getAllText(await tool.handler({ ticket_id: 1, page_size: 100 }));
+      const text = allTextOf(await tool.handler({ ticket_id: 1, page_size: 100 }));
       expect(text).toContain('No change history to show for ticket #1');
     });
 
@@ -374,7 +368,7 @@ describe('ticket tools', () => {
 
     it('renders bodies newest first, with comment ids and resolved authors', async () => {
       const tool = findTool('list_ticket_comments');
-      const text = getAllText(
+      const text = allTextOf(
         await tool.handler({ ticket_id: 1, sort_order: 'desc', page_size: 20 }),
       );
       expect(text).toContain('# Comments on ticket #1 (newest first)');
@@ -388,7 +382,7 @@ describe('ticket tools', () => {
 
     it('labels an oldest-first page as such', async () => {
       const tool = findTool('list_ticket_comments');
-      const text = getAllText(
+      const text = allTextOf(
         await tool.handler({ ticket_id: 1, sort_order: 'asc', page_size: 20 }),
       );
       expect(text).toContain('# Comments on ticket #1 (oldest first)');
@@ -410,7 +404,7 @@ describe('ticket tools', () => {
         ),
       );
       const tool = findTool('list_ticket_comments');
-      const text = getAllText(
+      const text = allTextOf(
         await tool.handler({ ticket_id: 1, sort_order: 'desc', page_size: 20 }),
       );
       expect(text).toContain('# Comments on ticket #1 (oldest first)');
@@ -426,12 +420,10 @@ describe('ticket tools', () => {
         ),
       );
       const tool = findTool('list_ticket_comments');
-      const desc = getAllText(
+      const desc = allTextOf(
         await tool.handler({ ticket_id: 1, sort_order: 'desc', page_size: 20 }),
       );
-      const asc = getAllText(
-        await tool.handler({ ticket_id: 1, sort_order: 'asc', page_size: 20 }),
-      );
+      const asc = allTextOf(await tool.handler({ ticket_id: 1, sort_order: 'asc', page_size: 20 }));
       expect(desc).toContain('(newest first)');
       expect(asc).toContain('(oldest first)');
     });
@@ -439,7 +431,7 @@ describe('ticket tools', () => {
     it('surfaces the pagination cursor when more comments remain', async () => {
       mswServer.use(commentsMorePageHandler);
       const tool = findTool('list_ticket_comments');
-      const text = getAllText(
+      const text = allTextOf(
         await tool.handler({ ticket_id: 1, sort_order: 'desc', page_size: 1 }),
       );
       expect(text).toContain('More available');
@@ -456,7 +448,7 @@ describe('ticket tools', () => {
         }),
       );
       const tool = findTool('list_ticket_comments');
-      const text = getAllText(
+      const text = allTextOf(
         await tool.handler({ ticket_id: 1, sort_order: 'desc', page_size: 20 }),
       );
       expect(text).toContain('Sideloaded Author (9998)');
@@ -475,7 +467,7 @@ describe('ticket tools', () => {
         }),
       );
       const tool = findTool('list_ticket_comments');
-      const text = getAllText(
+      const text = allTextOf(
         await tool.handler({ ticket_id: 1, sort_order: 'desc', page_size: 20 }),
       );
       expect(showManyCalls).toBe(1);
@@ -492,7 +484,7 @@ describe('ticket tools', () => {
       const tool = findTool('list_ticket_comments');
       const result = await tool.handler({ ticket_id: 1, sort_order: 'desc', page_size: 20 });
       expect(result['isError']).toBeFalsy();
-      expect(getAllText(result)).toContain('### Internal note (id 3001) by 9998');
+      expect(allTextOf(result)).toContain('### Internal note (id 3001) by 9998');
     });
 
     it('returns a clear message when the ticket has no comments', async () => {
@@ -502,7 +494,7 @@ describe('ticket tools', () => {
         ),
       );
       const tool = findTool('list_ticket_comments');
-      const text = getAllText(
+      const text = allTextOf(
         await tool.handler({ ticket_id: 1, sort_order: 'desc', page_size: 20 }),
       );
       expect(text).toContain('No comments to show for ticket #1');
@@ -518,7 +510,7 @@ describe('ticket tools', () => {
         ),
       );
       const tool = findTool('list_ticket_comments');
-      const text = getAllText(
+      const text = allTextOf(
         await tool.handler({ ticket_id: 1, sort_order: 'desc', page_size: 20 }),
       );
       expect(text).toContain('next-comment-cursor');
@@ -539,7 +531,7 @@ describe('ticket tools', () => {
         ),
       );
       const tool = findTool('list_ticket_comments');
-      const text = getAllText(
+      const text = allTextOf(
         await tool.handler({ ticket_id: 1, sort_order: 'desc', page_size: 20 }),
       );
       expect(text.startsWith('# Comments on ticket #1')).toBe(true);
@@ -564,7 +556,7 @@ describe('ticket tools', () => {
         ),
       );
       const tool = findTool('list_ticket_comments');
-      const text = getAllText(
+      const text = allTextOf(
         await tool.handler({ ticket_id: 1, sort_order: 'desc', page_size: 1 }),
       );
       expect(text).toContain('Response truncated');
@@ -585,7 +577,7 @@ describe('ticket tools', () => {
         ),
       );
       const tool = findTool('list_ticket_comments');
-      const text = getAllText(
+      const text = allTextOf(
         await tool.handler({ ticket_id: 1, sort_order: 'desc', page_size: 20 }),
       );
       expect(text).toContain('paginated this response by offset');
@@ -609,7 +601,7 @@ describe('ticket tools', () => {
         ),
       );
       const tool = findTool('list_ticket_comments');
-      const text = getAllText(
+      const text = allTextOf(
         await tool.handler({ ticket_id: 1, sort_order: 'desc', page_size: 100 }),
       );
       expect(text).toContain('read the remaining comments in Zendesk directly');
@@ -626,7 +618,7 @@ describe('ticket tools', () => {
         ),
       );
       const tool = findTool('list_ticket_comments');
-      const text = getAllText(
+      const text = allTextOf(
         await tool.handler({ ticket_id: 1, sort_order: 'desc', page_size: 20 }),
       );
       expect(text).toContain('No comments to show for ticket #1');
@@ -636,7 +628,7 @@ describe('ticket tools', () => {
 
     it('says nothing about offset pagination on a normal cursor page', async () => {
       const tool = findTool('list_ticket_comments');
-      const text = getAllText(
+      const text = allTextOf(
         await tool.handler({ ticket_id: 1, sort_order: 'desc', page_size: 20 }),
       );
       expect(text).not.toContain('paginated this response by offset');
@@ -653,10 +645,8 @@ describe('ticket tools', () => {
         ),
       );
       const tool = findTool('list_ticket_comments');
-      const asc = getAllText(
-        await tool.handler({ ticket_id: 1, sort_order: 'asc', page_size: 20 }),
-      );
-      const desc = getAllText(
+      const asc = allTextOf(await tool.handler({ ticket_id: 1, sort_order: 'asc', page_size: 20 }));
+      const desc = allTextOf(
         await tool.handler({ ticket_id: 1, sort_order: 'desc', page_size: 20 }),
       );
       expect(asc).toContain('(oldest first)');
@@ -696,7 +686,7 @@ describe('ticket tools', () => {
     it('includes content_url in caption of embedded images', async () => {
       const tool = findTool('get_ticket_attachments');
       const result = await tool.handler({ ticket_id: 1 });
-      const allText = getAllText(result);
+      const allText = allTextOf(result);
       expect(allText).toContain(
         'https://testsubdomain.zendesk.com/attachments/token/abc/?name=screenshot.png',
       );
@@ -705,7 +695,7 @@ describe('ticket tools', () => {
     it('returns text reference for non-image attachments', async () => {
       const tool = findTool('get_ticket_attachments');
       const result = await tool.handler({ ticket_id: 1 });
-      const allText = getAllText(result);
+      const allText = allTextOf(result);
       expect(allText).toContain('report.pdf');
       expect(allText).toContain('application/pdf');
       expect(allText).toContain(
@@ -716,7 +706,7 @@ describe('ticket tools', () => {
     it('respects MAX_ATTACHMENT_BYTES for oversize images', async () => {
       const tool = findTool('get_ticket_attachments');
       const result = await tool.handler({ ticket_id: 1 });
-      const allText = getAllText(result);
+      const allText = allTextOf(result);
       expect(allText).toContain('huge.png');
       expect(allText).toContain('skipped: exceeds 5 MB per-image limit');
       const imageBlocks = result.content.filter((c) => c.type === 'image');
@@ -752,7 +742,7 @@ describe('ticket tools', () => {
       const result = await tool.handler({ ticket_id: 1 });
       const imageBlocks = result.content.filter((c) => c.type === 'image');
       expect(imageBlocks).toHaveLength(10);
-      const allText = getAllText(result);
+      const allText = allTextOf(result);
       expect(allText).toContain('skipped: max 10 embedded images reached');
     });
 
@@ -808,7 +798,7 @@ describe('ticket tools', () => {
       );
       const tool = findTool('get_ticket_attachments');
       const result = await tool.handler({ ticket_id: 1 });
-      const allText = getAllText(result);
+      const allText = allTextOf(result);
       expect(allText).toContain('page1.png');
       expect(allText).toContain('page2.png');
       expect(allText).toContain('# Attachments for ticket #1 (2 total)');
@@ -859,7 +849,7 @@ describe('ticket tools', () => {
       const result = await tool.handler({ ticket_id: 1 });
       const imageBlocks = result.content.filter((c) => c.type === 'image');
       expect(imageBlocks).toHaveLength(1);
-      const allText = getAllText(result);
+      const allText = allTextOf(result);
       expect(allText).toContain('good.png');
       expect(allText).toContain('broken.png');
       expect(allText).toContain('download failed: 404');
@@ -876,7 +866,7 @@ describe('ticket tools', () => {
       const tool = findTool('get_ticket_attachments');
       const result = await tool.handler({ ticket_id: 1, attachment_ids: [30001, 30002] });
       expect(commentsCallCount).toBe(0);
-      const allText = getAllText(result);
+      const allText = allTextOf(result);
       expect(allText).toContain('# Attachments for ticket #1 (2 total)');
       expect(allText).toContain('screenshot.png');
       expect(allText).toContain('report.pdf');
@@ -885,7 +875,7 @@ describe('ticket tools', () => {
     it('fail-softs on unknown attachment_ids', async () => {
       const tool = findTool('get_ticket_attachments');
       const result = await tool.handler({ ticket_id: 1, attachment_ids: [30001, 999999] });
-      const allText = getAllText(result);
+      const allText = allTextOf(result);
       expect(allText).toContain('# Attachments for ticket #1 (1 total)');
       expect(allText).toContain('screenshot.png');
       expect(allText).not.toContain('999999');
@@ -895,7 +885,7 @@ describe('ticket tools', () => {
       const tool = findTool('get_ticket_attachments');
       const result = await tool.handler({ ticket_id: 1, attachment_ids: [999999] });
       expect(result.content).toHaveLength(1);
-      expect((result.content[0] as { text: string }).text).toContain('No attachments found');
+      expect(firstText(result)).toContain('No attachments found');
     });
 
     it('preserves order and image/caption pairing across multiple images', async () => {
@@ -945,15 +935,13 @@ describe('ticket tools', () => {
       const result = await tool.handler({ ticket_id: 1 });
       expect(result.content).toHaveLength(7);
       expect(result.content[0]).toMatchObject({ type: 'text' });
-      expect((result.content[0] as { text: string }).text).toContain(
-        '# Attachments for ticket #1 (3 total)',
-      );
+      expect(firstText(result)).toContain('# Attachments for ticket #1 (3 total)');
       expect(result.content[1]).toMatchObject({ type: 'image' });
-      expect((result.content[2] as { text: string }).text).toContain('first.png');
+      expect(textAt(result, 2)).toContain('first.png');
       expect(result.content[3]).toMatchObject({ type: 'image' });
-      expect((result.content[4] as { text: string }).text).toContain('second.png');
+      expect(textAt(result, 4)).toContain('second.png');
       expect(result.content[5]).toMatchObject({ type: 'image' });
-      expect((result.content[6] as { text: string }).text).toContain('third.png');
+      expect(textAt(result, 6)).toContain('third.png');
     });
 
     it('handles comments where the attachments field is omitted', async () => {
@@ -975,7 +963,7 @@ describe('ticket tools', () => {
       const tool = findTool('get_ticket_attachments');
       const result = await tool.handler({ ticket_id: 1 });
       expect(result.content).toHaveLength(1);
-      expect((result.content[0] as { text: string }).text).toContain('No attachments found');
+      expect(firstText(result)).toContain('No attachments found');
     });
 
     it('returns "no attachments" message when ticket has none', async () => {
@@ -991,7 +979,7 @@ describe('ticket tools', () => {
       const tool = findTool('get_ticket_attachments');
       const result = await tool.handler({ ticket_id: 1 });
       expect(result.content).toHaveLength(1);
-      expect((result.content[0] as { text: string }).text).toContain('No attachments found');
+      expect(firstText(result)).toContain('No attachments found');
     });
 
     it('has readOnly annotation', () => {
@@ -1058,7 +1046,7 @@ describe('ticket tools', () => {
         const result = await tool.handler({ ticket_id: 1 });
         const imageBlocks = result.content.filter((c) => c.type === 'image');
         expect(imageBlocks).toHaveLength(2);
-        expect(getAllText(result)).toContain('skipped: max 2 embedded images reached');
+        expect(allTextOf(result)).toContain('skipped: max 2 embedded images reached');
       });
 
       it('falls back to the default cap when the override is empty or non-numeric', async () => {
@@ -1072,7 +1060,7 @@ describe('ticket tools', () => {
         const result = await tool.handler({ ticket_id: 1 });
         const imageBlocks = result.content.filter((c) => c.type === 'image');
         expect(imageBlocks).toHaveLength(10);
-        expect(getAllText(result)).toContain('skipped: max 10 embedded images reached');
+        expect(allTextOf(result)).toContain('skipped: max 10 embedded images reached');
       });
 
       it('honors ATTACHMENT_MAX_BYTES (with a dynamic skip message)', async () => {
@@ -1092,7 +1080,7 @@ describe('ticket tools', () => {
         const result = await tool.handler({ ticket_id: 1 });
         const imageBlocks = result.content.filter((c) => c.type === 'image');
         expect(imageBlocks).toHaveLength(0);
-        expect(getAllText(result)).toContain('exceeds 2 MB per-image limit');
+        expect(allTextOf(result)).toContain('exceeds 2 MB per-image limit');
       });
 
       // #205: the per-image cap and the image count bound each image and how many,
@@ -1122,7 +1110,7 @@ describe('ticket tools', () => {
           // 60 KB of bytes is 80 KB of base64, so two fit in 200 KB and two do not.
           expect(result.content.filter((c) => c.type === 'image')).toHaveLength(2);
 
-          const text = getAllText(result);
+          const text = allTextOf(result);
           expect(text).toContain('img-2.png');
           expect(text).toMatch(/skipped: response budget of [\d.]+ MB reached/);
           // Neither existing guardrail fired: each image is far under the 5 MB
@@ -1157,7 +1145,7 @@ describe('ticket tools', () => {
             },
           ]);
 
-          const text = getAllText(result);
+          const text = allTextOf(result);
           // The image is not embedded, but it IS listed, with the reason.
           expect(result.content.filter((c) => c.type === 'image')).toHaveLength(0);
           expect(text).toContain('lies.png');
@@ -1212,7 +1200,7 @@ describe('ticket tools', () => {
 
           expect(serializedBytes(result)).toBeLessThanOrEqual(4 * 1024);
           expect(result.content.length).toBeLessThan(200);
-          expect(getAllText(result)).toMatch(/\d+ further attachments omitted/);
+          expect(allTextOf(result)).toMatch(/\d+ further attachments omitted/);
         });
       });
     });
@@ -1795,7 +1783,7 @@ describe('ticket tools', () => {
         ),
       );
       const tool = findTool('get_linked_incidents');
-      const text = getAllText(await tool.handler({ problem_id: 1 }));
+      const text = allTextOf(await tool.handler({ problem_id: 1 }));
       expect(text).toContain('takes no pagination or filter parameters');
       expect(text).not.toContain('Use pagination or filters');
     });
@@ -2053,7 +2041,7 @@ describe('ticket tools', () => {
         ),
       );
       const tool = findTool('preview_macro_diff');
-      const text = getAllText(await tool.handler({ ticket_id: 1, macro_id: 700 }));
+      const text = allTextOf(await tool.handler({ ticket_id: 1, macro_id: 700 }));
       expect(text).toContain('takes no pagination or filter parameters');
       expect(text).not.toContain('Use pagination or filters');
     });

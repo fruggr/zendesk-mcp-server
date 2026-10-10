@@ -232,7 +232,9 @@ describe('HTTP authorization server', () => {
 
     it('narrows every advertised scope to read under --read-only', async () => {
       await start({ readOnly: true });
-      const prm = await metadataOf(await fetch(`${base}/.well-known/oauth-protected-resource/mcp`));
+      const prm = (await (
+        await fetch(`${base}/.well-known/oauth-protected-resource/mcp`)
+      ).json()) as { scopes_supported: unknown };
       const meta = await metadataOf(await fetch(`${base}/.well-known/oauth-authorization-server`));
       expect(prm.scopes_supported).toEqual(['read']);
       expect(meta.scopes_supported).not.toContain('write');
@@ -759,6 +761,7 @@ describe('HTTP authorization server', () => {
       const tokens = (await res.json()) as TokenResponse['body'];
       expect(res.status).toBe(200);
       expect((await callMcp(base, tokens.access_token)).status).toBe(200);
+      expect(tokens.refresh_token).toEqual(expect.any(String));
       const next = await form('/token', {
         grant_type: 'refresh_token',
         client_id: clientId,
