@@ -11,6 +11,8 @@ import { zendeskGet } from './zendesk-api';
  * almost never, and every Help Center tool call would otherwise pay a
  * `GET /api/v2/brands` round-trip first.
  */
+const BRAND_SUBDOMAIN = /^[a-z0-9][a-z0-9-]*$/;
+
 export type BrandSubdomainResolver = (idOrSubdomain: string) => Promise<string>;
 
 /**
@@ -91,6 +93,13 @@ export const createBrandSubdomainResolver = (
       // server config here would send half the callers on the wrong chase.
       throw new Error(
         `Unknown brand "${idOrSubdomain}": no brand with that id or subdomain exists on this account; call list_brands to see the available brands.`,
+      );
+    }
+    // The subdomain becomes the host the bearer token is sent to: refuse
+    // anything that is not a bare DNS label rather than trust the API blindly.
+    if (!BRAND_SUBDOMAIN.test(brand.subdomain)) {
+      throw new Error(
+        `Brand ${brand.id} has an unexpected subdomain; refusing to send a request to it.`,
       );
     }
     return brand.subdomain;

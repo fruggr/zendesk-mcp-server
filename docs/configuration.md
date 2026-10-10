@@ -265,6 +265,13 @@ once by subdomain) reads as two entries and turns the server into multi-brand
 mode (per-call `brand_id` required). Subdomain entries are matched
 case-insensitively (`Support` resolves the `support` brand).
 
+**Not a security boundary.** `--brand-ids` narrows the Help Center surface
+only: tickets, users, search and end-user requests stay account-wide, and what
+any call can reach is decided by the Zendesk permissions behind the token. To
+keep an agent on one brand, combine `--brand-ids <brand>` with
+`--namespace help_center` (and `--read-only` where it fits); anything stronger
+must come from that account's Zendesk permissions.
+
 Zendesk addresses brands by host: the server resolves each entry to its brand
 (lazily, on first use — startup validates the format only) and calls
 `<brand.subdomain>.zendesk.com` under the standard `/api/v2/help_center` path.

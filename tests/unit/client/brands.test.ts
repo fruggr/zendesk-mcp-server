@@ -76,6 +76,32 @@ describe('createBrandSubdomainResolver', () => {
     await expect(resolve('nonexistent')).rejects.not.toThrow(/--brand-ids/);
   });
 
+  it.each(['ok.evil.com', 'evil.com/ok', 'ok@evil', '-lead', 'Upper', ''])(
+    'refuses to route to a brand whose subdomain is not a bare DNS label (%j)',
+    async (bad) => {
+      // The subdomain becomes the host the bearer token is sent to.
+      mswServer.use(
+        http.get(`https://${SUBDOMAIN}.zendesk.com/api/v2/brands`, () =>
+          HttpResponse.json({ brands: [{ id: 555, subdomain: bad }] }),
+        ),
+      );
+      const resolve = createBrandSubdomainResolver(SUBDOMAIN, () => TOKEN);
+      await expect(resolve('555')).rejects.toThrow(
+        'Brand 555 has an unexpected subdomain; refusing to send a request to it.',
+      );
+    },
+  );
+
+  it('accepts a subdomain with digits and inner hyphens', async () => {
+    mswServer.use(
+      http.get(`https://${SUBDOMAIN}.zendesk.com/api/v2/brands`, () =>
+        HttpResponse.json({ brands: [{ id: 556, subdomain: 'help-2024' }] }),
+      ),
+    );
+    const resolve = createBrandSubdomainResolver(SUBDOMAIN, () => TOKEN);
+    await expect(resolve('556')).resolves.toBe('help-2024');
+  });
+
   it('follows cursor pagination so brands past the first page resolve', async () => {
     const base = 'https://testsubdomain.zendesk.com/api/v2';
     const seenParams: (string | null)[] = [];
