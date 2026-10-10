@@ -75,9 +75,9 @@
   "packageManager": "pnpm@12.9.1+sha512.06b055fff5cd20dc12781de173ced3310ce0951bf2ec620211a16045d5444d5c93a663210764ef29a653a610459ba0368f0e74f84d80c54723cf95aae7bc0d6d",
   "devDependencies": {
     "@biomejs/biome": "2.5.14",
-    "@modelcontextprotocol/client": "2.2.0",
-    "@modelcontextprotocol/node": "2.1.0",
-    "@modelcontextprotocol/server": "2.2.0",
+    "@modelcontextprotocol/client": "2.3.1",
+    "@modelcontextprotocol/node": "2.1.1",
+    "@modelcontextprotocol/server": "2.3.1",
     "@semantic-release/changelog": "^7.0.0",
     "@semantic-release/exec": "^7.1.0",
     "@semantic-release/git": "^11.0.0",
