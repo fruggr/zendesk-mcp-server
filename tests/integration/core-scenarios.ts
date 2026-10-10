@@ -176,7 +176,7 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         expect(uris).toContain('zendesk-hc://topology');
       });
 
-      it('disables the promoted pre-listing (zero scan, tool gone) but keeps read-by-id when --no-promoted-articles', async () => {
+      it('disables the promoted pre-listing (zero scan) but keeps the tool and read-by-id when --no-promoted-articles', async () => {
         // Count any /articles scan: with the pre-listing off there must be none. A
         // successful handler (not an error one) would let an accidental scan pass
         // silently on the "no entries" check alone, so assert the request count too.
@@ -198,9 +198,12 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         expect(uris.some((u) => u.startsWith('zendesk-hc://article/'))).toBe(false);
         expect(scanCount).toBe(0);
 
-        // ...and the companion tool is gone.
+        // ...but the companion tool stays: an explicit, on-demand call, not a
+        // preload, so it scans only when the LLM asks for it.
         const names = toolNames((await connected.client.listTools()).tools);
-        expect(names).not.toContain('list_promoted_articles');
+        expect(names).toContain('list_promoted_articles');
+        await connected.client.callTool({ name: 'list_promoted_articles', arguments: {} });
+        expect(scanCount).toBe(1);
 
         // ...but reading an UNLISTED (non-promoted) article by id still works —
         // read-by-id is NOT disabled by the flag. Article 5000 is never promoted.

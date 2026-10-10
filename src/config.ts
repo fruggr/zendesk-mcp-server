@@ -68,14 +68,12 @@ export const ConfigSchema = z.object({
   topology: z.boolean().default(true),
   /**
    * Whether to PRE-LIST the promoted ("featured") Help Center articles: the
-   * `<scheme>://article/{id}` resource's `list` callback (which scans `/articles`
-   * to enumerate the promoted set for `resources/list`) AND the
-   * `list_promoted_articles` tool. On by default; an operator disables the
-   * pre-listing with `--no-promoted-articles` (e.g. on a very large Help Center
-   * where scanning is costly) so the server issues zero preloading requests. This
-   * does NOT disable reading a known article by id (`<scheme>://article/{id}` stays
-   * registered) — that is cheap and on-demand. Only ever active when the
-   * `help_center` namespace itself is active.
+   * article resource's `list` callback, which scans `/articles` to enumerate the
+   * promoted set for `resources/list`. On by default; `--no-promoted-articles`
+   * turns it off (e.g. on a very large or multi-brand Help Center) so the server
+   * issues zero preloading requests. Reading a known article by id and the
+   * on-demand `list_promoted_articles` tool stay available. Only ever active
+   * when the `help_center` namespace itself is active.
    */
   promotedArticles: z.boolean().default(true),
   /**

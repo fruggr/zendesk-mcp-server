@@ -263,14 +263,13 @@ export const registerToolset = (
     for (const handle of registered) handle.remove();
   };
 
-  // Apply filters (--read-only, --namespace, --tool, --no-promoted-articles).
+  // Apply filters (--read-only, --namespace, --tool).
   // All of them live in filterTools so `--print-tools` renders exactly this set;
   // a filter applied only here would make that diagnostic lie.
   const filteredTools = filterTools(tools, {
     readOnly: config.readOnly,
     namespaces: config.namespaces,
     tools: config.tools,
-    promotedArticles: config.promotedArticles,
   });
 
   // Registration is atomic: if any registerTool/registerResource throws partway

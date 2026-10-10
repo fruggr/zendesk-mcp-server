@@ -80,13 +80,11 @@ export const articleResourceEnabled = (config: Config): boolean =>
 
 /**
  * Whether the promoted-article PRE-LISTING is exposed: the resource `list`
- * callback's scan (which enumerates the promoted articles for `resources/list`)
- * AND the `list_promoted_articles` tool. This is the costly, fan-out part (a capped
- * scan of `/articles`, no server-side promoted filter), so it gets its own flag —
- * `--no-promoted-articles` turns it off so the server issues zero preloading
- * requests, while read-by-id (above) stays available. `!== false` (not truthiness)
- * so an omitted flag on a hand-built Config stays default-on, matching the tool
- * filter in `server.ts`.
+ * callback's scan, which enumerates the promoted articles for `resources/list`.
+ * A client may trigger it unprompted, and it fans out (a capped scan of
+ * `/articles`, per brand in scope), so `--no-promoted-articles` turns it off.
+ * Read-by-id and the explicit `list_promoted_articles` tool stay available.
+ * `!== false` so an omitted flag on a hand-built Config stays default-on.
  */
 export const promotedArticlesEnabled = (config: Config): boolean =>
   config.promotedArticles !== false && helpCenterNamespaceActive(config);

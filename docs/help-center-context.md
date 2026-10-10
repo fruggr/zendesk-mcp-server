@@ -88,7 +88,7 @@ per page and per brand in scope, capped by
 | Flag | Effect |
 |------|--------|
 | [`--no-topology`](configuration.md#cli-reference) | Disables the `instructions` blob **and** the topology resource. They toggle together. |
-| [`--no-promoted-articles`](configuration.md#cli-reference) | Disables the promoted pre-listing: both the resource `list` scan and the `list_promoted_articles` tool, so the server makes zero preloading requests. **Reading a known article by id stays available**, since it never preloads. |
+| [`--no-promoted-articles`](configuration.md#cli-reference) | Disables the promoted pre-listing (the resource `list` scan), so the server makes zero preloading requests. **Reading a known article by id and the `list_promoted_articles` tool stay available**: both run only when explicitly asked for. |
 
 ## Branding the URI scheme
 

@@ -36,9 +36,9 @@ Options:
   --no-topology           Disable the Help Center structural context
                           (instructions + zendesk-hc://topology resource)
   --no-promoted-articles  Disable the promoted-article PRE-LISTING (the
-                          <scheme>://article/{id} list scan + the
-                          list_promoted_articles tool). Reading a known
-                          article by id stays available.
+                          <scheme>://article/{id} list scan). Reading a known
+                          article by id and the list_promoted_articles tool
+                          stay available.
   --hc-resource-scheme <scheme>
                           URI scheme of the Help Center resources
                           (default: zendesk-hc, i.e. zendesk-hc://topology);
@@ -304,8 +304,7 @@ requests per brand (20 by default) on each `resources/list`, cached a few
 minutes per session. With `all` or more than ~3 brands, and especially on a
 shared HTTP deployment where every session scans on its own, start the server
 with `--no-promoted-articles` or lower that cap. Articles stay readable on
-demand by URI; `--no-promoted-articles` also removes the
-`list_promoted_articles` tool.
+demand by URI, and `list_promoted_articles` still works per brand.
 
 ### `OAUTH_CALLBACK_PORT`
 **Required:** no · **Default:** `27439`
@@ -444,7 +443,7 @@ Safety threshold for `reorder_article`. When moving an article would rewrite mor
 
 Hard cap on the number of article pages scanned to find promoted ("featured") articles. This backs both the `<scheme>://article/{id}` resource listing (`resources/list`) and the `list_promoted_articles` tool. The Help Center API has no server-side promoted filter, so the scan pages through the articles and filters them client-side; this bounds that scan on a very large Help Center (promoted articles beyond the cap are omitted, and the truncation is flagged). Raise it if promoted articles live deep in a large catalog.
 
-**Cost note.** Each scanned page is one Zendesk API request, and Zendesk rate-limits every plan, so on a large Help Center a single listing or tool call can fan out to several requests. The resource-listing scan is cached per session for a few minutes (`ARTICLE_RESOURCES_TTL_MS`) so repeated `resources/list` calls coalesce; the `list_promoted_articles` tool performs a fresh, uncached scan on every call. The scan runs only when a resource-capable client calls `resources/list` or the LLM calls `list_promoted_articles`, never at connect. The worst case is a large catalog with few or no promoted articles: a full-cap scan for little result. If that matters for your tenant's quota, lower this cap or disable the pre-listing with **`--no-promoted-articles`**, which turns off the resource `list` scan **and** the `list_promoted_articles` tool, so the server makes **zero** preloading requests. It does **not** disable reading a known article by id (`<scheme>://article/{id}` stays registered): that is a cheap, on-demand single fetch, not a preload.
+**Cost note.** Each scanned page is one Zendesk API request, and Zendesk rate-limits every plan, so on a large Help Center a single listing or tool call can fan out to several requests. The resource-listing scan is cached per session for a few minutes (`ARTICLE_RESOURCES_TTL_MS`) so repeated `resources/list` calls coalesce; the `list_promoted_articles` tool performs a fresh, uncached scan on every call. The scan runs only when a resource-capable client calls `resources/list` or the LLM calls `list_promoted_articles`, never at connect. The worst case is a large catalog with few or no promoted articles: a full-cap scan for little result. If that matters for your tenant's quota, lower this cap or disable the pre-listing with **`--no-promoted-articles`**, which turns off the resource `list` scan, so the server makes **zero** preloading requests. It does **not** disable reading a known article by id (`<scheme>://article/{id}` stays registered) nor the `list_promoted_articles` tool: both run only when explicitly asked for, never as a preload.
 
 ---
 

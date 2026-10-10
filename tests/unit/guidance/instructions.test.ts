@@ -153,7 +153,7 @@ describe('articleResourceEnabled (read-by-id)', () => {
   });
 });
 
-describe('promotedArticlesEnabled (pre-listing + tool)', () => {
+describe('promotedArticlesEnabled (resource pre-listing)', () => {
   it('is enabled by default and when help_center is explicitly included', () => {
     expect(promotedArticlesEnabled(makeConfig())).toBe(true);
     expect(promotedArticlesEnabled(makeConfig({ namespaces: ['help_center'] }))).toBe(true);
