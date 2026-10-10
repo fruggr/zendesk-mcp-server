@@ -3,12 +3,9 @@ import { type Config, ConfigSchema } from '../../../src/config';
 import { renderToolSurface } from '../../../src/routing/print';
 import type { ToolContext, ToolDefinition } from '../../../src/tools/definitions';
 import { createAllTools } from '../../../src/tools/index';
+import { testToolContext } from '../../tool-context';
 
-const ctx: ToolContext = {
-  subdomain: 'testsubdomain',
-  resolveBrandSubdomain: () => Promise.resolve(''),
-  getToken: () => 'token',
-};
+const ctx: ToolContext = testToolContext({ subdomain: 'testsubdomain', getToken: () => 'token' });
 const allTools = createAllTools(ctx);
 
 const makeConfig = (overrides: Partial<Config> = {}): Config =>

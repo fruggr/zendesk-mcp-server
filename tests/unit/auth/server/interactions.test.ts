@@ -32,7 +32,7 @@ const EXPIRED =
 interface Details {
   prompt: { name: string; details: Record<string, unknown> };
   params: Record<string, unknown>;
-  session?: { accountId: string };
+  session?: { accountId: string } | undefined;
 }
 
 interface FakeResponse {
@@ -540,8 +540,7 @@ describe('createInteractionRoutes', () => {
 
     it('refuses a confirmation without a session instead of failing', async () => {
       const { routes } = build();
-      const { session, ...withoutSession } = consentPrompt(DCR, DCR_REDIRECT);
-      fake.details = withoutSession;
+      fake.details = { ...consentPrompt(DCR, DCR_REDIRECT), session: undefined };
       await post(routes, '/interaction/uid-1/confirm');
       expect(fake.finished[0]?.[0]).toMatchObject({ error: 'access_denied' });
     });

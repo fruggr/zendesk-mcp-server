@@ -4,6 +4,7 @@ import { Namespace } from '../../src/config';
 import { createReloadableServer, registerReloadTool } from '../../src/dev/reload';
 import { createServerShell, registerToolset } from '../../src/server';
 import { createAllTools } from '../../src/tools/index';
+import { testToolContext } from '../tool-context';
 import { makeConfig } from './harness';
 
 const getToken = () => 'test-token';
@@ -28,11 +29,7 @@ const connect = async (server: Awaited<ReturnType<typeof createServerShell>>) =>
 describe('dev-mode tool reload', () => {
   it('swaps the exposed toolset in place and notifies the client', async () => {
     const config = makeConfig({ mode: 'all' });
-    const ctx = {
-      subdomain: config.subdomain,
-      resolveBrandSubdomain: () => Promise.resolve(''),
-      getToken,
-    };
+    const ctx = testToolContext({ subdomain: config.subdomain, getToken });
     const server = createServerShell(config);
     const params = { config, getToken };
 
@@ -125,11 +122,7 @@ describe('dev-mode tool reload', () => {
 
   it('restores the previous generation when re-registration fails', async () => {
     const config = makeConfig({ mode: 'all' });
-    const ctx = {
-      subdomain: config.subdomain,
-      resolveBrandSubdomain: () => Promise.resolve(''),
-      getToken,
-    };
+    const ctx = testToolContext({ subdomain: config.subdomain, getToken });
     // A reload whose fresh definitions collide on name: registering the second
     // copy throws mid-way, which must trigger a restore of the last-good set.
     const [dup] = createAllTools(ctx);

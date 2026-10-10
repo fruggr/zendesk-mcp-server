@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { createAllTools, type ToolContext } from '../../../src/tools';
+import { testToolContext } from '../../tool-context';
 
-const ctx: ToolContext = {
+const ctx: ToolContext = testToolContext({
   subdomain: 'testsubdomain',
-  resolveBrandSubdomain: () => Promise.resolve(''),
   getToken: () => 'test-token',
-};
+});
 const tools = createAllTools(ctx);
 
 describe('tool annotation invariants', () => {

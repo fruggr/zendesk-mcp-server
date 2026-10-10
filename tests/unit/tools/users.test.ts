@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { ToolContext } from '../../../src/tools/definitions';
 import { createUserTools } from '../../../src/tools/users';
+import { testToolContext } from '../../tool-context';
 import { firstText } from '../../tool-result';
 
-const ctx: ToolContext = {
+const ctx: ToolContext = testToolContext({
   subdomain: 'testsubdomain',
-  resolveBrandSubdomain: () => Promise.resolve(''),
   getToken: () => 'test-token',
-};
+});
 
 const findTool = (name: string) => {
   const tools = createUserTools(ctx);

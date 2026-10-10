@@ -2,6 +2,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import * as z from 'zod/v4';
 import { createAllTools, type ToolContext } from '../../src/tools';
 import { createStrictParamsParser } from '../../src/utils/validation';
+import { testToolContext } from '../tool-context';
 
 /**
  * The uncompiled path, which the rest of the suite no longer exercises.
@@ -19,11 +20,10 @@ import { createStrictParamsParser } from '../../src/utils/validation';
 z.config({ jitless: true });
 afterAll(() => z.config({ jitless: false }));
 
-const ctx: ToolContext = {
+const ctx: ToolContext = testToolContext({
   subdomain: 'testsubdomain',
-  resolveBrandSubdomain: () => Promise.resolve(''),
   getToken: () => 'test-token',
-};
+});
 
 const isCompiled = (schema: z.ZodType): boolean =>
   Boolean(

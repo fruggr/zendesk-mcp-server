@@ -18,13 +18,13 @@ import {
   ticketWithSubscribersHandler,
 } from '../../msw-handlers';
 import { mswServer } from '../../setup';
+import { testToolContext } from '../../tool-context';
 import { allTextOf, firstText, textAt } from '../../tool-result';
 
-const ctx: ToolContext = {
+const ctx: ToolContext = testToolContext({
   subdomain: 'testsubdomain',
-  resolveBrandSubdomain: () => Promise.resolve(''),
   getToken: () => 'test-token',
-};
+});
 
 const findTool = (name: string) => {
   const tools = createTicketTools(ctx);

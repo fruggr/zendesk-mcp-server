@@ -1,5 +1,6 @@
 import { describe, it } from 'vitest';
 import { createAllTools, type ToolContext } from '../../../src/tools';
+import { testToolContext } from '../../tool-context';
 
 // Deterministic floor of the Glama Tool Definition Quality rubric
 // (docs/mcp-metadata.md): not whether prose is *good* — CodeRabbit judges that —
@@ -7,11 +8,10 @@ import { createAllTools, type ToolContext } from '../../../src/tools';
 // `60% mean + 40% MIN`. Failure messages teach the fixer the intent and never
 // name the mechanical pass condition.
 
-const ctx: ToolContext = {
+const ctx: ToolContext = testToolContext({
   subdomain: 'testsubdomain',
-  resolveBrandSubdomain: () => Promise.resolve(''),
   getToken: () => 'test-token',
-};
+});
 const tools = createAllTools(ctx);
 
 // Exemplars already in the tree that clear the bar — point fixers at these.
