@@ -3,8 +3,9 @@ import { Namespace } from '../../../src/config';
 import { filterTools, groupByNamespace, NAMESPACE_LABELS } from '../../../src/routing/registry';
 import type { ToolContext } from '../../../src/tools/definitions';
 import { createAllTools } from '../../../src/tools/index';
+import { testToolContext } from '../../tool-context';
 
-const ctx: ToolContext = { subdomain: 'testsubdomain', getToken: () => 'token' };
+const ctx: ToolContext = testToolContext({ subdomain: 'testsubdomain', getToken: () => 'token' });
 const allTools = createAllTools(ctx);
 
 describe('filterTools', () => {

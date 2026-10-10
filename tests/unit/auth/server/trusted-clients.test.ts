@@ -235,7 +235,7 @@ describe('createCimdFetch', () => {
     const raw = paddedDocument(16 * 1024);
     expect(raw.length).toBe(16 * 1024);
     const res = await createCimdFetch(async () => new Response(raw))('https://x/doc', {});
-    expect((await res.json()).application_type).toBe('native');
+    expect(((await res.json()) as { application_type: unknown }).application_type).toBe('native');
   });
 
   it('never rewrites a client document past the cap, even one that parses', async () => {

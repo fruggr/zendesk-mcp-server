@@ -28,11 +28,11 @@ const gitPluginConfig = rc.plugins.find(
 describe('.releaserc.json @semantic-release/git', () => {
   it('configures a commit message template', () => {
     expect(gitPluginConfig).toBeDefined();
-    expect(typeof gitPluginConfig?.message).toBe('string');
+    expect(typeof gitPluginConfig?.['message']).toBe('string');
   });
 
   it('keeps [skip ci] in the literal part of the message, ahead of the release notes', () => {
-    const message = gitPluginConfig?.message as string;
+    const message = gitPluginConfig?.['message'] as string;
     // GitHub accepts the marker anywhere in the commit message, but only the
     // text before `${nextRelease.notes}` is authored here — the notes are
     // generated per release and cannot be relied on to carry it.

@@ -1,7 +1,7 @@
 import { request as httpRequest, type IncomingMessage } from 'node:http';
 import { HttpResponse, http } from 'msw';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Config } from '../../../src/config';
+import { type Config, Namespace } from '../../../src/config';
 import {
   DEFAULT_BROWSER_MCP_CLIENT_ORIGINS,
   extractBearer,
@@ -11,6 +11,7 @@ import {
   startHttpTransport,
 } from '../../../src/transports/http';
 import { type Logger, silentLogger } from '../../../src/utils/logger';
+import { makeConfig } from '../../integration/harness';
 import {
   authorize,
   DCR_REDIRECT,
@@ -26,22 +27,20 @@ import {
 } from '../../msw-handlers';
 import { mswServer } from '../../setup';
 
-const baseConfig = {
-  subdomain: 'testsubdomain',
+const baseConfig: Config = makeConfig({
   oauthClientId: 'test_zendesk',
   logLevel: 'error',
-  mode: 'all',
-  readOnly: false,
   transport: 'http',
-  host: '127.0.0.1',
-  port: 0,
-  corsOrigins: [],
+  // Every namespace (requests included) and no topology: the surface these
+  // tests were written against, which the schema defaults would narrow.
+  namespaces: Namespace.options,
+  topology: false,
   // In memory, with a fixed secret: nothing is written to the config dir.
   oauthStore: 'memory://',
   oauthMasterSecret: Buffer.alloc(32, 4).toString('base64'),
   oauthTrustedClients: [],
   defaultTrustedClients: true,
-} as Config;
+});
 
 // Zendesk's OAuth endpoints mocked statefully, local requests let through.
 const mockZendeskOAuth = () => {

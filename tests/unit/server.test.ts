@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { describe, expect, it } from 'vitest';
-import type { Config } from '../../src/config';
+import { type Config, Namespace } from '../../src/config';
 import { filterTools } from '../../src/routing/registry';
 import {
   aggregateAnnotations,
@@ -11,6 +11,8 @@ import {
 } from '../../src/server';
 import type { ToolAnnotations } from '../../src/tools/definitions';
 import { createAllTools } from '../../src/tools/index';
+import { makeConfig } from '../integration/harness';
+import { testToolContext } from '../tool-context';
 
 const ann = (overrides: Partial<ToolAnnotations> = {}): ToolAnnotations => ({
   readOnlyHint: false,
@@ -28,17 +30,15 @@ interface RegisteredTool {
 const introspect = (server: ReturnType<typeof createMcpServer>): Record<string, RegisteredTool> =>
   (server as unknown as { _registeredTools: Record<string, RegisteredTool> })._registeredTools;
 
-const baseConfig: Config = {
-  subdomain: 'testsubdomain',
+const baseConfig: Config = makeConfig({
   oauthClientId: 'test_zendesk',
-  logLevel: 'info',
-  mode: 'all',
-  readOnly: false,
-  transport: 'stdio',
   host: '0.0.0.0',
   port: 3000,
-  corsOrigins: [],
-};
+  // Every namespace (requests included) and no topology: the surface these
+  // tests were written against, which the schema defaults would narrow.
+  namespaces: Namespace.options,
+  topology: false,
+});
 
 const getToken = () => 'test-token';
 
@@ -126,7 +126,7 @@ describe('createMcpServer', () => {
     // caller could invoke `zendesk_tickets` with operation="get_article" and
     // dispatch a help-center handler. Each proxy must scope dispatch to its
     // own operations. We exercise the pure helper directly.
-    const allTools = createAllTools({ subdomain: 'x', getToken });
+    const allTools = createAllTools(testToolContext({ subdomain: 'x', getToken }));
     const ticketsTools = filterTools(allTools, {
       readOnly: false,
       namespaces: ['tickets'],
@@ -149,7 +149,7 @@ describe('createMcpServer', () => {
     // `per_page` was silently stripped and page_size defaulted to 100, returning
     // a large unpaginated page. Strict validation must reject it loudly and point
     // at the valid parameter names.
-    const allTools = createAllTools({ subdomain: 'x', getToken });
+    const allTools = createAllTools(testToolContext({ subdomain: 'x', getToken }));
     const ticketsTools = filterTools(allTools, { readOnly: false, namespaces: ['tickets'] });
     const dispatch = buildProxyDispatch(ticketsTools, undefined);
 
@@ -269,7 +269,7 @@ describe('aggregateAnnotations', () => {
 describe('registerToolset atomicity', () => {
   it('rolls back partial registration when a later tool fails to register', () => {
     const server = createServerShell(baseConfig);
-    const [first] = createAllTools({ subdomain: baseConfig.subdomain, getToken });
+    const [first] = createAllTools(testToolContext({ subdomain: baseConfig.subdomain, getToken }));
     if (!first) throw new Error('expected at least one tool');
 
     // Two definitions sharing a name: the second registerTool throws

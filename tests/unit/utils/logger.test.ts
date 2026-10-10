@@ -56,7 +56,7 @@ describe('createLogger', () => {
     log.warn('w');
     log.error('e');
 
-    expect(errSpy.mock.calls.map((call) => call[0])).toEqual([
+    expect(errSpy.mock.calls.map((call: unknown[]) => call[0])).toEqual([
       '[zendesk-mcp] [debug] d',
       '[zendesk-mcp] [info] i',
       '[zendesk-mcp] [warn] w',
@@ -192,7 +192,7 @@ describe('createLogger', () => {
   it('collapses a circular reference instead of blowing the stack', () => {
     const log = createLogger('debug');
     const circular: Record<string, unknown> = { label: 'root' };
-    circular.self = circular;
+    circular['self'] = circular;
 
     expect(() => log.info('evt', { circular })).not.toThrow();
 
@@ -205,7 +205,7 @@ describe('createLogger', () => {
   it('still redacts sensitive keys inside a cycle', () => {
     const log = createLogger('debug');
     const node: Record<string, unknown> = { token: 'cyclic-secret' };
-    node.self = node;
+    node['self'] = node;
 
     log.error('cyclic', { node });
 
@@ -233,7 +233,7 @@ describe('createLogger', () => {
     log.attachServer({ sendLoggingMessage: send } as never);
 
     const node: Record<string, unknown> = { token: 'cyclic-secret' };
-    node.self = node;
+    node['self'] = node;
 
     expect(() => log.warn('cyclic', { node })).not.toThrow();
 

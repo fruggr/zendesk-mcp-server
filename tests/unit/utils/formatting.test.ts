@@ -535,7 +535,8 @@ describe('formatComment', () => {
   });
 
   it('omits the Attachments line when the comment has none', () => {
-    const result = formatComment({ ...MOCK_COMMENT, attachments: undefined });
+    const { attachments, ...withoutAttachments } = MOCK_COMMENT;
+    const result = formatComment(withoutAttachments);
     expect(result).not.toContain('Attachments:');
   });
 

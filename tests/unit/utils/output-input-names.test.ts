@@ -8,12 +8,16 @@ import {
   INPUT_NAME_OF,
 } from '../../../src/utils/formatting';
 import { MOCK_ARTICLE, MOCK_REQUEST, MOCK_TICKET } from '../../msw-handlers';
+import { testToolContext } from '../../tool-context';
 
 // An agent writes back what it just read (#339): every field a write tool sets
 // must reach it under that input's name — shown as-is, or annotated
 // `**Label** (input_name)` when the display label differs.
 
-const ctx: ToolContext = { subdomain: 'testsubdomain', getToken: () => 'test-token' };
+const ctx: ToolContext = testToolContext({
+  subdomain: 'testsubdomain',
+  getToken: () => 'test-token',
+});
 const tools = createAllTools(ctx);
 
 const inputsOf = (name: string): string[] => {
@@ -25,7 +29,7 @@ const inputsOf = (name: string): string[] => {
 const normalise = (label: string) => label.toLowerCase().replaceAll(' ', '_');
 
 const shownFields = (text: string) =>
-  [...text.matchAll(/\*\*([^*]+)\*\*(?: \(([a-z_]+)\))?:/g)].map(([, label, input]) => ({
+  [...text.matchAll(/\*\*([^*]+)\*\*(?: \(([a-z_]+)\))?:/g)].map(([, label = '', input]) => ({
     label,
     input,
   }));

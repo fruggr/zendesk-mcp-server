@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { TokenKey } from '../../../src/auth/token-persistence';
 
 // In-memory filesystem backing the mocked `node:fs`, so these tests never touch
 // the real disk. `node:fs` is also used by readPackageInfo (imported indirectly),
@@ -49,8 +50,8 @@ const importFresh = async () => {
 
 // The default-shaped key: the client id `config.ts` derives when
 // ZENDESK_OAUTH_CLIENT_ID is unset, and the scope a read-write server requests.
-const KEY = { subdomain: 'acme', oauthClientId: 'acme_zendesk', scope: 'read write' } as const;
-const keyWith = (overrides: Partial<typeof KEY>) => ({ ...KEY, ...overrides });
+const KEY: TokenKey = { subdomain: 'acme', oauthClientId: 'acme_zendesk', scope: 'read write' };
+const keyWith = (overrides: Partial<TokenKey>): TokenKey => ({ ...KEY, ...overrides });
 
 describe('token-persistence', () => {
   beforeEach(() => {
