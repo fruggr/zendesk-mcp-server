@@ -43,6 +43,13 @@ export const TOPOLOGY_TTL_MS = 5 * 60 * 1000;
 // without going stale for long.
 export const ARTICLE_RESOURCES_TTL_MS = 5 * 60 * 1000;
 
+// TTL for the fulfilled brand list memoised by the brand resolver: brands
+// change rarely, but a brand ADDED after startup must still resolve without a
+// restart, so the cache expires instead of living for the process. The
+// per-consumers coalescing (one /brands walk per server, not per caller) is
+// unaffected — everything within the TTL still shares the one walk.
+export const BRAND_LIST_TTL_MS = 5 * 60 * 1000;
+
 // Bounds the promoted-article scan on a large Help Center: the API has no
 // server-side promoted filter, so the list callback pages through /articles and
 // filters client-side. Promoted articles beyond the cap are omitted, and the
@@ -130,6 +137,12 @@ export const LARGE_ARTICLE_SECTION_COUNT = 4;
 
 export const getBaseUrl = (subdomain: string): string => `https://${subdomain}.zendesk.com/api/v2`;
 
+// Zendesk addresses multi-brand Help Centers by HOST, not by a path segment:
+// the brand's zendesk.com subdomain serves the standard /api/v2/help_center
+// path, and only that brand's content (verified live: a host-mapped brand
+// answers identically on its zendesk subdomain). A brand is only ever
+// <subdomain>.zendesk.com, so the EFFECTIVE subdomain — the account's, or the
+// resolved brand's — is the single argument; there is no separate host form.
 export const getHelpCenterBaseUrl = (subdomain: string): string =>
   `https://${subdomain}.zendesk.com/api/v2/help_center`;
 

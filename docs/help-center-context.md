@@ -15,8 +15,8 @@ whole feature degrades silently, it never breaks a session.
 ## `instructions` (sent on `initialize`)
 
 A short, static blob auto-loaded by compliant clients. It names the Zendesk
-subdomain and points at the topology resource. No Zendesk request is made to
-build it.
+subdomain (and the brand scope, when `--brand-ids` restricts the server) and
+points at the topology resource. No Zendesk request is made to build it.
 
 ## `zendesk-hc://topology` (pull-only resource)
 
@@ -28,6 +28,13 @@ read on demand, never pushed. It returns Markdown describing
 - the visibility user segments;
 - the Guide permission groups;
 - the calling user's role.
+
+When the server is restricted with `--brand-ids`, the locales and the
+category/section tree are read from the FIRST allowed brand (named in the
+header, which also lists the allowed brands); with `--brand-ids all` or the
+flag unset they are the account default brand's. User segments, permission
+groups and the calling user are account-wide either way — user segments are
+shared across brands, not per-brand.
 
 Prefer these IDs (`section_id`, `permission_group_id`, `user_segment_id`,
 `locale`) over guessing from names.
@@ -44,7 +51,13 @@ detail.
 
 ## `zendesk-hc://article/{id}` (pull-only resources)
 
-Two distinct capabilities behind one URI template.
+Two distinct capabilities behind one URI template. With `--brand-ids` naming
+several brands or `all`, the template gains a brand dimension —
+`<scheme>://brands/{brand}/articles/{id}` — because an article id alone does
+not say which brand's Help Center holds it. The brand is named by id or
+subdomain, exactly like the tools' `brand_id`, and is resolved through the
+same allow-list: a read for a brand outside the allow-list fails like a tool
+call would. Unset and single-brand servers keep `<scheme>://article/{id}`.
 
 Read-by-id: any article id can be read on demand and comes back as Markdown.
 That is one Zendesk fetch, with no preloading, and it consumes no LLM context
@@ -53,13 +66,14 @@ until an article is actually opened.
 Promoted pre-listing: the resource's *listing* surfaces the promoted
 (*featured*) articles, so a user can pin one in clients that support resource
 pinning or `@`-mentions. The companion `list_promoted_articles` tool returns the
-same set.
+same set. In multi/all mode the listing runs the bounded scan once per allowed
+brand and each entry carries its brand-scoped URI.
 
 ### What the pre-listing costs
 
 Only the pre-listing costs requests. Zendesk has no server-side filter for
 promoted articles, so finding them means scanning article pages, one API request
-per page, capped by
+per page and per brand in scope, capped by
 [`ARTICLE_RESOURCES_SCAN_MAX_PAGES`](configuration.md#article_resources_scan_max_pages).
 
 - The scan runs only on a client's `resources/list` call or a
@@ -74,7 +88,7 @@ per page, capped by
 | Flag | Effect |
 |------|--------|
 | [`--no-topology`](configuration.md#cli-reference) | Disables the `instructions` blob **and** the topology resource. They toggle together. |
-| [`--no-promoted-articles`](configuration.md#cli-reference) | Disables the promoted pre-listing: both the resource `list` scan and the `list_promoted_articles` tool, so the server makes zero preloading requests. **Reading a known article by id stays available**, since it never preloads. |
+| [`--no-promoted-articles`](configuration.md#cli-reference) | Disables the promoted pre-listing (the resource `list` scan), so the server makes zero preloading requests. **Reading a known article by id and the `list_promoted_articles` tool stay available**: both run only when explicitly asked for. |
 
 ## Branding the URI scheme
 

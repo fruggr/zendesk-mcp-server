@@ -448,6 +448,19 @@ export interface ZendeskCategory {
   translations?: ZendeskTranslation[];
 }
 
+/** A brand as the Support API's GET /api/v2/brands returns it. */
+export interface ZendeskBrand {
+  id: number;
+  name: string;
+  brand_url: string;
+  subdomain: string;
+  host_mapping: string | null;
+  default: boolean;
+  active: boolean;
+  /** False when the brand has Guide disabled — it serves no Help Center API. */
+  has_help_center: boolean;
+}
+
 export interface ZendeskSection {
   id: number;
   name: string;
@@ -488,6 +501,7 @@ export interface ZendeskListResponse<T> {
   users?: T[];
   organizations?: T[];
   articles?: T[];
+  brands?: T[];
   categories?: T[];
   sections?: T[];
   comments?: T[];

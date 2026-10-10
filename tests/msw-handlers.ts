@@ -561,6 +561,45 @@ export const MOCK_LOCALES = {
   default_locale: 'en-us',
 };
 
+// A brand as GET /api/v2/brands returns it — kept in sync with the /brands
+// handler below.
+export const MOCK_BRAND = {
+  id: 360001234567,
+  name: 'Main brand',
+  brand_url: 'https://testsubdomain.zendesk.com',
+  subdomain: 'testsubdomain',
+  host_mapping: null,
+  default: true,
+  active: true,
+  has_help_center: true,
+};
+
+// A second brand, so multi-brand allow-list scenarios have two brands to
+// resolve between. Its Help Center host is mocked below.
+export const MOCK_BRAND_SECOND = {
+  id: 424242,
+  name: 'Second brand',
+  brand_url: 'https://brand424242.zendesk.com',
+  subdomain: 'brand424242',
+  host_mapping: null,
+  default: false,
+  active: true,
+  has_help_center: true,
+};
+
+// A third brand: existing on the account but outside a two-brand allow-list,
+// so the allow-list rejection (not just the Unknown-brand one) has a fixture.
+export const MOCK_BRAND_THIRD = {
+  id: 777777,
+  name: 'Third brand',
+  brand_url: 'https://brand777777.zendesk.com',
+  subdomain: 'brand777777',
+  host_mapping: null,
+  default: false,
+  active: true,
+  has_help_center: true,
+};
+
 export const MOCK_ARTICLE_ATTACHMENT = {
   id: 20001,
   file_name: 'screenshot.png',
@@ -924,6 +963,33 @@ export const manyContentTagsHandler = http.get(`${BASE}/guide/content_tags`, () 
 );
 
 export const handlers = [
+  // Brands (Support API): the discovery source for --brand-ids. Shaped per the
+  // Zendesk Brands API reference.
+  http.get(`${BASE}/brands`, () =>
+    HttpResponse.json({ brands: [MOCK_BRAND, MOCK_BRAND_SECOND, MOCK_BRAND_THIRD] }),
+  ),
+
+  // The second brand's Help Center host: Zendesk addresses brands by HOST, so
+  // a brand's Guide answers on <brand.subdomain>.zendesk.com under the standard
+  // /api/v2/help_center path.
+  http.get('https://brand424242.zendesk.com/api/v2/help_center/categories', () =>
+    HttpResponse.json({ categories: [MOCK_CATEGORY] }),
+  ),
+  // The locked brand's article listing: single-lock mode pins the article
+  // resources to this host, so the promoted scan lands here, not on the
+  // account default. This handler is what makes the lock-bypass regression
+  // (resources reading the default brand) observable.
+  http.get('https://brand424242.zendesk.com/api/v2/help_center/articles', () =>
+    HttpResponse.json({
+      articles: [MOCK_ARTICLE, MOCK_PROMOTED_ARTICLE],
+      meta: { has_more: false, after_cursor: '' },
+      count: 2,
+    }),
+  ),
+  http.get('https://brand424242.zendesk.com/api/v2/help_center/articles/:id', ({ params }) =>
+    HttpResponse.json({ article: { ...MOCK_ARTICLE, id: Number(params['id']) } }),
+  ),
+
   // Views (issue #121). Registered before `/tickets/:id` so `/tickets/show_many`
   // hits its own handler instead of being captured as an `:id`.
   http.get(`${BASE}/tickets/show_many`, ({ request }) => {

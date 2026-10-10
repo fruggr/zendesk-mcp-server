@@ -5,6 +5,7 @@ import type {
   ZendeskArticleAttachment,
   ZendeskAudit,
   ZendeskAuditEvent,
+  ZendeskBrand,
   ZendeskCategory,
   ZendeskComment,
   ZendeskContentTag,
@@ -565,6 +566,11 @@ export const formatNodeTranslationSummary = (translation: ZendeskTranslation): s
 
 export const formatCategory = (category: ZendeskCategory): string =>
   `- **${category.name}** (${category.id}) — ${category.description || 'No description'}`;
+
+// Flags after the URL carry the two facts a caller scopes on: which brand a
+// bare (unscoped) server talks to, and which are served at all.
+export const formatBrand = (brand: ZendeskBrand): string =>
+  `- **${brand.name}** (${brand.id}) — ${brand.brand_url}${brand.default ? ' — default' : ''}${brand.active ? '' : ' — inactive'}`;
 
 export const formatSection = (section: ZendeskSection): string =>
   `- **${section.name}** (${section.id}) — Category: ${section.category_id} — ${section.description || 'No description'}`;

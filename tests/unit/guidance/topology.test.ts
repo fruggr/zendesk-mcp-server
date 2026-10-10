@@ -1,3 +1,4 @@
+import { HttpResponse, http } from 'msw';
 import { describe, expect, it, vi } from 'vitest';
 import { ZendeskApiError } from '../../../src/client/zendesk-api';
 import {
@@ -6,13 +7,56 @@ import {
   formatTopology,
   type TopologyData,
 } from '../../../src/guidance/topology';
-import { errorHandlers, manyCategoriesHandler, manySectionsHandler } from '../../msw-handlers';
+import {
+  errorHandlers,
+  MOCK_CATEGORY,
+  MOCK_LOCALES,
+  MOCK_SECTION,
+  manyCategoriesHandler,
+  manySectionsHandler,
+} from '../../msw-handlers';
 import { mswServer } from '../../setup';
 
 const SUBDOMAIN = 'testsubdomain';
 const TOKEN = 'test-token';
 
 describe('fetchTopology', () => {
+  it('scopes per-brand Help Center calls to the brand subdomain when one is given', async () => {
+    // Zendesk addresses brands by HOST, and a brand's host is only ever
+    // <brand.subdomain>.zendesk.com — so the brand dimension is passed as the
+    // subdomain, not as a separate host string.
+    const brandBase = 'https://brand424242.zendesk.com/api/v2/help_center';
+    const seen: string[] = [];
+    mswServer.use(
+      http.get(`${brandBase}/locales`, ({ request }) => {
+        seen.push(request.url);
+        return HttpResponse.json(MOCK_LOCALES);
+      }),
+      http.get(`${brandBase}/categories`, ({ request }) => {
+        seen.push(request.url);
+        return HttpResponse.json({ categories: [MOCK_CATEGORY] });
+      }),
+      http.get(`${brandBase}/sections`, ({ request }) => {
+        seen.push(request.url);
+        return HttpResponse.json({ sections: [MOCK_SECTION] });
+      }),
+    );
+
+    const data = await fetchTopology(SUBDOMAIN, TOKEN, ['424242'], 'brand424242');
+
+    // Brand-scoped: the tree (locales, categories, sections) is read from the
+    // brand host. User segments, permission groups and the current user are
+    // account-wide and deliberately NOT brand-scoped.
+    expect(seen).toHaveLength(3);
+    expect(seen.every((url) => url.startsWith('https://brand424242.zendesk.com/'))).toBe(true);
+    expect(data.brandIds).toEqual(['424242']);
+    expect(data.categories.map((c) => c.id)).toEqual([800]);
+    expect(data.sections.map((s) => s.id)).toEqual([600]);
+    expect(data.userSegments.map((s) => s.id)).toEqual([15001]);
+    expect(data.permissionGroups.map((g) => g.id)).toEqual([12001]);
+    expect(data.currentUser.id).toBe(9999);
+  });
+
   it('aggregates locales, the category/section tree, visibility, permission groups and the current user', async () => {
     const data = await fetchTopology(SUBDOMAIN, TOKEN);
 
@@ -142,6 +186,26 @@ describe('formatTopology', () => {
     expect(text).toContain('Signed-in users');
     expect(text).toContain('(15001)');
     expect(text).toContain('admin');
+  });
+
+  it('names the brand in the header when the topology is brand-scoped', () => {
+    const text = formatTopology({ ...baseData(), brandIds: ['424242'] });
+    expect(text).toContain('brand 424242');
+  });
+
+  it('pins the tree to the FIRST allowed brand and lists the whole allow-list', () => {
+    const text = formatTopology({ ...baseData(), brandIds: ['424242', '777777'] });
+    expect(text).toContain('brand 424242');
+    expect(text).toContain('**Allowed brands**: 424242, 777777');
+  });
+
+  it('mentions all brands when the allow-list is "all"', () => {
+    const text = formatTopology({ ...baseData(), brandIds: ['all'] });
+    expect(text).toContain('all brands');
+  });
+
+  it('mentions no brand when unscoped (account default brand)', () => {
+    expect(formatTopology(baseData())).not.toContain('brand');
   });
 
   it('points at the listing tools rather than a pagination parameter when truncated', () => {

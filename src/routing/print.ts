@@ -75,7 +75,6 @@ export const renderToolSurface = (config: Config, tools: ToolDefinition[]): stri
     readOnly: config.readOnly,
     namespaces: config.namespaces,
     tools: config.tools,
-    promotedArticles: config.promotedArticles,
   });
 
   const header = renderHeader(config);

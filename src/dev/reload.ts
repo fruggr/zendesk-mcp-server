@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
+import { createBrandSubdomainResolver } from '../client/brands';
 import type { Config } from '../config';
 import { createServerShell, registerToolset } from '../server';
 import { createAllTools, type ToolContext, type ToolDefinition } from '../tools/index';
@@ -68,8 +69,16 @@ export const createReloadableServer = (
   loadTools: (ctx: ToolContext) => Promise<ToolDefinition[]> = loadFreshTools,
 ): { server: McpServer; reload: () => Promise<number> } => {
   const server = createServerShell(config, logger);
-  const ctx: ToolContext = { subdomain: config.subdomain, getToken };
-  const params = { config, getToken, onUnauthorized, logger };
+  // ONE shared resolver across every reload generation: tools and the
+  // topology/article resources resolve against the same cached brand list.
+  const resolveBrandSubdomain = createBrandSubdomainResolver(config.subdomain, getToken);
+  const ctx: ToolContext = {
+    subdomain: config.subdomain,
+    brandIds: config.brandIds,
+    resolveBrandSubdomain,
+    getToken,
+  };
+  const params = { config, getToken, resolveBrandSubdomain, onUnauthorized, logger };
 
   // The last generation registered successfully — both the handle (to dispose)
   // and its definitions (to restore if a reload's re-registration fails).

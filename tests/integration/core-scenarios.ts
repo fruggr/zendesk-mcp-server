@@ -1,6 +1,13 @@
 import { HttpResponse, http } from 'msw';
 import { afterEach, describe, expect, it } from 'vitest';
-import { errorHandlers, MOCK_PROMOTED_ARTICLE, promotedArticlesHandler } from '../msw-handlers';
+import {
+  errorHandlers,
+  MOCK_BRAND,
+  MOCK_BRAND_SECOND,
+  MOCK_BRAND_THIRD,
+  MOCK_PROMOTED_ARTICLE,
+  promotedArticlesHandler,
+} from '../msw-handlers';
 import { mswServer } from '../setup';
 import { type ConnectedClient, type IntegrationHarness, makeConfig } from './harness';
 
@@ -169,7 +176,7 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         expect(uris).toContain('zendesk-hc://topology');
       });
 
-      it('disables the promoted pre-listing (zero scan, tool gone) but keeps read-by-id when --no-promoted-articles', async () => {
+      it('disables the promoted pre-listing (zero scan) but keeps the tool and read-by-id when --no-promoted-articles', async () => {
         // Count any /articles scan: with the pre-listing off there must be none. A
         // successful handler (not an error one) would let an accidental scan pass
         // silently on the "no entries" check alone, so assert the request count too.
@@ -191,9 +198,12 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         expect(uris.some((u) => u.startsWith('zendesk-hc://article/'))).toBe(false);
         expect(scanCount).toBe(0);
 
-        // ...and the companion tool is gone.
+        // ...but the companion tool stays: an explicit, on-demand call, not a
+        // preload, so it scans only when the LLM asks for it.
         const names = toolNames((await connected.client.listTools()).tools);
-        expect(names).not.toContain('list_promoted_articles');
+        expect(names).toContain('list_promoted_articles');
+        await connected.client.callTool({ name: 'list_promoted_articles', arguments: {} });
+        expect(scanCount).toBe(1);
 
         // ...but reading an UNLISTED (non-promoted) article by id still works —
         // read-by-id is NOT disabled by the flag. Article 5000 is never promoted.
@@ -216,6 +226,106 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         expect(uris).not.toContain('zendesk-hc://article/5001');
 
         const read = await connected.client.readResource({ uri: 'wiki://article/5001' });
+        expect(resourceTextOf(read)).toContain('(5001)');
+      });
+
+      it('carries a brand dimension in the article URIs in multi mode', async () => {
+        // With several brands an article id alone does not say WHICH Help
+        // Center holds it, so resources/list names the brand exactly like a
+        // tool call's brand_id — and the read resolves it through the same
+        // allow-list + resolver as the tools.
+        mswServer.use(
+          promotedArticlesHandler,
+          http.get('https://brand424242.zendesk.com/api/v2/help_center/articles', () =>
+            HttpResponse.json({
+              articles: [MOCK_PROMOTED_ARTICLE],
+              meta: { has_more: false, after_cursor: '' },
+              count: 1,
+            }),
+          ),
+          http.get('https://brand424242.zendesk.com/api/v2/help_center/articles/:id', () =>
+            HttpResponse.json({ article: MOCK_PROMOTED_ARTICLE }),
+          ),
+        );
+        connected = await harness.connect(
+          makeConfig({
+            mode: 'all',
+            brandIds: [String(MOCK_BRAND.id), String(MOCK_BRAND_SECOND.id)],
+          }),
+        );
+
+        // One promoted listing per allowed brand, each with a brand-scoped URI.
+        const { resources } = await connected.client.listResources();
+        const uris = resources.map((r) => r.uri);
+        expect(uris).toContain(`zendesk-hc://brands/${MOCK_BRAND.id}/articles/5001`);
+        expect(uris).toContain('zendesk-hc://brands/424242/articles/5001');
+        expect(uris.some((u) => u.startsWith('zendesk-hc://article/'))).toBe(false);
+
+        // A brand-scoped URI reads through the brand's own Help Center.
+        const read = await connected.client.readResource({
+          uri: 'zendesk-hc://brands/424242/articles/5001',
+        });
+        expect(resourceTextOf(read)).toContain('(5001)');
+
+        // A brand that exists on the account but sits outside the allow-list is
+        // refused by the shared guard — the same error a tool call gets.
+        await expect(
+          connected.client.readResource({
+            uri: `zendesk-hc://brands/${MOCK_BRAND_THIRD.id}/articles/5001`,
+          }),
+        ).rejects.toThrow(/not allowed/);
+        // And a brand that exists nowhere fails at resolution, same as a tool call.
+        await expect(
+          connected.client.readResource({ uri: 'zendesk-hc://brands/999999/articles/5001' }),
+        ).rejects.toThrow(/Unknown brand "999999"/);
+      });
+
+      it("accepts any brand in the article URIs in 'all' mode", async () => {
+        mswServer.use(
+          promotedArticlesHandler,
+          http.get('https://brand424242.zendesk.com/api/v2/help_center/articles', () =>
+            HttpResponse.json({
+              articles: [MOCK_PROMOTED_ARTICLE],
+              meta: { has_more: false, after_cursor: '' },
+              count: 1,
+            }),
+          ),
+          http.get('https://brand424242.zendesk.com/api/v2/help_center/articles/:id', () =>
+            HttpResponse.json({ article: MOCK_PROMOTED_ARTICLE }),
+          ),
+          // The third brand's Help Center has no promoted articles — the scan
+          // still answers, so one failing brand does not empty the listing.
+          http.get('https://brand777777.zendesk.com/api/v2/help_center/articles', () =>
+            HttpResponse.json({
+              articles: [],
+              meta: { has_more: false, after_cursor: '' },
+              count: 0,
+            }),
+          ),
+        );
+        connected = await harness.connect(makeConfig({ mode: 'all', brandIds: ['all'] }));
+
+        const { resources } = await connected.client.listResources();
+        const uris = resources.map((r) => r.uri);
+        expect(uris).toContain('zendesk-hc://brands/testsubdomain/articles/5001');
+        expect(uris).toContain('zendesk-hc://brands/brand424242/articles/5001');
+
+        const read = await connected.client.readResource({
+          uri: 'zendesk-hc://brands/brand424242/articles/5001',
+        });
+        expect(resourceTextOf(read)).toContain('(5001)');
+      });
+
+      it('keeps the unscoped article URIs in single-lock mode', async () => {
+        mswServer.use(promotedArticlesHandler);
+        connected = await harness.connect(
+          makeConfig({ mode: 'all', brandIds: [String(MOCK_BRAND_SECOND.id)] }),
+        );
+        const uris = (await connected.client.listResources()).resources.map((r) => r.uri);
+        expect(uris).toContain('zendesk-hc://article/5001');
+        expect(uris.some((u) => u.includes('/brands/'))).toBe(false);
+
+        const read = await connected.client.readResource({ uri: 'zendesk-hc://article/5001' });
         expect(resourceTextOf(read)).toContain('(5001)');
       });
     });
@@ -242,6 +352,47 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         });
         expect(result.isError).toBeFalsy();
         expect(textOf(result)).toContain('SLA contractuels fruggr - Bugs/Incidents');
+      });
+
+      it('exposes list_brands and requires brand_id in multi-brand mode', async () => {
+        // Unset: no list_brands, no brand_id on the schemas.
+        connected = await harness.connect(makeConfig({ mode: 'all' }));
+        let names = toolNames((await connected.client.listTools()).tools);
+        expect(names).not.toContain('list_brands');
+        await connected.close();
+
+        // Multi: list_brands appears, and brand-scoped tools require brand_id.
+        connected = await harness.connect(
+          makeConfig({ mode: 'all', brandIds: ['424242', '360001234567'] }),
+        );
+        names = toolNames((await connected.client.listTools()).tools);
+        expect(names).toContain('list_brands');
+
+        const brands = await connected.client.callTool({ name: 'list_brands', arguments: {} });
+        expect(brands.isError).toBeFalsy();
+        expect(textOf(brands)).toContain('Second brand');
+
+        // brand_id required: a call without it fails.
+        const missing = await connected.client.callTool({
+          name: 'list_categories',
+          arguments: {},
+        });
+        expect(missing.isError).toBe(true);
+
+        // With an allowed brand_id the call resolves through the brand host.
+        const scoped = await connected.client.callTool({
+          name: 'list_categories',
+          arguments: { brand_id: 424242 },
+        });
+        expect(scoped.isError).toBeFalsy();
+        expect(textOf(scoped)).toContain('General');
+
+        // A brand outside the allow-list is rejected.
+        const rejected = await connected.client.callTool({
+          name: 'list_categories',
+          arguments: { brand_id: 999999 },
+        });
+        expect(rejected.isError).toBe(true);
       });
 
       it('exposes one proxy per namespace in "namespace" mode', async () => {

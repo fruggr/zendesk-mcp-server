@@ -130,4 +130,48 @@ describe('createArticleResourcesProvider', () => {
     await expect(provider.readArticle(5000)).rejects.toBeInstanceOf(ZendeskApiError);
     expect(onUnauthorized).toHaveBeenCalledTimes(1);
   });
+
+  it('routes a brand-scoped read through the resolved brand subdomain', async () => {
+    // The brand in a `<scheme>://brands/{brand}/articles/{id}` URI is resolved
+    // through the SAME idiom the tools use (id or subdomain), and the article
+    // is then fetched from that brand's Help Center.
+    let seenUrl = '';
+    mswServer.use(
+      http.get(
+        'https://brand424242.zendesk.com/api/v2/help_center/articles/5001',
+        ({ request }) => {
+          seenUrl = request.url;
+          return HttpResponse.json({ article: MOCK_PROMOTED_ARTICLE });
+        },
+      ),
+    );
+    const provider = createArticleResourcesProvider(
+      () => TOKEN,
+      SUBDOMAIN,
+      undefined,
+      (idOrSubdomain: string) =>
+        Promise.resolve(/^\d+$/.test(idOrSubdomain) ? `brand${idOrSubdomain}` : idOrSubdomain),
+    );
+    const text = await provider.readArticle(5001, '424242');
+    expect(seenUrl).toContain('brand424242.zendesk.com');
+    expect(text).toContain('(5001)');
+  });
+
+  it('surfaces a resolver rejection for an unknown brand instead of fetching', async () => {
+    let fetched = false;
+    mswServer.use(
+      http.get(`${HC}/articles/:id`, () => {
+        fetched = true;
+        return HttpResponse.json({ article: MOCK_PROMOTED_ARTICLE });
+      }),
+    );
+    const provider = createArticleResourcesProvider(
+      () => TOKEN,
+      SUBDOMAIN,
+      undefined,
+      (idOrSubdomain: string) => Promise.reject(new Error(`Unknown brand "${idOrSubdomain}"`)),
+    );
+    await expect(provider.readArticle(5001, '999999')).rejects.toThrow(/Unknown brand "999999"/);
+    expect(fetched).toBe(false);
+  });
 });

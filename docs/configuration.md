@@ -19,6 +19,13 @@ zendesk-mcp-server <subdomain> [options]
 
 Options:
   --mode <mode>           single | namespace (default) | all
+  --brand-ids <list>      Restrict Help Center operations to an allow-list of
+                          brands (multi-brand accounts; default: account
+                          default brand). Comma-separated brand ids or
+                          subdomains, or "all". One entry: hard lock, no
+                          per-call override. Several or "all": list_brands is
+                          exposed and every brand-scoped Help Center tool
+                          requires a per-call brand_id. Also ZENDESK_BRAND_IDS.
   --namespace <ns>        Filter by namespace (repeatable): tickets, help_center,
                           users, requests. Defaults to tickets + help_center +
                           users; `requests` (the end-user surface) is opt-in and
@@ -29,9 +36,9 @@ Options:
   --no-topology           Disable the Help Center structural context
                           (instructions + zendesk-hc://topology resource)
   --no-promoted-articles  Disable the promoted-article PRE-LISTING (the
-                          <scheme>://article/{id} list scan + the
-                          list_promoted_articles tool). Reading a known
-                          article by id stays available.
+                          <scheme>://article/{id} list scan). Reading a known
+                          article by id and the list_promoted_articles tool
+                          stay available.
   --hc-resource-scheme <scheme>
                           URI scheme of the Help Center resources
                           (default: zendesk-hc, i.e. zendesk-hc://topology);
@@ -243,6 +250,62 @@ OAuth client identifier. The same public PKCE client serves both transports: in
 HTTP mode, add `<public-url>/oauth/callback` to its redirect URLs
 ([setup](http-deployment.md#zendesk-oauth-setup)).
 
+### `ZENDESK_BRAND_IDS`
+**Required:** no · **Default:** none (account default brand)
+
+Restrict every Help Center operation — tools, the topology resource, the
+article resources — to an allow-list of brands on a multi-brand account.
+Entries are brand ids or brand subdomains (display names can contain commas
+and change; a subdomain is unique and is what the brand host is built from),
+comma-separated, or the special value `all` for every brand of the account.
+Also `--brand-ids`. Brand ids come from the `list_brands` tool or the Zendesk
+Brands API. Tickets, users and search are account-wide and unaffected. Name
+each brand once, by id or by subdomain — the same brand twice (once by id,
+once by subdomain) reads as two entries and turns the server into multi-brand
+mode (per-call `brand_id` required). Subdomain entries are matched
+case-insensitively (`Support` resolves the `support` brand).
+
+**Not a security boundary.** `--brand-ids` narrows the Help Center surface
+only: tickets, users, search and end-user requests stay account-wide, and what
+any call can reach is decided by the Zendesk permissions behind the token. To
+keep an agent on one brand, combine `--brand-ids <brand>` with
+`--namespace help_center` (and `--read-only` where it fits); anything stronger
+must come from that account's Zendesk permissions.
+
+Zendesk addresses brands by host: the server resolves each entry to its brand
+(lazily, on first use — startup validates the format only) and calls
+`<brand.subdomain>.zendesk.com` under the standard `/api/v2/help_center` path.
+The resolved brand list is cached briefly (5 minutes), so a brand added after
+startup resolves on its own — no restart needed.
+
+The value shapes the tool surface:
+
+- **Unset** — the account default brand is used and no schema carries a
+  `brand_id` field (byte-identical to a single-brand account).
+- **One entry** (e.g. `--brand-ids 360001234567` or `--brand-ids support`) —
+  a **hard lock**: every Help Center operation is pinned to that brand, no
+  schema carries `brand_id`, and `list_brands` is not exposed.
+- **Several entries** — `list_brands` is exposed (limited to the allowed
+  brands) and every brand-scoped Help Center tool takes a **required**
+  `brand_id` restricted to the allow-list. There is no silent default: a call
+  without `brand_id` fails.
+- **`all`** — `list_brands` is exposed with every brand, and `brand_id` is
+  likewise required, accepting any brand.
+
+The account-wide Guide tools (`list_permission_groups`, `list_content_tags`,
+`create_content_tag`, `list_user_segments`) take no `brand_id` — they have no
+brand dimension (user segments are shared across brands). Everywhere else
+`brand_id` accepts a brand id **or** its subdomain.
+
+**Cost with several brands.** The promoted-article pre-listing scans every
+brand in scope: up to
+[`ARTICLE_RESOURCES_SCAN_MAX_PAGES`](#article_resources_scan_max_pages)
+requests per brand (20 by default) on each `resources/list`, cached a few
+minutes per session. With `all` or more than ~3 brands, and especially on a
+shared HTTP deployment where every session scans on its own, start the server
+with `--no-promoted-articles` or lower that cap. Articles stay readable on
+demand by URI, and `list_promoted_articles` still works per brand.
+
 ### `OAUTH_CALLBACK_PORT`
 **Required:** no · **Default:** `27439`
 
@@ -380,7 +443,7 @@ Safety threshold for `reorder_article`. When moving an article would rewrite mor
 
 Hard cap on the number of article pages scanned to find promoted ("featured") articles. This backs both the `<scheme>://article/{id}` resource listing (`resources/list`) and the `list_promoted_articles` tool. The Help Center API has no server-side promoted filter, so the scan pages through the articles and filters them client-side; this bounds that scan on a very large Help Center (promoted articles beyond the cap are omitted, and the truncation is flagged). Raise it if promoted articles live deep in a large catalog.
 
-**Cost note.** Each scanned page is one Zendesk API request, and Zendesk rate-limits every plan, so on a large Help Center a single listing or tool call can fan out to several requests. The resource-listing scan is cached per session for a few minutes (`ARTICLE_RESOURCES_TTL_MS`) so repeated `resources/list` calls coalesce; the `list_promoted_articles` tool performs a fresh, uncached scan on every call. The scan runs only when a resource-capable client calls `resources/list` or the LLM calls `list_promoted_articles`, never at connect. The worst case is a large catalog with few or no promoted articles: a full-cap scan for little result. If that matters for your tenant's quota, lower this cap or disable the pre-listing with **`--no-promoted-articles`**, which turns off the resource `list` scan **and** the `list_promoted_articles` tool, so the server makes **zero** preloading requests. It does **not** disable reading a known article by id (`<scheme>://article/{id}` stays registered): that is a cheap, on-demand single fetch, not a preload.
+**Cost note.** Each scanned page is one Zendesk API request, and Zendesk rate-limits every plan, so on a large Help Center a single listing or tool call can fan out to several requests. The resource-listing scan is cached per session for a few minutes (`ARTICLE_RESOURCES_TTL_MS`) so repeated `resources/list` calls coalesce; the `list_promoted_articles` tool performs a fresh, uncached scan on every call. The scan runs only when a resource-capable client calls `resources/list` or the LLM calls `list_promoted_articles`, never at connect. The worst case is a large catalog with few or no promoted articles: a full-cap scan for little result. If that matters for your tenant's quota, lower this cap or disable the pre-listing with **`--no-promoted-articles`**, which turns off the resource `list` scan, so the server makes **zero** preloading requests. It does **not** disable reading a known article by id (`<scheme>://article/{id}` stays registered) nor the `list_promoted_articles` tool: both run only when explicitly asked for, never as a preload.
 
 ---
 
