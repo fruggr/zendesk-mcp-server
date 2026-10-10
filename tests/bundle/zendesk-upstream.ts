@@ -11,7 +11,7 @@ import { setupServer } from 'msw/node';
 import { createZendeskOAuthMock, handlers } from '../msw-handlers';
 
 const upstream = setupServer(...createZendeskOAuthMock().handlers, ...handlers);
-upstream.listen({ onUnhandledRequest: 'bypass' });
+upstream.listen({ onUnhandledFrame: 'bypass' });
 
 // The test process needs one browser hop from the mock: Zendesk's authorize
 // page. The relay serves that route alone, to a constant URL; only the query
