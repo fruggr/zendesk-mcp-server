@@ -353,6 +353,27 @@ describe('help center tools', () => {
   });
 
   describe('list_promoted_articles', () => {
+    it('states it takes no filter parameters rather than advising pagination when truncating', async () => {
+      mswServer.use(
+        http.get(`${HC_BASE}/articles`, () =>
+          HttpResponse.json({
+            articles: Array.from({ length: 300 }, (_, i) => ({
+              ...MOCK_ARTICLE,
+              id: 8000 + i,
+              title: 'x'.repeat(150),
+              promoted: true,
+            })),
+            meta: { has_more: false, after_cursor: '' },
+          }),
+        ),
+      );
+      const text = (await findTool('list_promoted_articles').handler({})).content[0]?.text ?? '';
+      expect(text).toContain(
+        'list_promoted_articles takes no filter parameters, so this listing cannot be narrowed from the call; read a single article with get_article.',
+      );
+      expect(text).not.toContain('Use pagination or filters');
+    });
+
     it('lists only the promoted articles, with the admin-only status note', async () => {
       mswServer.use(promotedArticlesHandler);
       const tool = findTool('list_promoted_articles');
@@ -1692,7 +1713,7 @@ describe('help center tools', () => {
       expect(result.content[0]?.text).toContain('getting-started');
     });
 
-    it('states it takes no parameters rather than advising pagination when truncating', async () => {
+    it('states it takes no filter parameters rather than advising pagination when truncating', async () => {
       // A tool whose inputSchema is z.object({}) cannot be narrowed at all, so
       // the generic "use pagination or filters" notice is unactionable (#265).
       mswServer.use(
@@ -1708,7 +1729,8 @@ describe('help center tools', () => {
       );
       const tool = findTool('list_labels');
       const text = (await tool.handler({})).content[0]?.text ?? '';
-      expect(text).toContain('list_labels takes no parameters');
+      // "filter": in multi/all brand mode the tool does take brand_id.
+      expect(text).toContain('list_labels takes no filter parameters');
       expect(text).not.toContain('Use pagination or filters');
     });
   });

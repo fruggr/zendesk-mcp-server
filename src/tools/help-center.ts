@@ -1266,7 +1266,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
               type: 'text',
               text: truncateIfNeeded(
                 `${header}\n\n${body}${note}`,
-                'list_promoted_articles takes no parameters, so this listing cannot be narrowed from the call; read a single article with get_article.',
+                'list_promoted_articles takes no filter parameters, so this listing cannot be narrowed from the call; read a single article with get_article.',
               ),
             },
           ],
@@ -2339,7 +2339,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
                 response.labels ?? [],
                 formatLabel,
                 undefined,
-                'list_labels takes no parameters, so this listing cannot be narrowed from the call.',
+                'list_labels takes no filter parameters, so this listing cannot be narrowed from the call.',
               ),
             },
           ],

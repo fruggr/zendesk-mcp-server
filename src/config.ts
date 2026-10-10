@@ -253,9 +253,10 @@ const parseBrandIds = (raw: string | undefined): string[] | undefined => {
   if (raw === undefined) return undefined;
   const entries = raw.split(',').map((entry) => entry.trim());
   if (entries.some((entry) => entry.length === 0)) {
-    throw new Error(
+    throw createStartupError(
       'Invalid --brand-ids / ZENDESK_BRAND_IDS value: empty entry. ' +
         'Expected a comma-separated list of brand ids or subdomains, or "all".',
+      STARTUP_DOCS.environment,
     );
   }
   // 'all' is matched case-insensitively: 'ALL' is the flag written in caps, not
@@ -266,8 +267,9 @@ const parseBrandIds = (raw: string | undefined): string[] | undefined => {
   // string compares would not.
   const normalized = entries.map((entry) => entry.toLowerCase());
   if (normalized.length > 1 && normalized.includes('all')) {
-    throw new Error(
+    throw createStartupError(
       'Invalid --brand-ids / ZENDESK_BRAND_IDS value: "all" cannot be combined with brand ids or subdomains.',
+      STARTUP_DOCS.environment,
     );
   }
   // De-duplicate after trim, preserving order: 'A,A' is one brand named twice,

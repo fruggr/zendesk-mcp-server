@@ -116,6 +116,21 @@ describe('loadConfig', () => {
     );
   });
 
+  it.each([
+    ['an empty entry', '123456,,support'],
+    ['"all" mixed with brands', 'all,support'],
+  ])('reports %s in --brand-ids as a startup error linking the docs', (_case, value) => {
+    let error: unknown;
+    try {
+      loadConfig(['mycompany', '--brand-ids', value]);
+    } catch (err) {
+      error = err;
+    }
+    expect(isStartupError(error)).toBe(true);
+    expect((error as Error).message).toMatch(/^Invalid --brand-ids \/ ZENDESK_BRAND_IDS value: /);
+    expect((error as Error).message.endsWith(` See ${STARTUP_DOCS.environment}`)).toBe(true);
+  });
+
   it('rejects --brand-ids with only commas', () => {
     expect(() => loadConfig(['mycompany', '--brand-ids', ',,'])).toThrow();
   });
