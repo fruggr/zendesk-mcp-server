@@ -22,12 +22,18 @@ export interface TokenResponse {
   };
 }
 
+interface RegistrationResponse {
+  client_id?: string;
+  error?: string;
+  error_description?: string;
+}
+
 export interface AuthorizeResult {
   /** Present when the flow reached the client's redirect URI with a code. */
-  code?: string;
-  iss?: string;
-  error?: string;
-  errorDescription?: string;
+  code?: string | undefined;
+  iss?: string | undefined;
+  error?: string | undefined;
+  errorDescription?: string | undefined;
   consentShown: boolean;
   hops: string[];
   verifier: string;
@@ -55,7 +61,7 @@ export const registerDcrClient = async (
   metadata: Record<string, unknown> = {},
 ): Promise<{
   status: number;
-  body: { client_id?: string; error?: string; error_description?: string };
+  body: RegistrationResponse;
 }> => {
   const res = await fetch(`${baseUrl}/reg`, {
     method: 'POST',
@@ -69,7 +75,7 @@ export const registerDcrClient = async (
       ...metadata,
     }),
   });
-  return { status: res.status, body: await res.json() };
+  return { status: res.status, body: (await res.json()) as RegistrationResponse };
 };
 
 export const authorize = async (
@@ -153,7 +159,7 @@ export const tokenRequest = async (
     headers: { 'content-type': 'application/x-www-form-urlencoded', connection: 'close' },
     body: new URLSearchParams({ resource: `${baseUrl}/mcp`, ...params }),
   });
-  return { status: res.status, body: await res.json() };
+  return { status: res.status, body: (await res.json()) as TokenResponse['body'] };
 };
 
 export const exchangeCode = (

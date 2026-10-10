@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 // validates it from package.json, and release syncs only its `version`. These
 // tests read the committed manifest and assert it stays consistent with
 // package.json, the registry schema, and what the generator would seed.
+// @ts-expect-error -- plain .mjs helper, no declaration file (same as the other script tests).
 import { buildServerJson } from '../../scripts/build-server-json.mjs';
 
 const pkg = JSON.parse(

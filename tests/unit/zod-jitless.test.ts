@@ -2,6 +2,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import * as z from 'zod/v4';
 import { createAllTools, type ToolContext } from '../../src/tools';
 import { createStrictParamsParser } from '../../src/utils/validation';
+import { testToolContext } from '../tool-context';
 
 /**
  * The uncompiled path, which the rest of the suite no longer exercises.
@@ -19,7 +20,10 @@ import { createStrictParamsParser } from '../../src/utils/validation';
 z.config({ jitless: true });
 afterAll(() => z.config({ jitless: false }));
 
-const ctx: ToolContext = { subdomain: 'testsubdomain', getToken: () => 'test-token' };
+const ctx: ToolContext = testToolContext({
+  subdomain: 'testsubdomain',
+  getToken: () => 'test-token',
+});
 
 const isCompiled = (schema: z.ZodType): boolean =>
   Boolean(
@@ -68,8 +72,8 @@ describe('jitless: the server behaves identically with compilation stood down', 
     const byName = (a: string, b: string) => a.localeCompare(b);
     expect(Object.keys(json.properties).sort(byName)).toEqual(['include_comments', 'ticket_id']);
     expect([...json.required].sort(byName)).toEqual(['include_comments', 'ticket_id']);
-    expect(json.properties.ticket_id?.type).toBe('integer');
-    expect(json.properties.include_comments?.type).toBe('boolean');
+    expect(json.properties['ticket_id']?.type).toBe('integer');
+    expect(json.properties['include_comments']?.type).toBe('boolean');
     for (const [name, prop] of Object.entries(json.properties)) {
       expect(prop.description, `${name} lost its description`).toBeTruthy();
     }

@@ -2,8 +2,6 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-// @ts-expect-error -- plain .mjs helper, no declaration file (same as the other
-// script tests in this directory).
 import {
   changedRanges,
   escapedMutants,
@@ -11,6 +9,8 @@ import {
   scoreOf,
   specsFor,
   tallyStatuses,
+  // @ts-expect-error -- plain .mjs helper, no declaration file (same as the other
+  // script tests in this directory).
 } from '../../scripts/mutation-scope.mjs';
 
 // The PR gate decides whether a change was tested, so its own parsing and
@@ -133,7 +133,7 @@ describe('escapedMutants', () => {
     };
     const { judged, escaped } = escapedMutants(ranges, report);
     expect(judged).toBe(3);
-    expect(escaped.map((e) => e.line)).toEqual([60, 61]);
+    expect(escaped.map((e: { line: number }) => e.line)).toEqual([60, 61]);
   });
 
   it('treats Timeout as detected, not escaped', () => {
@@ -154,7 +154,9 @@ describe('escapedMutants', () => {
     // The counterpart: contained means Stryker did instrument and run it, so its
     // verdict describes this run and the gate is entitled to act on it.
     const report = { files: { 'src/utils/logger.ts': { mutants: [mutant(60, 'Survived', 70)] } } };
-    expect(escapedMutants(ranges, report).escaped.map((e) => e.line)).toEqual([60]);
+    expect(escapedMutants(ranges, report).escaped.map((e: { line: number }) => e.line)).toEqual([
+      60,
+    ]);
   });
 
   it('ignores a file the diff did not touch, even when it has survivors', () => {
@@ -249,7 +251,7 @@ describe('the mutation baseline cache key', () => {
     );
     const call = /hashFiles\(([^)]*)\)/.exec(action);
     expect(call?.[1], 'the action must compute the prefix with hashFiles(...)').toBeDefined();
-    const hashed = [...(call?.[1] ?? '').matchAll(/'([^']+)'/g)].map((m) => m[1]);
+    const hashed = [...(call?.[1] ?? '').matchAll(/'([^']+)'/g)].map((m) => m[1] ?? '');
 
     // Sorted comparison, so the failure message names the missing file.
     const alphabetically = (a: string, b: string) => a.localeCompare(b);

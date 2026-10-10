@@ -373,7 +373,7 @@ describe('authenticateViaBrowser', () => {
   it('logs the failure (with platform diagnostics) instead of swallowing it when open rejects', async () => {
     mswServer.use(oauthTokenHandler);
 
-    const errorEvents: Array<{ event: string; fields?: Record<string, unknown> }> = [];
+    const errorEvents: Array<{ event: string; fields?: Record<string, unknown> | undefined }> = [];
     const logger = {
       debug: vi.fn(),
       info: vi.fn(),
@@ -553,10 +553,10 @@ describe('startBrowserAuth', () => {
     const logger = makeLogger();
 
     try {
-      const err = await startBrowserAuth(
-        { subdomain: SUB, oauthClientId: CLIENT_ID, callbackPort: port },
+      const err = (await startBrowserAuth(
+        { subdomain: SUB, oauthClientId: CLIENT_ID, callbackPort: port, readOnly: false },
         logger,
-      ).catch((e) => e as Error);
+      ).catch((e: unknown) => e)) as Error;
 
       // The raw EADDRINUSE is rewrapped into guidance both the user and the LLM
       // can act on: which port, what to do first (the port is the mutex between

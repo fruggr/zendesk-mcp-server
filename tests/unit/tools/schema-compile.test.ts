@@ -2,13 +2,17 @@ import { describe, expect, it, vi } from 'vitest';
 import * as z from 'zod/v4';
 import { createAllTools, type ToolContext } from '../../../src/tools';
 import { createStrictParamsParser } from '../../../src/utils/validation';
+import { testToolContext } from '../../tool-context';
 
 // `import 'zod/compile'` (src/index.ts) earns its line only if every tool schema is
 // compilable and the parse that runs is synchronous — both fail silently. A schema the
 // fast path cannot model comes back unchanged, silently uncovered; `{ strict: true }`
 // turns that into a thrown error. See docs/decisions/zod-compile.md.
 
-const ctx: ToolContext = { subdomain: 'testsubdomain', getToken: () => 'test-token' };
+const ctx: ToolContext = testToolContext({
+  subdomain: 'testsubdomain',
+  getToken: () => 'test-token',
+});
 const tools = createAllTools(ctx);
 
 // The shim records `bag.fallbackRun` when (and only when) it has installed a compiled fast

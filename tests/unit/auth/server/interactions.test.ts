@@ -32,7 +32,7 @@ const EXPIRED =
 interface Details {
   prompt: { name: string; details: Record<string, unknown> };
   params: Record<string, unknown>;
-  session?: { accountId: string };
+  session?: { accountId: string } | undefined;
 }
 
 interface FakeResponse {

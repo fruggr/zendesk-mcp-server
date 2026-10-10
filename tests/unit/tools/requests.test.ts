@@ -12,9 +12,13 @@ import {
   MOCK_TICKET_FORM_FEATURE,
 } from '../../msw-handlers';
 import { mswServer } from '../../setup';
+import { testToolContext } from '../../tool-context';
 
 const BASE = 'https://testsubdomain.zendesk.com/api/v2';
-const ctx: ToolContext = { subdomain: 'testsubdomain', getToken: () => 'test-token' };
+const ctx: ToolContext = testToolContext({
+  subdomain: 'testsubdomain',
+  getToken: () => 'test-token',
+});
 
 const findTool = (name: string) => {
   const tool = createRequestTools(ctx).find((t) => t.name === name);
