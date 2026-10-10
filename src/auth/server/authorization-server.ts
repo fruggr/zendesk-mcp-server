@@ -44,7 +44,7 @@ export interface AuthorizationServer {
   readonly protectedResourceMetadata: ProtectedResourceMetadata;
   /** Every route that is neither `/mcp`, the protected-resource metadata nor `/healthz`. */
   handle(req: IncomingMessage, res: ServerResponse): Promise<void>;
-  /** Our JWE, decrypted and checked (issuer, expiry, revocation), or `undefined`; the audience is the caller's to check. */
+  /** Our JWE, decrypted and checked (issuer, revocation), or `undefined`; audience and expiry are the caller's to check. */
   verifyAccessToken(bearer: string): Promise<VerifiedAccessToken | undefined>;
   /** Zendesk refused this grant's token: end the grant so the client signs in again. */
   revokeGrant(grantId: string): Promise<void>;
@@ -79,7 +79,6 @@ const asVerified = (claims: AccessTokenClaims, issuer: string): VerifiedAccessTo
   const valid =
     claims.iss === issuer &&
     typeof claims.exp === 'number' &&
-    claims.exp * 1000 > Date.now() &&
     typeof claims.zd === 'string' &&
     typeof claims.gid === 'string';
   if (!valid) return undefined;

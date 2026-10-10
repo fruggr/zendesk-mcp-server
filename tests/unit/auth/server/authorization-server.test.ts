@@ -201,13 +201,12 @@ describe('createAuthorizationServer', () => {
       }
     });
 
-    it('rejects a token from its expiry second on', async () => {
+    // Expiry, like the audience, is checked by `/mcp` (the SDK's `verifyBearerToken`).
+    it('hands back an expired token with its expiry', async () => {
       const as = build(createMemoryStore());
       const token = await forge(issuer, { exp: 2_000_000_000 });
-      vi.spyOn(Date, 'now').mockReturnValue(2_000_000_000_000 - 1);
+      vi.spyOn(Date, 'now').mockReturnValue(2_000_000_000_000 + 1);
       expect(await as.verifyAccessToken(token)).toMatchObject({ expiresAt: 2_000_000_000 });
-      vi.spyOn(Date, 'now').mockReturnValue(2_000_000_000_000);
-      expect(await as.verifyAccessToken(token)).toBeUndefined();
     });
 
     it('refuses a revoked grant for one access-token lifetime, and only that grant', async () => {

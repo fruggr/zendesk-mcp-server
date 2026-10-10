@@ -116,6 +116,7 @@ const initializeSession = async (port: number, authorization: string): Promise<s
 };
 
 describe('authenticate', () => {
+  afterEach(() => vi.restoreAllMocks());
   const resource = 'https://mcp.example.com/mcp';
   const verified = (aud: string | undefined): VerifiedAccessToken => ({
     zendeskAccessToken: 'zd',
@@ -145,6 +146,18 @@ describe('authenticate', () => {
     expect(await auth(undefined)).toBeUndefined();
     expect(await auth('Basic good')).toBeUndefined();
     expect(await auth(['Bearer good', 'Bearer good'])).toBeUndefined();
+  });
+
+  it('refuses a token past its expiry second', async () => {
+    const server = as(resource);
+    const expiring = { ...verified(resource), expiresAt: 2_000_000_000 };
+    const request = mockRequest({ authorization: 'Bearer good' });
+    const at = (now: number) => {
+      vi.spyOn(Date, 'now').mockReturnValue(now);
+      return authenticate(request, { ...server, verifyAccessToken: async () => expiring });
+    };
+    expect(await at(2_000_000_000_000)).toMatchObject({ expiresAt: 2_000_000_000 });
+    expect(await at(2_000_000_000_000 + 1)).toBeUndefined();
   });
 
   it('refuses a token the authorization server rejects', async () => {
