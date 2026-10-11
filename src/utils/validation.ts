@@ -18,10 +18,16 @@ interface SchemaNode {
 
 const formatPath = (path: readonly PropertyKey[]): string => path.map(String).join('.');
 
-// Our own formatter rather than the SDK's (not exported): one wording for every
-// mode, stable across SDK bumps. `; ` because zod messages carry commas.
 const formatIssue = (issue: Issue): string =>
   issue.path.length > 0 ? `${formatPath(issue.path)}: ${issue.message}` : issue.message;
+
+/**
+ * `path: message` per issue, joined by `; ` since zod messages carry commas.
+ * Ours rather than the SDK's (not exported): one wording for every mode and for
+ * startup config errors, stable across SDK bumps.
+ */
+export const formatIssues = (issues: readonly Issue[]): string =>
+  issues.map(formatIssue).join('; ');
 
 const unwrap = (node: SchemaNode): SchemaNode =>
   node._zod.def.innerType ? unwrap(node._zod.def.innerType) : node;
@@ -72,11 +78,14 @@ type StrictResult =
  * `page_size`) had the key dropped, so a large unpaginated page came back. The
  * validator rejects unknown keys and names both the offending ones and the
  * valid parameters, so a misremembered name fails loudly. Any other failure is
- * one `path: message` per issue (#206). Unknown keys win when both occur: the
- * caller can see its type errors, not the names it guessed.
+ * one `path: message` per issue (#206). When both occur only the unknown keys
+ * are reported: a guessed name is the one error a caller cannot spot by
+ * re-reading its own arguments.
  */
-const createStrictValidator = (schema: z.ZodObject): ((params: unknown) => StrictResult) => {
-  const strict = schema.strict();
+const createStrictValidator = (
+  schema: z.ZodObject,
+  strict: z.ZodObject = schema.strict(),
+): ((params: unknown) => StrictResult) => {
   const topLevelKeys = keyList(Object.keys(schema.shape));
 
   return (params) => {
@@ -89,7 +98,7 @@ const createStrictValidator = (schema: z.ZodObject): ((params: unknown) => Stric
     const message =
       unknownKeyIssues.length > 0
         ? unknownKeysMessage(schema, unknownKeyIssues, topLevelKeys)
-        : `Invalid parameter(s): ${result.error.issues.map(formatIssue).join('; ')}`;
+        : `Invalid parameter(s): ${formatIssues(result.error.issues)}`;
     return { success: false, message };
   };
 };
@@ -114,7 +123,8 @@ export const createStrictParamsParser = (
 export const toStrictStandardSchema = (
   schema: z.ZodObject,
 ): StandardSchemaWithJSON<unknown, Record<string, unknown>> => {
-  const validate = createStrictValidator(schema);
+  const strict = schema.strict();
+  const validate = createStrictValidator(schema, strict);
   return {
     '~standard': {
       version: 1,
@@ -124,7 +134,7 @@ export const toStrictStandardSchema = (
         const result = validate(value);
         return result.success ? { value: result.data } : { issues: [{ message: result.message }] };
       },
-      jsonSchema: schema.strict()['~standard'].jsonSchema,
+      jsonSchema: strict['~standard'].jsonSchema,
     },
   };
 };

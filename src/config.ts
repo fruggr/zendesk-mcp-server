@@ -2,6 +2,7 @@ import { type ParseArgsConfig, parseArgs } from 'node:util';
 import * as z from 'zod/v4';
 import { readEnv } from './utils/env';
 import { createStartupError, STARTUP_DOCS } from './utils/startup-error';
+import { formatIssues } from './utils/validation';
 
 export const ToolMode = z.enum(['single', 'namespace', 'all']);
 export type ToolMode = z.infer<typeof ToolMode>;
@@ -358,7 +359,7 @@ const validated = (input: unknown): Config => {
   const result = ConfigSchema.safeParse(input);
   if (result.success) return result.data;
   throw createStartupError(
-    `${result.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join('; ')}.`,
+    `${formatIssues(result.error.issues)}.`,
     STARTUP_DOCS.cliReference,
     result.error,
   );

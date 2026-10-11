@@ -34,7 +34,7 @@ and does not compile the schema at all** while doing so. Probed on a live server
 | Every JSON-RPC message — `JSONRPCMessageSchema.parse`, synchronous in stdio, SSE and streamable HTTP alike | **yes** |
 | `createStrictParamsParser`'s params parse (`src/utils/validation.ts`) — the proxy dispatch path, i.e. `namespace` and `single`, the default modes | **yes** |
 | `ConfigSchema.parse` at startup (`src/config.ts`) | yes, once |
-| The SDK's tool-argument validation — the registered schema in `all` mode, the proxy's `{operation, params}` schema in the others | **yes** since SDK v2: it validates through zod's `~standard.validate`, which runs synchronously (on SDK v1, `safeParseAsync`: **no**) |
+| The SDK's tool-argument validation — in `all` mode the registered `toStrictStandardSchema` wrapper, which runs the same strict parse as the proxy; the proxy's `{operation, params}` schema in the others | **yes** since SDK v2: it validates synchronously through `~standard.validate` (on SDK v1, `safeParseAsync`: **no**) |
 
 On SDK v1 no tool input schema was ever compiled in `all` mode, and in the default mode
 only the *inner* params parse was; the cost figures below were measured then. SDK v2
@@ -122,7 +122,9 @@ to leave in place:
 - The real `tools/list` payload across all three modes (`all`, `namespace`, `single` —
   128 kB of JSON) is **identical byte for byte**.
 - `unrecognized_keys` issues preserved verbatim, so `createStrictParamsParser` still
-  produces its exact message; the SDK's `-32602` text is unchanged too.
+  produces its exact message; the SDK's `-32602` text was unchanged too. (Since #206
+  the `all`-mode error body is ours, from the same parser, so that check now lives in
+  the integration tests.)
 - The full test suite runs with compilation active — `tests/setup.ts` carries the same
   import, deliberately, so the suite exercises what ships. That would leave the
   uncompiled path untested, so `tests/unit/zod-jitless.test.ts` covers it explicitly:
