@@ -489,6 +489,9 @@ finding — judge it against your change, then add the one-line directive.
 | `browser-oauth.ts` `req.url ?? '/'` | StringLiteral | A request reaching a `node:http` server always has `req.url`, so the default is never read. |
 | `token-store.ts` `tryRefresh`'s `if (!current.refreshToken)` | ConditionalExpression | Both callers check for a refresh token first, so the guard only narrows the type. |
 | `token-store.ts` `scheduledRefresh.unref?.()` | OptionalChaining | Node's `setInterval` always returns a `Timeout` with `unref`. |
+| `token-persistence.ts` the scoped-name regex's `$` anchor | Regex | `.` stops only at a newline, which no package name holds, so the greedy `(.+)` reaches the end anyway. |
+| `token-persistence.ts` the `'utf8'` of the token file's write and read | StringLiteral | Node writes a string as UTF-8 by default, and `JSON.parse` decodes the Buffer a read then returns as UTF-8. |
+| `token-persistence.ts` `loadToken`'s `raw && typeof raw === 'object'` | ConditionalExpression, LogicalOperator | No JSON primitive carries an `accessToken`, and reading one off `null` throws into the catch that returns `undefined` anyway. |
 | `article-order.ts` the cascade's loop bound | EqualityOperator | `<=` reads one step past the end, where the element is `undefined` and the break below leaves the loop. (Its sibling in `hasPositionInversion` is waived at the call site: #250 changed that line, so the gate asked.) |
 | `article-sections.ts` three `if (!x) return ''` | ConditionalExpression | `string` inputs, so they fire only on `''` — for which the pipeline also returns `''`. |
 | `article-sections.ts` `cheerio.load` fragment flag | BooleanLiteral | `textOf` only sees HTML `parseSections` re-serialised from its own fragment parse, so what a document parse would swallow (`<frameset>`) is already gone. |

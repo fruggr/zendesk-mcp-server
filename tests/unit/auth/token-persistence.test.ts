@@ -1,3 +1,5 @@
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TokenKey } from '../../../src/auth/token-persistence';
 
@@ -27,16 +29,30 @@ vi.mock('node:fs', () => ({
     files.set(to, v);
     files.delete(from);
   },
-  rmSync: (p: string) => {
+  // Like the real one: without `force`, removing a missing file throws.
+  rmSync: (p: string, opts?: { force?: boolean }) => {
+    if (!files.has(p) && !opts?.force) {
+      throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+    }
     files.delete(p);
   },
-  mkdirSync: () => undefined,
+  // Like the real one on a dir that exists or lacks a parent: only `recursive`
+  // makes it a no-op.
+  mkdirSync: (_p: string, opts?: { recursive?: boolean }) => {
+    if (!opts?.recursive) throw Object.assign(new Error('EEXIST'), { code: 'EEXIST' });
+  },
   chmodSync: (p: string, mode: number) => {
     if (failDirChmod && !p.endsWith('.tmp')) {
       throw Object.assign(new Error('EPERM'), { code: 'EPERM' });
     }
     chmodCalls.push({ path: p, mode });
   },
+}));
+
+// The package name the config dir segments are derived from.
+let packageName = '@fruggr/zendesk-mcp-server';
+vi.mock('../../../src/utils/package-info', () => ({
+  readPackageInfo: () => ({ name: packageName, version: '0.0.0' }),
 }));
 
 const realPlatform = process.platform;
@@ -59,6 +75,7 @@ describe('token-persistence', () => {
     chmodCalls.length = 0;
     failWrite = false;
     failDirChmod = false;
+    packageName = '@fruggr/zendesk-mcp-server';
     delete process.env['OAUTH_TOKEN_FILE'];
     delete process.env['XDG_CONFIG_HOME'];
     delete process.env['APPDATA'];
@@ -235,6 +252,37 @@ describe('token-persistence', () => {
     expect(path).toMatch(/acme--acme_zendesk--read_write--[0-9a-f]{8}\.json$/);
   });
 
+  it('uses the exact %APPDATA% base on Windows, and its default when unset', async () => {
+    setPlatform('win32');
+    process.env['APPDATA'] = 'C:\\Users\\u\\AppData\\Roaming';
+    const { configDir } = await importFresh();
+    expect(configDir()).toBe(
+      join('C:\\Users\\u\\AppData\\Roaming', 'fruggr', 'zendesk-mcp-server'),
+    );
+
+    delete process.env['APPDATA'];
+    expect(configDir()).toBe(join(homedir(), 'AppData', 'Roaming', 'fruggr', 'zendesk-mcp-server'));
+  });
+
+  it('falls back to ~/.config when XDG_CONFIG_HOME is unset', async () => {
+    setPlatform('linux');
+    const { configDir } = await importFresh();
+    expect(configDir()).toBe(join(homedir(), '.config', 'fruggr', 'zendesk-mcp-server'));
+  });
+
+  it('splits only a leading npm scope into two dir segments', async () => {
+    setPlatform('linux');
+    process.env['XDG_CONFIG_HOME'] = '/cfg';
+    const { configDir } = await importFresh();
+
+    packageName = '@acme/server';
+    expect(configDir()).toBe('/cfg/acme/server');
+    packageName = 'zendesk-mcp-server';
+    expect(configDir()).toBe('/cfg/zendesk-mcp-server');
+    packageName = 'not-a-scope@acme/server';
+    expect(configDir()).toBe('/cfg/not-a-scope@acme/server');
+  });
+
   it('saves then loads a single token record, writing atomically with 0600 perms', async () => {
     setPlatform('linux');
     const path = '/cfg/acme.json';
@@ -294,6 +342,28 @@ describe('token-persistence', () => {
 
     clearToken(path);
     expect(loadToken(path)).toBeUndefined();
+  });
+
+  it('clears a token that was never saved without reporting a failure', async () => {
+    const { clearToken } = await importFresh();
+    const logger = {
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      attachServer: vi.fn(),
+    };
+
+    clearToken('/cfg/never-saved.json', logger);
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  it('treats a record without a string access token as no token', async () => {
+    files.set('/cfg/shapeless.json', JSON.stringify({ refreshToken: 'r' }));
+    files.set('/cfg/numeric.json', JSON.stringify({ accessToken: 42 }));
+    const { loadToken } = await importFresh();
+    expect(loadToken('/cfg/shapeless.json')).toBeUndefined();
+    expect(loadToken('/cfg/numeric.json')).toBeUndefined();
   });
 
   it('returns undefined for a missing file', async () => {
