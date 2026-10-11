@@ -285,11 +285,11 @@ export const registerToolset = (
               tool.name,
               {
                 title: tool.title,
+                description: tool.description,
                 // The strict schema, wrapped so the SDK validates through the same
                 // parser as the proxies: unknown keys are rejected rather than
                 // stripped (#100), errors read alike in every mode (#206), and
                 // clients still see additionalProperties:false.
-                description: tool.description,
                 inputSchema: toStrictStandardSchema(tool.inputSchema),
                 annotations: tool.annotations,
               },
