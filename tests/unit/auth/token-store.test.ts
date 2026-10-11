@@ -52,7 +52,9 @@ vi.mock('../../../src/auth/token-persistence', () => ({
 }));
 
 // Imported after vi.mock so the mocked deps are bound.
-const { createTokenStore, isAuthRequiredError } = await import('../../../src/auth/token-store');
+const { createAuthRequiredError, createTokenStore, isAuthRequiredError } = await import(
+  '../../../src/auth/token-store'
+);
 
 const CONFIG = { subdomain: 'testsubdomain', oauthClientId: 'test_client', readOnly: false };
 // Same tenant, read-only surface: the store must then ask for the `read` scope
@@ -83,6 +85,32 @@ const makeLogger = () => ({
 // Flush the microtask + immediate queue so the store's token-promise handlers run.
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
+const FOUR_HOURS = 4 * 60 * 60 * 1000;
+
+// A refresh response the test settles, to hold a refresh in flight.
+const deferredRefresh = () => {
+  let resolve!: (t: TokenResult) => void;
+  let reject!: (e: unknown) => void;
+  const promise = new Promise<TokenResult>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+};
+
+describe('isAuthRequiredError', () => {
+  it('needs an Error, the AuthRequiredError name and an authorize URL, all three', () => {
+    expect(isAuthRequiredError(createAuthRequiredError(AUTH_URL))).toBe(true);
+    expect(isAuthRequiredError({ name: 'AuthRequiredError', authorizeUrl: AUTH_URL })).toBe(false);
+    expect(isAuthRequiredError(Object.assign(new Error('x'), { authorizeUrl: AUTH_URL }))).toBe(
+      false,
+    );
+    expect(isAuthRequiredError(Object.assign(new Error('x'), { name: 'AuthRequiredError' }))).toBe(
+      false,
+    );
+  });
+});
+
 describe('createTokenStore', () => {
   beforeEach(() => {
     startBrowserAuthMock.mockReset();
@@ -109,7 +137,11 @@ describe('createTokenStore', () => {
     const err = await store.getToken().catch((e) => e);
     expect(isAuthRequiredError(err)).toBe(true);
     expect((err as { authorizeUrl: string }).authorizeUrl).toBe(AUTH_URL);
-    expect((err as Error).message).toContain(AUTH_URL);
+    // MCP surfaces this as the tool-call error text: it is what the user reads.
+    expect((err as Error).message).toMatchInlineSnapshot(`
+      "Zendesk authentication required. A browser window should have opened for you to sign in. If it did not, open this URL in your browser, then retry your request:
+      https://testsubdomain.zendesk.com/oauth/authorizations/new?client_id=test_client"
+    `);
     expect(startBrowserAuthMock).toHaveBeenCalledWith(
       expect.objectContaining({ subdomain: CONFIG.subdomain, oauthClientId: CONFIG.oauthClientId }),
     );
@@ -628,17 +660,32 @@ describe('createTokenStore', () => {
         // Far from expiry, so getToken alone would never refresh.
         expiresAt: Date.now() + 12 * 60 * 60 * 1000,
       });
-      refreshAccessTokenMock.mockResolvedValue({
+      refreshAccessTokenMock.mockResolvedValueOnce({
         access_token: 'new',
         refresh_token: 'r2',
         expires_in: 3600,
       });
+      refreshAccessTokenMock.mockResolvedValueOnce({
+        access_token: 'newer',
+        refresh_token: 'r3',
+        expires_in: 3600,
+      });
       const store = createTokenStore(CONFIG);
 
-      await vi.advanceTimersByTimeAsync(4 * 60 * 60 * 1000);
+      await vi.advanceTimersByTimeAsync(FOUR_HOURS - 1);
+      expect(refreshAccessTokenMock).not.toHaveBeenCalled();
 
-      expect(refreshAccessTokenMock).toHaveBeenCalledWith(
+      await vi.advanceTimersByTimeAsync(1);
+      expect(refreshAccessTokenMock).toHaveBeenCalledTimes(1);
+      expect(refreshAccessTokenMock).toHaveBeenLastCalledWith(
         expect.objectContaining({ refreshToken: 'r1' }),
+      );
+
+      // Every period, not once: each run must release the slot for the next.
+      await vi.advanceTimersByTimeAsync(FOUR_HOURS);
+      expect(refreshAccessTokenMock).toHaveBeenCalledTimes(2);
+      expect(refreshAccessTokenMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ refreshToken: 'r2' }),
       );
       store.dispose();
     } finally {
@@ -690,6 +737,153 @@ describe('createTokenStore', () => {
       await vi.advanceTimersByTimeAsync(8 * 60 * 60 * 1000);
 
       expect(refreshAccessTokenMock).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('records the expiry a refresh reports, and none when it reports none', async () => {
+    vi.useFakeTimers();
+    try {
+      const expired = { accessToken: 'old', refreshToken: 'r1', expiresAt: Date.now() - 1000 };
+      loadTokenMock.mockReturnValue(expired);
+      refreshAccessTokenMock.mockResolvedValueOnce({ access_token: 'a', expires_in: 3600 });
+      const timed = createTokenStore(CONFIG);
+      await expect(timed.getToken()).resolves.toBe('a');
+      expect(saveTokenMock).toHaveBeenLastCalledWith(
+        expect.any(String),
+        expect.objectContaining({ expiresAt: Date.now() + 3_600_000 }),
+        expect.anything(),
+      );
+      timed.dispose();
+
+      refreshAccessTokenMock.mockResolvedValueOnce({ access_token: 'b' });
+      const untimed = createTokenStore(CONFIG);
+      await expect(untimed.getToken()).resolves.toBe('b');
+      expect(saveTokenMock).toHaveBeenLastCalledWith(
+        expect.any(String),
+        expect.objectContaining({ expiresAt: undefined }),
+        expect.anything(),
+      );
+      untimed.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('refreshes from the first millisecond of the skew window, not one before', async () => {
+    vi.useFakeTimers();
+    try {
+      refreshAccessTokenMock.mockResolvedValue({ access_token: 'new', expires_in: 3600 });
+
+      loadTokenMock.mockReturnValue({
+        accessToken: 'outside',
+        refreshToken: 'r1',
+        expiresAt: Date.now() + 60_001,
+      });
+      const outside = createTokenStore(CONFIG);
+      await expect(outside.getToken()).resolves.toBe('outside');
+      outside.dispose();
+
+      loadTokenMock.mockReturnValue({
+        accessToken: 'inside',
+        refreshToken: 'r1',
+        expiresAt: Date.now() + 60_000,
+      });
+      const inside = createTokenStore(CONFIG);
+      await expect(inside.getToken()).resolves.toBe('new');
+      inside.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('holds a call during a background refresh and serves the token it mints', async () => {
+    vi.useFakeTimers();
+    try {
+      loadTokenMock.mockReturnValue({
+        accessToken: 'old',
+        refreshToken: 'r1',
+        expiresAt: Date.now() + 12 * 60 * 60 * 1000,
+      });
+      const background = deferredRefresh();
+      refreshAccessTokenMock.mockReturnValueOnce(background.promise);
+      const store = createTokenStore(CONFIG);
+
+      await vi.advanceTimersByTimeAsync(FOUR_HOURS);
+      // 'old' is still valid, but r1 is about to be rotated out from under it.
+      const call = store.getToken();
+      background.resolve({ access_token: 'new', refresh_token: 'r2', expires_in: 3600 });
+
+      await expect(call).resolves.toBe('new');
+      store.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('shares one on-demand refresh between callers a failed background refresh released', async () => {
+    vi.useFakeTimers();
+    try {
+      loadTokenMock.mockReturnValue({
+        accessToken: 'old',
+        refreshToken: 'r1',
+        // Inside the skew window by the time the background tick fires.
+        expiresAt: Date.now() + FOUR_HOURS + 30_000,
+      });
+      const background = deferredRefresh();
+      refreshAccessTokenMock
+        .mockReturnValueOnce(background.promise)
+        .mockResolvedValueOnce({ access_token: 'new', refresh_token: 'r2', expires_in: 3600 });
+      const store = createTokenStore(CONFIG);
+
+      await vi.advanceTimersByTimeAsync(FOUR_HOURS);
+      const calls = Promise.all([store.getToken(), store.getToken()]);
+      background.reject(new Error('Token refresh failed (503)'));
+
+      await expect(calls).resolves.toEqual(['new', 'new']);
+      expect(refreshAccessTokenMock).toHaveBeenCalledTimes(2);
+      store.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('skips the background tick while an on-demand refresh is in flight', async () => {
+    vi.useFakeTimers();
+    try {
+      loadTokenMock.mockReturnValue({
+        accessToken: 'old',
+        refreshToken: 'r1',
+        expiresAt: Date.now() - 1000,
+      });
+      const onDemand = deferredRefresh();
+      refreshAccessTokenMock.mockReturnValueOnce(onDemand.promise);
+      const store = createTokenStore(CONFIG);
+
+      const call = store.getToken();
+      await vi.advanceTimersByTimeAsync(FOUR_HOURS);
+      expect(refreshAccessTokenMock).toHaveBeenCalledTimes(1);
+
+      onDemand.resolve({ access_token: 'new', refresh_token: 'r2', expires_in: 3600 });
+      await expect(call).resolves.toBe('new');
+      store.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('lets the background tick and invalidate run on a store with no token', async () => {
+    vi.useFakeTimers();
+    try {
+      const store = createTokenStore(CONFIG);
+
+      await vi.advanceTimersByTimeAsync(FOUR_HOURS);
+      expect(refreshAccessTokenMock).not.toHaveBeenCalled();
+
+      store.invalidate();
+      expect(clearTokenMock).toHaveBeenCalledTimes(1);
+      store.dispose();
     } finally {
       vi.useRealTimers();
     }
