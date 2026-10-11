@@ -113,6 +113,16 @@ describe('createTokenStore', () => {
     clearTokenMock.mockReset();
   });
 
+  it('serves the token current when getToken is called, not one installed after', async () => {
+    const store = createTokenStore(CONFIG);
+    store.setToken('first');
+
+    const call = store.getToken();
+    store.setToken('second');
+
+    await expect(call).resolves.toBe('first');
+  });
+
   it('returns a token set via setToken without triggering the browser flow', async () => {
     const store = createTokenStore(CONFIG);
     store.setToken('preset-token');

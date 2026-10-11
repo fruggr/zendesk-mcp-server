@@ -488,7 +488,6 @@ finding — judge it against your change, then add the one-line directive.
 | `config.ts` `topology` / `promotedArticles` | LogicalOperator | `&&` and `??` agree for every value the CLI field holds — the schema's `.default(true)` resolves `undefined` to the same result. |
 | `browser-oauth.ts` `req.url ?? '/'` | StringLiteral | A request reaching a `node:http` server always has `req.url`, so the default is never read. |
 | `token-store.ts` `tryRefresh`'s `if (!current.refreshToken)` | ConditionalExpression | Both callers check for a refresh token first, so the guard only narrows the type. |
-| `token-store.ts` `getToken`'s `if (refreshing !== undefined)` forced true | ConditionalExpression | Awaiting `undefined` costs one microtask and changes nothing a caller sees. |
 | `token-store.ts` `scheduledRefresh.unref?.()` | OptionalChaining | Node's `setInterval` always returns a `Timeout` with `unref`. |
 | `article-order.ts` the cascade's loop bound | EqualityOperator | `<=` reads one step past the end, where the element is `undefined` and the break below leaves the loop. (Its sibling in `hasPositionInversion` is waived at the call site: #250 changed that line, so the gate asked.) |
 | `article-sections.ts` three `if (!x) return ''` | ConditionalExpression | `string` inputs, so they fire only on `''` — for which the pipeline also returns `''`. |
