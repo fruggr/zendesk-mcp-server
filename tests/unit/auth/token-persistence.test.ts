@@ -4,9 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TokenKey } from '../../../src/auth/token-persistence';
 
 // In-memory filesystem backing the mocked `node:fs`, so these tests never touch
-// the real disk. `node:fs` is also used by readPackageInfo (imported indirectly),
-// which then falls back to the default scoped package name — giving a
-// deterministic `fruggr/zendesk-mcp-server` config segment.
+// the real disk.
 const files = new Map<string, string>();
 const chmodCalls: Array<{ path: string; mode: number }> = [];
 let failWrite = false;
@@ -276,11 +274,11 @@ describe('token-persistence', () => {
     const { configDir } = await importFresh();
 
     packageName = '@acme/server';
-    expect(configDir()).toBe('/cfg/acme/server');
+    expect(configDir()).toBe(join('/cfg', 'acme', 'server'));
     packageName = 'zendesk-mcp-server';
-    expect(configDir()).toBe('/cfg/zendesk-mcp-server');
+    expect(configDir()).toBe(join('/cfg', 'zendesk-mcp-server'));
     packageName = 'not-a-scope@acme/server';
-    expect(configDir()).toBe('/cfg/not-a-scope@acme/server');
+    expect(configDir()).toBe(join('/cfg', 'not-a-scope@acme/server'));
   });
 
   it('saves then loads a single token record, writing atomically with 0600 perms', async () => {
