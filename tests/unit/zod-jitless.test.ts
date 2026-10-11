@@ -55,6 +55,13 @@ describe('jitless: the server behaves identically with compilation stood down', 
     );
   });
 
+  it('a wrongly typed parameter fails with the exact same message', () => {
+    const parse = createStrictParamsParser(getTicket.inputSchema);
+    expect(() => parse({ ticket_id: 'abc' })).toThrow(
+      /^Invalid parameter\(s\): ticket_id: Invalid input: expected number, received string$/,
+    );
+  });
+
   it('the exposed JSON Schema is unaffected', () => {
     // toJSONSchema reads the schema definition, never the parse path, so a jitless host
     // advertises the same tool surface. Asserted structurally rather than as a snapshot:

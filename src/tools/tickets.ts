@@ -1242,7 +1242,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
             'Tags to set on the new ticket. Each tag is a single lowercase token (join multi-word tags with an underscore). Use manage_tags later to add or remove individual tags.',
           ),
         custom_fields: z
-          .array(z.object({ id: z.number().int(), value: z.unknown() }))
+          .array(z.object({ id: z.number().int(), value: z.unknown() }).strict())
           .optional()
           .describe(
             'Custom field values as { id, value } pairs (field ids come from your Zendesk admin settings). Call list_ticket_fields first to discover the numeric field ids and, for dropdown/multiselect fields, the exact option values Zendesk accepts.',
@@ -1315,7 +1315,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
             'Replaces the full tag set on the ticket. Use manage_tags for incremental add/remove.',
           ),
         custom_fields: z
-          .array(z.object({ id: z.number().int(), value: z.unknown() }))
+          .array(z.object({ id: z.number().int(), value: z.unknown() }).strict())
           .optional()
           .describe(
             'Custom field values as { id, value } pairs (field ids come from your Zendesk admin settings). Call list_ticket_fields first to discover the numeric field ids and, for dropdown/multiselect fields, the exact option values Zendesk accepts.',

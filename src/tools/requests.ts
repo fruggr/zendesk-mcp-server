@@ -654,7 +654,7 @@ export const createRequestTools = (ctx: ToolContext): ToolDefinition[] => {
             'Form id chosen from list_request_forms, deciding which questions apply. Omit to use the account default form.',
           ),
         custom_fields: z
-          .array(z.object({ id: z.number().int(), value: z.unknown() }))
+          .array(z.object({ id: z.number().int(), value: z.unknown() }).strict())
           .optional()
           .describe(
             "Answers to the form's own questions, as { id, value } pairs. Take both the ids and the accepted values from get_request_form; an id this form does not carry, or a value a dropdown does not offer, is refused here because Zendesk would drop it without an error. Option values are the tag strings, never numbers.",

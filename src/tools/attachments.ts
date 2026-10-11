@@ -11,30 +11,32 @@ import type { ZendeskUpload } from '../types';
  * log to their own request. The Uploads API (`POST /api/v2/uploads.json`) is
  * documented as allowed for end users, so the same code path serves both.
  */
-export const attachmentSchema = z.object({
-  file_name: z.string().min(1).describe('File name, e.g. "app.log" or "screenshot.png".'),
-  file_base64: z
-    .string()
-    .min(1)
-    // `abort` is what makes the ordering pay: zod respects declaration order but
-    // does not stop on its own, so the base64 regex would still scan megabytes
-    // already disqualified by length (measured 1.67ms -> 0.33ms). In-range inputs
-    // and the published schema are unaffected.
-    .max(MAX_BASE64_INPUT_CHARS, {
-      abort: true,
-      error: (issue) =>
-        `Attachment too large: ${(issue.input as string).length} base64 characters, limit ${MAX_BASE64_INPUT_CHARS}. Downscale the file, split the upload, or link to it instead of uploading.`,
-    })
-    .base64()
-    .describe(
-      `File content encoded as base64. At most ${MAX_BASE64_INPUT_CHARS} characters (about ${MAX_BASE64_INPUT_MB} MB of file), and the attachments of one call must stay under that total; the HTTP transport additionally caps request bodies at 4 MB.`,
-    ),
-  content_type: z
-    .string()
-    .min(1)
-    .default('application/octet-stream')
-    .describe('MIME type, e.g. "text/plain", "image/png", "application/pdf".'),
-});
+export const attachmentSchema = z
+  .object({
+    file_name: z.string().min(1).describe('File name, e.g. "app.log" or "screenshot.png".'),
+    file_base64: z
+      .string()
+      .min(1)
+      // `abort` is what makes the ordering pay: zod respects declaration order but
+      // does not stop on its own, so the base64 regex would still scan megabytes
+      // already disqualified by length (measured 1.67ms -> 0.33ms). In-range inputs
+      // and the published schema are unaffected.
+      .max(MAX_BASE64_INPUT_CHARS, {
+        abort: true,
+        error: (issue) =>
+          `Attachment too large: ${(issue.input as string).length} base64 characters, limit ${MAX_BASE64_INPUT_CHARS}. Downscale the file, split the upload, or link to it instead of uploading.`,
+      })
+      .base64()
+      .describe(
+        `File content encoded as base64. At most ${MAX_BASE64_INPUT_CHARS} characters (about ${MAX_BASE64_INPUT_MB} MB of file), and the attachments of one call must stay under that total; the HTTP transport additionally caps request bodies at 4 MB.`,
+      ),
+    content_type: z
+      .string()
+      .min(1)
+      .default('application/octet-stream')
+      .describe('MIME type, e.g. "text/plain", "image/png", "application/pdf".'),
+  })
+  .strict();
 
 export type AttachmentInput = z.infer<typeof attachmentSchema>;
 

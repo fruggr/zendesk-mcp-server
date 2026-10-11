@@ -26,7 +26,7 @@ import { resolveBrand } from './tools/help-center';
 import { createAllTools, type ToolDefinition } from './tools/index';
 import { type Logger, silentLogger } from './utils/logger';
 import { readPackageInfo } from './utils/package-info';
-import { createStrictParamsParser } from './utils/validation';
+import { createStrictParamsParser, toStrictStandardSchema } from './utils/validation';
 
 /**
  * Invoke a tool handler, notifying `onUnauthorized` when Zendesk rejects the
@@ -285,11 +285,12 @@ export const registerToolset = (
               tool.name,
               {
                 title: tool.title,
-                // Register the strict schema (not just `.shape`) so the SDK rejects
-                // unknown keys instead of silently stripping them, and advertises
-                // additionalProperties:false to clients (#100).
+                // The strict schema, wrapped so the SDK validates through the same
+                // parser as the proxies: unknown keys are rejected rather than
+                // stripped (#100), errors read alike in every mode (#206), and
+                // clients still see additionalProperties:false.
                 description: tool.description,
-                inputSchema: tool.inputSchema.strict(),
+                inputSchema: toStrictStandardSchema(tool.inputSchema),
                 annotations: tool.annotations,
               },
               async (params) => runHandler(tool, params as Record<string, unknown>, onUnauthorized),

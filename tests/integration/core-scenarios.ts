@@ -635,7 +635,10 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
           arguments: { per_page: 3 },
         });
         expect(result.isError).toBe(true);
-        expect(textOf(result)).toContain('per_page');
+        // Same wording as the proxy path: the SDK validates through our parser (#206).
+        expect(textOf(result)).toMatch(
+          /^Input validation error: Invalid arguments for tool list_tickets: Unknown parameter\(s\): per_page\. Valid parameters: .*page_size/,
+        );
       });
 
       it('reports a wrongly typed parameter in "all" mode as a tool error naming the field', async () => {
@@ -646,8 +649,77 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         });
         expect(result.isError).toBe(true);
         expect(textOf(result)).toMatchInlineSnapshot(
-          `"Input validation error: Invalid arguments for tool get_ticket: ticket_id: Invalid input: expected number, received string"`,
+          `"Input validation error: Invalid arguments for tool get_ticket: Invalid parameter(s): ticket_id: Invalid input: expected number, received string"`,
         );
+      });
+
+      it('words a validation error the same in all three modes: one parser behind each (#206)', async () => {
+        const params = { article_id: 'abc', locale: 5 };
+        const expected =
+          'Invalid parameter(s): article_id: Invalid input: expected number, received string; locale: Invalid input: expected string, received number';
+
+        connected = await harness.connect(makeConfig({ mode: 'all' }));
+        const all = await connected.client.callTool({ name: 'get_article', arguments: params });
+        await connected.close();
+        connected = await harness.connect(makeConfig({ mode: 'namespace' }));
+        const namespace = await connected.client.callTool({
+          name: 'zendesk_help_center',
+          arguments: { operation: 'get_article', params },
+        });
+        await connected.close();
+        connected = await harness.connect(makeConfig({ mode: 'single' }));
+        const single = await connected.client.callTool({
+          name: 'zendesk',
+          arguments: { operation: 'get_article', params },
+        });
+
+        expect([all.isError, namespace.isError, single.isError]).toEqual([true, true, true]);
+        // The SDK keeps its own prefix in `all` mode; the body after it is ours.
+        expect(textOf(all)).toBe(
+          `Input validation error: Invalid arguments for tool get_article: ${expected}`,
+        );
+        expect(textOf(namespace)).toBe(expected);
+        expect(textOf(single)).toBe(expected);
+      });
+
+      it('names a nested unknown key and its valid siblings, in "all" mode and through a proxy', async () => {
+        const params = {
+          ticket_id: 1,
+          body: 'x',
+          attachments: [{ file_name: 'a.txt', file_base64: 'eA==', filename: 'b.txt' }],
+        };
+        const expected =
+          'Unknown parameter(s): attachments.0.filename. Valid parameters for attachments.0: content_type, file_base64, file_name.';
+
+        connected = await harness.connect(makeConfig({ mode: 'all' }));
+        const all = await connected.client.callTool({
+          name: 'add_private_note',
+          arguments: params,
+        });
+        await connected.close();
+        connected = await harness.connect(makeConfig({ mode: 'namespace' }));
+        const proxied = await connected.client.callTool({
+          name: 'zendesk_tickets',
+          arguments: { operation: 'add_private_note', params },
+        });
+
+        expect(all.isError).toBe(true);
+        expect(textOf(all)).toBe(
+          `Input validation error: Invalid arguments for tool add_private_note: ${expected}`,
+        );
+        expect(proxied.isError).toBe(true);
+        expect(textOf(proxied)).toBe(expected);
+      });
+
+      it('advertises nested objects as closed over the wire, so a client sees the strictness', async () => {
+        connected = await harness.connect(makeConfig({ mode: 'all' }));
+        const { tools } = await connected.client.listTools();
+        const schema = tools.find((tool) => tool.name === 'update_ticket')?.inputSchema as {
+          additionalProperties?: unknown;
+          properties: Record<string, { items?: { additionalProperties?: unknown } }>;
+        };
+        expect(schema.additionalProperties).toBe(false);
+        expect(schema.properties['custom_fields']?.items?.additionalProperties).toBe(false);
       });
 
       it('rejects a call to an unknown tool with a JSON-RPC invalid-params error', async () => {
