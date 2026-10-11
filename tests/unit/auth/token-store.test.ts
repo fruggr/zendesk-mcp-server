@@ -88,15 +88,7 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
 const FOUR_HOURS = 4 * 60 * 60 * 1000;
 
 // A refresh response the test settles, to hold a refresh in flight.
-const deferredRefresh = () => {
-  let resolve!: (t: TokenResult) => void;
-  let reject!: (e: unknown) => void;
-  const promise = new Promise<TokenResult>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  return { promise, resolve, reject };
-};
+const deferredRefresh = () => Promise.withResolvers<TokenResult>();
 
 describe('isAuthRequiredError', () => {
   it('needs an Error, the AuthRequiredError name and an authorize URL, all three', () => {
@@ -706,7 +698,7 @@ describe('createTokenStore', () => {
       refreshAccessTokenMock.mockRejectedValue(new Error('Token refresh failed (503)'));
       const store = createTokenStore(CONFIG);
 
-      await vi.advanceTimersByTimeAsync(4 * 60 * 60 * 1000);
+      await vi.advanceTimersByTimeAsync(FOUR_HOURS);
 
       // A transient failure must not wipe a still-valid token or force re-auth.
       expect(clearTokenMock).not.toHaveBeenCalled();
