@@ -157,6 +157,18 @@ describe('PostToolUse lint hook (.claude/settings.json)', () => {
     expect(biomeArgv()).toBeUndefined();
   });
 
+  it('does not run Biome on a path whose directory name ends in a newline', () => {
+    // `$(...)` would strip the newline and hand Biome src/evil/x.ts, a link
+    // pointing outside the project, after checking the regular src/evil\n/x.ts.
+    const outside = join(sandbox, 'outside.ts');
+    writeFileSync(outside, 'export const a = 1;\n');
+    const file = edited('src/evil\n/x.ts');
+    mkdirSync(join(project, 'src', 'evil'));
+    symlinkSync(outside, join(project, 'src', 'evil', 'x.ts'));
+    runHook({ tool_input: { file_path: file } });
+    expect(biomeArgv()).toBeUndefined();
+  });
+
   it('never blocks the edit when Biome reports a violation', () => {
     const file = edited('src/a.ts');
     expect(() => runHook({ tool_input: { file_path: file } }, { BIOME_EXIT: '1' })).not.toThrow();

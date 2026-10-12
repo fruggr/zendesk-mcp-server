@@ -13,6 +13,11 @@ file=$(jq -r '.tool_input.file_path // empty' 2>/dev/null) || exit 0
 # A symlinked file is skipped and its directory resolved physically (`cd -P`, as
 # the kernel would), so neither a link nor `..` can redirect the write.
 [ -L "$file" ] && exit 0
+# `$(...)` strips trailing newlines, so a directory named `evil<LF>` would be
+# checked as one path and handed to Biome as another.
+case "$file" in *'
+'*) exit 0 ;;
+esac
 project=$(cd -P "$CLAUDE_PROJECT_DIR" && pwd -P) || exit 0
 dir=$(cd -P "$(dirname "$file")" && pwd -P) || exit 0
 case "$dir/" in
