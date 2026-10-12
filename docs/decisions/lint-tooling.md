@@ -73,11 +73,16 @@ rule lost (the two type-aware rules still run at pre-commit and in CI).
 
 | Stage | Command | Wired in | Cost |
 | --- | --- | --- | ---: |
-| `PostToolUse` (per edit) | `biome lint --write --skip=types <file>` | `.claude/settings.json` | **137.0 ms** |
+| `PostToolUse` (per edit) | `biome lint --write --skip=types <file>` | `.claude/settings.json` → `.claude/hooks/lint-edited-file.sh` | **137.0 ms** |
 | pre-commit (staged) | `biome check --write --error-on-warnings <files>` | lefthook (`lefthook.yml`) | 503.5 ms |
 | pre-push | *nothing* | — | — |
 | CI | `pnpm check` — the same command, repository scope | `.github/workflows/ci.yml` | 807.2 ms |
 | CI | `biome migrate --write` + `git diff --exit-code biome.json` | `.github/workflows/ci.yml` | ~50 ms |
+
+The costs time each command as written, not the hook as Claude Code invokes it,
+so a wiring fault never shows up here: the per-edit hook once read its path from
+an unset variable and linted the whole tree on every edit (#374).
+`tests/unit/lint-hook.test.ts` drives the real hook with stdin JSON to pin it.
 
 **Why CI carries a second Biome step.** `pnpm check` runs Biome in check mode, so
 an upgrade that changes formatter or lint output fails on the bump PR itself

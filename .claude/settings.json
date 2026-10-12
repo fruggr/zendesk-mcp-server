@@ -33,7 +33,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cd \"$CLAUDE_PROJECT_DIR\" && set -f && node scripts/biome.mjs lint --write --skip=types --no-errors-on-unmatched $CLAUDE_FILE_PATHS || true"
+            "command": "sh \"$CLAUDE_PROJECT_DIR/.claude/hooks/lint-edited-file.sh\""
           }
         ]
       }

@@ -52,7 +52,7 @@ Two independent causes, both from `platform === 'android'`:
 ## Consequences
 
 - Every Biome caller in the repo goes through the shim: the `check` and
-  `check:fix` scripts, the `PostToolUse` hook in `.claude/settings.json`, the
+  `check:fix` scripts, the `PostToolUse` hook (`.claude/hooks/lint-edited-file.sh`), the
   pre-commit job in `lefthook.yml`. `scripts/bench-lint-tooling.mjs` asks it for
   the binary path (`--print-binary`) instead, so its samples don't include the
   shim's own start-up. A caller that bypasses all of that keeps working
