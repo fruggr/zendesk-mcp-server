@@ -169,6 +169,14 @@ describe('PostToolUse lint hook (.claude/settings.json)', () => {
     expect(biomeArgv()).toBeUndefined();
   });
 
+  it('does not lint a sibling when the edited file name ends in a newline', () => {
+    // `$(...)` would strip the newline and hand Biome src/a.ts instead.
+    const file = edited('src/a.ts\n');
+    edited('src/a.ts');
+    runHook({ tool_input: { file_path: file } });
+    expect(biomeArgv()).toBeUndefined();
+  });
+
   it('never blocks the edit when Biome reports a violation', () => {
     const file = edited('src/a.ts');
     expect(() => runHook({ tool_input: { file_path: file } }, { BIOME_EXIT: '1' })).not.toThrow();
