@@ -1,3 +1,35 @@
+## [3.3.1](https://github.com/fruggr/zendesk-mcp-server/compare/v3.3.0...v3.3.1) (2026-10-14)
+
+### Bug Fixes
+
+* **validation:** readable parameter errors instead of raw zod JSON, and reject unknown nested keys ([#367](https://github.com/fruggr/zendesk-mcp-server/issues/367)) ([f9c288f](https://github.com/fruggr/zendesk-mcp-server/commit/f9c288fbc34cb65ae00aeeb453c4acf63bcb4733)), closes [#206](https://github.com/fruggr/zendesk-mcp-server/issues/206)
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Chores
+
+* **deps:** lock file maintenance ([#376](https://github.com/fruggr/zendesk-mcp-server/issues/376)) ([8899cd2](https://github.com/fruggr/zendesk-mcp-server/commit/8899cd2e9abfede007c6ade4799117f3aa92a1bc))
+* **deps:** update dependency msw to v3 ([#352](https://github.com/fruggr/zendesk-mcp-server/issues/352)) ([2b83e0d](https://github.com/fruggr/zendesk-mcp-server/commit/2b83e0d0bd5150a9a20678ff0b0fb1cd7cab3f1e))
+* **deps:** update pnpm to v12.10.0 ([#368](https://github.com/fruggr/zendesk-mcp-server/issues/368)) ([40237c7](https://github.com/fruggr/zendesk-mcp-server/commit/40237c700570be1121ac4c29b9fb69eafc624fcf))
+* **deps:** update pnpm to v12.10.1 ([#371](https://github.com/fruggr/zendesk-mcp-server/issues/371)) ([211a2f1](https://github.com/fruggr/zendesk-mcp-server/commit/211a2f177f0a32a8baba61479fc654c3e32af605))
+* **deps:** update pnpm to v12.11.0 ([#377](https://github.com/fruggr/zendesk-mcp-server/issues/377)) ([6dc896d](https://github.com/fruggr/zendesk-mcp-server/commit/6dc896de9547e5c83584c4ff9059ed1693b29a55))
+* **deps:** update pnpm to v12.11.1 ([#379](https://github.com/fruggr/zendesk-mcp-server/issues/379)) ([f28ab4e](https://github.com/fruggr/zendesk-mcp-server/commit/f28ab4e90d27d9b41f54c529733972d78c96da8f))
+* **dev:** lint only the edited file in the Claude Code PostToolUse hook ([#375](https://github.com/fruggr/zendesk-mcp-server/issues/375)) ([d553528](https://github.com/fruggr/zendesk-mcp-server/commit/d5535283d9f6f2648c3ba64f7bdb6c963c588b58)), closes [#374](https://github.com/fruggr/zendesk-mcp-server/issues/374)
+* **docker:** update node.js to 2982820 ([#372](https://github.com/fruggr/zendesk-mcp-server/issues/372)) ([7beff3f](https://github.com/fruggr/zendesk-mcp-server/commit/7beff3fecf028ff667cc4b37fc2abe62759f4db9))
+* **release:** 3.3.1 [skip ci] ([f7adf96](https://github.com/fruggr/zendesk-mcp-server/commit/f7adf9609366ef0feba988f78cf33508fc43786b))
+
+### Code Refactoring
+
+* **auth:** update mcp sdk and delegate the /mcp audience check to it ([#366](https://github.com/fruggr/zendesk-mcp-server/issues/366)) ([8ec4b85](https://github.com/fruggr/zendesk-mcp-server/commit/8ec4b851498922ded734ea4ca9aa2ff89264b9fb))
+
+### Tests
+
+* **auth:** assert token-persistence's config dir, file options and shape check ([#370](https://github.com/fruggr/zendesk-mcp-server/issues/370)) ([0ae540c](https://github.com/fruggr/zendesk-mcp-server/commit/0ae540cb6d88d276bd4125b5227d380f47083b54)), closes [#209](https://github.com/fruggr/zendesk-mcp-server/issues/209), references [#310](https://github.com/fruggr/zendesk-mcp-server/issues/310) [#369](https://github.com/fruggr/zendesk-mcp-server/issues/369) [#209](https://github.com/fruggr/zendesk-mcp-server/issues/209) [#209](https://github.com/fruggr/zendesk-mcp-server/issues/209)
+* **auth:** assert token-store's refresh timing, coalescing and error guard ([#369](https://github.com/fruggr/zendesk-mcp-server/issues/369)) ([94cc12d](https://github.com/fruggr/zendesk-mcp-server/commit/94cc12da863c5b0c4fbff4adde89aae2400a2938)), references [#310](https://github.com/fruggr/zendesk-mcp-server/issues/310)
+* type-check the test suite ([#364](https://github.com/fruggr/zendesk-mcp-server/issues/364)) ([a6948f3](https://github.com/fruggr/zendesk-mcp-server/commit/a6948f39582775a5af54871ae4559bed531d00b4)), references [#352](https://github.com/fruggr/zendesk-mcp-server/issues/352) [#365](https://github.com/fruggr/zendesk-mcp-server/issues/365) [#352](https://github.com/fruggr/zendesk-mcp-server/issues/352)
+</details>
+
 ## [3.3.1](https://github.com/fruggr/zendesk-mcp-server/compare/v3.3.0...v3.3.1) (2026-10-11)
 
 ### Bug Fixes
