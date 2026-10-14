@@ -89,8 +89,9 @@ each new version automatically.
 - **Catch-up.** A version on npm whose registry entry or image is missing is
   mirrored by running Release by hand (*Actions* → *Release* → *Run workflow*
   on `main`, with the version). That run checks out the `v<version>` tag, skips
-  semantic-release, refuses a version npm does not serve, then runs the MCP
-  registry publish and the `image` job as a release would.
+  semantic-release, refuses a version npm does not serve or that is not the
+  newest release (the image job moves `latest`), then runs the MCP registry
+  publish (a single attempt) and the `image` job as a release would.
 - **Resilience.** The publish is retried a few times to absorb npm propagation
   lag (the registry validates by fetching the freshly published npm tarball).
 
