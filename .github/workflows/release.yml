@@ -75,14 +75,6 @@ jobs:
 
       - run: node scripts/smoke-test.mjs
 
-      # Snapshot the version before semantic-release. @semantic-release/npm
-      # rewrites package.json#version in the working tree during its prepare
-      # step, so a change here is the signal that a release was actually cut
-      # (chore/docs-only pushes produce no release and must not republish).
-      - name: Snapshot version before release
-        id: before
-        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
-
       # main is protected by a ruleset that requires a pull request *and*
       # status checks which only ever report on one, so a direct push of the
       # `chore(release)` commit is refused twice over and the built-in
@@ -138,18 +130,18 @@ jobs:
       # listing tracks every release with no manual step. Auth reuses the
       # workflow's `id-token: write` (GitHub OIDC) — no extra secret. Ownership
       # of the npm package is proven by the `mcpName` field in package.json.
+      # semantic-release tags the release commit it creates, and only when it
+      # cuts a release, so a version tag on HEAD is the signal. Not a
+      # package.json diff: a release retried after a partial failure (commit
+      # pushed, npm not) starts with package.json already at that version.
       - name: Detect whether a release was published
         id: released
-        env:
-          # Route the GitHub expression through env rather than templating it
-          # into the script source (avoids any shell-quoting surprises).
-          BEFORE: ${{ steps.before.outputs.version }}
         run: |
-          after="$(node -p "require('./package.json').version")"
-          if [ "$BEFORE" != "$after" ]; then
+          tag="$(git tag --points-at HEAD --list 'v[0-9]*' | head -n 1)"
+          if [ -n "$tag" ]; then
             echo "published=true" >> "$GITHUB_OUTPUT"
-            echo "version=$after" >> "$GITHUB_OUTPUT"
-            echo "Release $after detected; will publish to the MCP registry."
+            echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+            echo "Release ${tag#v} detected; will publish to the MCP registry."
           else
             echo "published=false" >> "$GITHUB_OUTPUT"
             echo "No release this run; skipping MCP registry publish."

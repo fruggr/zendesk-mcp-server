@@ -54,10 +54,11 @@ the [official MCP registry](https://registry.modelcontextprotocol.io) under the
 name `io.github.fruggr/zendesk-mcp-server`, so registry-driven MCP clients pick up
 each new version automatically.
 
-- **Gating.** `@semantic-release/npm` rewrites `package.json`'s `version` in the
-  working tree only when it actually publishes. The job snapshots the version
-  before and after semantic-release; the publish steps run **only** when it
-  changed, so `chore:` / `docs:` pushes (no release) never touch the registry.
+- **Gating.** semantic-release tags the release commit only when it cuts a
+  release, so the publish steps (and the image job) run **only** when a `v*` tag
+  points at `HEAD` after it; `chore:` / `docs:` pushes (no release) never touch
+  the registry. Not a `package.json` diff: retrying a release whose tag was
+  deleted after a partial failure starts with `package.json` already bumped.
 - **Manifest.** `server.json` is **version-controlled** at the repo root
   (committed and reviewable). [`scripts/build-server-json.mjs`](../scripts/build-server-json.mjs)
   *seeds* it from everything that already lives in `package.json` (name from
