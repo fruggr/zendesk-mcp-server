@@ -3,6 +3,16 @@ name: Release
 on:
   push:
     branches: [main]
+  # Catch-up for a version already on npm whose MCP registry entry or container
+  # image is missing (a run that died after the npm publish, or one whose
+  # publish went undetected). Runs from `main` only: the `release` environment
+  # refuses any other ref. semantic-release does not run.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version already published on npm to mirror (e.g. 3.3.1)
+        required: true
+        type: string
 
 concurrency:
   group: release
@@ -33,8 +43,21 @@ jobs:
       published: ${{ steps.released.outputs.published }}
       version: ${{ steps.released.outputs.version }}
     steps:
+      - name: Validate the requested version
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::'$VERSION' is not a MAJOR.MINOR.PATCH version." >&2
+            exit 1
+          fi
+
+      # A manual run checks out the release tag, so the tag-on-HEAD detection
+      # below and every later step see that release's tree.
       - uses: actions/checkout@v7
         with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/v{0}', inputs.version) || '' }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -84,6 +107,7 @@ jobs:
       # and is revoked in post-job: install, test and build must not eat into
       # that window.
       - uses: actions/create-github-app-token@v3
+        if: github.event_name == 'push'
         id: app-token
         with:
           # `client-id`, not the deprecated `app-id`. A variable rather than a
@@ -100,6 +124,7 @@ jobs:
           permission-pull-requests: write
 
       - run: pnpm exec semantic-release
+        if: github.event_name == 'push'
         env:
           # The App token, not secrets.GITHUB_TOKEN: it authenticates both the
           # `git push HEAD:main` of @semantic-release/git (which needs the
@@ -136,8 +161,19 @@ jobs:
       # pushed, npm not) starts with package.json already at that version.
       - name: Detect whether a release was published
         id: released
+        env:
+          EVENT: ${{ github.event_name }}
         run: |
           tag="$(git tag --points-at HEAD --list 'v[0-9]*' | head -n 1)"
+          if [ "$EVENT" = workflow_dispatch ]; then
+            # Mirror only what npm already serves: the registry validates
+            # against the npm tarball, and the image must match it.
+            name="$(node -p "require('./package.json').name")"
+            if [ "$(npm view "$name@${tag#v}" version 2>/dev/null)" != "${tag#v}" ]; then
+              echo "::error::$name@${tag#v} is not on npm; nothing to mirror." >&2
+              exit 1
+            fi
+          fi
           if [ -n "$tag" ]; then
             echo "published=true" >> "$GITHUB_OUTPUT"
             echo "version=${tag#v}" >> "$GITHUB_OUTPUT"

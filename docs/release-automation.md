@@ -86,6 +86,11 @@ each new version automatically.
   `id-token: write` GitHub OIDC token, the same permission npm Trusted
   Publishing already relies on. No new secret, and the `io.github.fruggr/*`
   namespace is authorized because the workflow runs in the `fruggr` org's repo.
+- **Catch-up.** A version on npm whose registry entry or image is missing is
+  mirrored by running Release by hand (*Actions* → *Release* → *Run workflow*
+  on `main`, with the version). That run checks out the `v<version>` tag, skips
+  semantic-release, refuses a version npm does not serve, then runs the MCP
+  registry publish and the `image` job as a release would.
 - **Resilience.** The publish is retried a few times to absorb npm propagation
   lag (the registry validates by fetching the freshly published npm tarball).
 
