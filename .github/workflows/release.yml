@@ -68,7 +68,7 @@ jobs:
         env:
           VERSION: ${{ inputs.version }}
         run: |
-          newest="$(git tag --list 'v[0-9]*' --sort=-v:refname | head -n 1)"
+          newest="$(git tag --list 'v[0-9]*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)"
           if [ "$newest" != "v$VERSION" ]; then
             echo "::error::v$VERSION is not the newest release ($newest); its image would take over the latest tags." >&2
             exit 1
@@ -187,7 +187,8 @@ jobs:
           if [ "$EVENT" = workflow_dispatch ]; then
             tag="v$VERSION"
           else
-            tag="$(git tag --points-at HEAD --list 'v[0-9]*' | head -n 1)"
+            # Stable tags only; `|| true` because Actions runs bash with pipefail.
+            tag="$(git tag --points-at HEAD --list 'v[0-9]*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)"
           fi
           if [ -n "$tag" ]; then
             echo "published=true" >> "$GITHUB_OUTPUT"
