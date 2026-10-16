@@ -153,7 +153,7 @@ export const startBrowserAuth = (
         body: tokenBody.toString(),
       });
 
-      // Stryker disable next-line StringLiteral,ObjectLiteral: log event name and payload (role 4).
+      // Stryker disable next-line StringLiteral,ObjectLiteral,CallExpression: log call, event name and payload (role 4).
       logger.debug('oauth_token_exchange', { status: tokenResponse.status });
 
       if (!tokenResponse.ok) {
@@ -185,7 +185,7 @@ export const startBrowserAuth = (
     const resolveCallback = async (url: URL): Promise<CallbackResolution> => {
       const error = url.searchParams.get('error');
       const code = url.searchParams.get('code');
-      // Stryker disable next-line StringLiteral,ObjectLiteral: log event name and payload (role 4).
+      // Stryker disable next-line StringLiteral,ObjectLiteral,CallExpression: log call, event name and payload (role 4).
       logger.debug('oauth_callback_received', {
         hasCode: Boolean(code),
         hasError: Boolean(error),
@@ -210,7 +210,7 @@ export const startBrowserAuth = (
 
       try {
         const token = await exchangeCodeForToken(code);
-        // Stryker disable next-line StringLiteral: log event name (role 4).
+        // Stryker disable next-line StringLiteral,CallExpression: log call and event name (role 4).
         logger.info('oauth_authenticated');
         return { status: 200, html: SUCCESS_PAGE, outcome: { ok: true, token } };
       } catch (err) {
@@ -274,27 +274,27 @@ export const startBrowserAuth = (
       });
 
       const authUrl = `${authorizeBase}?${params.toString()}`;
-      // Stryker disable next-line StringLiteral,ObjectLiteral: log event name and payload (role 4).
+      // Stryker disable next-line StringLiteral,ObjectLiteral,CallExpression: log call, event name and payload (role 4).
       logger.debug('oauth_callback_listening', { port, redirectUri });
-      // Stryker disable next-line StringLiteral: log event name (role 4).
+      // Stryker disable next-line StringLiteral,CallExpression: log call and event name (role 4).
       logger.info('oauth_browser_opening');
       // Full authorize URL is debug-only: it carries the (public) client_id and
       // PKCE challenge — no secret — but stays out of default-level logs.
-      // Stryker disable next-line StringLiteral,ObjectLiteral: log event name and payload (role 4).
+      // Stryker disable next-line StringLiteral,ObjectLiteral,CallExpression: log call, event name and payload (role 4).
       logger.debug('oauth_authorize_url', { url: authUrl });
       // Always-on, ungated user-facing fallback: if the browser can't open, the
       // user must see this URL regardless of LOG_LEVEL — do NOT route it through
       // the (level-gated) logger.
-      // Stryker disable next-line StringLiteral: stderr prose read by a human only (role 3).
+      // Stryker disable next-line StringLiteral,CallExpression: stderr fallback read by a human, not asserted (role 3).
       console.error(`Opening browser for Zendesk authentication...`);
-      // Stryker disable next-line StringLiteral: as above.
+      // Stryker disable next-line StringLiteral,CallExpression: as above.
       console.error(`If the browser doesn't open, visit: ${authUrl}`);
 
       open(authUrl)
         .then(
           // Stryker disable next-line BlockStatement: the success branch only logs (role 4).
           () => {
-            // Stryker disable next-line StringLiteral: log event name (role 4).
+            // Stryker disable next-line StringLiteral,CallExpression: log call and event name (role 4).
             logger.debug('oauth_browser_opened');
           },
         )
@@ -378,7 +378,7 @@ export const refreshAccessToken = async (
     body: body.toString(),
   });
 
-  // Stryker disable next-line StringLiteral,ObjectLiteral: log event name and payload (role 4).
+  // Stryker disable next-line StringLiteral,ObjectLiteral,CallExpression: log call, event name and payload (role 4).
   logger.debug('oauth_token_refresh', { status: response.status });
 
   if (!response.ok) {
@@ -387,7 +387,7 @@ export const refreshAccessToken = async (
   }
 
   const tokenData = (await response.json()) as TokenResult;
-  // Stryker disable next-line StringLiteral: log event name (role 4).
+  // Stryker disable next-line StringLiteral,CallExpression: log call and event name (role 4).
   logger.info('oauth_token_refreshed');
   return tokenData;
 };

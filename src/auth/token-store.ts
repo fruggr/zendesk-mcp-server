@@ -161,11 +161,11 @@ export const createTokenStore = (
       // Freshly refreshed: if expiry is still unknown, don't re-probe every call.
       probedUnknownExpiry = true;
       persist(token);
-      // Stryker disable next-line StringLiteral: log event name (role 4).
+      // Stryker disable next-line StringLiteral,CallExpression: log call and event name (role 4).
       logger.info('oauth_token_refreshed_cached');
       return token.accessToken;
     } catch (err) {
-      // Stryker disable next-line StringLiteral,ObjectLiteral: log event name and payload (role 4).
+      // Stryker disable next-line StringLiteral,ObjectLiteral,CallExpression: log call, event name and payload (role 4).
       logger.warn('oauth_token_refresh_failed', {
         error: err instanceof Error ? err.message : String(err),
       });
@@ -181,7 +181,7 @@ export const createTokenStore = (
   };
 
   const beginAuth = (): Promise<string> => {
-    // Stryker disable next-line StringLiteral: log event name (role 4).
+    // Stryker disable next-line StringLiteral,CallExpression: log call and event name (role 4).
     logger.info('oauth_auth_start');
     return startBrowserAuth(
       {
@@ -205,15 +205,18 @@ export const createTokenStore = (
             // Freshly minted: trust it without an immediate probe-refresh.
             probedUnknownExpiry = true;
             persist(token);
-            // Stryker disable next-line StringLiteral: log event name (role 4).
+            // Stryker disable next-line StringLiteral,CallExpression: log call and event name (role 4).
             logger.info('oauth_token_cached');
           })
-          .catch((err) => {
-            // Stryker disable next-line StringLiteral,ObjectLiteral: log event name and payload (role 4).
-            logger.warn('oauth_auth_failed', {
-              error: err instanceof Error ? err.message : String(err),
-            });
-          })
+          .catch(
+            // Stryker disable next-line BlockStatement: the catch only logs (role 4).
+            (err) => {
+              // Stryker disable next-line StringLiteral,ObjectLiteral,CallExpression: log call, event name and payload (role 4).
+              logger.warn('oauth_auth_failed', {
+                error: err instanceof Error ? err.message : String(err),
+              });
+            },
+          )
           .finally(() => {
             // Let the next call start a fresh flow: on success the cached token
             // short-circuits anyway; on failure/timeout we want a clean retry.
@@ -253,7 +256,7 @@ export const createTokenStore = (
     if (refreshing !== undefined) await refreshing;
 
     if (token && !needsRefresh(token)) {
-      // Stryker disable next-line StringLiteral: log event name (role 4).
+      // Stryker disable next-line StringLiteral,CallExpression: log call and event name (role 4).
       logger.debug('oauth_token_cache_hit');
       return token.accessToken;
     }
@@ -292,7 +295,7 @@ export const createTokenStore = (
       token = undefined;
       clearPersistedToken(tokenPath, logger);
     }
-    // Stryker disable next-line StringLiteral: log event name (role 4).
+    // Stryker disable next-line StringLiteral,CallExpression: log call and event name (role 4).
     logger.info('oauth_token_invalidated');
   };
 

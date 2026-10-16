@@ -142,11 +142,13 @@ export const saveToken = (
 ): void => {
   try {
     writeFileAtomic(path, record);
-    // Stryker disable next-line StringLiteral: log event name (role 4).
+    // Stryker disable BlockStatement: the catch below only logs (role 4).
+    // Stryker disable next-line StringLiteral,CallExpression: log call and event name (role 4).
     logger.debug('token_persisted');
   } catch (err) {
+    // Stryker restore BlockStatement
     // Never fail the auth flow because the token couldn't be cached to disk.
-    // Stryker disable next-line StringLiteral,ObjectLiteral: log event name and payload (role 4).
+    // Stryker disable next-line StringLiteral,ObjectLiteral,CallExpression: log call, event name and payload (role 4).
     logger.warn('token_persist_failed', {
       error: err instanceof Error ? err.message : String(err),
     });
@@ -156,10 +158,12 @@ export const saveToken = (
 export const clearToken = (path: string, logger: Logger = silentLogger): void => {
   try {
     rmSync(path, { force: true });
-    // Stryker disable next-line StringLiteral: log event name (role 4).
+    // Stryker disable BlockStatement: the catch below only logs (role 4).
+    // Stryker disable next-line StringLiteral,CallExpression: log call and event name (role 4).
     logger.debug('token_cleared');
   } catch (err) {
-    // Stryker disable next-line StringLiteral,ObjectLiteral: log event name and payload (role 4).
+    // Stryker restore BlockStatement
+    // Stryker disable next-line StringLiteral,ObjectLiteral,CallExpression: log call, event name and payload (role 4).
     logger.warn('token_clear_failed', {
       error: err instanceof Error ? err.message : String(err),
     });
