@@ -29,8 +29,8 @@ const isWindows = process.platform === 'win32';
  * vendor-namespaced and can't collide with another `zendesk-mcp-server`.
  */
 // Splits an npm scoped name into [scope, package]; hoisted so it is compiled once.
-// Stryker disable next-line Regex: dropping `$` changes nothing, as `.` stops only at a newline no package name holds.
-const SCOPED_PACKAGE_NAME = /^@([^/]+)\/(.+)$/;
+// No `$`: `.` already stops only at a newline, which no npm name holds.
+const SCOPED_PACKAGE_NAME = /^@([^/]+)\/(.+)/;
 
 const appDirSegments = (): string[] => {
   const { name } = readPackageInfo();
@@ -125,8 +125,9 @@ export const loadToken = (path: string): PersistedToken | undefined => {
   try {
     // Stryker disable next-line StringLiteral: JSON.parse decodes the Buffer an encoding-less read returns as UTF-8.
     const raw: unknown = JSON.parse(readFileSync(path, 'utf8'));
-    // Stryker disable next-line ConditionalExpression,LogicalOperator: no JSON primitive has an accessToken, and null throws into the catch below.
-    if (raw && typeof raw === 'object' && typeof (raw as PersistedToken).accessToken === 'string') {
+    // No JSON primitive carries an accessToken, so only `null` needs guarding.
+    // Stryker disable next-line OptionalChaining: on null the plain read throws into the catch, which also returns undefined.
+    if (typeof (raw as Partial<PersistedToken> | null)?.accessToken === 'string') {
       return raw as PersistedToken;
     }
   } catch {

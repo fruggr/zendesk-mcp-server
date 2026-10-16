@@ -21,6 +21,7 @@ const detectWsl = (): boolean => {
   }
 };
 
+// Stryker restore all
 interface BrowserOAuthConfig {
   subdomain: string;
   oauthClientId: string;
@@ -64,17 +65,18 @@ const callbackPortInUseError = (port: number, cause: Error): Error =>
   );
 
 // Pages served back to the browser tab that completed (or failed) the flow.
-// Stryker restore all
 // ASCII only, like every other string on the auth path.
 const errorPage = (title: string, detail?: string): string =>
   `<html><body><h1>${escapeHtml(title)}</h1>${detail === undefined ? '' : `<p>${escapeHtml(detail)}</p>`}</body></html>`;
 
-// Stryker disable StringLiteral: prose and auto-close script read by the user only (role 3).
 const SUCCESS_PAGE =
+  // Stryker disable next-line StringLiteral: markup and prose read by the user only (role 3).
   '<html><body>' +
   '<h1>Authentication successful!</h1>' +
+  // Stryker disable next-line StringLiteral: as above.
   '<p>You can close this tab and return to your AI assistant.</p>' +
   '<p>This tab will auto-close in <span id="t">10</span>s.</p>' +
+  // Stryker disable StringLiteral: the auto-close script, read by the browser only (role 3).
   '<script>' +
   'let n=10;' +
   'const el=document.getElementById("t");' +
@@ -224,8 +226,11 @@ export const startBrowserAuth = (
     };
 
     callbackServer = createServer(async (req, res) => {
-      // Stryker disable next-line StringLiteral: node:http always sets req.url, so the default is never read.
-      const url = new URL(req.url ?? '/', `http://localhost`);
+      const url = new URL(
+        // Stryker disable next-line StringLiteral: node:http always sets req.url, so the default is never read.
+        req.url ?? '/',
+        `http://localhost`,
+      );
 
       if (url.pathname !== '/callback') {
         res.writeHead(404);

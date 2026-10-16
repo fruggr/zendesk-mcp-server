@@ -477,7 +477,14 @@ report still read 100 %. Hence: after adding a directive, check the **Ignored co
 ### Equivalents, and the limit of a line-level waiver
 
 The equivalents found in #250 and #209 now carry their directive at the call site, with
-the reason that used to live in a table here.
+the reason that used to live in a table here. Where an equivalent sat on dead code, the
+code went instead (`token-persistence.ts`: the regex's `$`, and the guards in front of
+`?.accessToken`), which keeps the killed mutants on that line alive.
+
+The price of the rest, measured when the scope was triaged to zero: 9 killed mutants
+became `Ignored` as siblings of an equivalent on the same line, one each in `config.ts`,
+`article-order.ts`, `token-store.ts`, `logger.ts` and `package-info.ts`, four in
+`article-sections.ts`.
 
 **And it cannot target one mutant among several of the same mutator on a line.**
 The equivalent mutant is typically the whole-condition `ConditionalExpression`
