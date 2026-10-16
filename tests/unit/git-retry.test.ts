@@ -2,17 +2,17 @@ import { spawnSync } from 'node:child_process';
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 /**
  * `scripts/git-retry/git` stands in for git on PATH during semantic-release, so
  * a transient GitHub refusal of one push (the 3.3.1 note, `remote: fatal error
- * in commit_refs`) no longer ends a release halfway. The real git here is a
- * stub that logs its argv and fails its first `FAIL_TIMES` calls.
+ * in commit_refs`) no longer ends a release halfway.
  */
 
 const repoRoot = new URL('../../', import.meta.url);
-const wrapper = new URL('scripts/git-retry/git', repoRoot).pathname;
+const wrapper = fileURLToPath(new URL('scripts/git-retry/git', repoRoot));
 
 const FAKE_GIT = `#!/bin/sh
 printf '%s\\n' "$*" >> "$CALLS"
