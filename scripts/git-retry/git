@@ -6,6 +6,9 @@
 # one a no-op, and a real refusal fails every time.
 real="${REAL_GIT:?REAL_GIT must name the real git, not this wrapper}"
 [ "$1" = push ] || exec "$real" "$@"
+# semantic-release's auth probe expects the unauthenticated dry run to fail;
+# retrying it would only add 35 s to every release run.
+for arg; do [ "$arg" = --dry-run ] && exec "$real" "$@"; done
 delays="${GIT_PUSH_RETRY_DELAYS:-5 10 20}"
 attempts=$(($(echo "$delays" | wc -w) + 1))
 attempt=1

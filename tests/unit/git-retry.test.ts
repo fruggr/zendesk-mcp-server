@@ -55,7 +55,7 @@ afterEach(() => {
   rmSync(sandbox, { recursive: true, force: true });
 });
 
-describe('git retry wrapper (scripts/git-retry/git)', () => {
+describe.skipIf(process.platform === 'win32')('git retry wrapper (scripts/git-retry/git)', () => {
   it('passes any command but push straight through, failures included', () => {
     const result = run(['tag', 'v1.2.3', 'HEAD'], 1);
     expect(result.status).toBe(1);
@@ -67,6 +67,18 @@ describe('git retry wrapper (scripts/git-retry/git)', () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toBe('ok\n');
     expect(loggedCalls()).toEqual(['push -- https://example/repo.git refs/notes/x']);
+  });
+
+  it('does not retry a dry-run push, which semantic-release expects to fail', () => {
+    const result = run(
+      ['push', '--dry-run', '--no-verify', '--', 'https://example/repo.git', 'HEAD:main'],
+      9,
+    );
+    expect(result.status).toBe(1);
+    expect(loggedCalls()).toEqual([
+      'push --dry-run --no-verify -- https://example/repo.git HEAD:main',
+    ]);
+    expect(result.stderr).not.toContain('git push failed');
   });
 
   it('retries a failed push with the same arguments until it succeeds', () => {
