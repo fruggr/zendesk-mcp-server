@@ -100,6 +100,7 @@ export const computePositionWrites = (
   // blocks its placement.
   const left = desired[movedIndex - 1];
   let running = left ? left.position : -1;
+  // Stryker disable next-line EqualityOperator: one step past the end reads undefined, which the break below handles.
   for (let i = movedIndex; i < desired.length; i += 1) {
     const article = desired[i];
     if (!article) break;

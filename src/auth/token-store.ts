@@ -136,6 +136,7 @@ export const createTokenStore = (
     current: StoredToken,
     { dropOnFailure = true }: { dropOnFailure?: boolean } = {},
   ): Promise<string | undefined> => {
+    // Stryker disable next-line ConditionalExpression: both callers check for a refresh token first; the guard only narrows the type.
     if (!current.refreshToken) return undefined;
     try {
       const result = await refreshAccessToken(
@@ -160,9 +161,11 @@ export const createTokenStore = (
       // Freshly refreshed: if expiry is still unknown, don't re-probe every call.
       probedUnknownExpiry = true;
       persist(token);
+      // Stryker disable next-line StringLiteral: log event name (role 4).
       logger.info('oauth_token_refreshed_cached');
       return token.accessToken;
     } catch (err) {
+      // Stryker disable next-line StringLiteral,ObjectLiteral: log event name and payload (role 4).
       logger.warn('oauth_token_refresh_failed', {
         error: err instanceof Error ? err.message : String(err),
       });
@@ -178,6 +181,7 @@ export const createTokenStore = (
   };
 
   const beginAuth = (): Promise<string> => {
+    // Stryker disable next-line StringLiteral: log event name (role 4).
     logger.info('oauth_auth_start');
     return startBrowserAuth(
       {
@@ -201,9 +205,11 @@ export const createTokenStore = (
             // Freshly minted: trust it without an immediate probe-refresh.
             probedUnknownExpiry = true;
             persist(token);
+            // Stryker disable next-line StringLiteral: log event name (role 4).
             logger.info('oauth_token_cached');
           })
           .catch((err) => {
+            // Stryker disable next-line StringLiteral,ObjectLiteral: log event name and payload (role 4).
             logger.warn('oauth_auth_failed', {
               error: err instanceof Error ? err.message : String(err),
             });
@@ -247,6 +253,7 @@ export const createTokenStore = (
     if (refreshing !== undefined) await refreshing;
 
     if (token && !needsRefresh(token)) {
+      // Stryker disable next-line StringLiteral: log event name (role 4).
       logger.debug('oauth_token_cache_hit');
       return token.accessToken;
     }
@@ -285,6 +292,7 @@ export const createTokenStore = (
       token = undefined;
       clearPersistedToken(tokenPath, logger);
     }
+    // Stryker disable next-line StringLiteral: log event name (role 4).
     logger.info('oauth_token_invalidated');
   };
 
@@ -299,6 +307,7 @@ export const createTokenStore = (
       });
     }
   }, SCHEDULED_REFRESH_MS);
+  // Stryker disable next-line OptionalChaining: Node's setInterval always returns a Timeout with unref.
   scheduledRefresh.unref?.();
 
   // Stop the background timer (e.g. on shutdown or in tests). Optional for stdio,

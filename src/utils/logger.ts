@@ -131,6 +131,7 @@ export const createLogger = (level: LogLevel): Logger => {
       // Best-effort sink: a dead stderr must not break the caller.
     }
 
+    // Stryker disable next-line ConditionalExpression: with no server, the property read throws into the best-effort catch.
     if (server) {
       try {
         void server

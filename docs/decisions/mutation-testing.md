@@ -366,7 +366,7 @@ scope is a decision to do its assertion work *first*:
 
 | Excluded | Why | Owner |
 | --- | --- | --- |
-| `src/tools/**` | `.describe()` calls, each emptied by `StringLiteral` into a survivor that says nothing about test quality | [#212](https://github.com/fruggr/zendesk-mcp-server/issues/212) |
+| `src/tools/**` | Cost, measured in [#212](https://github.com/fruggr/zendesk-mcp-server/issues/212): ~2 h 30 min on 4 cores for 3 671 mutants, against ~10 min for the rest of the scope. Most are static (tests build the tools outside a test, so each one reruns the whole suite). The exposed schema is pinned by `tests/integration/tools-list/` instead. | Deferred |
 
 Excluded from *mutation* only: it still runs under `pnpm test` and still counts
 towards the coverage thresholds.
@@ -393,25 +393,24 @@ What #250 measured, chasing zero on this repo: the last mutants in an area are e
 ones, each needing a `// Stryker disable` whose justification ran two to five lines. Nine
 of those comments in `src/` bought no test and no behaviour — only a number.
 
-### Waive late, not early
+### Triaged to zero, not driven to zero
 
-**An equivalent mutant stays escaped. The directive is written the day the gate actually
-trips on it, by whoever is touching that line.**
+**Every survivor in scope is either killed or waived at the call site, so the report
+always reads zero escaped.** The dashboard then shows only what is new since the last
+triage, which is what the repository owner reviews from time to time.
 
-An escaped mutant is not debt to clear in advance; it is a note to the next person who
-edits that line. They have the context to judge it, and they pay a small tax once instead
-of the file carrying speculative Stryker commentary for everyone, forever.
+That replaces the earlier "waive late" rule (waive only when the gate trips), dropped
+after #209: leaving known survivors escaped kept every report noisy with mutants already
+judged not worth a test, and made new gaps hard to spot.
 
 Two consequences:
 
 - **A directive's reason is one sentence, two lines at most** — the ~50-word cap
-  `AGENTS.md` puts on any implementation comment, applied at the call site. A reason that
-  needs a paragraph earns a row in the table below instead; if nobody writes that row, the
-  mutant stays escaped.
-- **A file joins the `mutate` scope with no *escaped* mutant it has not looked at** — that
-  much of the old bar survives, because a file arriving with unreviewed debt mines the gate
-  on lines nobody has read. Reaching that by waiving is as valid as reaching it by killing.
-  What is gone is the expectation that an area already in scope be driven to zero.
+  `AGENTS.md` puts on any implementation comment, applied at the call site — and it names
+  the role it claims (§ below) or why the mutant is equivalent.
+- **Waiving is a triage, not a target.** A survivor in a role-1 or logic line is a missing
+  test and gets one; the waiver is for log names, human-only prose and equivalents. A
+  file joins `mutate` triaged the same way.
 
 ### The `StringLiteral` question, decided on measurement
 
@@ -449,8 +448,7 @@ does**, and there are four roles:
    exact-output assertion is cheap where it applies: measured on one formatter, two
    snapshots took its region from 6 killed / 15 escaped to 21 killed / 0 escaped, with no
    directive, and the seven logic mutants needed *the same two inputs* anyway. Where the
-   string is only read by a human debugging, neither assert nor waive it — leave it
-   escaped.
+   string is only read by a human debugging, waive it with a reason.
 4. **Internal diagnostics** — log event names, debug payload keys. Disable with a
    reason, unless a test asserts the event name as an observability contract, in
    which case it is role 1.
@@ -476,31 +474,10 @@ region open across the rest of `config.ts` and ignored 31 mutants instead of 5, 
 report still read 100 %. Hence: after adding a directive, check the **Ignored count** in
 `reports/mutation/mutation.json`, not just the score.
 
-### Known equivalents, so nobody re-derives them
+### Equivalents, and the limit of a line-level waiver
 
-Waiving late means the analysis has to outlive the moment it was done. These were checked
-in #250 and deliberately **left escaped**. If the gate trips on one of them, this is the
-finding — judge it against your change, then add the one-line directive.
-
-| Site | Mutator | Why no test can tell |
-| --- | --- | --- |
-| `config.ts` `parseCliArgs` field guard | ConditionalExpression | Only `--port` / `--callback-port` reach it with no field; the key they would write is read by nothing. |
-| `config.ts` `topology` / `promotedArticles` | LogicalOperator | `&&` and `??` agree for every value the CLI field holds — the schema's `.default(true)` resolves `undefined` to the same result. |
-| `browser-oauth.ts` `req.url ?? '/'` | StringLiteral | A request reaching a `node:http` server always has `req.url`, so the default is never read. |
-| `token-store.ts` `tryRefresh`'s `if (!current.refreshToken)` | ConditionalExpression | Both callers check for a refresh token first, so the guard only narrows the type. |
-| `token-store.ts` `scheduledRefresh.unref?.()` | OptionalChaining | Node's `setInterval` always returns a `Timeout` with `unref`. |
-| `token-persistence.ts` the scoped-name regex's `$` anchor | Regex | `.` stops only at a newline, which no package name holds, so the greedy `(.+)` reaches the end anyway. |
-| `token-persistence.ts` the `'utf8'` of the token file's write and read | StringLiteral | Node writes a string as UTF-8 by default, and `JSON.parse` decodes the Buffer a read then returns as UTF-8. |
-| `token-persistence.ts` `loadToken`'s `raw && typeof raw === 'object'` | ConditionalExpression, LogicalOperator | No JSON primitive carries an `accessToken`, and reading one off `null` throws into the catch that returns `undefined` anyway. |
-| `article-order.ts` the cascade's loop bound | EqualityOperator | `<=` reads one step past the end, where the element is `undefined` and the break below leaves the loop. (Its sibling in `hasPositionInversion` is waived at the call site: #250 changed that line, so the gate asked.) |
-| `article-sections.ts` three `if (!x) return ''` | ConditionalExpression | `string` inputs, so they fire only on `''` — for which the pipeline also returns `''`. |
-| `article-sections.ts` `cheerio.load` fragment flag | BooleanLiteral | `textOf` only sees HTML `parseSections` re-serialised from its own fragment parse, so what a document parse would swallow (`<frameset>`) is already gone. |
-| `article-sections.ts` the `''` ternary arm | StringLiteral | It only feeds the heading lookup, which no marker string satisfies either. |
-| `logger.ts` `if (server)` | ConditionalExpression | With none attached the property read throws into the best-effort catch right below. |
-| `package-info.ts` the `raw && typeof raw === 'object'` guard | ConditionalExpression, LogicalOperator | The values it excludes carry no string `name`/`version`, so they fall through or throw into the catch that resumes the walk — what the closed guard does anyway. |
-
-A line-level directive cannot target one mutant among several of the same mutator, so each
-of these would also waive a killed sibling. One more reason to wait until the gate asks.
+The equivalents found in #250 and #209 now carry their directive at the call site, with
+the reason that used to live in a table here.
 
 **And it cannot target one mutant among several of the same mutator on a line.**
 The equivalent mutant is typically the whole-condition `ConditionalExpression`

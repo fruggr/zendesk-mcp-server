@@ -29,6 +29,7 @@ const isWindows = process.platform === 'win32';
  * vendor-namespaced and can't collide with another `zendesk-mcp-server`.
  */
 // Splits an npm scoped name into [scope, package]; hoisted so it is compiled once.
+// Stryker disable next-line Regex: dropping `$` changes nothing, as `.` stops only at a newline no package name holds.
 const SCOPED_PACKAGE_NAME = /^@([^/]+)\/(.+)$/;
 
 const appDirSegments = (): string[] => {
@@ -105,6 +106,7 @@ const writeFileAtomic = (path: string, record: PersistedToken): void => {
   const dir = dirname(path);
   mkdirSync(dir, { recursive: true });
   const tmp = `${path}.${process.pid}.tmp`;
+  // Stryker disable next-line StringLiteral: Node writes a string as UTF-8 by default.
   writeFileSync(tmp, JSON.stringify(record, null, 2), 'utf8');
   if (!isWindows) chmodSync(tmp, 0o600);
   renameSync(tmp, path);
@@ -121,7 +123,9 @@ const writeFileAtomic = (path: string, record: PersistedToken): void => {
 // rather than an error: persistence must never wedge the auth flow.
 export const loadToken = (path: string): PersistedToken | undefined => {
   try {
+    // Stryker disable next-line StringLiteral: JSON.parse decodes the Buffer an encoding-less read returns as UTF-8.
     const raw: unknown = JSON.parse(readFileSync(path, 'utf8'));
+    // Stryker disable next-line ConditionalExpression,LogicalOperator: no JSON primitive has an accessToken, and null throws into the catch below.
     if (raw && typeof raw === 'object' && typeof (raw as PersistedToken).accessToken === 'string') {
       return raw as PersistedToken;
     }
@@ -138,9 +142,11 @@ export const saveToken = (
 ): void => {
   try {
     writeFileAtomic(path, record);
+    // Stryker disable next-line StringLiteral: log event name (role 4).
     logger.debug('token_persisted');
   } catch (err) {
     // Never fail the auth flow because the token couldn't be cached to disk.
+    // Stryker disable next-line StringLiteral,ObjectLiteral: log event name and payload (role 4).
     logger.warn('token_persist_failed', {
       error: err instanceof Error ? err.message : String(err),
     });
@@ -150,8 +156,10 @@ export const saveToken = (
 export const clearToken = (path: string, logger: Logger = silentLogger): void => {
   try {
     rmSync(path, { force: true });
+    // Stryker disable next-line StringLiteral: log event name (role 4).
     logger.debug('token_cleared');
   } catch (err) {
+    // Stryker disable next-line StringLiteral,ObjectLiteral: log event name and payload (role 4).
     logger.warn('token_clear_failed', {
       error: err instanceof Error ? err.message : String(err),
     });

@@ -134,12 +134,11 @@ quality bar still hold — the freedom is from Zendesk's shape, not from craft.)
   (`pnpm test:mutation:diff origin/main HEAD` reproduces it). That gate is the whole
   contract: **the score is not a target and 100 % is not the goal.** A survivor in a line
   you changed means an assertion is missing or too loose — tighten it, never weaken one to
-  go green. Everywhere else, leave a survivor alone: **waive late, not early**, so an
-  equivalent mutant stays escaped until the gate actually trips on it and the person
-  touching the line writes a
+  go green. The scope is kept at **zero escaped mutants**: a survivor that is not worth a
+  test (log event names, human-only prose, equivalents) gets a
   `// Stryker disable next-line <mutator>: <reason>` whose reason is one sentence, two
-  lines at most. A reason that needs a paragraph goes in the ADR's waiver table instead. Rationale, scope and costs:
-  `docs/decisions/mutation-testing.md`.
+  lines at most, so the dashboard shows only new, untriaged survivors. Rationale, scope
+  and costs: `docs/decisions/mutation-testing.md`.
 
 ## Planning
 

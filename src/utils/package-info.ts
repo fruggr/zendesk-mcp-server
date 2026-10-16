@@ -35,6 +35,7 @@ export const readPackageInfo = (): PackageInfo => {
     try {
       // JSON.parse yields `unknown`; validate at runtime rather than asserting.
       const raw: unknown = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
+      // Stryker disable next-line ConditionalExpression,LogicalOperator: excluded values carry no string name/version, or throw into the catch.
       if (raw && typeof raw === 'object') {
         const pkg = raw as Partial<PackageInfo>;
         if (typeof pkg.name === 'string' && typeof pkg.version === 'string') {
