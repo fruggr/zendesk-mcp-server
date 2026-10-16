@@ -481,10 +481,11 @@ the reason that used to live in a table here. Where an equivalent sat on dead co
 code went instead (`token-persistence.ts`: the regex's `$`, and the guards in front of
 `?.accessToken`), which keeps the killed mutants on that line alive.
 
-The price of the rest, measured when the scope was triaged to zero: 9 killed mutants
-became `Ignored` as siblings of an equivalent on the same line, one each in `config.ts`,
-`article-order.ts`, `token-store.ts`, `logger.ts` and `package-info.ts`, four in
-`article-sections.ts`.
+The price of the rest: where an equivalent still carries a line-level directive
+(`config.ts`'s field guard, `article-order.ts`'s loop bound, `token-store.ts`'s
+`tryRefresh` guard, `logger.ts`'s `if (server)`, `article-sections.ts`'s tag-name arm),
+a killed sibling of the same mutator on that line becomes `Ignored` with it — one each,
+measured when the scope was triaged to zero.
 
 **And it cannot target one mutant among several of the same mutator on a line.**
 The equivalent mutant is typically the whole-condition `ConditionalExpression`
