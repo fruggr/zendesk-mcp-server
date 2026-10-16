@@ -108,8 +108,9 @@ everything an agent could depend on:
   identical (verified on PR #110). That is exactly the kind of change we want.
 
 **How to verify:** `tests/integration/tools-list/` pins what `tools/list` returns per
-namespace (names, titles, descriptions, annotations, JSON Schema), so the diff is the
-inline-snapshot diff those tests show: review it, never refresh it blind. Keys and constraints must be additive only; a field that disappears or
+namespace, in `all` mode and as the `namespace`-mode proxy (names, titles, descriptions,
+annotations, JSON Schema), so the diff is the inline-snapshot diff those tests show:
+review it, never refresh it blind. Keys and constraints must be additive only; a field that disappears or
 a type that loosens is a regression. Stop and rethink. For a `description` that
 differs, ask what an agent knew before and no longer knows — nothing missing is
 fine, however much shorter. One that may only ever grow fails

@@ -1,23 +1,18 @@
-import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
-import type { Namespace } from '../../../src/config';
-import { createMcpServer } from '../../../src/server';
+import type { Namespace, ToolMode } from '../../../src/config';
 import { makeConfig } from '../harness';
+import { stdioHarness } from '../stdio-harness';
 
 /**
- * What `tools/list` hands an agent for one namespace in `all` mode: names,
- * titles, descriptions, annotations and the emitted JSON Schema. Pinned whole
- * because `docs/mcp-metadata.md` forbids changing any of it silently — a diff
- * here is a schema change to justify in the PR, not a snapshot to refresh.
+ * What `tools/list` hands an agent for one namespace: names, titles,
+ * descriptions, annotations and the emitted JSON Schema — every tool in `all`
+ * mode, the namespace proxy in `namespace` mode. Pinned whole because
+ * `docs/mcp-metadata.md` forbids changing any of it silently — a diff here is a
+ * schema change to justify in the PR, not a snapshot to refresh.
  */
-export const listExposedTools = async (namespace: Namespace) => {
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const server = createMcpServer(
-    makeConfig({ mode: 'all', namespaces: [namespace] }),
-    () => 'token',
+export const listExposedTools = async (namespace: Namespace, mode: ToolMode = 'all') => {
+  const { client, close } = await stdioHarness.connect(
+    makeConfig({ mode, namespaces: [namespace] }),
   );
-  await server.connect(serverTransport);
-  const client = new Client({ name: 'tools-list-snapshot', version: '0.0.0' });
-  await client.connect(clientTransport);
   try {
     const { tools } = await client.listTools();
     return tools.map(({ name, title, description, annotations, inputSchema }) => ({
@@ -28,7 +23,6 @@ export const listExposedTools = async (namespace: Namespace) => {
       inputSchema,
     }));
   } finally {
-    await client.close();
-    await server.close();
+    await close();
   }
 };

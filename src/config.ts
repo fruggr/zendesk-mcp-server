@@ -508,10 +508,8 @@ export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
     readOnly: cli.readOnly ?? false,
     namespaces,
     tools: cli.tools,
-    // Stryker disable next-line LogicalOperator: the schema's .default(true) resolves undefined the same way.
-    topology: cli.topology ?? true,
-    // Stryker disable next-line LogicalOperator: as above.
-    promotedArticles: cli.promotedArticles ?? true,
+    topology: cli.topology,
+    promotedArticles: cli.promotedArticles,
     hcResourceScheme,
     dev: cli.dev ?? false,
     printTools: cli.printTools ?? false,

@@ -35,13 +35,12 @@ export const readPackageInfo = (): PackageInfo => {
     try {
       // JSON.parse yields `unknown`; validate at runtime rather than asserting.
       const raw: unknown = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
-      // Stryker disable next-line ConditionalExpression,LogicalOperator: excluded values carry no string name/version, or throw into the catch.
-      if (raw && typeof raw === 'object') {
-        const pkg = raw as Partial<PackageInfo>;
-        if (typeof pkg.name === 'string' && typeof pkg.version === 'string') {
-          cached = { name: pkg.name, version: pkg.version };
-          return cached;
-        }
+      const pkg = raw as Partial<PackageInfo> | null;
+      // No JSON primitive carries a name, so only `null` needs the optional chain.
+      // Stryker disable next-line OptionalChaining: on null the plain read throws into the catch, which also keeps walking.
+      if (typeof pkg?.name === 'string' && typeof pkg.version === 'string') {
+        cached = { name: pkg.name, version: pkg.version };
+        return cached;
       }
     } catch {
       // No readable/valid package.json here — keep walking up.

@@ -292,7 +292,6 @@ export const startBrowserAuth = (
       // the (level-gated) logger.
       // Stryker disable next-line StringLiteral,CallExpression: stderr fallback read by a human, not asserted (role 3).
       console.error(`Opening browser for Zendesk authentication...`);
-      // Stryker disable next-line StringLiteral,CallExpression: as above.
       console.error(`If the browser doesn't open, visit: ${authUrl}`);
 
       open(authUrl)
@@ -308,20 +307,14 @@ export const startBrowserAuth = (
           // plus environment markers (presence only, never values).
           logger.error('oauth_browser_open_failed', {
             error: err instanceof Error ? err.message : String(err),
-            // Stryker disable next-line OptionalChaining: diagnostic payload field (role 4).
             errorCode: (err as NodeJS.ErrnoException | undefined)?.code,
             platform: process.platform,
             release: release(),
             isWsl: detectWsl(),
-            // Stryker disable next-line StringLiteral: env-var name read only into this log payload (role 4).
             hasSystemRoot: Boolean(process.env['SYSTEMROOT']),
-            // Stryker disable next-line StringLiteral: env-var name read only into this log payload (role 4).
             hasWindir: Boolean(process.env['WINDIR']),
-            // Stryker disable next-line StringLiteral: env-var name read only into this log payload (role 4).
             hasComSpec: Boolean(process.env['ComSpec']),
-            // Stryker disable next-line StringLiteral: env-var name read only into this log payload (role 4).
             hasPath: Boolean(process.env['PATH']),
-            // Stryker disable next-line StringLiteral: env-var name read only into this log payload (role 4).
             hasDisplay: Boolean(process.env['DISPLAY']),
           });
         });

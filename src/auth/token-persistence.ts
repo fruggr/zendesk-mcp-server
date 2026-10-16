@@ -125,7 +125,7 @@ export const loadToken = (path: string): PersistedToken | undefined => {
   try {
     // Stryker disable next-line StringLiteral: JSON.parse decodes the Buffer an encoding-less read returns as UTF-8.
     const raw: unknown = JSON.parse(readFileSync(path, 'utf8'));
-    // No JSON primitive carries an accessToken, so only `null` needs guarding.
+    // No JSON primitive carries an accessToken, so no object check is needed.
     // Stryker disable next-line OptionalChaining: on null the plain read throws into the catch, which also returns undefined.
     if (typeof (raw as Partial<PersistedToken> | null)?.accessToken === 'string') {
       return raw as PersistedToken;

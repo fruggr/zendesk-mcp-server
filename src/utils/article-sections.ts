@@ -33,8 +33,6 @@ const countWords = (text: string): number => {
 };
 
 const textOf = (html: string): string => {
-  // Stryker disable next-line ConditionalExpression: string input, so it fires only on '', for which the pipeline returns '' too.
-  if (!html) return '';
   // Stryker disable next-line BooleanLiteral: input is HTML parseSections re-serialised from a fragment parse already.
   const $ = cheerio.load(`<div>${html}</div>`, null, false);
   return $('div').first().text();
@@ -233,14 +231,7 @@ const mdToHtmlProcessor = unified()
   .use(rehypeRaw)
   .use(rehypeStringify);
 
-export const htmlToMarkdown = (html: string): string => {
-  // Stryker disable next-line ConditionalExpression: string input, so it fires only on '', for which the pipeline returns '' too.
-  if (!html) return '';
-  return String(htmlToMdProcessor.processSync(html));
-};
+export const htmlToMarkdown = (html: string): string => String(htmlToMdProcessor.processSync(html));
 
-export const markdownToHtml = (markdown: string): string => {
-  // Stryker disable next-line ConditionalExpression: string input, so it fires only on '', for which the pipeline returns '' too.
-  if (!markdown) return '';
-  return String(mdToHtmlProcessor.processSync(markdown));
-};
+export const markdownToHtml = (markdown: string): string =>
+  String(mdToHtmlProcessor.processSync(markdown));

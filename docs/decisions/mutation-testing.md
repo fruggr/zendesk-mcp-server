@@ -366,7 +366,7 @@ scope is a decision to do its assertion work *first*:
 
 | Excluded | Why | Owner |
 | --- | --- | --- |
-| `src/tools/**` | Cost, measured in [#212](https://github.com/fruggr/zendesk-mcp-server/issues/212): ~2 h 30 min on 4 cores for 3 671 mutants, against ~10 min for the rest of the scope. Most are static (tests build the tools outside a test, so each one reruns the whole suite). The exposed schema is pinned by `tests/integration/tools-list/` instead. | Deferred |
+| `src/tools/**` | Cost, measured in [#212](https://github.com/fruggr/zendesk-mcp-server/issues/212): ~2 h 30 min on 4 cores for 3 671 mutants, against ~10 min for the rest of the scope. Most are static (tests build the tools outside a test, so each one reruns the whole suite). The exposed schema is pinned by `tests/integration/tools-list/` instead. | #212, deferred |
 
 Excluded from *mutation* only: it still runs under `pnpm test` and still counts
 towards the coverage thresholds.
