@@ -135,7 +135,7 @@ quality bar still hold — the freedom is from Zendesk's shape, not from craft.)
   contract: **the score is not a target and 100 % is not the goal.** A survivor in a line
   you changed means an assertion is missing or too loose — tighten it, never weaken one to
   go green. The scope is kept at **zero escaped mutants**: a survivor that is not worth a
-  test (log event names, human-only prose, equivalents) gets a
+  test (internal log names without an observability contract, human-only debugging prose, equivalents) gets a
   `// Stryker disable next-line <mutator>: <reason>` whose reason is one sentence, two
   lines at most, so the dashboard shows only new, untriaged survivors. Rationale, scope
   and costs: `docs/decisions/mutation-testing.md`.
