@@ -88,6 +88,53 @@ describe('createGrantRegistry', () => {
     expect(next).not.toBe(first);
   });
 
+  it('closes only the entry it is handed, never a newer one of the same grant', async () => {
+    const registry = createGrantRegistry<ReturnType<typeof entry>>({ idleTimeoutMs: 100 });
+    const first = registry.acquire('g1', 'user-a', entry);
+    await registry.close('g1');
+    const next = registry.acquire('g1', 'user-a', entry);
+
+    await registry.close('g1', first);
+
+    expect(next?.close).not.toHaveBeenCalled();
+    expect(registry.size).toBe(1);
+
+    await registry.close('g1', next);
+
+    expect(next?.close).toHaveBeenCalledOnce();
+    expect(registry.size).toBe(0);
+  });
+
+  it('leaves alone a grant whose entry was replaced while the sweep ran', async () => {
+    const time = clock();
+    const registry = createGrantRegistry<ReturnType<typeof entry>>({
+      idleTimeoutMs: 100,
+      now: time.now,
+    });
+    let finishSlowClose: () => void = () => undefined;
+    registry.acquire('g1', 'user-a', () => ({
+      close: vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            finishSlowClose = resolve;
+          }),
+      ),
+    }));
+    const stale = registry.acquire('g2', 'user-b', entry);
+    time.advance(100);
+
+    const sweeping = registry.sweep();
+    // While g1's close is pending, g2 is revoked and signed in again.
+    await registry.close('g2');
+    const fresh = registry.acquire('g2', 'user-b', entry);
+    finishSlowClose();
+    await sweeping;
+
+    expect(stale?.close).toHaveBeenCalledOnce();
+    expect(fresh?.close).not.toHaveBeenCalled();
+    expect(registry.size).toBe(1);
+  });
+
   it('ignores closing a grant it does not hold', async () => {
     const onCloseError = vi.fn();
     const registry = createGrantRegistry<ReturnType<typeof entry>>({

@@ -6,6 +6,8 @@ import {
 } from '@modelcontextprotocol/client';
 import { HttpResponse, http } from 'msw';
 import { afterEach, describe, expect, it } from 'vitest';
+import * as z from 'zod/v4';
+import type { ServerFactory } from '../../src/server';
 import { type HttpTransportOptions, startHttpTransport } from '../../src/transports/http';
 import { startStdioTransport } from '../../src/transports/stdio';
 import {
@@ -186,6 +188,60 @@ describe('[http-2026] grant entries', () => {
     const updatedB = nextUpdate(b, PING_URI);
     await b.callTool({ name: 'touch', arguments: {} });
     await expect(updatedB).resolves.toBeUndefined();
+  });
+
+  it('answers every request in flight before closing a revoked grant', async () => {
+    const gate = () => {
+      let open: () => void = () => undefined;
+      const opened = new Promise<void>((resolve) => {
+        open = resolve;
+      });
+      return { open, opened };
+    };
+    const holdStarted = gate();
+    const holdReleased = gate();
+    const revokeStarted = gate();
+    const revokeReleased = gate();
+    const text = (value: string) => ({ content: [{ type: 'text' as const, text: value }] });
+    // `hold` answers on its own schedule; `revoke` hits the grant's 401 path, then waits.
+    const gatedFactory: ServerFactory = (ctx) => {
+      const server = fixtureServerFactory(ctx);
+      server.registerTool(
+        'hold',
+        { description: 'Test only.', inputSchema: z.object({}) },
+        async () => {
+          holdStarted.open();
+          await holdReleased.opened;
+          return text('held');
+        },
+      );
+      server.registerTool(
+        'revoke',
+        { description: 'Test only.', inputSchema: z.object({}) },
+        async () => {
+          ctx.onUnauthorized?.();
+          revokeStarted.open();
+          await revokeReleased.opened;
+          return text('revoked');
+        },
+      );
+      return server;
+    };
+    const { grant } = await startServer({ serverFactory: gatedFactory });
+    const a = await grant();
+
+    const held = a.callTool({ name: 'hold', arguments: {} });
+    await holdStarted.opened;
+    const revoked = a.callTool({ name: 'revoke', arguments: {} });
+    await revokeStarted.opened;
+    // The other request answers first, after the grant was revoked…
+    holdReleased.open();
+    await expect(held).resolves.toMatchObject(text('held'));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    revokeReleased.open();
+
+    // …and the request that hit the 401 still gets its own answer.
+    await expect(revoked).resolves.toMatchObject(text('revoked'));
   });
 
   it('closes the listen stream of a grant idle past the timeout', async () => {

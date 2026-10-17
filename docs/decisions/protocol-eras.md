@@ -60,7 +60,12 @@ grant's entry only (once the request that hit it has answered).
 
 A listen stream is authenticated when it opens, like a 2025 session's GET
 stream. It closes with its grant: 30 minutes after the grant's last request, the
-2025 session rule, or at once when Zendesk revokes the grant. Cutting it at
+2025 session rule, or once the grant's requests in flight have answered when
+Zendesk rejects its token on one of them (closing earlier would abort those
+answers). A grant ended elsewhere (a 2025 session, a revocation at the
+authorization server) refuses new requests at once, but its open streams wait
+for the idle timeout: closing them would need a hook from the authorization
+server into the transport, not built yet. Cutting it at
 token expiry was rejected: the SDK client does not listen again on its own, so
 clients would lose notifications silently every hour.
 

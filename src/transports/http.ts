@@ -282,8 +282,10 @@ interface Session {
 interface GrantEntry {
   /** The grant's latest Zendesk token: requests adopt it, as a session does. */
   auth: { zendeskToken: string };
-  /** Zendesk refused the grant's token: close the entry after this request. */
+  /** Zendesk refused the grant's token: close the entry once `inFlight` drains. */
   revoked: boolean;
+  /** Requests being answered, listen streams aside: those last until the entry closes. */
+  inFlight: number;
   handle: NodeMcpRequestHandler;
   close(): Promise<void>;
 }
@@ -292,6 +294,11 @@ interface GrantEntry {
 // set; node:http types it optional, though a server request always carries one.
 const asNodeRequest = (req: IncomingMessage): NodeIncomingMessageLike =>
   req as NodeIncomingMessageLike;
+
+const isListenRequest = (body: unknown): boolean =>
+  typeof body === 'object' &&
+  body !== null &&
+  (body as { method?: unknown }).method === 'subscriptions/listen';
 
 // JSON-RPC tool calls are small; this is a generous ceiling that exists only
 // so a client can't stream an unbounded body into server memory.
@@ -505,9 +512,9 @@ export const startHttpTransport = async (
     const { grantId } = token;
     const auth = { zendeskToken: token.zendeskAccessToken };
     const getToken = (): string => auth.zendeskToken;
-    // A Zendesk 401 ends the grant; its entry closes once the request that hit
-    // it has answered (closing now would abort that very response), so listen
-    // streams do not outlive the revocation.
+    // A Zendesk 401 ends the grant; its entry closes once every request in
+    // flight has answered (closing now would abort those responses, the one
+    // that hit the 401 included), so listen streams do not outlive the revocation.
     const onUnauthorized = (): void => {
       entry.revoked = true;
       void as.revokeGrant(grantId);
@@ -540,6 +547,7 @@ export const startHttpTransport = async (
     const entry: GrantEntry = {
       auth,
       revoked: false,
+      inFlight: 0,
       handle: toNodeHandler(handler),
       close: () => handler.close(),
     };
@@ -570,10 +578,13 @@ export const startHttpTransport = async (
       expiresAt: token.expiresAt,
       extra: { verified: token },
     };
+    const counted = !isListenRequest(body);
+    if (counted) entry.inFlight += 1;
     try {
       await entry.handle(request, res, body);
     } finally {
-      if (entry.revoked) await grants.close(token.grantId);
+      if (counted) entry.inFlight -= 1;
+      if (entry.revoked && entry.inFlight === 0) await grants.close(token.grantId, entry);
     }
   };
 

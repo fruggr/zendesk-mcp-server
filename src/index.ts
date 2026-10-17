@@ -98,7 +98,8 @@ const main = async (): Promise<void> => {
 
   if (config.dev) {
     // Dev mode hot-reloads a single long-lived server; HTTP builds one per
-    // request, so there is nothing to reload. Warn rather than silently ignore.
+    // session or per request, so there is nothing to reload. Warn rather than
+    // silently ignore.
     logger.warn('dev_mode_ignored_http');
   }
 
