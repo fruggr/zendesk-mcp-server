@@ -9,7 +9,13 @@ import type { ToolDefinition } from '../tools/definitions';
  * docs/decisions/proxy-schema-surface.md.
  */
 
-type ProxyOperation = Pick<ToolDefinition, 'name' | 'description' | 'readOnly' | 'inputSchema'>;
+type ProxyOperation = Pick<ToolDefinition, 'name' | 'description' | 'readOnly' | 'inputSchema'> & {
+  annotations?: Pick<ToolDefinition['annotations'], 'readOnlyHint'>;
+};
+
+// A tool kept under --read-only can still write this server's own settings
+// (the preferences namespace); its hint, not its filter flag, says so.
+const writes = (t: ProxyOperation): boolean => !t.readOnly || t.annotations?.readOnlyHint === false;
 
 // Claude Code cuts any MCP tool description past this length (`… [truncated]`).
 export const MAX_TOOL_DESCRIPTION_LENGTH = 2048;
@@ -40,7 +46,7 @@ export const buildOperationList = (tools: readonly ProxyOperation[]): string =>
   tools
     .map(
       (t) =>
-        `- ${operationSignature(t)}: ${summarizeDescription(t.description)}${t.readOnly ? '' : ' (write)'}`,
+        `- ${operationSignature(t)}: ${summarizeDescription(t.description)}${writes(t) ? ' (write)' : ''}`,
     )
     .join('\n');
 

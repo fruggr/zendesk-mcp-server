@@ -79,7 +79,12 @@ describe('createUserIdResolver', () => {
 });
 
 describe('createSlaService', () => {
-  const settings = { slaPush: true, slaThresholds: DEFAULT_SLA_THRESHOLDS, slaCacheTtlSeconds: 60 };
+  const settings = {
+    slaPush: true,
+    slaThresholds: DEFAULT_SLA_THRESHOLDS,
+    slaCacheTtlSeconds: 60,
+    slaUserPreferences: true,
+  };
 
   it('exposes the push switch and the admin thresholds', async () => {
     const service = createSlaService(
@@ -111,6 +116,38 @@ describe('createSlaService', () => {
     await first.cached('scope:all', load);
     await second.cached('scope:all', load);
     expect(load).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps preferences per user and applies them to that user only', async () => {
+    const runtime = createSlaRuntime(settings);
+    const alice = createSlaService(settings, runtime, () => Promise.resolve(1));
+    const bob = createSlaService(settings, runtime, () => Promise.resolve(2));
+    await alice.savePreferences({ reply: { warning: 30, critical: 10 } });
+    expect(await alice.preferences()).toEqual({ reply: { warning: 30, critical: 10 } });
+    expect(await runtime.store.get('prefs:1')).toEqual({ reply: { warning: 30, critical: 10 } });
+    expect(await alice.thresholds()).toEqual({
+      reply: { warning: 30, critical: 10 },
+      wait: DEFAULT_SLA_THRESHOLDS.wait,
+    });
+    expect(await bob.preferences()).toBeUndefined();
+    expect(await bob.thresholds()).toEqual(DEFAULT_SLA_THRESHOLDS);
+  });
+
+  it('applies the admin defaults to everyone when preferences are turned off', async () => {
+    const off = { ...settings, slaUserPreferences: false };
+    const service = createSlaService(off, createSlaRuntime(off), () => Promise.resolve(1));
+    await service.savePreferences({ reply: { warning: 30, critical: 10 } });
+    expect(service.userPreferencesAllowed).toBe(false);
+    expect(service.adminThresholds).toEqual(DEFAULT_SLA_THRESHOLDS);
+    expect(await service.thresholds()).toEqual(DEFAULT_SLA_THRESHOLDS);
+  });
+
+  it('reads an unreadable store as no preference', async () => {
+    const runtime = createSlaRuntime(settings);
+    runtime.store.get = () => Promise.reject(new Error('EIO'));
+    const service = createSlaService(settings, runtime, () => Promise.resolve(1));
+    expect(await service.preferences()).toBeUndefined();
+    expect(await service.thresholds()).toEqual(DEFAULT_SLA_THRESHOLDS);
   });
 
   it('honours the configured cache lifetime', async () => {

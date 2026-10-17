@@ -3,6 +3,7 @@ import { configDir } from '../auth/token-persistence';
 import { zendeskGet } from '../client/zendesk-api';
 import { type Config, slaStateStoreOf } from '../config';
 import { createScopeCache, type ScopeCache } from './scope-cache';
+import { effectiveThresholds, type SlaPreferences } from './sla-preferences';
 import type { SlaThresholds } from './sla-thresholds';
 import { createDiskStore, createMemoryStore, type StateStore, startSweeper } from './state-store';
 
@@ -13,7 +14,15 @@ import { createDiskStore, createMemoryStore, type StateStore, startSweeper } fro
  */
 export interface SlaService {
   push: boolean;
+  /** Whether users may set personal thresholds (`SLA_USER_PREFERENCES`). */
+  userPreferencesAllowed: boolean;
+  /** The operator's defaults, before any personal preference. */
+  adminThresholds: SlaThresholds;
+  /** The thresholds in force for the caller: personal where allowed and set, else the admin's. */
   thresholds: () => Promise<SlaThresholds>;
+  /** The caller's stored preferences, whether or not the server currently honours them. */
+  preferences: () => Promise<SlaPreferences | undefined>;
+  savePreferences: (preferences: SlaPreferences) => Promise<void>;
   /** The caller's Zendesk user id, the key of every piece of per-user state. */
   userId: () => Promise<number>;
   /** `load()` served from the caller's cache entry for `scope`, shared while in flight. */
@@ -24,6 +33,7 @@ export interface SlaSettings {
   slaPush: boolean;
   slaThresholds: SlaThresholds;
   slaCacheTtlSeconds: number;
+  slaUserPreferences: boolean;
 }
 
 /**
@@ -89,9 +99,24 @@ export const createSlaService = (
   settings: SlaSettings,
   runtime: SlaRuntime,
   userId: () => Promise<number>,
-): SlaService => ({
-  push: settings.slaPush,
-  thresholds: () => Promise.resolve(settings.slaThresholds),
-  userId,
-  cached: async (scope, load) => runtime.cache(`cache:${await userId()}:${scope}`, load),
-});
+): SlaService => {
+  const prefsKey = async (): Promise<string> => `prefs:${await userId()}`;
+  // An unreadable store reads as "no preference": the defaults still alert.
+  const preferences = async (): Promise<SlaPreferences | undefined> =>
+    (await runtime.store.get(await prefsKey()).catch(() => undefined)) as
+      | SlaPreferences
+      | undefined;
+  return {
+    push: settings.slaPush,
+    userPreferencesAllowed: settings.slaUserPreferences,
+    adminThresholds: settings.slaThresholds,
+    thresholds: async () =>
+      settings.slaUserPreferences
+        ? effectiveThresholds(settings.slaThresholds, await preferences())
+        : settings.slaThresholds,
+    preferences,
+    savePreferences: async (prefs) => runtime.store.set(await prefsKey(), prefs),
+    userId,
+    cached: async (scope, load) => runtime.cache(`cache:${await userId()}:${scope}`, load),
+  };
+};

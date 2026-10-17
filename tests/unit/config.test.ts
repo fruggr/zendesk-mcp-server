@@ -33,6 +33,7 @@ const LOAD_CONFIG_ENV = [
   'SLA_WAIT_THRESHOLDS',
   'SLA_CACHE_TTL_SECONDS',
   'SLA_STATE_STORE',
+  'SLA_USER_PREFERENCES',
 ] as const;
 
 const clearLoadConfigEnv = (): void => {
@@ -246,12 +247,12 @@ describe('loadConfig', () => {
   // just as happily if a namespace were dropped from it.
   it('defaults to the agent namespaces, excluding the opt-in requests surface', () => {
     const config = loadConfig(['mycompany']);
-    expect(config.namespaces).toEqual(['tickets', 'help_center', 'users']);
+    expect(config.namespaces).toEqual(['tickets', 'help_center', 'users', 'preferences']);
     expect(config.namespaces).not.toContain('requests');
   });
 
   it('exposes that same list as DEFAULT_NAMESPACES', () => {
-    expect([...DEFAULT_NAMESPACES]).toEqual(['tickets', 'help_center', 'users']);
+    expect([...DEFAULT_NAMESPACES]).toEqual(['tickets', 'help_center', 'users', 'preferences']);
   });
 
   // The default must not survive an explicit --namespace: opting in to the
@@ -279,7 +280,13 @@ describe('loadConfig', () => {
   // ANDs the two filters and `requests` is not in the default set.
   it('opens the namespace filter when --tool names a non-default namespace tool', () => {
     const config = loadConfig(['mycompany', '--tool', 'list_requests']);
-    expect(config.namespaces).toEqual(['tickets', 'help_center', 'users', 'requests']);
+    expect(config.namespaces).toEqual([
+      'tickets',
+      'help_center',
+      'users',
+      'requests',
+      'preferences',
+    ]);
     expect(config.tools).toEqual(['list_requests']);
   });
 
@@ -881,7 +888,7 @@ describe('ConfigSchema defaults reached only by a direct parse', () => {
     });
 
   it('applies the default when the field is absent, not only via loadConfig', () => {
-    expect(parse().namespaces).toEqual(['tickets', 'help_center', 'users']);
+    expect(parse().namespaces).toEqual(['tickets', 'help_center', 'users', 'preferences']);
   });
 
   // loadConfig passes printTools explicitly, so its schema default is only ever
@@ -926,7 +933,7 @@ describe('ConfigSchema defaults reached only by a direct parse', () => {
   it('does not mutate DEFAULT_NAMESPACES when a parsed config is edited', () => {
     const config = parse();
     config.namespaces.push('requests');
-    expect([...DEFAULT_NAMESPACES]).toEqual(['tickets', 'help_center', 'users']);
+    expect([...DEFAULT_NAMESPACES]).toEqual(['tickets', 'help_center', 'users', 'preferences']);
   });
 });
 
@@ -947,6 +954,7 @@ describe('what the flags resolve to when none is passed', () => {
       topology: config.topology,
       promotedArticles: config.promotedArticles,
       slaPush: config.slaPush,
+      slaUserPreferences: config.slaUserPreferences,
     }).toStrictEqual({
       readOnly: false,
       dev: false,
@@ -954,6 +962,7 @@ describe('what the flags resolve to when none is passed', () => {
       topology: true,
       promotedArticles: true,
       slaPush: true,
+      slaUserPreferences: true,
     });
   });
 
@@ -969,6 +978,7 @@ describe('what the flags resolve to when none is passed', () => {
         topology: config.topology,
         promotedArticles: config.promotedArticles,
         slaPush: config.slaPush,
+        slaUserPreferences: config.slaUserPreferences,
       };
     };
     const off = {
@@ -978,6 +988,7 @@ describe('what the flags resolve to when none is passed', () => {
       topology: true,
       promotedArticles: true,
       slaPush: true,
+      slaUserPreferences: true,
     };
 
     expect(standalone('--read-only')).toStrictEqual({ ...off, readOnly: true });
@@ -989,6 +1000,10 @@ describe('what the flags resolve to when none is passed', () => {
       promotedArticles: false,
     });
     expect(standalone('--no-sla-push')).toStrictEqual({ ...off, slaPush: false });
+    expect(standalone('--no-sla-user-preferences')).toStrictEqual({
+      ...off,
+      slaUserPreferences: false,
+    });
   });
 
   it('reads the subdomain from argv when loadConfig is called with no arguments', () => {
@@ -1151,7 +1166,7 @@ describe('loadConfig startup errors', () => {
   it('names a list entry by its dotted path', () => {
     expect(thrownBy(['mycompany', '--namespace', 'bogus'])).toHaveProperty(
       'message',
-      'namespaces.0: Invalid option: expected one of "tickets"|"help_center"|"users"|"requests". ' +
+      'namespaces.0: Invalid option: expected one of "tickets"|"help_center"|"users"|"requests"|"preferences". ' +
         `See ${STARTUP_DOCS.cliReference}`,
     );
   });
@@ -1283,6 +1298,14 @@ describe('SLA settings', () => {
   ])('reads SLA_PUSH=%j as %s', (raw, value) => {
     process.env['SLA_PUSH'] = raw;
     expect(loadConfig(['mycompany']).slaPush).toBe(value);
+  });
+
+  it('reads SLA_USER_PREFERENCES=off, and lets the flag win over on', () => {
+    process.env['SLA_USER_PREFERENCES'] = 'off';
+    expect(loadConfig(['mycompany']).slaUserPreferences).toBe(false);
+    process.env['SLA_USER_PREFERENCES'] = 'on';
+    expect(loadConfig(['mycompany']).slaUserPreferences).toBe(true);
+    expect(loadConfig(['mycompany', '--no-sla-user-preferences']).slaUserPreferences).toBe(false);
   });
 
   it('lets --no-sla-push win over SLA_PUSH=true', () => {

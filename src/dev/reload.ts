@@ -30,6 +30,7 @@ const TOOL_MODULES = [
   { file: 'search.ts', factory: 'createSearchTools' },
   { file: 'help-center.ts', factory: 'createHelpCenterTools' },
   { file: 'users.ts', factory: 'createUserTools' },
+  { file: 'preferences.ts', factory: 'createPreferenceTools' },
 ] as const;
 
 type ToolFactory = (ctx: ToolContext) => ToolDefinition[];

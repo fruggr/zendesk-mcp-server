@@ -32,7 +32,7 @@ describe('renderToolSurface', () => {
   it('states the knobs in force on the first line', () => {
     const out = renderToolSurface(makeConfig(), allTools);
     expect(out.split('\n')[0]).toBe(
-      'Mode: namespace | Namespaces: tickets, help_center, users | Read-only: no',
+      'Mode: namespace | Namespaces: tickets, help_center, users, preferences | Read-only: no',
     );
   });
 
@@ -55,7 +55,7 @@ describe('renderToolSurface', () => {
       allTools,
     );
     expect(out.split('\n')[0]).toBe(
-      'Mode: all | Namespaces: tickets, help_center, users | Read-only: no' +
+      'Mode: all | Namespaces: tickets, help_center, users, preferences | Read-only: no' +
         ' | Tool filter: get_ticket, list_tickets',
     );
   });
