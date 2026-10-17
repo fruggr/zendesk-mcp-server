@@ -118,6 +118,9 @@ Zendesk.
 - **A file is the only persistent store.** `memory://` keeps everything in
   memory, for tests only.
 - **One instance only.** Several replicas sharing a store are not supported.
+  That holds for 2026-07-28 clients too, although each of their requests gets a
+  fresh server: their caches and listen streams live in this process (see
+  [Protocol revisions](#protocol-revisions)).
 
 ### Rotating the secret
 
@@ -201,6 +204,27 @@ fails with an authentication error and the client's next request gets a `401`,
 which makes it sign the user in again. A Zendesk outage during a refresh does not end the grant by itself,
 but most MCP clients are public clients, whose refresh token is already spent by
 then: their retry is a replay, which signs the user out.
+
+## Protocol revisions
+
+`/mcp` serves the 2025 revisions and 2026-07-28 side by side, and routes each
+request by what it carries:
+
+- **2025** (an `initialize` handshake, then `Mcp-Session-Id`): unchanged. One
+  server per session, evicted 30 minutes after its last request.
+- **2026-07-28** (every request carries its protocol version and capabilities):
+  no session. Each request gets a fresh server built from its own token, so the
+  scope and the Zendesk token are checked per request. What must outlive a
+  request lives per **grant** (one client sign-in): the Help Center caches and
+  the `subscriptions/listen` streams. A grant's state goes 30 minutes after its
+  last request, closing its listen streams, and at once when Zendesk rejects its
+  token. A listen stream is authenticated when it opens; it carries change
+  notifications only (a URI, never content), and a client that keeps listening
+  keeps making requests or listens again.
+
+Building a server costs a few milliseconds of CPU, paid on every 2026-07-28
+request. Why the two revisions are served this way:
+[the decision record](decisions/protocol-eras.md).
 
 ## Verify discovery endpoints
 
@@ -308,13 +332,17 @@ zendesk-mcp-server acme --transport http --port 3000 \
 
 The defaults are always applied: your additions extend them, they don't replace them.
 
+The allowed request headers cover both protocol revisions: `Authorization`,
+`Content-Type`, `Accept`, `mcp-session-id`, `mcp-protocol-version` and
+`last-event-id`, plus `mcp-method` and `mcp-name`, which 2026-07-28 clients send.
+
 ## Long-lived SSE streams behind a proxy
 
 Streamable HTTP keeps some responses open as an SSE stream, and the SDK maintains them itself: a comment frame roughly every 15 seconds (its default, not ours), well under the 60 seconds nginx (`proxy_read_timeout`) and AWS ALB (idle timeout) default to. Caddy sets no stream timeout at all. No proxy-side tuning needed either way.
 
 Every SSE response also carries `X-Accel-Buffering: no` and `Cache-Control: no-cache, no-transform`, so the classic "SSE arrives in bursts behind nginx" fix is obsolete — don't re-apply it.
 
-The heartbeat does **not** keep the *session* alive: the idle sweeper evicts it after 30 minutes with no inbound `/mcp` request, however healthy the stream looks. See [My HTTP session disappears after a pause](troubleshooting.md#my-http-session-disappears-after-a-pause-even-though-the-stream-stayed-up).
+The heartbeat does **not** keep the *session* alive: the idle sweeper evicts it after 30 minutes with no inbound `/mcp` request, however healthy the stream looks. A 2026-07-28 `subscriptions/listen` stream follows the same rule, per grant. See [My HTTP session disappears after a pause](troubleshooting.md#my-http-session-disappears-after-a-pause-even-though-the-stream-stayed-up).
 
 ## Operator responsibilities
 

@@ -86,10 +86,21 @@ pnpm mcp:live call get_ticket '{"ticket_id": 123}' -- --mode all
 
 # Read a resource (needs creds — fetched with the caller's token)
 pnpm mcp:live read zendesk-hc://topology -- --mode all
+
+# Pick the protocol era (default 2025); the negotiated revision goes to stderr
+pnpm mcp:live list --era 2026 -- --mode all
+pnpm mcp:live list --era auto -- --mode all
+
+# Drive a running HTTP server instead: signs in through its OAuth flow once
+# (prints the URL to open), then reuses the cached tokens
+pnpm mcp:live list --url http://localhost:3000/mcp --era 2026
+pnpm mcp:live list --url http://localhost:3000/mcp --read-only-scope
+pnpm mcp:live probe-unauth --url http://localhost:3000/mcp   # status + WWW-Authenticate
 ```
 
-It links a real MCP `Client` to the server over an in-memory transport
-(identical to `tests/integration/stdio-harness.ts`), so `tools/list`,
+Without `--url`, it links a real MCP `Client` to the server over an in-memory
+transport, through the same `startStdioTransport` as the binary (identical to
+`tests/integration/stdio-harness.ts`), so `tools/list`,
 `tools/call`, `resources/list` and `resources/read` cross the wire and dispatch
 through the genuine handlers. Use it for quick manual checks, or as a basis for
 scripted or CI assertions.

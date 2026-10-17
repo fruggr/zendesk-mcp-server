@@ -79,8 +79,11 @@ per page and per brand in scope, capped by
 - The scan runs only on a client's `resources/list` call or a
   `list_promoted_articles` call, **never at connect time**. No other tool
   triggers it.
-- The resource listing is cached briefly per session, so repeated
-  `resources/list` calls coalesce.
+- The resource listing is cached for 5 minutes, so repeated `resources/list`
+  calls coalesce. The cache belongs to one user: per connection on stdio, per
+  session for a 2025 HTTP client, per grant for a 2026-07-28 HTTP client (each
+  of its requests gets a fresh server, the cache stays). The topology resource
+  and the brand list (multi-brand servers) are cached the same way.
 - The `list_promoted_articles` tool performs a fresh scan on every call.
 
 ## Turning it off
