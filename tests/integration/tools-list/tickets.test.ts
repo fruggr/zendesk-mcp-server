@@ -711,7 +711,7 @@ it('exposes the tickets tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "Read the elapsed-time metrics (reply, resolution, wait and on-hold times, reopens, replies) of up to 100 tickets in one call. Each ticket gets first reply, first and full resolution, agent wait, requester wait and on-hold times in calendar and business minutes, plus reopen, reply, assignee-station and group-station counts and the key timestamps (assigned, solved, latest comment). These are facts Zendesk records on every ticket, so they are available even on tickets no SLA policy covers; they say how long things took, not how long is left — for the live breach countdown use get_ticket or search_tickets. A duration still running reads "not reached yet". Read-only; tickets the caller cannot see are reported as such rather than failing the call.",
+        "description": "Read the elapsed-time metrics (reply, resolution, wait and on-hold times, reopens, replies) of up to 100 tickets in one call. Each ticket gets first reply, first and full resolution, agent wait, requester wait and on-hold times in calendar and business minutes, plus reopen, reply, assignee-station and group-station counts and the key timestamps (assigned, solved, latest comment). These are facts Zendesk records on every ticket, so they are available even on tickets no SLA policy covers; they say how long things took, not how long is left — for the live breach countdown use get_ticket, search_tickets or list_sla_alerts. A duration still running reads "not reached yet". Read-only; tickets the caller cannot see are reported as such rather than failing the call.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -917,6 +917,69 @@ it('exposes the tickets tool surface unchanged', async () => {
         },
         "name": "preview_macro_diff",
         "title": "Preview a Macro Diff on a Ticket",
+      },
+      {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": true,
+          "readOnlyHint": true,
+        },
+        "description": "List the SLA metrics that are breached or about to breach across a set of tickets, most urgent first. Pick the set with exactly one of scope (mine, my_groups or all unsolved tickets), view (a Zendesk view by title or id) or query (any Zendesk ticket search). Each running metric that is breached, or closer to its breach than its CRITICAL or WARNING threshold, is one line under BREACHED, CRITICAL or WARNING, soonest breach first, with the ticket id, metric, time left or overdue, subject, status and priority; paused and achieved metrics never appear. Thresholds are per metric family (reply metrics vs every other metric), the caller's own when set with configure_sla_alerts, else the server's; warning and critical override them for this call only. When no set is given the client may be asked which one (and, on a first call, shown the thresholds); otherwise it defaults to the caller's own tickets and says so. Read-only; results are cached per user for about a minute, and a set larger than a few hundred tickets is read in part, with a notice. For one ticket's full SLA state use get_ticket; for elapsed times use get_ticket_metrics.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "critical": {
+              "description": "Override the CRITICAL threshold of every metric family for this call only; must not exceed the warning threshold in force. A readable duration: 30m, 4h, 2d, 1w, or a mix like 1d4h.",
+              "type": "string",
+            },
+            "include_breached": {
+              "default": true,
+              "description": "Whether to list metrics already past their deadline (BREACHED). Defaults to true; set false to see only what can still be saved.",
+              "type": "boolean",
+            },
+            "query": {
+              "description": "A Zendesk ticket search query selecting the tickets to check, e.g. "status<solved priority:urgent" or "organization:acme status<solved"; "type:ticket" is added automatically. Use instead of scope or view.",
+              "minLength": 1,
+              "type": "string",
+            },
+            "scope": {
+              "description": "A named set of unsolved tickets: "mine" (assigned to you), "my_groups" (in any group you belong to) or "all" (the whole account, as far as your role sees it). Use instead of view or query.",
+              "enum": [
+                "mine",
+                "my_groups",
+                "all",
+              ],
+              "type": "string",
+            },
+            "view": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string",
+                },
+                {
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991,
+                  "type": "integer",
+                },
+              ],
+              "description": "A Zendesk view to check, by its exact title (matched case-insensitively) or numeric id, as listed by list_views. Use instead of scope or query.",
+            },
+            "warning": {
+              "description": "Override the WARNING threshold of every metric family for this call only: how much time left before a breach counts as a warning. A readable duration: 30m, 4h, 2d, 1w, or a mix like 1d4h.",
+              "type": "string",
+            },
+            "within": {
+              "description": "Only list alerts breaching within this time from now (breached ones aside, see include_breached). A readable duration: 30m, 4h, 2d, 1w, or a mix like 1d4h. Omit to list everything inside the thresholds.",
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+        "name": "list_sla_alerts",
+        "title": "List SLA Alerts",
       },
       {
         "annotations": {

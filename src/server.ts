@@ -1,4 +1,4 @@
-import { McpServer, ResourceTemplate } from '@modelcontextprotocol/server';
+import { McpServer, ResourceTemplate, type ServerContext } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 import { createBrandSubdomainResolver } from './client/brands';
 import { ZendeskApiError } from './client/zendesk-api';
@@ -21,9 +21,10 @@ import {
   PARAMS_FIELD_DESCRIPTION,
 } from './routing/proxy-schema';
 import { filterTools, groupByNamespace, NAMESPACE_LABELS } from './routing/registry';
-import type { ToolAnnotations, ToolResult } from './tools/definitions';
+import type { ToolAnnotations, ToolCallContext, ToolResult } from './tools/definitions';
 import { resolveBrand } from './tools/help-center';
 import { createAllTools, type ToolDefinition } from './tools/index';
+import { isInputRequiredError, supportsFormElicitation } from './utils/elicitation';
 import { type Logger, silentLogger } from './utils/logger';
 import { readPackageInfo } from './utils/package-info';
 import {
@@ -50,16 +51,27 @@ const runHandler = async (
   def: ToolDefinition,
   params: Record<string, unknown>,
   onUnauthorized: (() => void) | undefined,
+  call: ToolCallContext | undefined,
 ): Promise<ToolResult> => {
   try {
-    return await def.handler(params);
+    return await def.handler(params, call);
   } catch (err) {
+    // A handler asking the user something: hand the SDK its `input_required`
+    // result, which it relays (or, for a 2025-era client, turns into an
+    // `elicitation/create` round) before calling the handler again.
+    if (isInputRequiredError(err)) return err.inputRequired as unknown as ToolResult;
     if (onUnauthorized && err instanceof ZendeskApiError && err.status === 401) {
       onUnauthorized();
     }
     throw err;
   }
 };
+
+/** The parts of the SDK request context a tool handler may use. */
+export const toCallContext = (server: McpServer, ctx: ServerContext): ToolCallContext => ({
+  canElicit: supportsFormElicitation(server.server.getClientCapabilities()),
+  inputResponses: ctx.mcpReq.inputResponses,
+});
 
 // A proxy aggregates N sub-operations. Hints follow the safest plausible
 // reading: readOnly/idempotent only if EVERY op is, destructive and openWorld
@@ -76,7 +88,7 @@ export const aggregateAnnotations = (
   openWorldHint: tools.some((t) => t.annotations.openWorldHint),
 });
 
-type ProxyDispatch = (args: Record<string, unknown>) => Promise<ToolResult>;
+type ProxyDispatch = (args: Record<string, unknown>, call?: ToolCallContext) => Promise<ToolResult>;
 
 // Each proxy carries its OWN handler map, scoped to the operations it
 // advertises. In `namespace` mode this is essential: without it, a caller
@@ -94,7 +106,7 @@ export const buildProxyDispatch = (
     tools.map((t) => [t.name, { def: t, parseParams: createStrictParamsParser(t.inputSchema) }]),
   );
 
-  return async (args) => {
+  return async (args, call) => {
     const { operation, params } = args as {
       operation: string;
       params: Record<string, unknown>;
@@ -112,7 +124,7 @@ export const buildProxyDispatch = (
     }
     // The throw is wrapped as an MCP tool error by the SDK.
     const validated = entry.parseParams(params);
-    return runHandler(entry.def, validated, onUnauthorized);
+    return runHandler(entry.def, validated, onUnauthorized, call);
   };
 };
 
@@ -152,7 +164,7 @@ const registerProxyTool = (
       }),
       annotations,
     },
-    async (args) => dispatch(args as Record<string, unknown>),
+    async (args, ctx) => dispatch(args as Record<string, unknown>, toCallContext(server, ctx)),
   );
 };
 
@@ -306,7 +318,13 @@ export const registerToolset = (
                 inputSchema: toStrictStandardSchema(tool.inputSchema),
                 annotations: tool.annotations,
               },
-              async (params) => runHandler(tool, params as Record<string, unknown>, onUnauthorized),
+              async (params, ctx) =>
+                runHandler(
+                  tool,
+                  params as Record<string, unknown>,
+                  onUnauthorized,
+                  toCallContext(server, ctx),
+                ),
             ),
           );
         }

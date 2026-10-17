@@ -24,7 +24,7 @@ export const createPreferenceTools = (ctx: ToolContext): ToolDefinition[] => [
     readOnly: true,
     title: 'Configure SLA Alert Thresholds',
     description:
-      'Read or change your personal SLA alert thresholds: how close to a breach a running SLA metric must be to count as WARNING or CRITICAL. Called with no parameters it changes nothing and reports the thresholds in force for you and where each comes from (your preference or the server default). With parameters it saves your own thresholds per metric family (reply: first_reply_time and next_reply_time; wait: every other metric) on this MCP server — nothing is written to Zendesk — and they then drive the Urgency line of get_ticket / search_tickets for you only; reset goes back to the server defaults. When the operator turned personal thresholds off (SLA_USER_PREFERENCES=off), only the read works and the reply says so.',
+      'Read or change your personal SLA alert thresholds: how close to a breach a running SLA metric must be to count as WARNING or CRITICAL. Called with no parameters it changes nothing and reports the thresholds in force for you and where each comes from (your preference or the server default). With parameters it saves your own thresholds per metric family (reply: first_reply_time and next_reply_time; wait: every other metric) on this MCP server — nothing is written to Zendesk — and they then drive list_sla_alerts and the Urgency line of get_ticket / search_tickets for you only; reset goes back to the server defaults. When the operator turned personal thresholds off (SLA_USER_PREFERENCES=off), only the read works and the reply says so.',
     inputSchema: z.object({
       reply_warning: z
         .string()

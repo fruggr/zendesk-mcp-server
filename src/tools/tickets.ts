@@ -403,7 +403,7 @@ const fetchViewCounts = async (
 // case-insensitively. The active-views list is paginated to completion so a title
 // on a later page still resolves; on no match the available titles come back, for
 // the caller to self-correct.
-const resolveViewId = async (
+export const resolveViewId = async (
   subdomain: string,
   token: string,
   view: string | number,
@@ -1725,7 +1725,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: true,
       title: 'Get Ticket Metrics',
       description:
-        'Read the elapsed-time metrics (reply, resolution, wait and on-hold times, reopens, replies) of up to 100 tickets in one call. Each ticket gets first reply, first and full resolution, agent wait, requester wait and on-hold times in calendar and business minutes, plus reopen, reply, assignee-station and group-station counts and the key timestamps (assigned, solved, latest comment). These are facts Zendesk records on every ticket, so they are available even on tickets no SLA policy covers; they say how long things took, not how long is left — for the live breach countdown use get_ticket or search_tickets. A duration still running reads "not reached yet". Read-only; tickets the caller cannot see are reported as such rather than failing the call.',
+        'Read the elapsed-time metrics (reply, resolution, wait and on-hold times, reopens, replies) of up to 100 tickets in one call. Each ticket gets first reply, first and full resolution, agent wait, requester wait and on-hold times in calendar and business minutes, plus reopen, reply, assignee-station and group-station counts and the key timestamps (assigned, solved, latest comment). These are facts Zendesk records on every ticket, so they are available even on tickets no SLA policy covers; they say how long things took, not how long is left — for the live breach countdown use get_ticket, search_tickets or list_sla_alerts. A duration still running reads "not reached yet". Read-only; tickets the caller cannot see are reported as such rather than failing the call.',
       inputSchema: z.object({
         ticket_ids: z
           .array(z.number().int().positive())

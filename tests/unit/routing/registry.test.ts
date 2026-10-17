@@ -69,7 +69,7 @@ describe('groupByNamespace', () => {
     const userCount = grouped.get('users')?.length ?? 0;
     const requestCount = grouped.get('requests')?.length ?? 0;
     const preferenceCount = grouped.get('preferences')?.length ?? 0;
-    expect(ticketCount).toBe(20); // 19 ticket tools + 1 search
+    expect(ticketCount).toBe(21); // 19 ticket tools + list_sla_alerts + 1 search
     expect(hcCount).toBe(29);
     expect(userCount).toBe(5);
     expect(requestCount).toBe(7);
