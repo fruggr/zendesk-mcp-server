@@ -83,8 +83,10 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
 
       it('omits instructions and the topology resource when topology is disabled', async () => {
         connected = await harness.connect(makeConfig({ topology: false }));
-        expect(connected.client.getInstructions()).toBeUndefined();
-        // Instructions are topology-gated. The article resources are a separate,
+        // The Help Center block of the instructions is topology-gated; the SLA
+        // line belongs to tickets and stays.
+        expect(connected.client.getInstructions()).toMatch(/^SLA alerts: /);
+        // The article resources are a separate,
         // still-enabled feature, so the resources capability is still advertised
         // — only the topology resource itself is gone from the listing.
         expect(connected.client.getServerCapabilities()?.resources).toBeDefined();
@@ -94,7 +96,7 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
 
       it('keeps the read-by-id article resource (and the resources capability) when topology and promoted listing are both off', async () => {
         connected = await harness.connect(makeConfig({ topology: false, promotedArticles: false }));
-        expect(connected.client.getInstructions()).toBeUndefined();
+        expect(connected.client.getInstructions()).not.toContain('Help Center');
         // Read-by-id stays registered whenever help_center is active, so the
         // resources capability persists; only the topology resource and the promoted
         // listing are gone. (Namespace filtering is what removes resources entirely.)
