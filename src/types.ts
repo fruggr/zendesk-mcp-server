@@ -68,6 +68,39 @@ export interface ZendeskSlaSideloadEntry {
   policy_metrics: ZendeskSlaLiveMetric[];
 }
 
+// A duration Zendesk tracks in both clocks; each half is null until the event
+// it measures has happened (measured on a live tenant, PR #387).
+export interface ZendeskMinutesPair {
+  calendar: number | null;
+  business: number | null;
+}
+
+// GET /tickets/{id}/metrics (`ticket_metric`), or one entry of the `metric_sets`
+// sideload on show_many / Search: elapsed facts, recorded whether or not an SLA
+// policy applies. Every field optional defensively: an entry missing one renders
+// "not recorded" rather than throwing.
+export interface ZendeskTicketMetric {
+  ticket_id: number;
+  reopens?: number;
+  replies?: number;
+  assignee_stations?: number;
+  group_stations?: number;
+  created_at?: string;
+  initially_assigned_at?: string | null;
+  assigned_at?: string | null;
+  solved_at?: string | null;
+  latest_comment_added_at?: string | null;
+  status_updated_at?: string | null;
+  requester_updated_at?: string | null;
+  assignee_updated_at?: string | null;
+  reply_time_in_minutes?: ZendeskMinutesPair;
+  first_resolution_time_in_minutes?: ZendeskMinutesPair;
+  full_resolution_time_in_minutes?: ZendeskMinutesPair;
+  agent_wait_time_in_minutes?: ZendeskMinutesPair;
+  requester_wait_time_in_minutes?: ZendeskMinutesPair;
+  on_hold_time_in_minutes?: ZendeskMinutesPair;
+}
+
 // A selectable value on a ticket field. `value` is the tag written back via
 // create_ticket / update_ticket custom_fields; `name` is the human label shown
 // in the Zendesk UI. Shared by dropdown/multiselect custom fields
