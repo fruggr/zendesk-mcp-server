@@ -15,7 +15,7 @@ it('exposes the tickets proxy unchanged', async () => {
         },
         "description": "Zendesk Tickets. Specify the operation and its parameters. The "operation" field lists every operation with a one-line summary and the parameter names "params" accepts (* = required); an unknown parameter is rejected with the list of valid ones.
 
-    Operations: get_ticket, get_ticket_history, list_ticket_comments, get_ticket_attachments, search_tickets, create_ticket, update_ticket, add_private_note, add_public_comment, list_tickets, get_linked_incidents, manage_tags, list_sla_policies, get_ticket_metrics, list_ticket_fields, list_views, get_view_tickets, list_macros, preview_macro_diff, search",
+    Operations: get_ticket, get_ticket_history, list_ticket_comments, get_ticket_attachments, search_tickets, create_ticket, update_ticket, add_private_note, add_public_comment, list_tickets, get_linked_incidents, manage_tags, list_sla_policies, get_ticket_metrics, list_ticket_fields, list_views, get_view_tickets, list_macros, preview_macro_diff, list_sla_alerts, search",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "properties": {
@@ -40,6 +40,7 @@ it('exposes the tickets proxy unchanged', async () => {
     - get_view_tickets(view*, sort_by, sort_order, page_size, cursor): Read the tickets inside a Zendesk view, in the view's own configured sort order — the same order the agent sees in the Zendesk UI — which is the natural way to work a named queue like "Unassigned tickets" or "Breaching today".
     - list_macros(per_page, page): List the active macros available to the authenticated user.
     - preview_macro_diff(ticket_id*, macro_id*): Preview the exact changes a macro would make to a specific ticket, as a before → after diff, WITHOUT saving anything. (write)
+    - list_sla_alerts(scope, view, query, within, include_breached, warning, critical): List the SLA metrics that are breached or about to breach across a set of tickets, most urgent first.
     - search(query*, per_page, page): Search across tickets, users, and organizations.",
               "type": "string",
             },

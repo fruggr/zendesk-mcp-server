@@ -1061,6 +1061,13 @@ export const handlers = [
       })),
     });
   }),
+  // `include=slas` is honoured here, nested per ticket like Search (measured,
+  // PR #387 spike 1); offset-paginated with `count` and `next_page`.
+  http.get(`${BASE}/views/:id/tickets`, ({ request }) => {
+    const withSla = new URL(request.url).searchParams.get('include') === 'slas';
+    const ticket = withSla ? { ...MOCK_TICKET, slas: MOCK_SLA_SIDELOAD } : MOCK_TICKET;
+    return HttpResponse.json({ tickets: [ticket], count: 1, next_page: null, previous_page: null });
+  }),
   http.get(`${BASE}/views/:id/execute`, ({ params }) =>
     HttpResponse.json({
       columns: [{ id: 'subject', title: 'Subject' }],
@@ -1275,6 +1282,12 @@ export const handlers = [
   // handler instead of matching `:id` = 'show_many'. Both show_many endpoints
   // echo a deterministic `<Entity> <id>` name so name resolution is assertable.
   http.get(`${BASE}/users/me`, () => HttpResponse.json({ user: MOCK_USER })),
+  http.get(`${BASE}/users/:id/group_memberships`, ({ params }) =>
+    HttpResponse.json({
+      group_memberships: [{ user_id: Number(params['id']), group_id: MOCK_TICKET.group_id }],
+      meta: { has_more: false, after_cursor: null },
+    }),
+  ),
   http.get(`${BASE}/users/show_many`, ({ request }) => {
     const ids = (new URL(request.url).searchParams.get('ids') ?? '')
       .split(',')
