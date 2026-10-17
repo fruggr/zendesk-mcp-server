@@ -27,6 +27,7 @@ import type {
   ZendeskUserSegment,
   ZendeskView,
   ZendeskViewCount,
+  ZendeskViewExecuteRow,
 } from '../types.js';
 
 // The advice closing the truncation notice is the caller's: only the call site
@@ -181,7 +182,7 @@ export const formatMacro = (macro: ZendeskMacro): string => {
     .join('\n');
 };
 
-const minutesUntil = (iso: string, now: number): number | null => {
+export const minutesUntil = (iso: string, now: number): number | null => {
   const t = Date.parse(iso);
   return Number.isNaN(t) ? null : Math.round((t - now) / 60_000);
 };
@@ -199,7 +200,7 @@ const STAGES_WITHOUT_LIVE_DEADLINE: ReadonlySet<string | undefined> = new Set([
 const hasRunningStage = (m: ZendeskSlaLiveMetric): boolean =>
   !STAGES_WITHOUT_LIVE_DEADLINE.has(m.stage);
 
-const hasPendingDeadline = (
+export const hasPendingDeadline = (
   m: ZendeskSlaLiveMetric,
 ): m is ZendeskSlaLiveMetric & { breach_at: string } =>
   hasRunningStage(m) &&
@@ -234,11 +235,16 @@ const formatSlaMetric = (m: ZendeskSlaLiveMetric, now: number): string => {
 // `slas` sideload carries (per-metric stage + breach countdown) — targets and
 // policy identity are not on the wire (see `list_sla_policies`). Returns '' when
 // no policy applies, so concatenating is always safe. `Next breach` speaks only for
-// metrics that are running (#260).
-export const formatSlaBlock = (entry: ZendeskSlaSideloadEntry | undefined): string => {
+// metrics that are running (#260). `urgency` is the pushed `**Urgency**` line, ''
+// when push is off or nothing is urgent.
+export const formatSlaBlock = (
+  entry: ZendeskSlaSideloadEntry | undefined,
+  urgency = '',
+  heading = '### SLA',
+): string => {
   if (!entry?.policy_metrics || entry.policy_metrics.length === 0) return '';
   const now = Date.now();
-  const lines = ['### SLA'];
+  const lines = [heading];
   const pending = entry.policy_metrics
     .filter(hasPendingDeadline)
     .map((m) => ({ due: m.breach_at, at: Date.parse(m.breach_at) }))
@@ -251,8 +257,27 @@ export const formatSlaBlock = (entry: ZendeskSlaSideloadEntry | undefined): stri
     undefined,
   );
   if (soonest) lines.push(`- **Next breach**: ${soonest.due}`);
+  if (urgency) lines.push(urgency);
   for (const m of entry.policy_metrics) lines.push(formatSlaMetric(m, now));
   return `\n\n${lines.join('\n')}`;
+};
+
+// A view row carries one metric only, the next to breach, so the block says so
+// rather than pass for the ticket's whole SLA state.
+export const formatNextBreachBlock = (metric: ZendeskSlaLiveMetric | null | undefined): string =>
+  metric ? formatSlaBlock({ policy_metrics: [metric] }, '', '### SLA (next breach only)') : '';
+
+/** The next-breaching metric each `/views/{id}/execute` row carries, by ticket id. */
+export const nextBreachByTicket = (
+  rows: ZendeskViewExecuteRow[],
+): Map<number, ZendeskSlaLiveMetric> => {
+  const byId = new Map<number, ZendeskSlaLiveMetric>();
+  for (const row of rows) {
+    const id = row.ticket?.id;
+    const metric = row.ticket?.sla_policy_metric;
+    if (typeof id === 'number' && metric) byId.set(id, metric);
+  }
+  return byId;
 };
 
 const withName = (id: unknown, names: Map<number, string>): string => {

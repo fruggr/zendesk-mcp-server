@@ -16,6 +16,7 @@ import type { Fetch } from '../auth/server/trusted-clients';
 import type { Config } from '../config';
 import { createMcpServer } from '../server';
 import { type Logger, silentLogger } from '../utils/logger';
+import { startSlaRuntime } from '../utils/sla-service';
 
 const WILDCARD_HOSTS = new Set(['0.0.0.0', '::', '*']);
 const TRAILING_SLASHES = /\/+$/;
@@ -380,6 +381,9 @@ export const startHttpTransport = async (
   const buildAuthorizationServer = await prepareAuthorizationServer(config, logger);
   let authorizationServer: AuthorizationServer | undefined;
   const sessions = new Map<string, Session>();
+  // One SLA state for every session: keys carry the Zendesk user id, so users
+  // never share an entry, while one user's sessions share their cache.
+  const sla = startSlaRuntime(config);
   const idleTimeoutMs = options.sessionIdleTimeoutMs ?? SESSION_IDLE_TIMEOUT_MS;
   const maxBodyBytes = options.maxBodyBytes ?? MAX_BODY_BYTES;
 
@@ -432,6 +436,7 @@ export const startHttpTransport = async (
       () => auth.zendeskToken,
       logger,
       () => void as.revokeGrant(auth.grantId),
+      sla.runtime,
     );
     const transport = new NodeStreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
@@ -584,6 +589,7 @@ export const startHttpTransport = async (
     port: boundPort,
     close: async () => {
       clearInterval(sweeper);
+      sla.stop();
       await Promise.all([...sessions.values()].map((session) => session.close()));
       sessions.clear();
       // server.close() waits for every connection to drain; a wedged or

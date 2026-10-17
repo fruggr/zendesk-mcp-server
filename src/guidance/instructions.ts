@@ -1,4 +1,6 @@
 import type { Config } from '../config';
+import { SLA_RESOURCE_SCHEME } from '../utils/sla-resource';
+import { describeThresholds } from '../utils/sla-thresholds';
 
 /**
  * URI of the dynamic Help Center topology resource. Single source of truth for
@@ -58,6 +60,14 @@ const helpCenterNamespaceActive = (config: Config): boolean =>
   !config.namespaces?.length || config.namespaces.includes('help_center');
 
 /**
+ * Whether the SLA alert resources (`zendesk-sla://alerts/...`) are exposed:
+ * whenever the `tickets` namespace is active, like the tools reading the same
+ * tickets.
+ */
+export const slaAlertsEnabled = (config: Config): boolean =>
+  !config.namespaces?.length || config.namespaces.includes('tickets');
+
+/**
  * Whether the Help Center structural context (init instructions + the
  * topology resource, default `zendesk-hc://topology`) should be exposed. True only when the
  * feature is enabled (`--no-topology` not set) AND the `help_center` namespace
@@ -90,12 +100,34 @@ export const promotedArticlesEnabled = (config: Config): boolean =>
   config.promotedArticles !== false && helpCenterNamespaceActive(config);
 
 /**
- * The static `instructions` blob sent on `initialize`. Deliberately short and
- * I/O-free: it must not trigger the lazy OAuth/PKCE flow just to connect, and
- * it stays within a tight token budget. The rich, dynamic topology lives in the
- * pull-only topology resource (default `zendesk-hc://topology`) referenced here.
+ * The one SLA line of the `instructions`: alerts exist, the thresholds in force
+ * by default, and how a user changes theirs. Present whenever the `tickets`
+ * namespace is, push or not: the tool and the resources stay either way.
+ */
+export const buildSlaInstructions = (config: Config): string | undefined => {
+  if (!slaAlertsEnabled(config)) return undefined;
+  const subscribe = config.slaPush ? ', subscribable for change notifications' : '';
+  const change = config.slaUserPreferences
+    ? 'each user can set their own with configure_sla_alerts'
+    : 'the operator set them for everyone';
+  return `SLA alerts: list_sla_alerts lists the SLA metrics breached or about to breach (your tickets, your groups', all, a view or a search), and the ${SLA_RESOURCE_SCHEME}://alerts/... resources hold the same report${subscribe}. Thresholds in force by default: ${describeThresholds(config.slaThresholds)}; ${change}.`;
+};
+
+/**
+ * The static `instructions` blob sent on `initialize`: the Help Center block
+ * and the SLA line, each present only when its namespace is. Deliberately short
+ * and I/O-free: it must not trigger the lazy OAuth/PKCE flow just to connect,
+ * and it stays within a tight token budget. The rich, dynamic topology lives in
+ * the pull-only topology resource (default `zendesk-hc://topology`).
  */
 export const buildInstructions = (config: Config): string | undefined => {
+  const blocks = [buildHelpCenterInstructions(config), buildSlaInstructions(config)].filter(
+    (block): block is string => block !== undefined,
+  );
+  return blocks.length > 0 ? blocks.join('\n\n') : undefined;
+};
+
+const buildHelpCenterInstructions = (config: Config): string | undefined => {
   if (!helpCenterContextEnabled(config)) return undefined;
   let scope: string;
   if (config.brandIds === undefined) {

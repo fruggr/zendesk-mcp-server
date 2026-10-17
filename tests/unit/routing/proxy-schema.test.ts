@@ -84,6 +84,14 @@ describe('buildOperationList', () => {
       - list_things(): List things."
     `);
   });
+
+  it('marks as a write a tool kept under --read-only whose hint says it writes', () => {
+    const local = { ...listThings, annotations: { readOnlyHint: false } };
+    const zendeskRead = { ...getThing, annotations: { readOnlyHint: true } };
+    expect(buildOperationList([local, zendeskRead])).toBe(
+      '- list_things(): List things. (write)\n- get_thing(thing_id*, locale): Retrieve a thing by ID.',
+    );
+  });
 });
 
 describe('buildOperationFieldDescription', () => {

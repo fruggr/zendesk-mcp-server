@@ -142,6 +142,15 @@ quality bar still hold — the freedom is from Zendesk's shape, not from craft.)
 
 ## Planning
 
+**Measure before you plan.** When a plan would rest on how Zendesk really
+answers (a sideload honoured or dropped, where a field sits, who may call an
+endpoint) and the tools' formatted output can't show it, scope with a probe
+spike first: a read-only `scripts/probe-*.ts` plus a protocol in a draft PR, run
+by an independent agent who posts the raw shapes; the plan is written from that
+report, and no feature code lands before the owner approves it. Use the
+`probe-spike` skill. Agents never handle the Zendesk token — no reading, no
+exporting, no `curl`: the scripts resolve it themselves (`docs/live-testing.md`).
+
 An implementation plan that changes **MCP-runtime-observable behaviour** — the
 tool surface, transports, auth, resources, prompts, persistence or timing a
 running server exposes to a client — must also carry a **functional validation

@@ -11,7 +11,7 @@ it('exposes the tickets tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "Retrieve a Zendesk ticket by ID, including its live SLA state (per-metric stage and breach countdown) when an SLA policy applies, plus its comments if requested. Returns ticket details (subject, status, priority, assignee, tags, description) and optionally all comments/internal notes. It also lists the followers and email CCs on the ticket, resolved to names, which is how you tell who a ticket update actually reaches: followers are notified of updates including internal notes, email CCs take part in the public correspondence, and being the requester makes someone neither. Both lists come back empty on an account where the "CCs and followers" setting is not enabled in Zendesk. The per-ticket Show endpoint exposes no SLA, so the SLA block is resolved via a scoped search and may be absent for a very high-volume requester or a just-updated ticket; SLA targets and policy conditions live in list_sla_policies. This returns the ticket as it stands now; for the history of changes behind that state (who changed what, and when), use get_ticket_history. The comment thread is appended in one block — the first page of comments Zendesk returns, cut past the response character limit — so on a long ticket read it with list_ticket_comments, which pages the comments and returns the newest first.",
+        "description": "Retrieve a Zendesk ticket by ID, including its live SLA state (per-metric stage and breach countdown) when an SLA policy applies, plus its comments if requested. Returns ticket details (subject, status, priority, assignee, tags, description) and optionally all comments/internal notes. It also lists the followers and email CCs on the ticket, resolved to names, which is how you tell who a ticket update actually reaches: followers are notified of updates including internal notes, email CCs take part in the public correspondence, and being the requester makes someone neither. Both lists come back empty on an account where the "CCs and followers" setting is not enabled in Zendesk. The per-ticket Show endpoint exposes no SLA, so the SLA block is resolved via a scoped search and may be absent for a very high-volume requester or a just-updated ticket; SLA targets and policy conditions live in list_sla_policies. Unless the operator turned SLA push off, the SLA block also carries an Urgency line naming the most urgent running metric as BREACHED, CRITICAL or WARNING against the caller's alert thresholds. This returns the ticket as it stands now; for the history of changes behind that state (who changed what, and when), use get_ticket_history. The comment thread is appended in one block — the first page of comments Zendesk returns, cut past the response character limit — so on a long ticket read it with list_ticket_comments, which pages the comments and returns the newest first.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -164,7 +164,7 @@ it('exposes the tickets tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "Search tickets using Zendesk query syntax, returning each result with its live SLA state (per-metric stage and breach countdown) when an SLA policy applies. Examples: "status:open assignee:me", "priority:urgent ticket_type:incident". Returns total count, so queue triage like "breaching today" works without a per-ticket fetch.",
+        "description": "Search tickets using Zendesk query syntax, returning each result with its live SLA state (per-metric stage and breach countdown) when an SLA policy applies. Examples: "status:open assignee:me", "priority:urgent ticket_type:incident". Returns total count, so queue triage like "breaching today" works without a per-ticket fetch. Unless the operator turned SLA push off, each SLA block also carries an Urgency line (BREACHED, CRITICAL or WARNING) against the caller's alert thresholds.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -711,6 +711,38 @@ it('exposes the tickets tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
+        "description": "Read the elapsed-time metrics (reply, resolution, wait and on-hold times, reopens, replies) of up to 100 tickets in one call. Each ticket gets first reply, first and full resolution, agent wait, requester wait and on-hold times in calendar and business minutes, plus reopen, reply, assignee-station and group-station counts and the key timestamps (assigned, solved, latest comment). These are facts Zendesk records on every ticket, so they are available even on tickets no SLA policy covers; they say how long things took, not how long is left — for the live breach countdown use get_ticket, search_tickets or list_sla_alerts. A duration still running reads "not reached yet". Read-only; tickets the caller cannot see are reported as such rather than failing the call.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "ticket_ids": {
+              "description": "Ticket IDs to read metrics for, 1 to 100 numeric ids (duplicates are read once), as returned by search_tickets, list_tickets or get_view_tickets. The answer keeps this order.",
+              "items": {
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991,
+                "type": "integer",
+              },
+              "maxItems": 100,
+              "minItems": 1,
+              "type": "array",
+            },
+          },
+          "required": [
+            "ticket_ids",
+          ],
+          "type": "object",
+        },
+        "name": "get_ticket_metrics",
+        "title": "Get Ticket Metrics",
+      },
+      {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": true,
+          "readOnlyHint": true,
+        },
         "description": "List the ticket field definitions configured on this Zendesk (both system fields and custom fields), returning each field's id, type, whether it is active/required, and — for dropdown and multiselect fields — the valid option values. Use this to discover the numeric field ids and accepted option tags that create_ticket and update_ticket expect in their custom_fields argument, so a natural-language intent ("set severity to High") maps to the right id and a value Zendesk will accept instead of a blind guess. Read-only reference lookup; cursor-paginated in Zendesk's default field order.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -769,7 +801,7 @@ it('exposes the tickets tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "Read the tickets inside a Zendesk view, in the view's own configured sort order — the same order the agent sees in the Zendesk UI — which is the natural way to work a named queue like "Unassigned tickets" or "Breaching today". Accepts the view by title or by numeric id (discover both with list_views); a title is matched case-insensitively against the agent's active views, and on no match the available titles are returned so you can retry in one step. Tickets come back with the same fields as list_tickets and are cursor-paginated; there is no live SLA block here (use search_tickets when you need per-ticket SLA state), and sort_by/sort_order override the view's order when you want a different cut.",
+        "description": "Read the tickets inside a Zendesk view, in the view's own configured sort order — the same order the agent sees in the Zendesk UI — which is the natural way to work a named queue like "Unassigned tickets" or "Breaching today". Accepts the view by title or by numeric id (discover both with list_views); a title is matched case-insensitively against the agent's active views, and on no match the available titles are returned so you can retry in one step. Tickets come back with the same fields as list_tickets and are cursor-paginated. Each ticket an SLA policy covers also shows its next SLA breach: only the one metric closest to breaching, read from the view itself at no extra cost (use get_ticket or search_tickets for every metric). sort_by/sort_order override the view's order when you want a different cut.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -885,6 +917,69 @@ it('exposes the tickets tool surface unchanged', async () => {
         },
         "name": "preview_macro_diff",
         "title": "Preview a Macro Diff on a Ticket",
+      },
+      {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": true,
+          "readOnlyHint": true,
+        },
+        "description": "List the SLA metrics that are breached or about to breach across a set of tickets, most urgent first. Pick the set with exactly one of scope (mine, my_groups or all unsolved tickets), view (a Zendesk view by title or id) or query (any Zendesk ticket search). Each running metric that is breached, or closer to its breach than its CRITICAL or WARNING threshold, is one line under BREACHED, CRITICAL or WARNING, soonest breach first, with the ticket id, metric, time left or overdue, subject, status and priority; paused and achieved metrics never appear. Thresholds are per metric family (reply metrics vs every other metric), the caller's own when set with configure_sla_alerts, else the server's; warning and critical override them for this call only. When no set is given the client may be asked which one (and, on a first call, shown the thresholds); otherwise it defaults to the caller's own tickets and says so. Read-only; results are cached per user for about a minute, and a set larger than a few hundred tickets is read in part, with a notice. For one ticket's full SLA state use get_ticket; for elapsed times use get_ticket_metrics.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "critical": {
+              "description": "Override the CRITICAL threshold of every metric family for this call only; must not exceed the warning threshold in force. A readable duration: 30m, 4h, 2d, 1w, or a mix like 1d4h.",
+              "type": "string",
+            },
+            "include_breached": {
+              "default": true,
+              "description": "Whether to list metrics already past their deadline (BREACHED). Defaults to true; set false to see only what can still be saved.",
+              "type": "boolean",
+            },
+            "query": {
+              "description": "A Zendesk ticket search query selecting the tickets to check, e.g. "status<solved priority:urgent" or "organization:acme status<solved"; "type:ticket" is added automatically. Use instead of scope or view.",
+              "minLength": 1,
+              "type": "string",
+            },
+            "scope": {
+              "description": "A named set of unsolved tickets: "mine" (assigned to you), "my_groups" (in any group you belong to) or "all" (the whole account, as far as your role sees it). Use instead of view or query.",
+              "enum": [
+                "mine",
+                "my_groups",
+                "all",
+              ],
+              "type": "string",
+            },
+            "view": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string",
+                },
+                {
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991,
+                  "type": "integer",
+                },
+              ],
+              "description": "A Zendesk view to check, by its exact title (matched case-insensitively) or numeric id, as listed by list_views. Use instead of scope or query.",
+            },
+            "warning": {
+              "description": "Override the WARNING threshold of every metric family for this call only: how much time left before a breach counts as a warning. A readable duration: 30m, 4h, 2d, 1w, or a mix like 1d4h.",
+              "type": "string",
+            },
+            "within": {
+              "description": "Only list alerts breaching within this time from now (breached ones aside, see include_breached). A readable duration: 30m, 4h, 2d, 1w, or a mix like 1d4h. Omit to list everything inside the thresholds.",
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+        "name": "list_sla_alerts",
+        "title": "List SLA Alerts",
       },
       {
         "annotations": {

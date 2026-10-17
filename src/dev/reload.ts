@@ -5,10 +5,18 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 import { createBrandSubdomainResolver } from '../client/brands';
 import type { Config } from '../config';
-import { createServerShell, registerToolset } from '../server';
+import { slaAlertsEnabled } from '../guidance/instructions';
+import { createServerShell, installAlertSubscriptions, registerToolset } from '../server';
 import { createAllTools, type ToolContext, type ToolDefinition } from '../tools/index';
+import { createAlertsReader } from '../tools/sla-alerts';
 import { startStdioTransport } from '../transports/stdio';
 import { type Logger, silentLogger } from '../utils/logger';
+import {
+  createSlaRuntime,
+  createSlaService,
+  createUserIdResolver,
+  type SlaRuntime,
+} from '../utils/sla-service';
 
 const thisDir = dirname(fileURLToPath(import.meta.url));
 // `src/tools/` — the leaf factory modules re-imported on reload.
@@ -20,10 +28,12 @@ const toolsDir = join(thisDir, '..', 'tools');
 // need a restart. Keep in sync with createAllTools.
 const TOOL_MODULES = [
   { file: 'tickets.ts', factory: 'createTicketTools' },
+  { file: 'sla-alerts.ts', factory: 'createSlaAlertTools' },
   { file: 'requests.ts', factory: 'createRequestTools' },
   { file: 'search.ts', factory: 'createSearchTools' },
   { file: 'help-center.ts', factory: 'createHelpCenterTools' },
   { file: 'users.ts', factory: 'createUserTools' },
+  { file: 'preferences.ts', factory: 'createPreferenceTools' },
 ] as const;
 
 type ToolFactory = (ctx: ToolContext) => ToolDefinition[];
@@ -67,6 +77,7 @@ export const createReloadableServer = (
   // re-importing the leaf modules from disk; tests inject a stub to drive the
   // re-registration failure/rollback path deterministically.
   loadTools: (ctx: ToolContext) => Promise<ToolDefinition[]> = loadFreshTools,
+  slaRuntime: SlaRuntime = createSlaRuntime(config),
 ): { server: McpServer; reload: () => Promise<number> } => {
   const server = createServerShell(config, logger);
   // ONE shared resolver across every reload generation: tools and the
@@ -77,8 +88,13 @@ export const createReloadableServer = (
     brandIds: config.brandIds,
     resolveBrandSubdomain,
     getToken,
+    sla: createSlaService(config, slaRuntime, createUserIdResolver(config.subdomain, getToken)),
   };
-  const params = { config, getToken, resolveBrandSubdomain, onUnauthorized, logger };
+  const params = { config, getToken, resolveBrandSubdomain, onUnauthorized, logger, sla: ctx.sla };
+  // Subscriptions belong to the long-lived shell, not to a tool generation.
+  if (config.slaPush && slaAlertsEnabled(config)) {
+    installAlertSubscriptions(server, config, createAlertsReader(ctx), logger);
+  }
 
   // The last generation registered successfully — both the handle (to dispose)
   // and its definitions (to restore if a reload's re-registration fails).
@@ -194,8 +210,16 @@ export const startDevServer = async (
   getToken: () => string | Promise<string>,
   logger: Logger = silentLogger,
   onUnauthorized?: () => void,
+  slaRuntime?: SlaRuntime,
 ): Promise<McpServer> => {
-  const { server, reload } = createReloadableServer(config, getToken, logger, onUnauthorized);
+  const { server, reload } = createReloadableServer(
+    config,
+    getToken,
+    logger,
+    onUnauthorized,
+    loadFreshTools,
+    slaRuntime,
+  );
   registerReloadTool(server, reload, logger);
   await startStdioTransport(server, logger);
   logger.info('dev_mode_enabled');

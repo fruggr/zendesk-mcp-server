@@ -1,11 +1,12 @@
 import { HttpResponse, http } from 'msw';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   errorHandlers,
   MOCK_BRAND,
   MOCK_BRAND_SECOND,
   MOCK_BRAND_THIRD,
   MOCK_PROMOTED_ARTICLE,
+  MOCK_TICKET,
   promotedArticlesHandler,
 } from '../msw-handlers';
 import { mswServer } from '../setup';
@@ -62,17 +63,29 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
       });
 
       it('omits instructions and the resource when help_center is filtered out', async () => {
-        connected = await harness.connect(
-          makeConfig({ mode: 'namespace', namespaces: ['tickets'] }),
-        );
+        connected = await harness.connect(makeConfig({ mode: 'namespace', namespaces: ['users'] }));
         expect(connected.client.getInstructions()).toBeUndefined();
         expect(connected.client.getServerCapabilities()?.resources).toBeUndefined();
       });
 
+      it('keeps only the SLA alert resources when tickets is the one namespace', async () => {
+        connected = await harness.connect(
+          makeConfig({ mode: 'namespace', namespaces: ['tickets'] }),
+        );
+        const { resourceTemplates } = await connected.client.listResourceTemplates();
+        expect(resourceTemplates.map((t) => t.uriTemplate)).toEqual([
+          'zendesk-sla://alerts/{scope}',
+          'zendesk-sla://alerts/views/{view}',
+          'zendesk-sla://alerts{?query}',
+        ]);
+      });
+
       it('omits instructions and the topology resource when topology is disabled', async () => {
         connected = await harness.connect(makeConfig({ topology: false }));
-        expect(connected.client.getInstructions()).toBeUndefined();
-        // Instructions are topology-gated. The article resources are a separate,
+        // The Help Center block of the instructions is topology-gated; the SLA
+        // line belongs to tickets and stays.
+        expect(connected.client.getInstructions()).toMatch(/^SLA alerts: /);
+        // The article resources are a separate,
         // still-enabled feature, so the resources capability is still advertised
         // — only the topology resource itself is gone from the listing.
         expect(connected.client.getServerCapabilities()?.resources).toBeDefined();
@@ -82,7 +95,7 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
 
       it('keeps the read-by-id article resource (and the resources capability) when topology and promoted listing are both off', async () => {
         connected = await harness.connect(makeConfig({ topology: false, promotedArticles: false }));
-        expect(connected.client.getInstructions()).toBeUndefined();
+        expect(connected.client.getInstructions()).not.toContain('Help Center');
         // Read-by-id stays registered whenever help_center is active, so the
         // resources capability persists; only the topology resource and the promoted
         // listing are gone. (Namespace filtering is what removes resources entirely.)
@@ -510,6 +523,30 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         expect(names).not.toContain('set_category_translation');
         // The read side of the same feature survives the filter.
         expect(names).toContain('find_translation_gaps');
+        // --read-only means "no Zendesk writes": the server's own preferences stay.
+        expect(names).toContain('configure_sla_alerts');
+      });
+
+      it('keeps the preferences proxy under --read-only without costing the Zendesk proxies their read-only hint', async () => {
+        connected = await harness.connect(makeConfig({ mode: 'namespace', readOnly: true }));
+        const { tools } = await connected.client.listTools();
+        const byName = new Map(tools.map((t) => [t.name, t]));
+        expect([...byName.keys()]).toEqual([
+          'zendesk_tickets',
+          'zendesk_help_center',
+          'zendesk_users',
+          'connector_preferences',
+        ]);
+        expect(byName.get('zendesk_tickets')?.annotations?.readOnlyHint).toBe(true);
+        expect(byName.get('zendesk_tickets')?.description).toMatch(/^\[RO\] /);
+        const prefs = byName.get('connector_preferences');
+        expect(prefs?.annotations).toEqual({
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        });
+        expect(prefs?.description).not.toMatch(/^\[RO\]/);
       });
     });
 
@@ -932,6 +969,87 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
 
         expect(result.isError).toBe(true);
         expect(textOf(result)).toContain('Authentication failed');
+      });
+    });
+
+    describe('SLA alerting', () => {
+      // The mocked running metric breaches at 2099-06-18T21:37:00Z: 97 minutes
+      // after this clock, inside the default 8h critical window for waits.
+      beforeEach(() => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(new Date('2099-06-18T20:00:00Z'));
+      });
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      const searchText = async (slaPush: boolean): Promise<string> => {
+        connected = await harness.connect(makeConfig({ mode: 'all', slaPush }));
+        const result = await connected.client.callTool({
+          name: 'search_tickets',
+          arguments: { query: 'status:open' },
+        });
+        return `${result.isError ? 'ERROR ' : ''}${textOf(result)}`;
+      };
+
+      it('pushes the urgency line into the SLA block by default', async () => {
+        expect(await searchText(true)).toContain(
+          '- **Urgency**: CRITICAL — requester_wait_time due in 1h37m',
+        );
+      });
+
+      it('notifies a subscriber when an alert set changes', async () => {
+        // The poll timer is faked too; the transports keep their real setTimeout.
+        vi.useRealTimers();
+        vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+        vi.setSystemTime(new Date('2099-06-18T20:00:00Z'));
+        // A cache shorter than the poll, as in production (60s against 300s).
+        connected = await harness.connect(
+          makeConfig({ mode: 'namespace', slaPollSeconds: 60, slaCacheTtlSeconds: 30 }),
+        );
+        const updates: string[] = [];
+        connected.client.setNotificationHandler('notifications/resources/updated', (n) => {
+          updates.push(n.params.uri);
+        });
+        let searches = 0;
+        mswServer.events.on('request:start', ({ request }) => {
+          if (new URL(request.url).pathname.endsWith('/search')) searches += 1;
+        });
+        await connected.client.subscribeResource({ uri: 'zendesk-sla://alerts/mine' });
+        // The subscription takes its baseline first.
+        await vi.waitFor(() => expect(searches).toBe(1));
+        // The CRITICAL metric is now reported breached: the alert set changed.
+        mswServer.use(
+          http.get('https://testsubdomain.zendesk.com/api/v2/search', () =>
+            HttpResponse.json({
+              results: [
+                {
+                  ...MOCK_TICKET,
+                  slas: {
+                    policy_metrics: [
+                      {
+                        metric: 'requester_wait_time',
+                        stage: 'active',
+                        breach_at: '2099-06-18T19:00:00Z',
+                      },
+                    ],
+                  },
+                },
+              ],
+              count: 1,
+            }),
+          ),
+        );
+        await vi.advanceTimersByTimeAsync(60_000);
+        await vi.waitFor(() => expect(searches).toBe(2));
+        await vi.waitFor(() => expect(updates).toEqual(['zendesk-sla://alerts/mine']));
+      });
+
+      it('pushes no urgency line under --no-sla-push, and keeps the SLA block', async () => {
+        const text = await searchText(false);
+        expect(text).toMatch(/^Results: 1\n\n## Ticket #1/);
+        expect(text).toContain('### SLA');
+        expect(text).not.toContain('Urgency');
       });
     });
   });

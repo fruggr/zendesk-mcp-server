@@ -7,24 +7,27 @@ proxies). See [Tool surface](../README.md#tool-surface) in the README for how
 modes and the `--namespace` / `--tool` filters shape the surface.
 
 The **Mode** column marks each tool as `read` or `write`; `--read-only` filters
-out every `write` tool before the proxies are built.
+out every `write` tool before the proxies are built. A `local write` changes only
+this server's own per-user settings, never Zendesk, so `--read-only` keeps it.
 
 <details>
 <summary><strong>Tickets</strong></summary>
 
 | Tool | Description | Mode |
 |------|-------------|------|
-| `get_ticket` | Retrieve a ticket by ID with optional comments, its live SLA state (resolved via a scoped search) and who the ticket reaches, resolved to names (followers get internal notes too, email CCs only the public correspondence); the thread comes back whole, so reach for `list_ticket_comments` on a long one | read |
+| `get_ticket` | Retrieve a ticket by ID with optional comments, its live SLA state (resolved via a scoped search, with an Urgency line unless SLA push is off) and who the ticket reaches, resolved to names (followers get internal notes too, email CCs only the public correspondence); the thread comes back whole, so reach for `list_ticket_comments` on a long one | read |
 | `list_ticket_comments` | Read a ticket's conversation (public replies and internal notes, full bodies) newest-first and cursor-paginated, with comment ids and authors resolved to names — the paged alternative to `get_ticket(include_comments=true)` on a long thread | read |
 | `get_ticket_history` | Read a ticket's change history (audit trail) as a chronological, oldest-first timeline of who changed what and when: field changes as before → after with actor names, comment presence (not bodies), system noise filtered; cursor-paginated | read |
 | `get_ticket_attachments` | Download ticket attachments. Images are delivered as native multimodal content for the client's own model to analyze; oversize/over-limit images and non-images come back as text references, and a listing that would exceed the response budget is truncated with a block naming how many attachments were omitted | read |
-| `search_tickets` | Search tickets using Zendesk query syntax, with per-result SLA state | read |
+| `search_tickets` | Search tickets using Zendesk query syntax, with per-result SLA state and, unless SLA push is off, an Urgency line (BREACHED / CRITICAL / WARNING) | read |
 | `list_tickets` | List tickets with cursor-based pagination | read |
 | `get_linked_incidents` | Get incidents linked to a problem ticket | read |
 | `list_sla_policies` | List SLA policies with filter conditions and per-priority targets (requires an admin token, or a custom role with the SLA-management permission) | read |
+| `list_sla_alerts` | List the SLA metrics breached or about to breach across your tickets, your groups', all unsolved tickets, a view or any search query — one compact line each, grouped BREACHED / CRITICAL / WARNING, soonest first, against your thresholds (overridable per call); asks for the set through a form when the client supports it, else defaults to your own tickets | read |
+| `get_ticket_metrics` | Read the elapsed-time metrics of up to 100 tickets in one call: reply, resolution, wait and on-hold times in calendar and business minutes, reopens, replies, stations and key timestamps — recorded even where no SLA policy applies | read |
 | `list_ticket_fields` | List ticket field definitions (system + custom) with ids, types, and dropdown/multiselect option values, to resolve `custom_fields` ids and accepted values for create_ticket / update_ticket | read |
 | `list_views` | List the agent's active views (saved ticket queues) with best-effort (cached, may show "(count updating)") ticket counts, to see where the workload sits before opening a queue | read |
-| `get_view_tickets` | Read the tickets inside a view (by title or id) in the view's own configured sort order, cursor-paginated (no live SLA block; use search_tickets for that) | read |
+| `get_view_tickets` | Read the tickets inside a view (by title or id) in the view's own configured sort order, cursor-paginated, each ticket with its next SLA breach read from the view at no extra cost (every metric: get_ticket / search_tickets) | read |
 | `list_macros` | List the active macros available to the authenticated user, with each macro's id, title, scope, and ordered actions | read |
 | `create_ticket` | Create a new ticket with subject, description, priority, tags... | write |
 | `update_ticket` | Update ticket status, priority, assignee, tags, custom fields, and add or remove followers and email CCs by user id | write |
@@ -125,6 +128,20 @@ deliberately cannot do.
 | Tool | Description | Mode |
 |------|-------------|------|
 | `search` | Unified search across tickets, users, and organizations | read |
+
+</details>
+
+<details>
+<summary><strong>Connector preferences</strong> (this server, not Zendesk)</summary>
+
+Per-user settings of this MCP server, stored by the server and never written to
+Zendesk. In `namespace` mode they sit behind the `connector_preferences` proxy,
+deliberately not `zendesk_`-prefixed. `--read-only` keeps them: it means "no
+Zendesk writes", and this namespace writes none.
+
+| Tool | Description | Mode |
+|------|-------------|------|
+| `configure_sla_alerts` | Read the SLA alert thresholds in force for you and where each comes from, or set your own per metric family (reply, wait) or reset them; turned off server-wide by `SLA_USER_PREFERENCES=off` | local write |
 
 </details>
 
