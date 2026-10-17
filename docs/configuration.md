@@ -27,9 +27,10 @@ Options:
                           exposed and every brand-scoped Help Center tool
                           requires a per-call brand_id. Also ZENDESK_BRAND_IDS.
   --namespace <ns>        Filter by namespace (repeatable): tickets, help_center,
-                          users, requests. Defaults to tickets + help_center +
-                          users; `requests` (the end-user surface) is opt-in and
-                          only ever exposed when asked for by name
+                          users, requests, preferences. Defaults to tickets +
+                          help_center + users + preferences; `requests` (the
+                          end-user surface) is opt-in and only ever exposed when
+                          asked for by name
   --tool <name>           Filter by tool name (repeatable, forces --mode all)
   --read-only             Only expose read operations, and request the
                           `read` OAuth scope alone
@@ -71,6 +72,25 @@ Options:
                           exit. No server, no Zendesk credential, no network
                           call. Use it to check what a combination of --mode /
                           --namespace / --tool / --read-only actually exposes
+  --no-sla-push           Stop the server pushing SLA urgency on its own (see
+                          "SLA alerts" below). Also SLA_PUSH=false
+  --sla-reply-thresholds <warning,critical>
+                          Default alert thresholds of the reply metrics
+                          (default 4h,1h). Also SLA_REPLY_THRESHOLDS
+  --sla-wait-thresholds <warning,critical>
+                          Default alert thresholds of every other metric
+                          (default 2d,8h). Also SLA_WAIT_THRESHOLDS
+  --no-sla-user-preferences
+                          Apply the default thresholds to everyone: users
+                          cannot set their own. Also SLA_USER_PREFERENCES=off
+  --sla-cache-ttl-seconds <n>
+                          How long a user's SLA scope fetch is reused
+                          (default 60; 0 = no cache). Also SLA_CACHE_TTL_SECONDS
+  --sla-state-store <memory|disk>
+                          Where per-user SLA state lives (default: memory on
+                          HTTP, disk on stdio). Also SLA_STATE_STORE
+  --sla-poll-seconds <n>  How often a subscribed alert resource is re-checked
+                          (default 300, minimum 60). Also SLA_POLL_SECONDS
 ```
 
 `--namespace` and `--read-only` are applied before the proxies are registered, so they narrow the surface in every mode. In the default `namespace` mode, `--namespace help_center` registers a single proxy (`zendesk_help_center`) instead of the full set of namespace proxies.
@@ -184,6 +204,59 @@ Scope and limits, by design:
 - **Dev-only.** `reload_tools` is not part of the product tool surface and is
   never exposed without `--dev`; the published package ships compiled JS with no
   sources to reload. It is meant for `tsx`-from-source development.
+
+## SLA alerts
+
+`list_sla_alerts`, the SLA block of `get_ticket` / `search_tickets` and the
+`zendesk-sla://alerts/...` resources rank each running SLA metric against two
+thresholds — time left before its breach — per metric family:
+
+| Family | Metrics | Warning | Critical |
+|---|---|---|---|
+| Reply | `first_reply_time`, `next_reply_time` | `4h` | `1h` |
+| Wait and resolution | every other metric (`requester_wait_time`, `agent_work_time`, …) | `2d` | `8h` |
+
+A metric is WARNING inside the warning window, CRITICAL inside the critical
+one, and BREACHED once its deadline has passed; paused, achieved and fulfilled
+metrics never alert, and a metric Zendesk adds later falls in the wait family.
+Zendesk's live SLA carries no target and no start time, so the thresholds are
+durations rather than a share of the target.
+
+The thresholds in force for a user are, in order: the `warning` / `critical`
+of one `list_sla_alerts` call, the user's own (set with `configure_sla_alerts`,
+or in the form shown on their first `list_sla_alerts` call when the client
+supports it), then the defaults set here. `SLA_USER_PREFERENCES=off` makes the
+defaults apply to everyone.
+
+**Push.** On by default, `SLA_PUSH` / `--no-sla-push` controls only what the
+server does unasked: the `**Urgency**` line in the SLA block of `get_ticket`
+and `search_tickets`, and the polling and `notifications/resources/updated` of
+subscribed alert resources. With it off the tools, the resources and the
+server instructions all stay; the server just stops advertising
+`resources.subscribe`.
+
+**Subscriptions.** While a client holds at least one subscription, its session
+re-checks each subscribed URI every `SLA_POLL_SECONDS` and notifies only when
+the alert set (ticket, metric, level) changes, never for minutes counting
+down. Clients subscribe with `resources/subscribe` (MCP 2025 revisions); this
+server's transports do not speak the 2026-07-28 revision, so
+`subscriptions/listen` is not served yet. On HTTP an idle session is evicted
+after 30 minutes without a request
+([why](troubleshooting.md#my-http-session-disappears-after-a-pause-even-though-the-stream-stayed-up)),
+and its subscriptions end with it: a client re-subscribes when it reconnects.
+
+**Quota.** Each scope check reads at most five pages of 100 tickets (one
+search per group for `my_groups`) and is reused for `SLA_CACHE_TTL_SECONDS`
+per user, so several tool calls, resource reads and polls of the same scope
+cost one fetch. Zendesk charges a `304 Not Modified` like a full request, so
+there is no conditional revalidation to save quota beyond that lifetime.
+
+**State.** Per-user state — that cache and the preferences — is keyed by the
+Zendesk user id read from `/users/me`, never shared across users. `memory`
+(the HTTP default) lives and dies with the process; `disk` (the stdio default)
+lives next to the token files, one `0600` file per entry, so the stdio servers
+of one machine share it. Any process sweeps expired entries about every ten
+minutes, never at startup, under a lock file the others respect.
 
 ## Environment variables
 
@@ -382,6 +455,49 @@ slash to them and that would make the advertised resource URI unreadable by MCP
 clients. A generic scheme like `wiki` is safe collision-wise, since MCP resource
 URIs are scoped per server; it is just less self-descriptive in a client
 connected to several servers.
+
+### `SLA_PUSH`
+**Required:** no · **Default:** `true`
+
+`false` (or `off`, `0`) stops the server pushing SLA urgency on its own: see
+[SLA alerts](#sla-alerts). Same as `--no-sla-push`.
+
+### `SLA_REPLY_THRESHOLDS`
+**Required:** no · **Default:** `4h,1h`
+
+Default warning and critical thresholds of the reply metrics, as two durations
+(`30m`, `4h`, `2d`, `1w`, or a mix like `1d4h`), warning first; critical must
+not exceed warning. Same as `--sla-reply-thresholds`.
+
+### `SLA_WAIT_THRESHOLDS`
+**Required:** no · **Default:** `2d,8h`
+
+The same for every other SLA metric. Same as `--sla-wait-thresholds`.
+
+### `SLA_USER_PREFERENCES`
+**Required:** no · **Default:** `on`
+
+`off` (or `false`, `0`) makes the default thresholds apply to everyone;
+`configure_sla_alerts` then only reports them. Same as
+`--no-sla-user-preferences`.
+
+### `SLA_CACHE_TTL_SECONDS`
+**Required:** no · **Default:** `60`
+
+How long, in whole seconds, one user's SLA scope fetch is reused; `0` turns the
+cache off. Same as `--sla-cache-ttl-seconds`.
+
+### `SLA_STATE_STORE`
+**Required:** no · **Default:** `memory` on HTTP, `disk` on stdio
+
+Where per-user SLA state lives: see [SLA alerts](#sla-alerts). Same as
+`--sla-state-store`.
+
+### `SLA_POLL_SECONDS`
+**Required:** no · **Default:** `300`
+
+How often, in whole seconds (at least 60), a subscribed alert resource is
+re-checked. Same as `--sla-poll-seconds`.
 
 ### `LOG_LEVEL`
 **Required:** no · **Default:** `info`
