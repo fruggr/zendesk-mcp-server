@@ -74,7 +74,7 @@
   },
   "packageManager": "pnpm@12.12.1+sha512.b7f98934c0b1f29a65f5da52f2d7f994e7faad573ffdddea1497fb4dcb5aec051590ee7c7d95a38172b4bfae103a5b83edf2ee866e11731c2cafa96063610ac5",
   "devDependencies": {
-    "@biomejs/biome": "2.5.14",
+    "@biomejs/biome": "2.5.15",
     "@modelcontextprotocol/client": "2.3.1",
     "@modelcontextprotocol/node": "2.1.1",
     "@modelcontextprotocol/server": "2.3.1",
@@ -117,6 +117,6 @@
     "typescript-legacy": "npm:typescript@6.0.3",
     "unified": "11.0.5",
     "vitest": "^5.0.0",
-    "zod": "4.6.5"
+    "zod": "4.6.6"
   }
 }
