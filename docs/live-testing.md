@@ -108,6 +108,25 @@ transport, through the same `startStdioTransport` as the binary (identical to
 through the genuine handlers. Use it for quick manual checks, or as a basis for
 scripted or CI assertions.
 
+## Probes: raw Zendesk shapes the tools do not show
+
+The tools return formatted text, so a question about what Zendesk really sends
+(a sideload honoured or silently dropped, where a value sits in a payload) needs
+a probe: a read-only `scripts/probe-<topic>.ts` that hits the live tenant and
+prints the raw shape. Conventions:
+
+- GETs only, through `zendeskGet` (the server's retry policy applies).
+- Credentials from `live-auth.ts`, never from the caller.
+- Print keys, ids, stages, timestamps and numbers, never subjects, bodies or
+  names, so the output can go in a PR comment as is.
+- A step that fails is a finding: report it and carry on.
+- Keep a probe while its question can come back; the history holds the ones
+  dropped once answered (`git log --diff-filter=D -- 'scripts/probe-*'`).
+
+```bash
+pnpm tsx scripts/probe-sla-alerts-shape.ts [--view <id>] [--ticket <id>]
+```
+
 ## C. `scripts/validate-retry.mjs`: failure paths, without a flaky network
 
 The retry, timeout and write-safety behaviour of the client only shows itself
