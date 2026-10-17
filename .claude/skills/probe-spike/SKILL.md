@@ -22,7 +22,7 @@ MCP tools, or already pinned by a mock that a live run confirmed.
 2. **Write the probe** for the raw-payload questions: `scripts/probe-<topic>.ts`,
    following the conventions in `docs/live-testing.md` (Probes). In particular:
    - credentials from `scripts/live-auth.ts`, never from the caller;
-   - GETs only, through `zendeskGet`;
+   - GETs only, through `zendeskGet` (raw `fetch` only for a header question);
    - print keys, ids, stages, timestamps, numbers — never subjects, bodies or
      names;
    - a failing step is a finding: report it and carry on;
