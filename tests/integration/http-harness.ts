@@ -1,4 +1,8 @@
-import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
+import {
+  Client,
+  type ClientOptions,
+  StreamableHTTPClientTransport,
+} from '@modelcontextprotocol/client';
 import type { Config } from '../../src/config';
 import type { ServerFactory } from '../../src/server';
 import { startHttpTransport } from '../../src/transports/http';
@@ -21,7 +25,7 @@ import { signInWithDcr } from './oauth-client';
  */
 export const createHttpHarness = (era: Era, serverFactory?: ServerFactory): IntegrationHarness => ({
   name: era === '2025' ? 'http' : `http-${era}`,
-  async connect(config: Config): Promise<ConnectedClient> {
+  async connect(config: Config, clientOptions: ClientOptions = {}): Promise<ConnectedClient> {
     // The sign-in needs a working Zendesk login, whatever the scenario mocked:
     // the OAuth mock goes on top for it, then the scenario's own handlers are
     // put back above it, so the tool calls see exactly what the scenario set.
@@ -48,7 +52,7 @@ export const createHttpHarness = (era: Era, serverFactory?: ServerFactory): Inte
 
     const client = new Client(
       { name: 'integration-test', version: '0.0.0' },
-      clientOptionsFor(era),
+      { ...clientOptionsFor(era), ...clientOptions },
     );
     await client.connect(
       new StreamableHTTPClientTransport(new URL(`${baseUrl}/mcp`), {

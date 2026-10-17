@@ -1,4 +1,4 @@
-import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
+import { Client, type ClientOptions, InMemoryTransport } from '@modelcontextprotocol/client';
 import type { Config } from '../../src/config';
 import { createMcpServer } from '../../src/server';
 import { type StdioBuildExtras, startStdioTransport } from '../../src/transports/stdio';
@@ -32,7 +32,7 @@ export const createStdioHarness = (
   factory: StdioTestFactory = productionServer,
 ): IntegrationHarness => ({
   name: era === '2025' ? 'stdio' : `stdio-${era}`,
-  async connect(config: Config): Promise<ConnectedClient> {
+  async connect(config: Config, clientOptions: ClientOptions = {}): Promise<ConnectedClient> {
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     const handle = startStdioTransport((extras) => factory(config, extras), undefined, {
       transport: serverTransport,
@@ -40,7 +40,7 @@ export const createStdioHarness = (
 
     const client = new Client(
       { name: 'integration-test', version: '0.0.0' },
-      clientOptionsFor(era),
+      { ...clientOptionsFor(era), ...clientOptions },
     );
     await client.connect(clientTransport);
 

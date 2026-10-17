@@ -36,8 +36,11 @@ export const clientOptionsFor = (era: Era): ClientOptions =>
 export interface IntegrationHarness {
   /** Short transport name, used to label the test suite (e.g. 'stdio'). */
   readonly name: string;
-  /** Boot a server with `config` and return a client connected to it. */
-  connect(config: Config): Promise<ConnectedClient>;
+  /**
+   * Boot a server with `config` and return a client connected to it, built
+   * with `clientOptions` on top of the era's (e.g. declared capabilities).
+   */
+  connect(config: Config, clientOptions?: ClientOptions): Promise<ConnectedClient>;
 }
 
 /**
