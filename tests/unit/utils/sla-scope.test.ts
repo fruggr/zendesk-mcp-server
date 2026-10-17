@@ -196,6 +196,11 @@ describe('readGroupIds', () => {
     ]);
   });
 
+  it('reads a page without memberships as no group', async () => {
+    const { get } = recorder(() => ({}));
+    expect(await readGroupIds(get, 7)).toEqual([]);
+  });
+
   it('stops when has_more comes without a cursor', async () => {
     const { calls, get } = recorder(() => ({
       group_memberships: [{ group_id: 1 }],
