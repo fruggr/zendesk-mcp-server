@@ -39,7 +39,7 @@
  * ZENDESK_OAUTH_TOKEN and sends it as a Bearer. Grab one via the normal OAuth
  * flow (e.g. in a local session) and export it before calling.
  */
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { dirname, join } from 'node:path';
@@ -68,7 +68,6 @@ const fail = (message: string): never => {
   process.exit(1);
 };
 
-// Own flags, removed from the positional arguments as they are read.
 const takeValue = (name: string): string | undefined => {
   const at = own.indexOf(name);
   if (at === -1) return undefined;
@@ -145,7 +144,6 @@ const connectLocal = async (): Promise<{ client: Client; close: () => Promise<vo
 const CALLBACK_PORT = Number(process.env['MCP_LIVE_CALLBACK_PORT'] ?? 27440);
 const REDIRECT_URL = `http://127.0.0.1:${CALLBACK_PORT}/callback`;
 
-/** The OAuth client state cached for one server URL. */
 interface OAuthState {
   client?: StoredOAuthClientInformation;
   tokens?: StoredOAuthTokens;
@@ -185,16 +183,23 @@ const oauthProvider = (serverUrl: string): OAuthClientProvider => {
     redirectToAuthorization: (authorizationUrl) => {
       console.error(`Open this URL to sign in, then come back:\n${authorizationUrl.href}`);
     },
+    state: () => expectedState,
     saveCodeVerifier: (verifier) => save({ verifier }),
     codeVerifier: () => load().verifier ?? fail('No PKCE verifier saved; run the command again.'),
   };
 };
 
-// Waits for the authorization server to redirect the browser to our callback.
+// The SDK does not check `state`: a callback without ours is not this sign-in,
+// so it is refused and the listener keeps waiting.
+const expectedState = randomBytes(16).toString('hex');
 const awaitCallback = (): Promise<URLSearchParams> =>
   new Promise((resolve) => {
     const server = createServer((req, res) => {
       const params = new URL(req.url ?? '/', REDIRECT_URL).searchParams;
+      if (params.get('state') !== expectedState) {
+        res.writeHead(400).end('Unexpected sign-in callback; ignored.');
+        return;
+      }
       res.end('Signed in; you can close this tab.');
       server.close();
       resolve(params);
@@ -257,7 +262,12 @@ const main = async (): Promise<void> => {
   try {
     if (command === 'list' || command === undefined) {
       const { tools } = await client.listTools();
-      console.log(`# ${tools.length} tool(s) in "${config.mode}" mode\n`);
+      // Over --url the server's own flags decide the mode, not ours.
+      console.log(
+        url
+          ? `# ${tools.length} tool(s)\n`
+          : `# ${tools.length} tool(s) in "${config.mode}" mode\n`,
+      );
       for (const tool of tools) {
         const firstLine = (tool.description ?? '').split('\n')[0];
         console.log(`- ${tool.name}: ${firstLine}`);
