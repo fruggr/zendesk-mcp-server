@@ -25,7 +25,7 @@ out every `write` tool before the proxies are built.
 | `get_ticket_metrics` | Read the elapsed-time metrics of up to 100 tickets in one call: reply, resolution, wait and on-hold times in calendar and business minutes, reopens, replies, stations and key timestamps — recorded even where no SLA policy applies | read |
 | `list_ticket_fields` | List ticket field definitions (system + custom) with ids, types, and dropdown/multiselect option values, to resolve `custom_fields` ids and accepted values for create_ticket / update_ticket | read |
 | `list_views` | List the agent's active views (saved ticket queues) with best-effort (cached, may show "(count updating)") ticket counts, to see where the workload sits before opening a queue | read |
-| `get_view_tickets` | Read the tickets inside a view (by title or id) in the view's own configured sort order, cursor-paginated (no live SLA block; use search_tickets for that) | read |
+| `get_view_tickets` | Read the tickets inside a view (by title or id) in the view's own configured sort order, cursor-paginated, each ticket with its next SLA breach read from the view at no extra cost (every metric: get_ticket / search_tickets) | read |
 | `list_macros` | List the active macros available to the authenticated user, with each macro's id, title, scope, and ordered actions | read |
 | `create_ticket` | Create a new ticket with subject, description, priority, tags... | write |
 | `update_ticket` | Update ticket status, priority, assignee, tags, custom fields, and add or remove followers and email CCs by user id | write |

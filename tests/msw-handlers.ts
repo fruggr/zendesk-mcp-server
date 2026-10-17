@@ -50,6 +50,15 @@ export const MOCK_TICKET_METRIC = {
   custom_status_updated_at: '2026-10-16T18:53:52Z',
 };
 
+// The single next-breaching metric `/views/{id}/execute` carries on each row's
+// partial ticket (measured, PR #387 spike 1).
+export const MOCK_VIEW_ROW_SLA = {
+  breach_at: '2099-12-15T17:00:00Z',
+  stage: 'active',
+  metric: 'requester_wait_time',
+  days: 59,
+};
+
 export const MOCK_VIEW = {
   id: 25,
   title: 'Unassigned tickets',
@@ -1055,7 +1064,7 @@ export const handlers = [
   http.get(`${BASE}/views/:id/execute`, ({ params }) =>
     HttpResponse.json({
       columns: [{ id: 'subject', title: 'Subject' }],
-      rows: [{ ticket: { id: MOCK_TICKET.id } }],
+      rows: [{ ticket: { id: MOCK_TICKET.id, sla_policy_metric: MOCK_VIEW_ROW_SLA } }],
       view: { id: Number(params['id']) },
       meta: { has_more: false, after_cursor: '' },
     }),

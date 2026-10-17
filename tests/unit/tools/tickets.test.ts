@@ -1992,6 +1992,42 @@ describe('ticket tools', () => {
       expect(text).toContain('Test ticket');
     });
 
+    it("shows each ticket's next SLA breach from the execute row, with no extra call", async () => {
+      const paths: string[] = [];
+      mswServer.events.on('request:start', ({ request }) => {
+        paths.push(new URL(request.url).pathname.replace('/api/v2', ''));
+      });
+      try {
+        const result = await findTool('get_view_tickets').handler({
+          view: MOCK_VIEW.id,
+          page_size: 100,
+        });
+        const text = firstText(result) ?? '';
+        expect(text).toContain(
+          '### SLA (next breach only)\n- **Next breach**: 2099-12-15T17:00:00Z\n- **requester_wait_time** — active; due 2099-12-15T17:00:00Z',
+        );
+        expect(paths).toEqual([`/views/${MOCK_VIEW.id}/execute`, '/tickets/show_many']);
+      } finally {
+        mswServer.events.removeAllListeners();
+      }
+    });
+
+    it('shows no SLA block for a row that carries no SLA metric', async () => {
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/views/:id/execute', () =>
+          HttpResponse.json({
+            rows: [{ ticket: { id: 1, sla_policy_metric: null } }],
+            meta: { has_more: false, after_cursor: '' },
+          }),
+        ),
+      );
+      const result = await findTool('get_view_tickets').handler({
+        view: MOCK_VIEW.id,
+        page_size: 100,
+      });
+      expect(firstText(result)).not.toContain('### SLA');
+    });
+
     it('accepts a numeric view id directly', async () => {
       const tool = findTool('get_view_tickets');
       const result = await tool.handler({ view: MOCK_VIEW.id, page_size: 100 });
