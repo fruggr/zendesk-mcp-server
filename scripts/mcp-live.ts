@@ -33,11 +33,10 @@
  *   pnpm tsx scripts/mcp-live.ts call get_current_user '{}' -- --mode all
  *   pnpm tsx scripts/mcp-live.ts read zendesk-hc://topology -- --mode all
  *
- * Auth: this server is OAuth 2.1 PKCE only, and the browser flow can't run
- * headless. So `list` / schema validation work credential-free, and a real
- * `call` or `read` reads a pre-obtained OAuth access token from
- * ZENDESK_OAUTH_TOKEN and sends it as a Bearer. Grab one via the normal OAuth
- * flow (e.g. in a local session) and export it before calling.
+ * Auth: `list` / schema validation work credential-free. A real `call` or
+ * `read` resolves the token itself (`live-auth.ts`): ZENDESK_OAUTH_TOKEN when
+ * set, else the token the stdio server persisted on its first sign-in. The
+ * caller never handles the token. (`--url` signs in to the HTTP server instead.)
  */
 import { createHash, randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -57,6 +56,7 @@ import { configDir } from '../src/auth/token-persistence';
 import { loadConfig, VALUE_FLAG_NAMES } from '../src/config';
 import { createMcpServer } from '../src/server';
 import { startStdioTransport } from '../src/transports/stdio';
+import { missingTokenHelp, resolveLiveSubdomain, resolveLiveToken } from './live-auth';
 
 const argv = process.argv.slice(2);
 const sep = argv.indexOf('--');
@@ -108,23 +108,18 @@ const hasPositionalSubdomain = configArgs.some((arg, i) => {
   return !(prev && VALUE_FLAG_NAMES.has(prev));
 });
 if (!process.env['ZENDESK_SUBDOMAIN'] && !hasPositionalSubdomain) {
-  process.env['ZENDESK_SUBDOMAIN'] = 'mcp-live-placeholder';
+  process.env['ZENDESK_SUBDOMAIN'] = resolveLiveSubdomain() ?? 'mcp-live-placeholder';
 }
 
 const config = loadConfig(configArgs);
 
-// OAuth is unusable headless, so a missing token only errors when a tool
-// actually tries to reach Zendesk — `list` and arg validation still work
-// without credentials. Throwing (rather than exiting) lets the MCP layer
-// surface a clean tool error instead of killing the process.
-const oauthToken = process.env['ZENDESK_OAUTH_TOKEN'];
-const getToken = (): string => {
-  if (oauthToken) return oauthToken;
-  throw new Error(
-    'Live calls need a Zendesk OAuth access token in ZENDESK_OAUTH_TOKEN ' +
-      '(the browser PKCE flow cannot run headless here). ' +
-      'Obtain one via the normal OAuth flow and export it, or use `list` which requires no token.',
-  );
+// Resolved lazily: `list` and arg validation never need a credential, so a
+// missing one only errors when a tool actually reaches Zendesk. Throwing (rather
+// than exiting) lets the MCP layer surface a clean tool error.
+const tokenSource = url ? undefined : resolveLiveToken(config.subdomain);
+const getToken = (): Promise<string> => {
+  if (tokenSource) return tokenSource.getToken();
+  return Promise.reject(new Error(missingTokenHelp(config.subdomain)));
 };
 
 // An in-process server over the same stdio entry the binary uses.
@@ -314,6 +309,7 @@ const main = async (): Promise<void> => {
   } finally {
     await client.close();
     await close();
+    tokenSource?.dispose();
   }
 };
 
