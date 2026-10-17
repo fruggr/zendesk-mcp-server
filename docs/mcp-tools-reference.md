@@ -7,7 +7,8 @@ proxies). See [Tool surface](../README.md#tool-surface) in the README for how
 modes and the `--namespace` / `--tool` filters shape the surface.
 
 The **Mode** column marks each tool as `read` or `write`; `--read-only` filters
-out every `write` tool before the proxies are built.
+out every `write` tool before the proxies are built. A `local write` changes only
+this server's own per-user settings, never Zendesk, so `--read-only` keeps it.
 
 <details>
 <summary><strong>Tickets</strong></summary>
@@ -126,6 +127,20 @@ deliberately cannot do.
 | Tool | Description | Mode |
 |------|-------------|------|
 | `search` | Unified search across tickets, users, and organizations | read |
+
+</details>
+
+<details>
+<summary><strong>Connector preferences</strong> (this server, not Zendesk)</summary>
+
+Per-user settings of this MCP server, stored by the server and never written to
+Zendesk. In `namespace` mode they sit behind the `connector_preferences` proxy,
+deliberately not `zendesk_`-prefixed. `--read-only` keeps them: it means "no
+Zendesk writes", and this namespace writes none.
+
+| Tool | Description | Mode |
+|------|-------------|------|
+| `configure_sla_alerts` | Read the SLA alert thresholds in force for you and where each comes from, or set your own per metric family (reply, wait) or reset them; turned off server-wide by `SLA_USER_PREFERENCES=off` | local write |
 
 </details>
 

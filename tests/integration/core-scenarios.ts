@@ -511,6 +511,30 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         expect(names).not.toContain('set_category_translation');
         // The read side of the same feature survives the filter.
         expect(names).toContain('find_translation_gaps');
+        // --read-only means "no Zendesk writes": the server's own preferences stay.
+        expect(names).toContain('configure_sla_alerts');
+      });
+
+      it('keeps the preferences proxy under --read-only without costing the Zendesk proxies their read-only hint', async () => {
+        connected = await harness.connect(makeConfig({ mode: 'namespace', readOnly: true }));
+        const { tools } = await connected.client.listTools();
+        const byName = new Map(tools.map((t) => [t.name, t]));
+        expect([...byName.keys()]).toEqual([
+          'zendesk_tickets',
+          'zendesk_help_center',
+          'zendesk_users',
+          'connector_preferences',
+        ]);
+        expect(byName.get('zendesk_tickets')?.annotations?.readOnlyHint).toBe(true);
+        expect(byName.get('zendesk_tickets')?.description).toMatch(/^\[RO\] /);
+        const prefs = byName.get('connector_preferences');
+        expect(prefs?.annotations).toEqual({
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        });
+        expect(prefs?.description).not.toMatch(/^\[RO\]/);
       });
     });
 

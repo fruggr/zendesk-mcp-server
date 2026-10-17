@@ -1,5 +1,6 @@
 import type { ToolContext, ToolDefinition } from './definitions';
 import { createHelpCenterTools } from './help-center';
+import { createPreferenceTools } from './preferences';
 import { createRequestTools } from './requests';
 import { createSearchTools } from './search';
 import { createTicketTools } from './tickets';
@@ -13,4 +14,5 @@ export const createAllTools = (ctx: ToolContext): ToolDefinition[] => [
   ...createSearchTools(ctx),
   ...createHelpCenterTools(ctx),
   ...createUserTools(ctx),
+  ...createPreferenceTools(ctx),
 ];

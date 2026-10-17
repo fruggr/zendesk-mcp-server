@@ -66,8 +66,9 @@ const runHandler = async (
 };
 
 // A proxy aggregates N sub-operations. Hints follow the safest plausible
-// reading: readOnly/idempotent only if EVERY op is, destructive as soon as
-// ANY op is. openWorld is always true (we always hit Zendesk).
+// reading: readOnly/idempotent only if EVERY op is, destructive and openWorld
+// as soon as ANY op is (every Zendesk op is open-world; only the preferences
+// namespace stays on this server).
 // Clients that never show annotations to the model get the `[RO]` description
 // prefix instead.
 export const aggregateAnnotations = (
@@ -76,7 +77,7 @@ export const aggregateAnnotations = (
   readOnlyHint: tools.every((t) => t.annotations.readOnlyHint),
   destructiveHint: tools.some((t) => t.annotations.destructiveHint),
   idempotentHint: tools.every((t) => t.annotations.idempotentHint),
-  openWorldHint: true,
+  openWorldHint: tools.some((t) => t.annotations.openWorldHint),
 });
 
 type ProxyDispatch = (args: Record<string, unknown>) => Promise<ToolResult>;
@@ -142,7 +143,13 @@ const registerProxyTool = (
     toolName,
     {
       title,
-      description: buildProxyDescription({ title, tools, readOnly: readOnlyMode }),
+      // `[RO]` only where the proxy really writes nothing: `--read-only` keeps
+      // the preferences proxy, which writes this server's own settings.
+      description: buildProxyDescription({
+        title,
+        tools,
+        readOnly: readOnlyMode && annotations.readOnlyHint,
+      }),
       inputSchema: z.object({
         operation: z.string().describe(buildOperationFieldDescription(tools)),
         params: z.record(z.string(), z.unknown()).default({}).describe(PARAMS_FIELD_DESCRIPTION),

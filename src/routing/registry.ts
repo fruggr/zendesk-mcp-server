@@ -48,4 +48,9 @@ export const NAMESPACE_LABELS: Record<Namespace, { toolName: string; title: stri
   help_center: { toolName: 'zendesk_help_center', title: 'Zendesk Help Center' },
   users: { toolName: 'zendesk_users', title: 'Zendesk Users' },
   requests: { toolName: 'zendesk_requests', title: 'Zendesk Requests' },
+  // Deliberately not `zendesk_`-prefixed: it configures this server, not Zendesk.
+  preferences: {
+    toolName: 'connector_preferences',
+    title: 'Connector preferences (this MCP server, not Zendesk)',
+  },
 };

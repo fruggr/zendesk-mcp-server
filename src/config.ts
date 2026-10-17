@@ -15,7 +15,8 @@ export type ToolMode = z.infer<typeof ToolMode>;
 export const LogLevel = z.enum(['debug', 'info', 'warn', 'error']);
 export type LogLevel = z.infer<typeof LogLevel>;
 
-export const Namespace = z.enum(['tickets', 'help_center', 'users', 'requests']);
+// `preferences` holds this server's own per-user settings, not Zendesk data.
+export const Namespace = z.enum(['tickets', 'help_center', 'users', 'requests', 'preferences']);
 export type Namespace = z.infer<typeof Namespace>;
 
 /**
@@ -28,7 +29,12 @@ export type Namespace = z.infer<typeof Namespace>;
  * every agent install would ship an operation that reports success on a no-op.
  * Secondarily, an agent's tool list and context budget stay unchanged.
  */
-export const DEFAULT_NAMESPACES: readonly Namespace[] = ['tickets', 'help_center', 'users'];
+export const DEFAULT_NAMESPACES: readonly Namespace[] = [
+  'tickets',
+  'help_center',
+  'users',
+  'preferences',
+];
 
 export const Transport = z.enum(['stdio', 'http']);
 export type Transport = z.infer<typeof Transport>;
@@ -206,6 +212,13 @@ export const ConfigSchema = z.object({
    * HTTP, `disk` on stdio so the stdio processes of one machine share it.
    */
   slaStateStore: z.enum(['memory', 'disk']).optional(),
+  /**
+   * Whether each user may set personal SLA alert thresholds with
+   * `configure_sla_alerts` (`SLA_USER_PREFERENCES=off` /
+   * `--no-sla-user-preferences` turn it off: the admin defaults then apply to
+   * everyone).
+   */
+  slaUserPreferences: z.boolean().default(true),
 });
 
 /** The store a config resolves to; see `slaStateStore`. */
@@ -245,6 +258,7 @@ interface CliResult {
   slaWaitThresholds?: string;
   slaCacheTtlSeconds?: string;
   slaStateStore?: string;
+  slaUserPreferences?: boolean;
 }
 
 // Number.parseInt('8080abc', 10) === 8080 — a numeric prefix passes silently, so
@@ -350,6 +364,7 @@ const CLI_OPTIONS = {
   dev: { type: 'boolean' },
   'print-tools': { type: 'boolean' },
   'no-sla-push': { type: 'boolean' },
+  'no-sla-user-preferences': { type: 'boolean' },
   'sla-reply-thresholds': { type: 'string' },
   'sla-wait-thresholds': { type: 'string' },
   'sla-cache-ttl-seconds': { type: 'string' },
@@ -397,6 +412,7 @@ const STANDALONE_EFFECTS = new Map<string, Partial<CliResult>>([
   ['print-tools', { printTools: true }],
   ['no-default-trusted-clients', { defaultTrustedClients: false }],
   ['no-sla-push', { slaPush: false }],
+  ['no-sla-user-preferences', { slaUserPreferences: false }],
 ]);
 
 // parseArgs throws only for a malformed invocation, so every error it raises is one.
@@ -615,6 +631,7 @@ const resolveSlaSettings = (cli: CliResult) => ({
     '--sla-cache-ttl-seconds',
   ),
   slaStateStore: cli.slaStateStore ?? requireNonEmptyEnv('SLA_STATE_STORE'),
+  slaUserPreferences: cli.slaUserPreferences ?? booleanEnv('SLA_USER_PREFERENCES'),
 });
 
 export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {

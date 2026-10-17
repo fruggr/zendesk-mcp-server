@@ -68,10 +68,12 @@ describe('groupByNamespace', () => {
     const hcCount = grouped.get('help_center')?.length ?? 0;
     const userCount = grouped.get('users')?.length ?? 0;
     const requestCount = grouped.get('requests')?.length ?? 0;
+    const preferenceCount = grouped.get('preferences')?.length ?? 0;
     expect(ticketCount).toBe(20); // 19 ticket tools + 1 search
     expect(hcCount).toBe(29);
     expect(userCount).toBe(5);
     expect(requestCount).toBe(7);
+    expect(preferenceCount).toBe(1);
   });
 });
 
@@ -85,6 +87,10 @@ describe('NAMESPACE_LABELS', () => {
       help_center: { toolName: 'zendesk_help_center', title: 'Zendesk Help Center' },
       users: { toolName: 'zendesk_users', title: 'Zendesk Users' },
       requests: { toolName: 'zendesk_requests', title: 'Zendesk Requests' },
+      preferences: {
+        toolName: 'connector_preferences',
+        title: 'Connector preferences (this MCP server, not Zendesk)',
+      },
     });
   });
 

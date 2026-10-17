@@ -242,9 +242,19 @@ describe('aggregateAnnotations', () => {
     expect(result.destructiveHint).toBe(true);
   });
 
-  it('always reports openWorldHint=true (this server always hits Zendesk)', () => {
-    const result = aggregateAnnotations([{ annotations: ann({ openWorldHint: false }) }]);
-    expect(result.openWorldHint).toBe(true);
+  it('reports openWorldHint as soon as one op reaches Zendesk', () => {
+    expect(
+      aggregateAnnotations([
+        { annotations: ann({ openWorldHint: false }) },
+        { annotations: ann({ openWorldHint: true }) },
+      ]).openWorldHint,
+    ).toBe(true);
+  });
+
+  it('reports a closed world when no op leaves this server (preferences)', () => {
+    expect(
+      aggregateAnnotations([{ annotations: ann({ openWorldHint: false }) }]).openWorldHint,
+    ).toBe(false);
   });
 
   it('drops idempotentHint as soon as one op is non-idempotent', () => {
@@ -261,7 +271,7 @@ describe('aggregateAnnotations', () => {
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
-      openWorldHint: true,
+      openWorldHint: false,
     });
   });
 });
