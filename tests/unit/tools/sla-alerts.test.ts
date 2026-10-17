@@ -1,8 +1,9 @@
 import { HttpResponse, http } from 'msw';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ToolCallContext } from '../../../src/tools/definitions';
-import { createSlaAlertTools, MAX_ALERT_LINES } from '../../../src/tools/sla-alerts';
+import { createSlaAlertTools } from '../../../src/tools/sla-alerts';
 import { isInputRequiredError } from '../../../src/utils/elicitation';
+import { MAX_ALERT_LINES } from '../../../src/utils/sla-alerts-check';
 import type { SlaService } from '../../../src/utils/sla-service';
 import { MOCK_TICKET, MOCK_VIEW } from '../../msw-handlers';
 import { mswServer } from '../../setup';

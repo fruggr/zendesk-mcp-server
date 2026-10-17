@@ -34,6 +34,7 @@ const LOAD_CONFIG_ENV = [
   'SLA_CACHE_TTL_SECONDS',
   'SLA_STATE_STORE',
   'SLA_USER_PREFERENCES',
+  'SLA_POLL_SECONDS',
 ] as const;
 
 const clearLoadConfigEnv = (): void => {
@@ -646,7 +647,7 @@ describe('loadConfig', () => {
 
     it('covers every value-taking flag declared in CLI_OPTIONS', () => {
       // Guards the parametrised cases below against silently shrinking to zero.
-      expect(valueFlags).toHaveLength(19);
+      expect(valueFlags).toHaveLength(20);
     });
 
     it.each(valueFlags)('rejects %s as the last argument (value forgotten)', (flag) => {
@@ -1271,6 +1272,18 @@ describe('SLA settings', () => {
     );
     expect(startupMessage(['--sla-cache-ttl-seconds', '1m'])).toBe(
       `Invalid --sla-cache-ttl-seconds value. Expected a whole number of seconds. See ${STARTUP_DOCS.invocation}`,
+    );
+  });
+
+  it('polls subscriptions every 300 seconds by default, never under 60', () => {
+    expect(loadConfig(['mycompany']).slaPollSeconds).toBe(300);
+    process.env['SLA_POLL_SECONDS'] = '60';
+    expect(loadConfig(['mycompany']).slaPollSeconds).toBe(60);
+    expect(loadConfig(['mycompany', '--sla-poll-seconds', '90']).slaPollSeconds).toBe(90);
+    process.env['SLA_POLL_SECONDS'] = '59';
+    expect(startupMessage([])).toContain('slaPollSeconds');
+    expect(startupMessage(['--sla-poll-seconds', '5m'])).toBe(
+      `Invalid --sla-poll-seconds value. Expected a whole number of seconds. See ${STARTUP_DOCS.invocation}`,
     );
   });
 

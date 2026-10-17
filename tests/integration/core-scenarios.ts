@@ -6,6 +6,7 @@ import {
   MOCK_BRAND_SECOND,
   MOCK_BRAND_THIRD,
   MOCK_PROMOTED_ARTICLE,
+  MOCK_TICKET,
   promotedArticlesHandler,
 } from '../msw-handlers';
 import { mswServer } from '../setup';
@@ -62,11 +63,21 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
       });
 
       it('omits instructions and the resource when help_center is filtered out', async () => {
+        connected = await harness.connect(makeConfig({ mode: 'namespace', namespaces: ['users'] }));
+        expect(connected.client.getInstructions()).toBeUndefined();
+        expect(connected.client.getServerCapabilities()?.resources).toBeUndefined();
+      });
+
+      it('keeps only the SLA alert resources when tickets is the one namespace', async () => {
         connected = await harness.connect(
           makeConfig({ mode: 'namespace', namespaces: ['tickets'] }),
         );
-        expect(connected.client.getInstructions()).toBeUndefined();
-        expect(connected.client.getServerCapabilities()?.resources).toBeUndefined();
+        const { resourceTemplates } = await connected.client.listResourceTemplates();
+        expect(resourceTemplates.map((t) => t.uriTemplate)).toEqual([
+          'zendesk-sla://alerts/{scope}',
+          'zendesk-sla://alerts/views/{view}',
+          'zendesk-sla://alerts{?query}',
+        ]);
       });
 
       it('omits instructions and the topology resource when topology is disabled', async () => {
@@ -983,6 +994,53 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         expect(await searchText(true)).toContain(
           '- **Urgency**: CRITICAL — requester_wait_time due in 1h37m',
         );
+      });
+
+      it('notifies a subscriber when an alert set changes', async () => {
+        // The poll timer is faked too; the transports keep their real setTimeout.
+        vi.useRealTimers();
+        vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+        vi.setSystemTime(new Date('2099-06-18T20:00:00Z'));
+        // A cache shorter than the poll, as in production (60s against 300s).
+        connected = await harness.connect(
+          makeConfig({ mode: 'namespace', slaPollSeconds: 60, slaCacheTtlSeconds: 30 }),
+        );
+        const updates: string[] = [];
+        connected.client.setNotificationHandler('notifications/resources/updated', (n) => {
+          updates.push(n.params.uri);
+        });
+        let searches = 0;
+        mswServer.events.on('request:start', ({ request }) => {
+          if (new URL(request.url).pathname.endsWith('/search')) searches += 1;
+        });
+        await connected.client.subscribeResource({ uri: 'zendesk-sla://alerts/mine' });
+        // The subscription takes its baseline first.
+        await vi.waitFor(() => expect(searches).toBe(1));
+        // The CRITICAL metric is now reported breached: the alert set changed.
+        mswServer.use(
+          http.get('https://testsubdomain.zendesk.com/api/v2/search', () =>
+            HttpResponse.json({
+              results: [
+                {
+                  ...MOCK_TICKET,
+                  slas: {
+                    policy_metrics: [
+                      {
+                        metric: 'requester_wait_time',
+                        stage: 'active',
+                        breach_at: '2099-06-18T19:00:00Z',
+                      },
+                    ],
+                  },
+                },
+              ],
+              count: 1,
+            }),
+          ),
+        );
+        await vi.advanceTimersByTimeAsync(60_000);
+        await vi.waitFor(() => expect(searches).toBe(2));
+        await vi.waitFor(() => expect(updates).toEqual(['zendesk-sla://alerts/mine']));
       });
 
       it('pushes no urgency line under --no-sla-push, and keeps the SLA block', async () => {

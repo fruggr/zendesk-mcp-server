@@ -5,8 +5,10 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 import { createBrandSubdomainResolver } from '../client/brands';
 import type { Config } from '../config';
-import { createServerShell, registerToolset } from '../server';
+import { slaAlertsEnabled } from '../guidance/instructions';
+import { createServerShell, installAlertSubscriptions, registerToolset } from '../server';
 import { createAllTools, type ToolContext, type ToolDefinition } from '../tools/index';
+import { createAlertsReader } from '../tools/sla-alerts';
 import { startStdioTransport } from '../transports/stdio';
 import { type Logger, silentLogger } from '../utils/logger';
 import {
@@ -88,7 +90,11 @@ export const createReloadableServer = (
     getToken,
     sla: createSlaService(config, slaRuntime, createUserIdResolver(config.subdomain, getToken)),
   };
-  const params = { config, getToken, resolveBrandSubdomain, onUnauthorized, logger };
+  const params = { config, getToken, resolveBrandSubdomain, onUnauthorized, logger, sla: ctx.sla };
+  // Subscriptions belong to the long-lived shell, not to a tool generation.
+  if (config.slaPush && slaAlertsEnabled(config)) {
+    installAlertSubscriptions(server, config, createAlertsReader(ctx), logger);
+  }
 
   // The last generation registered successfully — both the handle (to dispose)
   // and its definitions (to restore if a reload's re-registration fails).

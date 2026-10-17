@@ -3,7 +3,7 @@ import * as z from 'zod/v4';
 import { zendeskGet } from '../client/zendesk-api';
 import { parseDuration } from '../utils/durations';
 import { inputRequiredError } from '../utils/elicitation';
-import { renderAlerts, selectAlerts } from '../utils/sla-alerts';
+import { checkAlerts, thresholdsSource } from '../utils/sla-alerts-check';
 import {
   ALERTS_ELICITATION_KEY,
   buildAlertsElicitation,
@@ -15,20 +15,11 @@ import {
   describeEffectiveThresholds,
   type SlaPreferences,
 } from '../utils/sla-preferences';
-import {
-  fetchScope,
-  type NamedScope,
-  type SlaScope,
-  scopeKey,
-  scopeLabel,
-} from '../utils/sla-scope';
+import { parseAlertsUri } from '../utils/sla-resource';
+import type { NamedScope, SlaScope } from '../utils/sla-scope';
 import type { SlaService } from '../utils/sla-service';
-import { describeThresholds } from '../utils/sla-thresholds';
 import type { ToolCallContext, ToolContext, ToolDefinition } from './definitions';
 import { resolveViewId } from './tickets';
-
-/** Alert lines listed before the rest are only counted. */
-export const MAX_ALERT_LINES = 100;
 
 const DURATION_HINT = 'A readable duration: 30m, 4h, 2d, 1w, or a mix like 1d4h.';
 
@@ -46,18 +37,6 @@ interface AlertParams {
   warning?: string;
   critical?: string;
 }
-
-const thresholdsSource = (
-  sla: SlaService,
-  prefs: SlaPreferences | undefined,
-  overridden: boolean,
-): string => {
-  if (overridden) return 'overridden for this call';
-  if (!sla.userPreferencesAllowed) return 'server default';
-  return prefs?.reply || prefs?.wait
-    ? 'yours; change them with configure_sla_alerts'
-    : 'server default; set your own with configure_sla_alerts';
-};
 
 const parseWithin = (within: string | undefined): number | undefined => {
   if (within === undefined) return undefined;
@@ -218,30 +197,63 @@ export const createSlaAlertTools = (ctx: ToolContext): ToolDefinition[] => {
           }
           scope = { kind: 'view', viewId: resolved.id };
         }
-        const target = scope;
-        const snapshot = await sla.cached(scopeKey(target), () =>
-          fetchScope(
-            target,
-            (path, query) => zendeskGet(subdomain, token, path, query),
-            sla.userId,
+        const { text } = await checkAlerts({
+          sla,
+          get: (path, query) => zendeskGet(subdomain, token, path, query),
+          target: scope,
+          thresholds: override.thresholds,
+          source: thresholdsSource(
+            sla,
+            prefs,
+            params.warning !== undefined || params.critical !== undefined,
           ),
-        );
-        const overridden = params.warning !== undefined || params.critical !== undefined;
-        const alerts = selectAlerts(snapshot.tickets, override.thresholds, Date.now(), {
-          withinMinutes,
-          includeBreached: params.include_breached,
-        });
-        const text = renderAlerts(alerts, {
-          scopeLabel: scopeLabel(target),
-          checked: snapshot.tickets.length,
-          truncated: snapshot.truncated,
-          unread: snapshot.unread,
-          thresholds: `${describeThresholds(override.thresholds)} (${thresholdsSource(sla, prefs, overridden)})`,
+          filter: { withinMinutes, includeBreached: params.include_breached },
           notes,
-          maxLines: MAX_ALERT_LINES,
         });
         return { content: [{ type: 'text', text }] };
       },
     },
   ];
 };
+
+/**
+ * Reads the alert resources (`zendesk-sla://alerts/...`) with the caller's
+ * token and thresholds, rendered like list_sla_alerts with its defaults. The
+ * poller asks it for the fingerprint only.
+ */
+export const createAlertsReader = (ctx: ToolContext) => {
+  const evaluate = async (uri: string) => {
+    const sla = requireSla(ctx.sla);
+    const target = parseAlertsUri(uri);
+    if (!target) throw new Error(`Not an SLA alert resource: ${uri}`);
+    const token = await ctx.getToken();
+    let scope: SlaScope;
+    if (target.kind === 'view') {
+      const resolved = await resolveViewId(ctx.subdomain, token, target.view);
+      if ('available' in resolved) {
+        throw new Error(
+          `No active view matches "${target.view}". Available views: ${resolved.available.join(', ') || 'none'}.`,
+        );
+      }
+      scope = { kind: 'view', viewId: resolved.id };
+    } else {
+      scope = target;
+    }
+    const prefs = sla.userPreferencesAllowed ? await sla.preferences() : undefined;
+    return checkAlerts({
+      sla,
+      get: (path, query) => zendeskGet(ctx.subdomain, token, path, query),
+      target: scope,
+      thresholds: await sla.thresholds(),
+      source: thresholdsSource(sla, prefs, false),
+      filter: { includeBreached: true },
+      notes: [],
+    });
+  };
+  return {
+    read: async (uri: string): Promise<string> => (await evaluate(uri)).text,
+    fingerprint: async (uri: string): Promise<string> => (await evaluate(uri)).fingerprint,
+  };
+};
+
+export type AlertsReader = ReturnType<typeof createAlertsReader>;
