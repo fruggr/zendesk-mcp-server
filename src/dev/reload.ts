@@ -3,9 +3,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
-import { createBrandSubdomainResolver } from '../client/brands';
 import type { Config } from '../config';
-import { createServerShell, registerToolset } from '../server';
+import { createServerCaches, createServerShell, registerToolset } from '../server';
 import { createAllTools, type ToolContext, type ToolDefinition } from '../tools/index';
 import { startStdioTransport } from '../transports/stdio';
 import { type Logger, silentLogger } from '../utils/logger';
@@ -69,16 +68,16 @@ export const createReloadableServer = (
   loadTools: (ctx: ToolContext) => Promise<ToolDefinition[]> = loadFreshTools,
 ): { server: McpServer; reload: () => Promise<number> } => {
   const server = createServerShell(config, logger);
-  // ONE shared resolver across every reload generation: tools and the
+  // ONE set of caches across every reload generation: tools and the
   // topology/article resources resolve against the same cached brand list.
-  const resolveBrandSubdomain = createBrandSubdomainResolver(config.subdomain, getToken);
+  const caches = createServerCaches(config, getToken, onUnauthorized);
   const ctx: ToolContext = {
     subdomain: config.subdomain,
     brandIds: config.brandIds,
-    resolveBrandSubdomain,
+    resolveBrandSubdomain: caches.resolveBrandSubdomain,
     getToken,
   };
-  const params = { config, getToken, resolveBrandSubdomain, onUnauthorized, logger };
+  const params = { config, getToken, caches, onUnauthorized, logger };
 
   // The last generation registered successfully — both the handle (to dispose)
   // and its definitions (to restore if a reload's re-registration fails).
