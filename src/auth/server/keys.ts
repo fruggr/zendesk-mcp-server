@@ -8,7 +8,7 @@ import {
 import type { JWK } from 'jose';
 
 /**
- * The four keys the authorization server needs, all derived from one master
+ * The keys the authorization server and the MCP endpoint need, all derived from one master
  * secret. Why one secret, and why HKDF: `docs/decisions/oauth-authorization-server.md`
  * ("Keys and secrets").
  */
@@ -21,6 +21,8 @@ export interface KeySet {
   readonly atRest: { readonly kid: string; readonly key: KeyObject };
   /** Keygrip HMAC key for `oidc-provider`'s `cookies.keys`. */
   readonly cookieKey: string;
+  /** HMAC key of the MCP `requestState` codec (`utils/request-state.ts`). */
+  readonly requestState: Buffer;
 }
 
 /** Newest first: the first set signs and encrypts, every set verifies and decrypts. */
@@ -83,6 +85,7 @@ export const deriveKeySet = (master: Buffer): KeySet => {
     },
     atRest: { kid: kidFor(master, 'at-rest'), key: createSecretKey(derive(master, 'at-rest')) },
     cookieKey: derive(master, 'cookie').toString('base64url'),
+    requestState: derive(master, 'request-state'),
   };
 };
 

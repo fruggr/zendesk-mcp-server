@@ -16,6 +16,7 @@ import type { Fetch } from '../auth/server/trusted-clients';
 import type { Config } from '../config';
 import { createMcpServer } from '../server';
 import { type Logger, silentLogger } from '../utils/logger';
+import { createRequestStateCodec } from '../utils/request-state';
 
 const WILDCARD_HOSTS = new Set(['0.0.0.0', '::', '*']);
 const TRAILING_SLASHES = /\/+$/;
@@ -432,6 +433,12 @@ export const startHttpTransport = async (
       () => auth.zendeskToken,
       logger,
       () => void as.revokeGrant(auth.grantId),
+      {
+        requestStateCodec: createRequestStateCodec({
+          key: as.requestStateKey,
+          principal: () => auth.grantId,
+        }),
+      },
     );
     const transport = new NodeStreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),

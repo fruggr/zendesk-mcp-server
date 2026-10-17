@@ -1,4 +1,4 @@
-import { McpServer, ResourceTemplate } from '@modelcontextprotocol/server';
+import { McpServer, type RequestStateCodec, ResourceTemplate } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 import { type BrandSubdomainResolver, createBrandSubdomainResolver } from './client/brands';
 import { ZendeskApiError } from './client/zendesk-api';
@@ -29,6 +29,7 @@ import { resolveBrand } from './tools/help-center';
 import { createAllTools, type ToolDefinition } from './tools/index';
 import { type Logger, silentLogger } from './utils/logger';
 import { readPackageInfo } from './utils/package-info';
+import { createRequestStateCodec } from './utils/request-state';
 import { createStrictParamsParser, toStrictStandardSchema } from './utils/validation';
 
 /**
@@ -152,7 +153,11 @@ const registerProxyTool = (
  * (`dev/reload.ts`) can keep this long-lived shell (and its transport/session)
  * alive while swapping the toolset underneath it via `registerToolset`.
  */
-export const createServerShell = (config: Config): McpServer => {
+export const createServerShell = (
+  config: Config,
+  // Every server verifies echoed `requestState`; see utils/request-state.ts.
+  requestStateCodec: RequestStateCodec = createRequestStateCodec({}),
+): McpServer => {
   // Read name/version from package.json at runtime rather than hardcoding them
   // (the old literals were stale and even carried the wrong package name).
   const pkg = readPackageInfo();
@@ -165,7 +170,10 @@ export const createServerShell = (config: Config): McpServer => {
   // (exactOptionalPropertyTypes).
   return new McpServer(
     { name: pkg.name, version: pkg.version },
-    instructions ? { instructions } : {},
+    {
+      ...(instructions ? { instructions } : {}),
+      requestState: { verify: (state, ctx) => requestStateCodec.verify(state, ctx) },
+    },
   );
 };
 
@@ -489,9 +497,11 @@ export const registerToolset = (
   return { count: filteredTools.length, dispose };
 };
 
-export interface McpServerOptions {
+export interface CreateMcpServerOptions {
   /** Caches kept by the caller across servers; built per server when omitted. */
   caches?: ServerCaches;
+  /** Built by the transport, which knows the key and the principal; a random-key one otherwise. */
+  requestStateCodec?: RequestStateCodec;
 }
 
 export const createMcpServer = (
@@ -499,9 +509,12 @@ export const createMcpServer = (
   getToken: () => string | Promise<string>,
   logger: Logger = silentLogger,
   onUnauthorized?: () => void,
-  { caches = createServerCaches(config, getToken, onUnauthorized) }: McpServerOptions = {},
+  {
+    caches = createServerCaches(config, getToken, onUnauthorized),
+    requestStateCodec,
+  }: CreateMcpServerOptions = {},
 ): McpServer => {
-  const server = createServerShell(config);
+  const server = createServerShell(config, requestStateCodec);
   const tools = createAllTools({
     subdomain: config.subdomain,
     brandIds: config.brandIds,
@@ -523,6 +536,7 @@ export interface ServerBuildContext {
   logger: Logger;
   onUnauthorized?: () => void;
   caches?: ServerCaches;
+  requestStateCodec: RequestStateCodec;
   /**
    * Announces that a resource changed, to whoever listens to it on this
    * connection, session or grant. The URI is the whole payload, and a listen
@@ -540,4 +554,9 @@ export const defaultServerFactory: ServerFactory = ({
   logger,
   onUnauthorized,
   caches,
-}) => createMcpServer(config, getToken, logger, onUnauthorized, caches ? { caches } : {});
+  requestStateCodec,
+}) =>
+  createMcpServer(config, getToken, logger, onUnauthorized, {
+    ...(caches ? { caches } : {}),
+    requestStateCodec,
+  });

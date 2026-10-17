@@ -106,6 +106,10 @@ const faultyStore = () => {
 };
 
 describe('createAuthorizationServer', () => {
+  it('hands the MCP endpoint the requestState key of the newest secret', () => {
+    expect(build(createMemoryStore()).requestStateKey).toEqual(RING[0].requestState);
+  });
+
   it('names the resource after the issuer', () => {
     const as = build(createMemoryStore());
     expect(as.resource).toBe('https://mcp.example.com/mcp');

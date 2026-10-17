@@ -48,6 +48,8 @@ export interface AuthorizationServer {
   verifyAccessToken(bearer: string): Promise<VerifiedAccessToken | undefined>;
   /** Zendesk refused this grant's token: end the grant so the client signs in again. */
   revokeGrant(grantId: string): Promise<void>;
+  /** HMAC key the MCP endpoint's `requestState` codec signs with (newest secret). */
+  readonly requestStateKey: Uint8Array;
 }
 
 export interface AuthorizationServerOptions {
@@ -184,6 +186,7 @@ export const createAuthorizationServer = (
   return {
     issuer,
     resource,
+    requestStateKey: ring[0].requestState,
     protectedResourceMetadata: {
       resource,
       authorization_servers: [issuer],

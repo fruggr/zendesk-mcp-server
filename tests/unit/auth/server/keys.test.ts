@@ -48,6 +48,7 @@ describe('deriveKeySet', () => {
     expect(a.accessToken.key.export()).toEqual(b.accessToken.key.export());
     expect(a.atRest.key.export()).toEqual(b.atRest.key.export());
     expect(a.cookieKey).toBe(b.cookieKey);
+    expect(a.requestState).toEqual(b.requestState);
   });
 
   it('separates purposes: no two derived keys share material or kid', () => {
@@ -57,8 +58,9 @@ describe('deriveKeySet', () => {
       set.accessToken.key.export().toString('base64url'),
       set.atRest.key.export().toString('base64url'),
       set.cookieKey,
+      set.requestState.toString('base64url'),
     ];
-    expect(new Set(materials).size).toBe(4);
+    expect(new Set(materials).size).toBe(5);
     expect(new Set([set.signingJwk.kid, set.accessToken.kid, set.atRest.kid]).size).toBe(3);
   });
 
@@ -103,6 +105,7 @@ describe('deriveKeySet', () => {
       },
       atRest: { kid: set.atRest.kid, key: set.atRest.key.export().toString('base64url') },
       cookieKey: set.cookieKey,
+      requestState: set.requestState.toString('base64url'),
     }).toMatchInlineSnapshot(`
       {
         "accessToken": {
@@ -114,6 +117,7 @@ describe('deriveKeySet', () => {
           "kid": "vNprDu0_nz9j5y2L",
         },
         "cookieKey": "7Mr9-IiAKbb_LlDI70DITQIBBpmJOa5RVWDplX7HBDA",
+        "requestState": "OWyEAF1EnORjnmMCKzkyimJBp8TjlL8IYEdWWxhApGI",
         "signingJwk": {
           "alg": "EdDSA",
           "crv": "Ed25519",
@@ -132,6 +136,7 @@ describe('deriveKeySet', () => {
     expect(set.accessToken.key.symmetricKeySize).toBe(32);
     expect(set.atRest.key.symmetricKeySize).toBe(32);
     expect(Buffer.from(set.cookieKey, 'base64url')).toHaveLength(32);
+    expect(set.requestState).toHaveLength(32);
   });
 });
 
