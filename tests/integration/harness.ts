@@ -1,4 +1,4 @@
-import type { Client } from '@modelcontextprotocol/client';
+import type { Client, ClientOptions } from '@modelcontextprotocol/client';
 import { type Config, ConfigSchema } from '../../src/config';
 
 /**
@@ -18,6 +18,15 @@ export interface ConnectedClient {
   baseUrl?: string;
   close(): Promise<void>;
 }
+
+/** Protocol era a harness negotiates: the 2025 revisions or 2026-07-28. */
+export type Era = '2025' | '2026';
+
+export const MODERN_REVISION = '2026-07-28';
+
+/** Client options pinning `era`: 2025 is the SDK client's default (`legacy`). */
+export const clientOptionsFor = (era: Era): ClientOptions =>
+  era === '2026' ? { versionNegotiation: { mode: { pin: MODERN_REVISION } } } : {};
 
 /**
  * Transport-agnostic seam for the integration suite. Each transport (stdio,

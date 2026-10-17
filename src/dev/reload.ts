@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import type { McpServer } from '@modelcontextprotocol/server';
+import type { McpServer, RequestStateCodec } from '@modelcontextprotocol/server';
+import type { StdioServerHandle } from '@modelcontextprotocol/server/stdio';
 import * as z from 'zod/v4';
 import type { Config } from '../config';
 import { createServerCaches, createServerShell, registerToolset } from '../server';
@@ -66,8 +67,9 @@ export const createReloadableServer = (
   // re-importing the leaf modules from disk; tests inject a stub to drive the
   // re-registration failure/rollback path deterministically.
   loadTools: (ctx: ToolContext) => Promise<ToolDefinition[]> = loadFreshTools,
+  requestStateCodec?: RequestStateCodec,
 ): { server: McpServer; reload: () => Promise<number> } => {
-  const server = createServerShell(config);
+  const server = createServerShell(config, requestStateCodec);
   // ONE set of caches across every reload generation: tools and the
   // topology/article resources resolve against the same cached brand list.
   const caches = createServerCaches(config, getToken, onUnauthorized);
@@ -138,7 +140,7 @@ export const registerReloadTool = (
     {
       title: 'Reload tools from source (dev)',
       description:
-        'Dev only. Re-imports the Zendesk tool modules from source and re-registers them on this live session, so tool code you just edited takes effect without restarting the server or reconnecting the client. Call it once at the end of an edit cycle, before testing your changes; the refreshed tool list is announced via tools/list_changed. Only the tool modules (tickets, search, help_center, users) are reloaded — edits to shared infrastructure (HTTP client, shared definitions, server wiring) still require a full restart. Takes no arguments and makes no Zendesk API calls.',
+        'Dev only. Re-imports the Zendesk tool modules from source and re-registers them on this live session, so tool code you just edited takes effect without restarting the server or reconnecting the client. Call it once at the end of an edit cycle, before testing your changes; the refreshed tool list is announced via tools/list_changed (a client on the 2026-07-28 revision receives it only on an open subscriptions/listen stream; otherwise call tools/list again). Only the tool modules (tickets, search, help_center, users) are reloaded — edits to shared infrastructure (HTTP client, shared definitions, server wiring) still require a full restart. Takes no arguments and makes no Zendesk API calls.',
       inputSchema: z.object({}).strict(),
       annotations: {
         readOnlyHint: false,
@@ -155,7 +157,7 @@ export const registerReloadTool = (
           content: [
             {
               type: 'text' as const,
-              text: `Reloaded ${count} tool(s) from source. The updated tool list is now live (tools/list_changed sent).`,
+              text: `Reloaded ${count} tool(s) from source. The updated tool list is now live (tools/list_changed sent; if your client did not receive it, call tools/list again).`,
             },
           ],
         };
@@ -179,25 +181,34 @@ export const registerReloadTool = (
 /**
  * Start the stdio server in dev mode: the normal toolset plus a persistent
  * `reload_tools` tool that hot-reloads edited tool code on demand. stdio only —
- * HTTP builds a per-session server per request, so there is no long-lived
+ * HTTP builds a server per session or per request, so there is no long-lived
  * server to hot-swap.
  *
- * Returns the running server so the caller can close it on shutdown: dev mode
+ * Returns the transport handle so the caller can close it on shutdown: dev mode
  * runs over the same stdio transport as normal mode and must exit the same way
  * when the client disconnects.
  */
 /* v8 ignore start -- runtime bootstrap: binds the reload tool to a real stdio
    transport; the reload machinery it wires up is covered by dev-reload.test.ts */
-export const startDevServer = async (
+export const startDevServer = (
   config: Config,
   getToken: () => string | Promise<string>,
   logger: Logger = silentLogger,
   onUnauthorized?: () => void,
-): Promise<McpServer> => {
-  const { server, reload } = createReloadableServer(config, getToken, logger, onUnauthorized);
-  registerReloadTool(server, reload, logger);
-  await startStdioTransport(server, logger);
+): StdioServerHandle => {
+  const handle = startStdioTransport(({ requestStateCodec }) => {
+    const { server, reload } = createReloadableServer(
+      config,
+      getToken,
+      logger,
+      onUnauthorized,
+      loadFreshTools,
+      requestStateCodec,
+    );
+    registerReloadTool(server, reload, logger);
+    return server;
+  }, logger);
   logger.info('dev_mode_enabled');
-  return server;
+  return handle;
 };
 /* v8 ignore stop */

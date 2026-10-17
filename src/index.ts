@@ -3,12 +3,12 @@
 // docs/decisions/zod-compile.md.
 import 'zod/compile';
 
-import type { McpServer } from '@modelcontextprotocol/server';
+import type { StdioServerHandle } from '@modelcontextprotocol/server/stdio';
 import type { Config } from './config';
 import { loadConfig } from './config';
 import { startDevServer } from './dev/reload';
 import { renderToolSurface } from './routing/print';
-import { createMcpServer } from './server';
+import { defaultServerFactory } from './server';
 import { createAllTools } from './tools/index';
 import { startStdioTransport } from './transports/stdio';
 import { createLogger, type Logger } from './utils/logger';
@@ -34,20 +34,27 @@ const buildStdioTokenStore = async (config: Config, logger: Logger): Promise<Std
   );
 };
 
-// Both stdio paths end with a server already connected to its transport; dev
-// mode wires `reload_tools` and connects on its own. Returning the server is
-// what lets the caller close it on shutdown.
-const connectStdio = async (
+// Both stdio paths end with the transport serving; dev mode builds its servers
+// with `reload_tools`. The handle is what lets the caller close it on shutdown.
+const connectStdio = (
   config: Config,
   tokenStore: StdioTokenStore,
   logger: Logger,
-): Promise<McpServer> => {
+): StdioServerHandle => {
   if (config.dev) {
     return startDevServer(config, tokenStore.getToken, logger, tokenStore.invalidate);
   }
-  const server = createMcpServer(config, tokenStore.getToken, logger, tokenStore.invalidate);
-  await startStdioTransport(server, logger);
-  return server;
+  return startStdioTransport(
+    (extras) =>
+      defaultServerFactory({
+        config,
+        getToken: tokenStore.getToken,
+        logger,
+        onUnauthorized: tokenStore.invalidate,
+        ...extras,
+      }),
+    logger,
+  );
 };
 
 const main = async (): Promise<void> => {
@@ -74,7 +81,7 @@ const main = async (): Promise<void> => {
 
   if (config.transport === 'stdio') {
     const tokenStore = await buildStdioTokenStore(config, logger);
-    const server = await connectStdio(config, tokenStore, logger);
+    const stdio = connectStdio(config, tokenStore, logger);
 
     // Installed *after* the transport is connected: the SDK's stdin `data`
     // listener is what puts stdin in flowing mode, and `end` only fires there.
@@ -82,7 +89,7 @@ const main = async (): Promise<void> => {
       watchStdin: true,
       logger,
       cleanup: async () => {
-        await server.close();
+        await stdio.close();
         tokenStore.dispose();
       },
     });
