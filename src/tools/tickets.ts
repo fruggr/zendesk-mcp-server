@@ -29,6 +29,7 @@ import type {
   ZendeskTicket,
   ZendeskTicketAttachment,
   ZendeskTicketField,
+  ZendeskTicketMetric,
   ZendeskUser,
   ZendeskView,
   ZendeskViewCount,
@@ -63,6 +64,7 @@ import {
   PAGE_DESC,
   PER_PAGE_DESC,
 } from '../utils/pagination';
+import { formatTicketMetrics } from '../utils/ticket-metrics';
 import {
   type AttachmentInput,
   attachmentsParam,
@@ -1700,6 +1702,53 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         const meta = extractOffsetPaginationMeta(response, policies.length, per_page, page);
         return {
           content: [{ type: 'text', text: formatList(policies, formatSlaPolicy, meta) }],
+        };
+      },
+    },
+    {
+      name: 'get_ticket_metrics',
+      namespace: 'tickets',
+      readOnly: true,
+      title: 'Get Ticket Metrics',
+      description:
+        'Read the elapsed-time metrics (reply, resolution, wait and on-hold times, reopens, replies) of up to 100 tickets in one call. Each ticket gets first reply, first and full resolution, agent wait, requester wait and on-hold times in calendar and business minutes, plus reopen, reply, assignee-station and group-station counts and the key timestamps (assigned, solved, latest comment). These are facts Zendesk records on every ticket, so they are available even on tickets no SLA policy covers; they say how long things took, not how long is left — for the live breach countdown use get_ticket or search_tickets. A duration still running reads "not reached yet". Read-only; tickets the caller cannot see are reported as such rather than failing the call.',
+      inputSchema: z.object({
+        ticket_ids: z
+          .array(z.number().int().positive())
+          .min(1)
+          .max(MAX_PAGE_SIZE)
+          .describe(
+            'Ticket IDs to read metrics for, 1 to 100 numeric ids (duplicates are read once), as returned by search_tickets, list_tickets or get_view_tickets. The answer keeps this order.',
+          ),
+      }),
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+      handler: async (params) => {
+        const ids = [...new Set((params as { ticket_ids: number[] }).ticket_ids)];
+        const token = await getToken();
+        const response = await zendeskGet<{
+          tickets?: ZendeskTicket[];
+          metric_sets?: ZendeskTicketMetric[];
+        }>(subdomain, token, '/tickets/show_many', {
+          ids: ids.join(','),
+          include: 'metric_sets',
+        });
+        const tickets = new Map((response.tickets ?? []).map((t) => [t.id, t]));
+        const metrics = new Map((response.metric_sets ?? []).map((m) => [m.ticket_id, m]));
+        const text = ids
+          .map((id) => formatTicketMetrics(id, tickets.get(id), metrics.get(id)))
+          .join('\n\n');
+        return {
+          content: [
+            {
+              type: 'text',
+              text: truncateIfNeeded(text, 'Pass fewer ticket_ids per call.'),
+            },
+          ],
         };
       },
     },

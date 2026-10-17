@@ -52,9 +52,9 @@ const captureShowMany = (): URLSearchParams[] => {
 };
 
 describe('ticket tools', () => {
-  it('creates 18 tools (search_tickets lives here; the unified search is elsewhere)', () => {
+  it('creates 19 tools (search_tickets lives here; the unified search is elsewhere)', () => {
     const tools = createTicketTools(ctx);
-    expect(tools).toHaveLength(18);
+    expect(tools).toHaveLength(19);
   });
 
   describe('get_ticket', () => {
@@ -1259,6 +1259,56 @@ describe('ticket tools', () => {
       );
       expect(error.message).toMatch(/admin/i);
       expect(error.message).toMatch(/get_ticket|search_tickets/);
+    });
+  });
+
+  describe('get_ticket_metrics', () => {
+    const captureShowManyTickets = (): URLSearchParams[] => {
+      const seen: URLSearchParams[] = [];
+      mswServer.events.on('request:start', ({ request }) => {
+        const url = new URL(request.url);
+        if (url.pathname.endsWith('/tickets/show_many')) seen.push(url.searchParams);
+      });
+      return seen;
+    };
+
+    afterEach(() => {
+      mswServer.events.removeAllListeners();
+    });
+
+    it('reads every ticket and its metric set in one show_many call', async () => {
+      const seen = captureShowManyTickets();
+      const result = await findTool('get_ticket_metrics').handler({ ticket_ids: [7, 3, 7] });
+      expect(seen).toHaveLength(1);
+      expect(seen[0]?.get('ids')).toBe('7,3');
+      expect(seen[0]?.get('include')).toBe('metric_sets');
+      const text = firstText(result) ?? '';
+      expect(text.indexOf('## Ticket #7:')).toBeLessThan(text.indexOf('## Ticket #3:'));
+      expect(text).toContain('- **Requester wait**: calendar 1d2h7m, business 7h');
+    });
+
+    it('reports a ticket show_many did not return instead of failing', async () => {
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/tickets/show_many', () =>
+          HttpResponse.json({ tickets: [{ ...MOCK_TICKET, id: 5 }], metric_sets: [] }),
+        ),
+      );
+      const result = await findTool('get_ticket_metrics').handler({ ticket_ids: [5, 6] });
+      expect(firstText(result)).toBe(
+        '## Ticket #5: Test ticket\n- No metrics recorded for this ticket.\n\n## Ticket #6\n- Not found, or not visible to you.',
+      );
+    });
+
+    it('accepts 1 to 100 positive ids', () => {
+      const schema = findTool('get_ticket_metrics').inputSchema;
+      expect(schema.safeParse({ ticket_ids: [] }).success).toBe(false);
+      expect(schema.safeParse({ ticket_ids: [0] }).success).toBe(false);
+      expect(
+        schema.safeParse({ ticket_ids: Array.from({ length: 101 }, (_, i) => i + 1) }).success,
+      ).toBe(false);
+      expect(
+        schema.safeParse({ ticket_ids: Array.from({ length: 100 }, (_, i) => i + 1) }).success,
+      ).toBe(true);
     });
   });
 

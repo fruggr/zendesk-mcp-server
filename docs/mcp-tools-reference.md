@@ -22,6 +22,7 @@ out every `write` tool before the proxies are built.
 | `list_tickets` | List tickets with cursor-based pagination | read |
 | `get_linked_incidents` | Get incidents linked to a problem ticket | read |
 | `list_sla_policies` | List SLA policies with filter conditions and per-priority targets (requires an admin token, or a custom role with the SLA-management permission) | read |
+| `get_ticket_metrics` | Read the elapsed-time metrics of up to 100 tickets in one call: reply, resolution, wait and on-hold times in calendar and business minutes, reopens, replies, stations and key timestamps — recorded even where no SLA policy applies | read |
 | `list_ticket_fields` | List ticket field definitions (system + custom) with ids, types, and dropdown/multiselect option values, to resolve `custom_fields` ids and accepted values for create_ticket / update_ticket | read |
 | `list_views` | List the agent's active views (saved ticket queues) with best-effort (cached, may show "(count updating)") ticket counts, to see where the workload sits before opening a queue | read |
 | `get_view_tickets` | Read the tickets inside a view (by title or id) in the view's own configured sort order, cursor-paginated (no live SLA block; use search_tickets for that) | read |

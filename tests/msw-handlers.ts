@@ -21,6 +21,35 @@ export const MOCK_TICKET = {
   custom_fields: [],
 };
 
+// One `ticket_metric` as Zendesk returns it (measured on a live tenant, PR #387
+// spike 1): every `*_in_minutes` field is a `{calendar, business}` pair whose
+// halves stay null until the event happens.
+export const MOCK_TICKET_METRIC = {
+  url: 'https://testsubdomain.zendesk.com/api/v2/ticket_metrics/39965184585245.json',
+  id: 39965184585245,
+  ticket_id: 7560,
+  created_at: '2026-10-16T18:46:26Z',
+  updated_at: '2026-10-16T18:53:52Z',
+  group_stations: 2,
+  assignee_stations: 1,
+  reopens: 0,
+  replies: 1,
+  assignee_updated_at: '2026-10-16T18:53:52Z',
+  requester_updated_at: '2026-10-16T18:46:25Z',
+  status_updated_at: '2026-10-16T18:53:52Z',
+  initially_assigned_at: '2026-10-16T18:53:52Z',
+  assigned_at: '2026-10-16T18:55:00Z',
+  solved_at: null,
+  latest_comment_added_at: '2026-10-16T18:46:25Z',
+  reply_time_in_minutes: { calendar: 4, business: 0 },
+  first_resolution_time_in_minutes: { calendar: null, business: null },
+  full_resolution_time_in_minutes: { calendar: null, business: null },
+  agent_wait_time_in_minutes: { calendar: null, business: null },
+  requester_wait_time_in_minutes: { calendar: 1567, business: 420 },
+  on_hold_time_in_minutes: { calendar: 0, business: 0 },
+  custom_status_updated_at: '2026-10-16T18:53:52Z',
+};
+
 export const MOCK_VIEW = {
   id: 25,
   title: 'Unassigned tickets',
@@ -997,7 +1026,16 @@ export const handlers = [
       .split(',')
       .filter(Boolean)
       .map(Number);
-    return HttpResponse.json({ tickets: ids.map((id) => ({ ...MOCK_TICKET, id })) });
+    const tickets = ids.map((id) => ({ ...MOCK_TICKET, id }));
+    // The `metric_sets` sideload comes back as a top-level array matched by
+    // `ticket_id`, not nested on each ticket (measured, PR #387 spike 1).
+    if (new URL(request.url).searchParams.get('include') === 'metric_sets') {
+      return HttpResponse.json({
+        tickets,
+        metric_sets: ids.map((id) => ({ ...MOCK_TICKET_METRIC, ticket_id: id })),
+      });
+    }
+    return HttpResponse.json({ tickets });
   }),
   http.get(`${BASE}/views/count_many`, ({ request }) => {
     const ids = (new URL(request.url).searchParams.get('ids') ?? '')
