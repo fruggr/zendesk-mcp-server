@@ -145,6 +145,8 @@ interface OAuthState {
   verifier?: string;
 }
 
+const requestedScope = readOnlyScope ? 'read offline_access' : 'read write offline_access';
+
 const oauthProvider = (serverUrl: string): OAuthClientProvider => {
   const key = createHash('sha256')
     .update(`${serverUrl} ${readOnlyScope}`)
@@ -168,7 +170,7 @@ const oauthProvider = (serverUrl: string): OAuthClientProvider => {
         grant_types: ['authorization_code', 'refresh_token'],
         response_types: ['code'],
         token_endpoint_auth_method: 'none',
-        scope: readOnlyScope ? 'read offline_access' : 'read write offline_access',
+        scope: requestedScope,
       };
     },
     clientInformation: () => load().client,
@@ -176,6 +178,8 @@ const oauthProvider = (serverUrl: string): OAuthClientProvider => {
     tokens: () => load().tokens,
     saveTokens: (tokens) => save({ tokens }),
     redirectToAuthorization: (authorizationUrl) => {
+      // The SDK asks for the resource's `scopes_supported` over `clientMetadata.scope`.
+      authorizationUrl.searchParams.set('scope', requestedScope);
       console.error(`Open this URL to sign in, then come back:\n${authorizationUrl.href}`);
     },
     state: () => expectedState,
