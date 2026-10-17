@@ -13,6 +13,7 @@ import { createAllTools } from './tools/index';
 import { startStdioTransport } from './transports/stdio';
 import { createLogger, type Logger } from './utils/logger';
 import { installShutdown } from './utils/shutdown';
+import { type SlaRuntime, startSlaRuntime } from './utils/sla-service';
 import { isStartupError } from './utils/startup-error';
 
 type StdioTokenStore = ReturnType<typeof import('./auth/token-store').createTokenStore>;
@@ -41,11 +42,18 @@ const connectStdio = async (
   config: Config,
   tokenStore: StdioTokenStore,
   logger: Logger,
+  slaRuntime: SlaRuntime,
 ): Promise<McpServer> => {
   if (config.dev) {
-    return startDevServer(config, tokenStore.getToken, logger, tokenStore.invalidate);
+    return startDevServer(config, tokenStore.getToken, logger, tokenStore.invalidate, slaRuntime);
   }
-  const server = createMcpServer(config, tokenStore.getToken, logger, tokenStore.invalidate);
+  const server = createMcpServer(
+    config,
+    tokenStore.getToken,
+    logger,
+    tokenStore.invalidate,
+    slaRuntime,
+  );
   await startStdioTransport(server, logger);
   return server;
 };
@@ -74,7 +82,8 @@ const main = async (): Promise<void> => {
 
   if (config.transport === 'stdio') {
     const tokenStore = await buildStdioTokenStore(config, logger);
-    const server = await connectStdio(config, tokenStore, logger);
+    const sla = startSlaRuntime(config);
+    const server = await connectStdio(config, tokenStore, logger, sla.runtime);
 
     // Installed *after* the transport is connected: the SDK's stdin `data`
     // listener is what puts stdin in flowing mode, and `end` only fires there.
@@ -82,6 +91,7 @@ const main = async (): Promise<void> => {
       watchStdin: true,
       logger,
       cleanup: async () => {
+        sla.stop();
         await server.close();
         tokenStore.dispose();
       },

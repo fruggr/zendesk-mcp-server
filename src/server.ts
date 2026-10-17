@@ -26,7 +26,12 @@ import { resolveBrand } from './tools/help-center';
 import { createAllTools, type ToolDefinition } from './tools/index';
 import { type Logger, silentLogger } from './utils/logger';
 import { readPackageInfo } from './utils/package-info';
-import { createSlaService } from './utils/sla-service';
+import {
+  createSlaRuntime,
+  createSlaService,
+  createUserIdResolver,
+  type SlaRuntime,
+} from './utils/sla-service';
 import { createStrictParamsParser, toStrictStandardSchema } from './utils/validation';
 
 /**
@@ -476,6 +481,8 @@ export const createMcpServer = (
   getToken: () => string | Promise<string>,
   logger: Logger = silentLogger,
   onUnauthorized?: () => void,
+  // The process-wide SLA state; every session of an HTTP server shares one.
+  slaRuntime: SlaRuntime = createSlaRuntime(config),
 ): McpServer => {
   const server = createServerShell(config, logger);
   // ONE shared resolver for the whole server: tools, topology resource and
@@ -488,7 +495,7 @@ export const createMcpServer = (
     brandIds: config.brandIds,
     resolveBrandSubdomain,
     getToken,
-    sla: createSlaService(config),
+    sla: createSlaService(config, slaRuntime, createUserIdResolver(config.subdomain, getToken)),
   });
   registerToolset(
     server,

@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { ConfigSchema, DEFAULT_NAMESPACES, loadConfig, VALUE_FLAG_NAMES } from '../../src/config';
+import {
+  ConfigSchema,
+  DEFAULT_NAMESPACES,
+  loadConfig,
+  slaStateStoreOf,
+  VALUE_FLAG_NAMES,
+} from '../../src/config';
 import { isStartupError, STARTUP_DOCS } from '../../src/utils/startup-error';
 
 // Cleared as one list: a suite that clears a subset only passes while the one before
@@ -25,6 +31,8 @@ const LOAD_CONFIG_ENV = [
   'SLA_PUSH',
   'SLA_REPLY_THRESHOLDS',
   'SLA_WAIT_THRESHOLDS',
+  'SLA_CACHE_TTL_SECONDS',
+  'SLA_STATE_STORE',
 ] as const;
 
 const clearLoadConfigEnv = (): void => {
@@ -631,7 +639,7 @@ describe('loadConfig', () => {
 
     it('covers every value-taking flag declared in CLI_OPTIONS', () => {
       // Guards the parametrised cases below against silently shrinking to zero.
-      expect(valueFlags).toHaveLength(17);
+      expect(valueFlags).toHaveLength(19);
     });
 
     it.each(valueFlags)('rejects %s as the last argument (value forgotten)', (flag) => {
@@ -1230,6 +1238,39 @@ describe('SLA settings', () => {
   it('rejects an empty threshold variable', () => {
     process.env['SLA_REPLY_THRESHOLDS'] = '';
     expect(startupMessage([])).toContain('Empty SLA_REPLY_THRESHOLDS.');
+  });
+
+  it('caches scope fetches for 60 seconds by default, overridable', () => {
+    expect(loadConfig(['mycompany']).slaCacheTtlSeconds).toBe(60);
+    process.env['SLA_CACHE_TTL_SECONDS'] = '0';
+    expect(loadConfig(['mycompany']).slaCacheTtlSeconds).toBe(0);
+    expect(loadConfig(['mycompany', '--sla-cache-ttl-seconds', '120']).slaCacheTtlSeconds).toBe(
+      120,
+    );
+  });
+
+  it('fails at startup on a cache lifetime that is not whole seconds', () => {
+    process.env['SLA_CACHE_TTL_SECONDS'] = '1.5';
+    expect(startupMessage([])).toBe(
+      `Invalid SLA_CACHE_TTL_SECONDS value. Expected a whole number of seconds. See ${STARTUP_DOCS.environment}`,
+    );
+    expect(startupMessage(['--sla-cache-ttl-seconds', '1m'])).toBe(
+      `Invalid --sla-cache-ttl-seconds value. Expected a whole number of seconds. See ${STARTUP_DOCS.invocation}`,
+    );
+  });
+
+  it('picks the state store per transport unless told otherwise', () => {
+    expect(slaStateStoreOf(loadConfig(['mycompany']))).toBe('disk');
+    expect(slaStateStoreOf(loadConfig(['mycompany', '--transport', 'http']))).toBe('memory');
+    process.env['SLA_STATE_STORE'] = 'disk';
+    expect(slaStateStoreOf(loadConfig(['mycompany', '--transport', 'http']))).toBe('disk');
+    expect(slaStateStoreOf(loadConfig(['mycompany', '--sla-state-store', 'memory']))).toBe(
+      'memory',
+    );
+  });
+
+  it('rejects an unknown state store', () => {
+    expect(startupMessage(['--sla-state-store', 'redis'])).toContain('slaStateStore');
   });
 
   it.each([

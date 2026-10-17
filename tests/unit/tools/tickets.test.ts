@@ -19,6 +19,7 @@ import {
   ticketWithSubscribersHandler,
 } from '../../msw-handlers';
 import { mswServer } from '../../setup';
+import { testSlaService } from '../../sla-service';
 import { testToolContext } from '../../tool-context';
 import { allTextOf, firstText, textAt } from '../../tool-result';
 
@@ -1242,7 +1243,7 @@ describe('ticket tools', () => {
     const slaTools = (push: boolean) =>
       createTicketTools(
         testToolContext({
-          sla: { push, thresholds: () => Promise.resolve(DEFAULT_SLA_THRESHOLDS) },
+          sla: testSlaService({ push }),
         }),
       );
     const run = (push: boolean, name: string, params: Record<string, unknown>) => {
@@ -1278,11 +1279,10 @@ describe('ticket tools', () => {
     it('uses the thresholds the service hands over', async () => {
       const tools = createTicketTools(
         testToolContext({
-          sla: {
-            push: true,
+          sla: testSlaService({
             thresholds: () =>
               Promise.resolve({ ...DEFAULT_SLA_THRESHOLDS, wait: { warning: 60, critical: 30 } }),
-          },
+          }),
         }),
       );
       const result = await tools

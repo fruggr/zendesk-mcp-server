@@ -9,7 +9,12 @@ import { createServerShell, registerToolset } from '../server';
 import { createAllTools, type ToolContext, type ToolDefinition } from '../tools/index';
 import { startStdioTransport } from '../transports/stdio';
 import { type Logger, silentLogger } from '../utils/logger';
-import { createSlaService } from '../utils/sla-service';
+import {
+  createSlaRuntime,
+  createSlaService,
+  createUserIdResolver,
+  type SlaRuntime,
+} from '../utils/sla-service';
 
 const thisDir = dirname(fileURLToPath(import.meta.url));
 // `src/tools/` — the leaf factory modules re-imported on reload.
@@ -68,6 +73,7 @@ export const createReloadableServer = (
   // re-importing the leaf modules from disk; tests inject a stub to drive the
   // re-registration failure/rollback path deterministically.
   loadTools: (ctx: ToolContext) => Promise<ToolDefinition[]> = loadFreshTools,
+  slaRuntime: SlaRuntime = createSlaRuntime(config),
 ): { server: McpServer; reload: () => Promise<number> } => {
   const server = createServerShell(config, logger);
   // ONE shared resolver across every reload generation: tools and the
@@ -78,7 +84,7 @@ export const createReloadableServer = (
     brandIds: config.brandIds,
     resolveBrandSubdomain,
     getToken,
-    sla: createSlaService(config),
+    sla: createSlaService(config, slaRuntime, createUserIdResolver(config.subdomain, getToken)),
   };
   const params = { config, getToken, resolveBrandSubdomain, onUnauthorized, logger };
 
@@ -196,8 +202,16 @@ export const startDevServer = async (
   getToken: () => string | Promise<string>,
   logger: Logger = silentLogger,
   onUnauthorized?: () => void,
+  slaRuntime?: SlaRuntime,
 ): Promise<McpServer> => {
-  const { server, reload } = createReloadableServer(config, getToken, logger, onUnauthorized);
+  const { server, reload } = createReloadableServer(
+    config,
+    getToken,
+    logger,
+    onUnauthorized,
+    loadFreshTools,
+    slaRuntime,
+  );
   registerReloadTool(server, reload, logger);
   await startStdioTransport(server, logger);
   logger.info('dev_mode_enabled');
