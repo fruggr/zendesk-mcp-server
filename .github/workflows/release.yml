@@ -3,16 +3,6 @@ name: Release
 on:
   push:
     branches: [main]
-  # Catch-up for a version already on npm whose MCP registry entry or container
-  # image is missing (a run that died after the npm publish, or one whose
-  # publish went undetected). Runs from `main` only: the `release` environment
-  # refuses any other ref. semantic-release does not run.
-  workflow_dispatch:
-    inputs:
-      version:
-        description: Version already published on npm to mirror (e.g. 3.3.1)
-        required: true
-        type: string
 
 concurrency:
   group: release
@@ -43,42 +33,10 @@ jobs:
       published: ${{ steps.released.outputs.published }}
       version: ${{ steps.released.outputs.version }}
     steps:
-      - name: Validate the requested version
-        if: github.event_name == 'workflow_dispatch'
-        env:
-          VERSION: ${{ inputs.version }}
-        run: |
-          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::'$VERSION' is not a MAJOR.MINOR.PATCH version." >&2
-            exit 1
-          fi
-
-      # A manual run checks out the release tag, so the tag-on-HEAD detection
-      # below and every later step see that release's tree.
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/v{0}', inputs.version) || '' }}
           fetch-depth: 0
           persist-credentials: false
-
-      # Before the install and test steps, so a doomed catch-up fails in seconds.
-      # Newest only: the image job moves `latest` and the X / X.Y tags.
-      - name: Check the requested version can be mirrored
-        if: github.event_name == 'workflow_dispatch'
-        env:
-          VERSION: ${{ inputs.version }}
-        run: |
-          newest="$(git tag --list 'v[0-9]*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)"
-          if [ "$newest" != "v$VERSION" ]; then
-            echo "::error::v$VERSION is not the newest release ($newest); its image would take over the latest tags." >&2
-            exit 1
-          fi
-          # The registry validates against the npm tarball, and the image must match it.
-          name="$(node -p "require('./package.json').name")"
-          if [ "$(npm view "$name@$VERSION" version 2>/dev/null)" != "$VERSION" ]; then
-            echo "::error::$name@$VERSION is not on npm; nothing to mirror." >&2
-            exit 1
-          fi
 
       - uses: pnpm/action-setup@v6
 
@@ -126,7 +84,6 @@ jobs:
       # and is revoked in post-job: install, test and build must not eat into
       # that window.
       - uses: actions/create-github-app-token@v3
-        if: github.event_name == 'push'
         id: app-token
         with:
           # `client-id`, not the deprecated `app-id`. A variable rather than a
@@ -142,8 +99,12 @@ jobs:
           permission-issues: write
           permission-pull-requests: write
 
-      - run: pnpm exec semantic-release
-        if: github.event_name == 'push'
+      # scripts/git-retry/git retries the pushes semantic-release makes, so one
+      # transient GitHub refusal no longer leaves a release half published.
+      - run: |
+          REAL_GIT="$(command -v git)"
+          export REAL_GIT
+          PATH="$GITHUB_WORKSPACE/scripts/git-retry:$PATH" pnpm exec semantic-release
         env:
           # The App token, not secrets.GITHUB_TOKEN: it authenticates both the
           # `git push HEAD:main` of @semantic-release/git (which needs the
@@ -180,16 +141,9 @@ jobs:
       # with package.json already at that version.
       - name: Detect whether a release was published
         id: released
-        env:
-          EVENT: ${{ github.event_name }}
-          VERSION: ${{ inputs.version }}
         run: |
-          if [ "$EVENT" = workflow_dispatch ]; then
-            tag="v$VERSION"
-          else
-            # Stable tags only; `|| true` because Actions runs bash with pipefail.
-            tag="$(git tag --points-at HEAD --list 'v[0-9]*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)"
-          fi
+          # Stable tags only; `|| true` because Actions runs bash with pipefail.
+          tag="$(git tag --points-at HEAD --list 'v[0-9]*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)"
           if [ -n "$tag" ]; then
             echo "published=true" >> "$GITHUB_OUTPUT"
             echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
@@ -231,15 +185,12 @@ jobs:
         if: steps.released.outputs.published == 'true'
         env:
           VERSION: ${{ steps.released.outputs.version }}
-          EVENT: ${{ github.event_name }}
         run: |
           # The registry validates by fetching the npm tarball; allow for npm
           # propagation right after publish. npm can hold a new version in
           # "processing" for minutes (3.1.0 took over 100 s), so the backoff
-          # sums to about 4.5 minutes. A catch-up has no lag to wait out, and
-          # retrying an entry the registry already holds only delays the image.
+          # sums to about 4.5 minutes.
           attempts=8
-          if [ "$EVENT" = workflow_dispatch ]; then attempts=1; fi
           for attempt in $(seq 1 "$attempts"); do
             if ./mcp-publisher publish; then
               echo "Published $VERSION to the MCP registry."

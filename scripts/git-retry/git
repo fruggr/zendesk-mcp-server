@@ -1,0 +1,21 @@
+#!/bin/sh
+# Put ahead of git on PATH for semantic-release only. It and @semantic-release/git
+# push the release commit, tags and note through the git on PATH, and one
+# transient GitHub refusal (3.3.1: `remote: fatal error in commit_refs`) ends a
+# release halfway. A push is idempotent: an attempt that landed makes the next
+# one a no-op, and a real refusal fails every time.
+real="${REAL_GIT:?REAL_GIT must name the real git, not this wrapper}"
+[ "$1" = push ] || exec "$real" "$@"
+# semantic-release's auth probe expects the unauthenticated dry run to fail;
+# retrying it would only add 35 s to every release run.
+for arg; do [ "$arg" = --dry-run ] && exec "$real" "$@"; done
+delays="${GIT_PUSH_RETRY_DELAYS:-5 10 20}"
+attempts=$(($(echo "$delays" | wc -w) + 1))
+attempt=1
+for delay in $delays; do
+  "$real" "$@" && exit 0
+  echo "git push failed (attempt $attempt of $attempts); retrying in ${delay}s" >&2
+  sleep "$delay"
+  attempt=$((attempt + 1))
+done
+exec "$real" "$@"
