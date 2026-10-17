@@ -113,7 +113,8 @@ scripted or CI assertions.
 The tools return formatted text, so a question about what Zendesk really sends
 (a sideload honoured or silently dropped, where a value sits in a payload) needs
 a probe: a read-only `scripts/probe-<topic>.ts` that hits the live tenant and
-prints the raw shape. Conventions:
+prints the raw shape. When the answer decides a design, the probe is run as a
+spike before the plan is written (`.claude/skills/probe-spike`). Conventions:
 
 - GETs only, through `zendeskGet` (the server's retry policy applies).
 - Credentials from `live-auth.ts`, never from the caller.
