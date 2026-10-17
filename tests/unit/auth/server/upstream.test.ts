@@ -1,5 +1,5 @@
 import { delay, HttpResponse, http } from 'msw';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { generateCodeChallenge } from '../../../../src/auth/pkce';
 import {
   buildZendeskAuthorizeUrl,
@@ -24,7 +24,6 @@ const recordingLogger = () => {
     info: (e, f) => events.push(['info', e, f]),
     warn: (e, f) => events.push(['warn', e, f]),
     error: (e, f) => events.push(['error', e, f]),
-    attachServer: vi.fn(),
   };
   return { logger, events };
 };

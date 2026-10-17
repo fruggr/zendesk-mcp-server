@@ -75,7 +75,6 @@ const makeLogger = () => ({
   info: vi.fn(),
   warn: vi.fn(),
   error: vi.fn(),
-  attachServer: vi.fn(),
 });
 
 const SUB = 'testsubdomain';
@@ -381,7 +380,6 @@ describe('authenticateViaBrowser', () => {
       error: vi.fn((event: string, fields?: Record<string, unknown>) => {
         errorEvents.push({ event, fields });
       }),
-      attachServer: vi.fn(),
     };
 
     // The browser fails to open (the #60 symptom). The flow must NOT crash: the
@@ -699,7 +697,6 @@ describe('startBrowserAuth', () => {
         info: vi.fn(),
         warn: vi.fn(),
         error: vi.fn(),
-        attachServer: vi.fn(),
       };
       const started = await startBrowserAuth(
         { subdomain: SUB, oauthClientId: CLIENT_ID, callbackPort: 0, readOnly: false },

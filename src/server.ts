@@ -1,10 +1,13 @@
-import { McpServer, ResourceTemplate } from '@modelcontextprotocol/server';
+import { McpServer, type RequestStateCodec, ResourceTemplate } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
-import { createBrandSubdomainResolver } from './client/brands';
+import { type BrandSubdomainResolver, createBrandSubdomainResolver } from './client/brands';
 import { ZendeskApiError } from './client/zendesk-api';
 import type { Config } from './config';
 import { ARTICLE_RESOURCES_SCAN_MAX_PAGES } from './constants';
-import { createArticleResourcesProvider } from './guidance/article-resources';
+import {
+  type ArticleResourcesProvider,
+  createArticleResourcesProvider,
+} from './guidance/article-resources';
 import {
   articleResourceEnabled,
   articleResourceUri,
@@ -14,7 +17,7 @@ import {
   promotedArticlesEnabled,
   topologyResourceUri,
 } from './guidance/instructions';
-import { createTopologyProvider } from './guidance/topology';
+import { createTopologyProvider, type TopologyProvider } from './guidance/topology';
 import {
   buildOperationFieldDescription,
   buildProxyDescription,
@@ -26,6 +29,7 @@ import { resolveBrand } from './tools/help-center';
 import { createAllTools, type ToolDefinition } from './tools/index';
 import { type Logger, silentLogger } from './utils/logger';
 import { readPackageInfo } from './utils/package-info';
+import { createRequestStateCodec } from './utils/request-state';
 import { createStrictParamsParser, toStrictStandardSchema } from './utils/validation';
 
 /**
@@ -144,36 +148,80 @@ const registerProxyTool = (
 };
 
 /**
- * Build the bare `McpServer` — identity, capabilities, `instructions` and the
- * logging sink — with no tools or resources registered yet. Split out from
- * `createMcpServer` so the dev reload (`dev/reload.ts`) can keep this
- * long-lived shell (and its transport/session) alive while swapping the toolset
- * underneath it via `registerToolset`.
+ * Build the bare `McpServer` — identity, `instructions` — with no tools or
+ * resources registered yet. Split out from `createMcpServer` so the dev reload
+ * (`dev/reload.ts`) can keep this long-lived shell (and its transport/session)
+ * alive while swapping the toolset underneath it via `registerToolset`.
  */
-export const createServerShell = (config: Config, logger: Logger = silentLogger): McpServer => {
+export const createServerShell = (
+  config: Config,
+  // Every server verifies echoed `requestState`; see utils/request-state.ts.
+  requestStateCodec: RequestStateCodec = createRequestStateCodec({}),
+): McpServer => {
   // Read name/version from package.json at runtime rather than hardcoding them
   // (the old literals were stale and even carried the wrong package name).
   const pkg = readPackageInfo();
   // Static, I/O-free Help Center context auto-loaded by clients on initialize.
   // Built before connect; undefined (and omitted) when the context is disabled.
   const instructions = buildInstructions(config);
-  const server = new McpServer(
+  // No `logging` capability: diagnostics go to stderr only (see utils/logger.ts).
+  // The `resources` capability is merged in by registerResource below. Spread
+  // `instructions` only when present so the field is omitted entirely
+  // (exactOptionalPropertyTypes).
+  return new McpServer(
+    { name: pkg.name, version: pkg.version },
     {
-      name: pkg.name,
-      version: pkg.version,
+      ...(instructions ? { instructions } : {}),
+      requestState: { verify: (state, ctx) => requestStateCodec.verify(state, ctx) },
     },
-    // Advertise the logging capability so structured diagnostics (notably the
-    // OAuth browser flow) reach clients that support it. Clients that don't
-    // simply ignore the notifications. The `resources` capability is merged in
-    // automatically by registerResource below. Spread `instructions` only when
-    // present so the field is omitted entirely (exactOptionalPropertyTypes).
-    { capabilities: { logging: {} }, ...(instructions ? { instructions } : {}) },
   );
+};
 
-  // Route the logger's MCP sink through this server. Auth runs lazily on the
-  // first tool call (after connect), so notifications can flow by then.
-  logger.attachServer(server);
-  return server;
+/**
+ * The Zendesk data a server caches between calls (brand list, Help Center
+ * topology, promoted-article pre-listing; each with its own TTL). What they hold
+ * depends on the caller's Zendesk role, so they belong to ONE user. A
+ * long-lived server builds its own; per-request servers (HTTP 2026-07-28) are
+ * handed the caches their grant keeps, or each request would refetch them.
+ */
+export interface ServerCaches {
+  resolveBrandSubdomain: BrandSubdomainResolver;
+  /** Undefined when the Help Center context is off. */
+  topology: TopologyProvider | undefined;
+  /** Undefined when the article resources are off. */
+  articles: ArticleResourcesProvider | undefined;
+}
+
+export const createServerCaches = (
+  config: Config,
+  getToken: () => string | Promise<string>,
+  onUnauthorized?: () => void,
+): ServerCaches => {
+  // ONE resolver for the tools AND the topology/article resources, so they
+  // resolve against a single cached brand list: one `GET /brands` walk, not one
+  // per consumer.
+  const resolveBrandSubdomain = createBrandSubdomainResolver(config.subdomain, getToken);
+  return {
+    resolveBrandSubdomain,
+    topology: helpCenterContextEnabled(config)
+      ? createTopologyProvider(
+          getToken,
+          config.subdomain,
+          onUnauthorized,
+          config.brandIds,
+          firstBrandSubdomainResolver(config, resolveBrandSubdomain),
+        )
+      : undefined,
+    articles: articleResourceEnabled(config)
+      ? createArticleResourcesProvider(
+          getToken,
+          config.subdomain,
+          onUnauthorized,
+          resourceBrandResolver(config, resolveBrandSubdomain),
+          config.brandIds,
+        )
+      : undefined,
+  };
 };
 
 /** Inputs `registerToolset` needs beyond the tool definitions themselves. */
@@ -181,15 +229,10 @@ export interface ToolsetParams {
   config: Config;
   getToken: () => string | Promise<string>;
   /**
-   * THE shared brand subdomain resolver for this server generation. Created
-   * ONCE by createMcpServer / createReloadableServer and passed here so the
-   * tools AND the topology/article resources resolve against a single cached
-   * brand list — otherwise each consumer builds its own and one session costs
-   * several `GET /brands` walks. Optional so test harnesses that register a
-   * toolset without brands can omit it; the resources then fall back to a
-   * local resolver (unset brandIds makes it a no-op anyway).
+   * The caches this generation reads through. Optional so test harnesses can
+   * omit them; registerToolset then builds a fresh set.
    */
-  resolveBrandSubdomain?: (idOrSubdomain: string) => Promise<string>;
+  caches?: ServerCaches;
   // Called when a tool handler hits a 401 from Zendesk. Lets the OAuth token
   // store invalidate the rejected token. Omitted where there is nothing to
   // invalidate (e.g. the HTTP per-session bearer is owned by the client).
@@ -251,13 +294,10 @@ const resourceBrandResolver = (
  */
 export const registerToolset = (
   server: McpServer,
-  { config, getToken, resolveBrandSubdomain, onUnauthorized, logger = silentLogger }: ToolsetParams,
+  { config, getToken, caches, onUnauthorized, logger = silentLogger }: ToolsetParams,
   tools: ToolDefinition[],
 ): { dispose(): void; count: number } => {
-  // Fall back to a local resolver only when the caller did not share one
-  // (test harnesses, --print-tools). Production callers always pass it.
-  const sharedResolver =
-    resolveBrandSubdomain ?? createBrandSubdomainResolver(config.subdomain, getToken);
+  const { topology, articles } = caches ?? createServerCaches(config, getToken, onUnauthorized);
   const registered: Removable[] = [];
   const dispose = (): void => {
     for (const handle of registered) handle.remove();
@@ -347,15 +387,8 @@ export const registerToolset = (
     // Pull-only Help Center topology resource. Read on demand with the caller's
     // token (resolved at read time via getToken), so auth timing and ACL are
     // both correct. Registered only when the context is enabled; this also
-    // advertises the `resources` capability (merged with `logging`).
-    if (helpCenterContextEnabled(config)) {
-      const topology = createTopologyProvider(
-        getToken,
-        config.subdomain,
-        onUnauthorized,
-        config.brandIds,
-        firstBrandSubdomainResolver(config, sharedResolver),
-      );
+    // advertises the `resources` capability.
+    if (topology) {
       registered.push(
         server.registerResource(
           'help-center-topology',
@@ -383,14 +416,7 @@ export const registerToolset = (
     // carry the brand segment (`<scheme>://brands/{brand}/articles/{id}`) and
     // the read resolves it through the shared allow-list + resolver, exactly
     // like a tool call's brand_id.
-    if (articleResourceEnabled(config)) {
-      const articles = createArticleResourcesProvider(
-        getToken,
-        config.subdomain,
-        onUnauthorized,
-        resourceBrandResolver(config, sharedResolver),
-        config.brandIds,
-      );
+    if (articles) {
       const listPromotedEnabled = promotedArticlesEnabled(config);
       const template = new ResourceTemplate(articleResourceUriTemplate(config), {
         list: async () => {
@@ -465,33 +491,72 @@ export const registerToolset = (
     throw err;
   }
 
-  logger.info('tools_registered', { count: filteredTools.length, mode: config.mode });
+  // Debug: a 2026-07-28 HTTP request builds a server, so this fires per request.
+  logger.debug('tools_registered', { count: filteredTools.length, mode: config.mode });
 
   return { count: filteredTools.length, dispose };
 };
+
+export interface CreateMcpServerOptions {
+  /** Caches kept by the caller across servers; built per server when omitted. */
+  caches?: ServerCaches;
+  /** Built by the transport, which knows the key and the principal; a random-key one otherwise. */
+  requestStateCodec?: RequestStateCodec;
+}
 
 export const createMcpServer = (
   config: Config,
   getToken: () => string | Promise<string>,
   logger: Logger = silentLogger,
   onUnauthorized?: () => void,
+  {
+    caches = createServerCaches(config, getToken, onUnauthorized),
+    requestStateCodec,
+  }: CreateMcpServerOptions = {},
 ): McpServer => {
-  const server = createServerShell(config, logger);
-  // ONE shared resolver for the whole server: tools, topology resource and
-  // article resources all resolve against this single cached brand list, so a
-  // session costs at most one `GET /brands` walk no matter how many consumers
-  // resolve a brand.
-  const resolveBrandSubdomain = createBrandSubdomainResolver(config.subdomain, getToken);
+  const server = createServerShell(config, requestStateCodec);
   const tools = createAllTools({
     subdomain: config.subdomain,
     brandIds: config.brandIds,
-    resolveBrandSubdomain,
+    resolveBrandSubdomain: caches.resolveBrandSubdomain,
     getToken,
   });
-  registerToolset(
-    server,
-    { config, getToken, resolveBrandSubdomain, onUnauthorized, logger },
-    tools,
-  );
+  registerToolset(server, { config, getToken, caches, onUnauthorized, logger }, tools);
   return server;
 };
+
+/**
+ * What a transport hands the server factory for each server it needs: one per
+ * stdio connection or 2025 HTTP session, one per 2026 HTTP request.
+ */
+export interface ServerBuildContext {
+  /** Effective config: HTTP narrows `readOnly` from the token's scope. */
+  config: Config;
+  getToken: () => string | Promise<string>;
+  logger: Logger;
+  onUnauthorized?: () => void;
+  caches?: ServerCaches;
+  requestStateCodec: RequestStateCodec;
+  /**
+   * Announces that a resource changed, to whoever listens to it on this
+   * connection, session or grant. The URI is the whole payload, and a listen
+   * stream is authenticated only when it opens: it must carry nothing
+   * sensitive (no content, no personal data, nothing confidential in the URI).
+   */
+  notifyResourceUpdated: (uri: string) => void;
+}
+
+export type ServerFactory = (ctx: ServerBuildContext) => McpServer;
+
+export const defaultServerFactory: ServerFactory = ({
+  config,
+  getToken,
+  logger,
+  onUnauthorized,
+  caches,
+  requestStateCodec,
+}) =>
+  createMcpServer(config, getToken, logger, onUnauthorized, {
+    ...(caches ? { caches } : {}),
+    requestStateCodec,
+  });
