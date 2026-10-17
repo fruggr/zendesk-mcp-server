@@ -105,7 +105,9 @@ a probe: a read-only `scripts/probe-<topic>.ts` that hits the live tenant and
 prints the raw shape. When the answer decides a design, the probe is run as a
 spike before the plan is written (`.claude/skills/probe-spike`). Conventions:
 
-- GETs only, through `zendeskGet` (the server's retry policy applies).
+- GETs only, through `zendeskGet` (the server's retry policy applies). A question
+  about headers (caching, rate limits) calls `fetch` with the token `live-auth.ts`
+  resolved, and prints only the headers it asks about.
 - Credentials from `live-auth.ts`, never from the caller.
 - Print keys, ids, stages, timestamps and numbers, never subjects, bodies or
   names, so the output can go in a PR comment as is.
