@@ -67,7 +67,7 @@ export const createReloadableServer = (
   // re-registration failure/rollback path deterministically.
   loadTools: (ctx: ToolContext) => Promise<ToolDefinition[]> = loadFreshTools,
 ): { server: McpServer; reload: () => Promise<number> } => {
-  const server = createServerShell(config, logger);
+  const server = createServerShell(config);
   // ONE set of caches across every reload generation: tools and the
   // topology/article resources resolve against the same cached brand list.
   const caches = createServerCaches(config, getToken, onUnauthorized);

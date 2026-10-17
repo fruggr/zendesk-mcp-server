@@ -349,7 +349,6 @@ describe('token-persistence', () => {
       info: vi.fn(),
       warn: vi.fn(),
       error: vi.fn(),
-      attachServer: vi.fn(),
     };
 
     clearToken('/cfg/never-saved.json', logger);

@@ -43,12 +43,10 @@ browser can't open (common in sandboxed or remote desktop environments) you can
 open that URL manually. It's also printed to the server's stderr. Sign in, then
 retry the request.
 
-To collect diagnostics, restart with `LOG_LEVEL=debug`. The server then emits
-structured logs through **two channels**, so they're reachable on any MCP client:
-
-- stderr, captured to a log file by every mainstream client.
-- MCP logging notifications (`notifications/message`), surfaced by clients that
-  support the `logging` capability.
+To collect diagnostics, restart with `LOG_LEVEL=debug`. The server writes
+structured logs to stderr, which every mainstream client captures to a log file.
+It sends no MCP logging notifications (the `logging` capability is deprecated as
+of the 2026-07-28 revision).
 
 When the browser fails to open, look for the `oauth_browser_open_failed` event:
 it reports the underlying error, the platform, and which environment markers are

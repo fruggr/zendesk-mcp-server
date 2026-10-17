@@ -45,7 +45,6 @@ const recordingLogger = () => {
     info: record('info'),
     warn: record('warn'),
     error: record('error'),
-    attachServer: vi.fn(),
   };
   return { logger, events };
 };

@@ -40,16 +40,17 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
     });
 
     describe('capabilities', () => {
-      it('advertises the logging capability over the wire', async () => {
+      // Diagnostics go to stderr only: the `logging` capability is deprecated
+      // as of 2026-07-28 (SEP-2577), and one process-wide MCP sink could reach
+      // another user's HTTP session.
+      it('does not advertise the logging capability', async () => {
         connected = await harness.connect(makeConfig());
-        expect(connected.client.getServerCapabilities()?.logging).toBeDefined();
+        expect(connected.client.getServerCapabilities()?.logging).toBeUndefined();
       });
 
-      it('advertises the resources capability alongside logging when help_center is active', async () => {
+      it('advertises the resources capability when help_center is active', async () => {
         connected = await harness.connect(makeConfig());
-        const caps = connected.client.getServerCapabilities();
-        expect(caps?.logging).toBeDefined();
-        expect(caps?.resources).toBeDefined();
+        expect(connected.client.getServerCapabilities()?.resources).toBeDefined();
       });
     });
 

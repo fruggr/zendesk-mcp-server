@@ -1,37 +1,22 @@
-import type { McpServer } from '@modelcontextprotocol/server';
 import type { LogLevel } from '../config';
 
 type Fields = Record<string, unknown>;
 
 /**
- * Minimal structured logger with two sinks:
- *  - stderr (always, gated by the configured level) — the universal floor that
- *    every mainstream MCP client captures to a log file;
- *  - MCP `notifications/message` (when a server is attached and advertises the
- *    `logging` capability) — surfaced by clients that support it, ignored
- *    gracefully by those that don't.
- *
- * Both sinks share a single level gate (`LOG_LEVEL`); MCP clients may further
- * raise the floor via `logging/setLevel`, which the SDK filters on its own.
+ * Minimal structured logger writing to stderr, gated by `LOG_LEVEL`: the
+ * channel every mainstream MCP client captures to a log file. There is no MCP
+ * sink (`notifications/message`): the `logging` capability is deprecated as of
+ * 2026-07-28 (SEP-2577), and one process-wide sink would reach whichever HTTP
+ * session it last pointed at. Rationale: `docs/decisions/protocol-eras.md`.
  */
 export interface Logger {
   debug(event: string, fields?: Fields): void;
   info(event: string, fields?: Fields): void;
   warn(event: string, fields?: Fields): void;
   error(event: string, fields?: Fields): void;
-  /** Attach an McpServer so logs are also emitted as MCP notifications. */
-  attachServer(server: Pick<McpServer, 'sendLoggingMessage'>): void;
 }
 
 const SEVERITY: Record<LogLevel, number> = { debug: 0, info: 1, warn: 2, error: 3 };
-
-// Our 4 levels mapped onto the MCP logging levels (note: `warning`, not `warn`).
-const MCP_LEVEL: Record<LogLevel, 'debug' | 'info' | 'warning' | 'error'> = {
-  debug: 'debug',
-  info: 'info',
-  warn: 'warning',
-  error: 'error',
-};
 
 // Field keys whose values must never reach a sink, matched after normalising
 // (lowercase, separators stripped) so `access_token`, `accessToken` and
@@ -113,40 +98,17 @@ export const silentLogger: Logger = {
   info: noop,
   warn: noop,
   error: noop,
-  attachServer: noop,
 };
 
 export const createLogger = (level: LogLevel): Logger => {
   const min = SEVERITY[level];
-  let server: Pick<McpServer, 'sendLoggingMessage'> | undefined;
 
   const emit = (lvl: LogLevel, event: string, fields?: Fields): void => {
     if (SEVERITY[lvl] < min) return;
-
-    const safe = sanitise(fields);
-
     try {
-      console.error(formatLine(lvl, event, safe));
+      console.error(formatLine(lvl, event, sanitise(fields)));
     } catch {
       // Best-effort sink: a dead stderr must not break the caller.
-    }
-
-    // Stryker disable next-line ConditionalExpression: with no server, the property read throws into the best-effort catch.
-    if (server) {
-      try {
-        void server
-          .sendLoggingMessage({
-            level: MCP_LEVEL[lvl],
-            logger: 'zendesk-mcp-server',
-            // `event` last so a caller-supplied `fields.event` can't shadow the
-            // canonical event name.
-            data: { ...safe, event },
-          })
-          .catch(noop);
-      } catch {
-        // Forwarding is best-effort (e.g. transport not connected yet);
-        // it must never break the flow that emitted the log.
-      }
     }
   };
 
@@ -155,8 +117,5 @@ export const createLogger = (level: LogLevel): Logger => {
     info: (event, fields) => emit('info', event, fields),
     warn: (event, fields) => emit('warn', event, fields),
     error: (event, fields) => emit('error', event, fields),
-    attachServer: (s) => {
-      server = s;
-    },
   };
 };

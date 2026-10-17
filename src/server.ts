@@ -147,36 +147,26 @@ const registerProxyTool = (
 };
 
 /**
- * Build the bare `McpServer` — identity, capabilities, `instructions` and the
- * logging sink — with no tools or resources registered yet. Split out from
- * `createMcpServer` so the dev reload (`dev/reload.ts`) can keep this
- * long-lived shell (and its transport/session) alive while swapping the toolset
- * underneath it via `registerToolset`.
+ * Build the bare `McpServer` — identity, `instructions` — with no tools or
+ * resources registered yet. Split out from `createMcpServer` so the dev reload
+ * (`dev/reload.ts`) can keep this long-lived shell (and its transport/session)
+ * alive while swapping the toolset underneath it via `registerToolset`.
  */
-export const createServerShell = (config: Config, logger: Logger = silentLogger): McpServer => {
+export const createServerShell = (config: Config): McpServer => {
   // Read name/version from package.json at runtime rather than hardcoding them
   // (the old literals were stale and even carried the wrong package name).
   const pkg = readPackageInfo();
   // Static, I/O-free Help Center context auto-loaded by clients on initialize.
   // Built before connect; undefined (and omitted) when the context is disabled.
   const instructions = buildInstructions(config);
-  const server = new McpServer(
-    {
-      name: pkg.name,
-      version: pkg.version,
-    },
-    // Advertise the logging capability so structured diagnostics (notably the
-    // OAuth browser flow) reach clients that support it. Clients that don't
-    // simply ignore the notifications. The `resources` capability is merged in
-    // automatically by registerResource below. Spread `instructions` only when
-    // present so the field is omitted entirely (exactOptionalPropertyTypes).
-    { capabilities: { logging: {} }, ...(instructions ? { instructions } : {}) },
+  // No `logging` capability: diagnostics go to stderr only (see utils/logger.ts).
+  // The `resources` capability is merged in by registerResource below. Spread
+  // `instructions` only when present so the field is omitted entirely
+  // (exactOptionalPropertyTypes).
+  return new McpServer(
+    { name: pkg.name, version: pkg.version },
+    instructions ? { instructions } : {},
   );
-
-  // Route the logger's MCP sink through this server. Auth runs lazily on the
-  // first tool call (after connect), so notifications can flow by then.
-  logger.attachServer(server);
-  return server;
 };
 
 /**
@@ -389,7 +379,7 @@ export const registerToolset = (
     // Pull-only Help Center topology resource. Read on demand with the caller's
     // token (resolved at read time via getToken), so auth timing and ACL are
     // both correct. Registered only when the context is enabled; this also
-    // advertises the `resources` capability (merged with `logging`).
+    // advertises the `resources` capability.
     if (topology) {
       registered.push(
         server.registerResource(
@@ -493,7 +483,8 @@ export const registerToolset = (
     throw err;
   }
 
-  logger.info('tools_registered', { count: filteredTools.length, mode: config.mode });
+  // Debug: a 2026-07-28 HTTP request builds a server, so this fires per request.
+  logger.debug('tools_registered', { count: filteredTools.length, mode: config.mode });
 
   return { count: filteredTools.length, dispose };
 };
@@ -510,7 +501,7 @@ export const createMcpServer = (
   onUnauthorized?: () => void,
   { caches = createServerCaches(config, getToken, onUnauthorized) }: McpServerOptions = {},
 ): McpServer => {
-  const server = createServerShell(config, logger);
+  const server = createServerShell(config);
   const tools = createAllTools({
     subdomain: config.subdomain,
     brandIds: config.brandIds,

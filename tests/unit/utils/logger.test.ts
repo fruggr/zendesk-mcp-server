@@ -227,29 +227,8 @@ describe('createLogger', () => {
     expect(line).toContain('b={"label":"shared-value"}');
   });
 
-  it('forwards the same sanitised payload to the MCP sink for a circular value', () => {
-    const send = vi.fn().mockResolvedValue(undefined);
-    const log = createLogger('debug');
-    log.attachServer({ sendLoggingMessage: send } as never);
-
-    const node: Record<string, unknown> = { token: 'cyclic-secret' };
-    node['self'] = node;
-
-    expect(() => log.warn('cyclic', { node })).not.toThrow();
-
-    const arg = send.mock.calls[0]?.[0] as {
-      data: { node: { token: string; self: string } };
-    };
-    expect(arg.data.node.token).toBe('[REDACTED]');
-    expect(arg.data.node.self).toBe('[circular]');
-    // The payload must be a finite tree the transport can serialise.
-    expect(() => JSON.stringify(arg.data)).not.toThrow();
-  });
-
   it('neutralises a caller-supplied toJSON that would re-expose a redacted value', () => {
-    const send = vi.fn().mockResolvedValue(undefined);
     const log = createLogger('debug');
-    log.attachServer({ sendLoggingMessage: send } as never);
 
     // See the `[function]` branch in redactValue.
     const hostile = {
@@ -266,9 +245,6 @@ describe('createLogger', () => {
     expect(errSpy.mock.calls[0]?.[0]).toBe(
       '[zendesk-mcp] [error] hostile_tojson hostile={"token":"[REDACTED]","toJSON":"[function]"}',
     );
-
-    const arg = send.mock.calls[0]?.[0] as { data: unknown };
-    expect(JSON.stringify(arg.data)).not.toContain('tojson-secret');
   });
 
   it('does not throw when a field getter throws during redaction', () => {
@@ -297,93 +273,11 @@ describe('createLogger', () => {
     expect(() => log.info('x', { a: 1 })).not.toThrow();
   });
 
-  it('keeps the canonical event name even if a field named "event" is passed', () => {
-    const send = vi.fn().mockResolvedValue(undefined);
-    const log = createLogger('debug');
-    log.attachServer({ sendLoggingMessage: send } as never);
-
-    log.info('real_event', { event: 'spoofed' });
-
-    const arg = send.mock.calls[0]?.[0] as { data: { event: string } };
-    expect(arg.data.event).toBe('real_event');
-  });
-
-  it('forwards to the MCP server when attached, mapping warn -> warning', () => {
-    const send = vi.fn().mockResolvedValue(undefined);
-    const log = createLogger('debug');
-    log.attachServer({ sendLoggingMessage: send } as never);
-
-    log.warn('w', { a: 1, token: 'x' });
-
-    expect(send).toHaveBeenCalledTimes(1);
-    const arg = send.mock.calls[0]?.[0] as {
-      level: string;
-      data: { event: string; token: string };
-    };
-    expect(arg.level).toBe('warning');
-    expect(arg.data.event).toBe('w');
-    // Redaction applies to the MCP sink too.
-    expect(arg.data.token).toBe('[REDACTED]');
-  });
-
-  it('maps every level onto its MCP counterpart', () => {
-    const send = vi.fn().mockResolvedValue(undefined);
-    const log = createLogger('debug');
-    log.attachServer({ sendLoggingMessage: send } as never);
-
-    log.debug('d');
-    log.info('i');
-    log.warn('w');
-    log.error('e');
-
-    // Only `warn -> warning` was pinned; the identity mappings were not, so a
-    // typo in any of the other three would have gone unnoticed.
-    expect(send.mock.calls.map((call) => (call[0] as { level: string }).level)).toEqual([
-      'debug',
-      'info',
-      'warning',
-      'error',
-    ]);
-  });
-
-  it('tags every MCP notification with the server logger name', () => {
-    const send = vi.fn().mockResolvedValue(undefined);
-    const log = createLogger('debug');
-    log.attachServer({ sendLoggingMessage: send } as never);
-
-    log.info('x');
-
-    expect(send.mock.calls[0]?.[0]).toMatchObject({ logger: 'zendesk-mcp-server' });
-  });
-
-  it('does not throw when the MCP forward rejects', () => {
-    const send = vi.fn().mockRejectedValue(new Error('not connected'));
-    const log = createLogger('debug');
-    log.attachServer({ sendLoggingMessage: send } as never);
-
-    expect(() => log.info('x')).not.toThrow();
-  });
-
-  it('does not throw when the MCP forward throws synchronously', () => {
-    // A transport that is not connected yet can reject before returning a
-    // promise at all — the `try` around the call is what covers that, and it
-    // was untested.
-    const send = vi.fn(() => {
-      throw new Error('transport not connected');
-    });
-    const log = createLogger('debug');
-    log.attachServer({ sendLoggingMessage: send } as never);
-
-    expect(() => log.info('x')).not.toThrow();
-    expect(errSpy).toHaveBeenCalledTimes(1);
-  });
-
   it('exposes a silent logger that never writes', () => {
     silentLogger.debug('a');
     silentLogger.info('b');
     silentLogger.warn('c');
     silentLogger.error('d');
-    silentLogger.attachServer({ sendLoggingMessage: vi.fn() } as never);
 
     expect(errSpy).not.toHaveBeenCalled();
   });

@@ -109,7 +109,6 @@ describe('createZendeskGrants', () => {
       info: vi.fn(),
       warn: (e, f) => events.push([e, f]),
       error: vi.fn(),
-      attachServer: vi.fn(),
     };
     const { grants, records, now } = setup(refresh, logger);
     await grants.save('g', { accessToken: 'a1', refreshToken: 'r1', expiresAt: now() });

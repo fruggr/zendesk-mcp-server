@@ -79,7 +79,6 @@ const makeLogger = () => ({
   info: vi.fn(),
   warn: vi.fn(),
   error: vi.fn(),
-  attachServer: vi.fn(),
 });
 
 // Flush the microtask + immediate queue so the store's token-promise handlers run.
