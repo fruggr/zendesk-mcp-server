@@ -1,5 +1,7 @@
 import {
   McpServer,
+  ProtocolError,
+  ProtocolErrorCode,
   type RequestStateCodec,
   ResourceTemplate,
   type ServerContext,
@@ -20,6 +22,7 @@ import {
   buildInstructions,
   helpCenterContextEnabled,
   promotedArticlesEnabled,
+  slaAlertsEnabled,
   topologyResourceUri,
 } from './guidance/instructions';
 import { createTopologyProvider, type TopologyProvider } from './guidance/topology';
@@ -32,15 +35,25 @@ import { filterTools, groupByNamespace, NAMESPACE_LABELS } from './routing/regis
 import type { ToolAnnotations, ToolCallContext, ToolResult } from './tools/definitions';
 import { resolveBrand } from './tools/help-center';
 import { createAllTools, type ToolDefinition } from './tools/index';
+import { type AlertsReader, createAlertsReader } from './tools/sla-alerts';
 import { isInputRequiredError, supportsFormElicitation } from './utils/elicitation';
 import { type Logger, silentLogger } from './utils/logger';
 import { readPackageInfo } from './utils/package-info';
 import { createRequestStateCodec } from './utils/request-state';
+import { type AlertPoller, createAlertPoller } from './utils/sla-poller';
+import {
+  NAMED_SCOPES,
+  namedAlertsUri,
+  parseAlertsUri,
+  SLA_ALERTS_TEMPLATES,
+  SLA_RESOURCE_SCHEME,
+} from './utils/sla-resource';
 import {
   createSlaRuntime,
   createSlaService,
   createUserIdResolver,
   type SlaRuntime,
+  type SlaService,
 } from './utils/sla-service';
 import { createStrictParamsParser, toStrictStandardSchema } from './utils/validation';
 
@@ -271,7 +284,115 @@ export interface ToolsetParams {
   // invalidate (e.g. the HTTP per-session bearer is owned by the client).
   onUnauthorized?: (() => void) | undefined;
   logger?: Logger;
+  /**
+   * The SLA service the tools got: the alert resources read with it. Optional
+   * so harnesses without one simply get no alert resources.
+   */
+  sla?: SlaService | undefined;
 }
+
+const ALERTS_MIME = 'text/markdown';
+
+// The three alert resource templates, read through `reader`. The named one
+// lists its three URIs so a client can offer them without guessing.
+const registerAlertResources = (server: McpServer, reader: AlertsReader): Removable[] => {
+  const read = async (uri: URL) => ({
+    contents: [
+      { uri: uri.toString(), mimeType: ALERTS_MIME, text: await reader.read(uri.toString()) },
+    ],
+  });
+  const describe =
+    'SLA metrics breached or about to breach, one line each, grouped BREACHED / CRITICAL / WARNING and soonest first, against your alert thresholds; the same report as list_sla_alerts. Subscribe to be told when the set of alerts changes.';
+  return [
+    server.registerResource(
+      'sla-alerts',
+      new ResourceTemplate(SLA_ALERTS_TEMPLATES.named, {
+        list: async () => ({
+          resources: NAMED_SCOPES.map((scope) => ({
+            uri: namedAlertsUri(scope),
+            name: `SLA alerts: ${scope}`,
+            mimeType: ALERTS_MIME,
+          })),
+        }),
+      }),
+      {
+        title: 'Zendesk SLA alerts',
+        description: `${describe} {scope} is mine, my_groups or all (unsolved tickets).`,
+        mimeType: ALERTS_MIME,
+      },
+      read,
+    ),
+    server.registerResource(
+      'sla-alerts-view',
+      new ResourceTemplate(SLA_ALERTS_TEMPLATES.view, { list: undefined }),
+      {
+        title: 'Zendesk SLA alerts in a view',
+        description: `${describe} {view} is a view title or id, as list_views shows it.`,
+        mimeType: ALERTS_MIME,
+      },
+      read,
+    ),
+    server.registerResource(
+      'sla-alerts-query',
+      new ResourceTemplate(SLA_ALERTS_TEMPLATES.query, { list: undefined }),
+      {
+        title: 'Zendesk SLA alerts for a search',
+        description: `${describe} {query} is any Zendesk ticket search query.`,
+        mimeType: ALERTS_MIME,
+      },
+      read,
+    ),
+  ];
+};
+
+/**
+ * The server pushing alert changes on its own: `resources/subscribe` and
+ * `unsubscribe` (2025-era clients), a poller re-checking each subscribed URI
+ * every `slaPollSeconds`, and `notifications/resources/updated` when a URI's
+ * alert set changes. Installed once per server, before it connects, and only
+ * with push on. Stops with the session.
+ */
+export const installAlertSubscriptions = (
+  server: McpServer,
+  config: Config,
+  reader: AlertsReader,
+  logger: Logger = silentLogger,
+): AlertPoller => {
+  const poller = createAlertPoller({
+    intervalMs: config.slaPollSeconds * 1000,
+    check: reader.fingerprint,
+    notify: (uri) => server.server.sendResourceUpdated({ uri }),
+    onError: (uri, error) =>
+      logger.warn('sla_alerts_poll_failed', {
+        uri,
+        error: error instanceof Error ? error.message : String(error),
+      }),
+  });
+  const subscribable = (uri: string): string => {
+    if (!parseAlertsUri(uri)) {
+      throw new ProtocolError(
+        ProtocolErrorCode.InvalidParams,
+        `Only SLA alert resources (${SLA_RESOURCE_SCHEME}://alerts/...) can be subscribed to: ${uri}`,
+      );
+    }
+    return uri;
+  };
+  server.server.registerCapabilities({ resources: { subscribe: true } });
+  server.server.setRequestHandler('resources/subscribe', (request) => {
+    poller.subscribe(subscribable(request.params.uri));
+    return {};
+  });
+  server.server.setRequestHandler('resources/unsubscribe', (request) => {
+    poller.unsubscribe(request.params.uri);
+    return {};
+  });
+  const previous = server.server.onclose;
+  server.server.onclose = () => {
+    poller.stop();
+    previous?.();
+  };
+  return poller;
+};
 
 /**
  * Lazily resolve the Help Center subdomain the topology resource pins to: the
@@ -327,10 +448,11 @@ const resourceBrandResolver = (
  */
 export const registerToolset = (
   server: McpServer,
-  { config, getToken, caches, onUnauthorized, logger = silentLogger }: ToolsetParams,
+  { config, getToken, caches, onUnauthorized, logger = silentLogger, sla }: ToolsetParams,
   tools: ToolDefinition[],
 ): { dispose(): void; count: number } => {
-  const { topology, articles } = caches ?? createServerCaches(config, getToken, onUnauthorized);
+  const shared = caches ?? createServerCaches(config, getToken, onUnauthorized);
+  const { topology, articles } = shared;
   const registered: Removable[] = [];
   const dispose = (): void => {
     for (const handle of registered) handle.remove();
@@ -525,6 +647,19 @@ export const registerToolset = (
         ),
       );
     }
+    if (sla && slaAlertsEnabled(config)) {
+      registered.push(
+        ...registerAlertResources(
+          server,
+          createAlertsReader({
+            subdomain: config.subdomain,
+            getToken,
+            resolveBrandSubdomain: shared.resolveBrandSubdomain,
+            sla,
+          }),
+        ),
+      );
+    }
   } catch (err) {
     dispose();
     throw err;
@@ -557,14 +692,22 @@ export const createMcpServer = (
   }: CreateMcpServerOptions = {},
 ): McpServer => {
   const server = createServerShell(config, requestStateCodec);
-  const tools = createAllTools({
+  const sla = createSlaService(config, slaRuntime, caches.resolveUserId);
+  const ctx = {
     subdomain: config.subdomain,
     brandIds: config.brandIds,
     resolveBrandSubdomain: caches.resolveBrandSubdomain,
     getToken,
-    sla: createSlaService(config, slaRuntime, caches.resolveUserId),
-  });
-  registerToolset(server, { config, getToken, caches, onUnauthorized, logger }, tools);
+    sla,
+  };
+  registerToolset(
+    server,
+    { config, getToken, caches, onUnauthorized, logger, sla },
+    createAllTools(ctx),
+  );
+  if (config.slaPush && slaAlertsEnabled(config)) {
+    installAlertSubscriptions(server, config, createAlertsReader(ctx), logger);
+  }
   return server;
 };
 

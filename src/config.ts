@@ -219,6 +219,12 @@ export const ConfigSchema = z.object({
    * everyone).
    */
   slaUserPreferences: z.boolean().default(true),
+  /**
+   * How often, in seconds, a subscribed SLA alert resource is re-checked while
+   * at least one subscription is open (default 300, minimum 60, which keeps a
+   * subscriber well inside Zendesk's rate limit).
+   */
+  slaPollSeconds: z.number().int().min(60).default(300),
 });
 
 /** The store a config resolves to; see `slaStateStore`. */
@@ -259,6 +265,7 @@ interface CliResult {
   slaCacheTtlSeconds?: string;
   slaStateStore?: string;
   slaUserPreferences?: boolean;
+  slaPollSeconds?: string;
 }
 
 // Number.parseInt('8080abc', 10) === 8080 — a numeric prefix passes silently, so
@@ -369,6 +376,7 @@ const CLI_OPTIONS = {
   'sla-wait-thresholds': { type: 'string' },
   'sla-cache-ttl-seconds': { type: 'string' },
   'sla-state-store': { type: 'string' },
+  'sla-poll-seconds': { type: 'string' },
 } as const satisfies ParseArgsConfig['options'];
 
 // The value-taking subset, spelled as they appear on the command line. Exported
@@ -400,6 +408,7 @@ const FIELD_BY_FLAG = new Map<string, keyof CliResult>([
   ['sla-wait-thresholds', 'slaWaitThresholds'],
   ['sla-cache-ttl-seconds', 'slaCacheTtlSeconds'],
   ['sla-state-store', 'slaStateStore'],
+  ['sla-poll-seconds', 'slaPollSeconds'],
 ]);
 
 // Standalone flags set a fixed value, which is why they cannot go through
@@ -632,6 +641,7 @@ const resolveSlaSettings = (cli: CliResult) => ({
   ),
   slaStateStore: cli.slaStateStore ?? requireNonEmptyEnv('SLA_STATE_STORE'),
   slaUserPreferences: cli.slaUserPreferences ?? booleanEnv('SLA_USER_PREFERENCES'),
+  slaPollSeconds: secondsSetting(cli.slaPollSeconds, 'SLA_POLL_SECONDS', '--sla-poll-seconds'),
 });
 
 export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {

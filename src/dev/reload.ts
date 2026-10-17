@@ -5,8 +5,15 @@ import type { McpServer, RequestStateCodec } from '@modelcontextprotocol/server'
 import type { StdioServerHandle } from '@modelcontextprotocol/server/stdio';
 import * as z from 'zod/v4';
 import type { Config } from '../config';
-import { createServerCaches, createServerShell, registerToolset } from '../server';
+import { slaAlertsEnabled } from '../guidance/instructions';
+import {
+  createServerCaches,
+  createServerShell,
+  installAlertSubscriptions,
+  registerToolset,
+} from '../server';
 import { createAllTools, type ToolContext, type ToolDefinition } from '../tools/index';
+import { createAlertsReader } from '../tools/sla-alerts';
 import { startStdioTransport } from '../transports/stdio';
 import { type Logger, silentLogger } from '../utils/logger';
 import { createSlaRuntime, createSlaService, type SlaRuntime } from '../utils/sla-service';
@@ -84,7 +91,11 @@ export const createReloadableServer = (
     getToken,
     sla: createSlaService(config, slaRuntime, caches.resolveUserId),
   };
-  const params = { config, getToken, caches, onUnauthorized, logger };
+  const params = { config, getToken, caches, onUnauthorized, logger, sla: ctx.sla };
+  // Subscriptions belong to the long-lived shell, not to a tool generation.
+  if (config.slaPush && slaAlertsEnabled(config)) {
+    installAlertSubscriptions(server, config, createAlertsReader(ctx), logger);
+  }
 
   // The last generation registered successfully — both the handle (to dispose)
   // and its definitions (to restore if a reload's re-registration fails).

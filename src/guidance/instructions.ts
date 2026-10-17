@@ -58,6 +58,14 @@ const helpCenterNamespaceActive = (config: Config): boolean =>
   !config.namespaces?.length || config.namespaces.includes('help_center');
 
 /**
+ * Whether the SLA alert resources (`zendesk-sla://alerts/...`) are exposed:
+ * whenever the `tickets` namespace is active, like the tools reading the same
+ * tickets.
+ */
+export const slaAlertsEnabled = (config: Config): boolean =>
+  !config.namespaces?.length || config.namespaces.includes('tickets');
+
+/**
  * Whether the Help Center structural context (init instructions + the
  * topology resource, default `zendesk-hc://topology`) should be exposed. True only when the
  * feature is enabled (`--no-topology` not set) AND the `help_center` namespace
