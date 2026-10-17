@@ -288,7 +288,11 @@ describe('createFileStore', () => {
     });
     const store = createFileStore(path);
     await store.set('touch', 'x');
-    expect(Object.keys(onDisk()).sort()).toEqual(['future', 'noExpiry', 'touch']);
+    expect(Object.keys(onDisk()).sort((a, b) => a.localeCompare(b))).toEqual([
+      'future',
+      'noExpiry',
+      'touch',
+    ]);
     for (const key of ['numberValue', 'stringExpiry', 'nullExpiry', 'plainString']) {
       expect(await store.get(key)).toBeUndefined();
     }

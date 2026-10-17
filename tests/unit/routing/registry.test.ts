@@ -91,6 +91,7 @@ describe('NAMESPACE_LABELS', () => {
   // The type already makes an incomplete literal a compile error; this catches
   // the reverse drift, a label left behind for a namespace that no longer exists.
   it('covers exactly the Namespace enum, with no extra keys', () => {
-    expect(Object.keys(NAMESPACE_LABELS).sort()).toEqual([...Namespace.options].sort());
+    const byName = (a: string, b: string) => a.localeCompare(b);
+    expect(Object.keys(NAMESPACE_LABELS).sort(byName)).toEqual([...Namespace.options].sort(byName));
   });
 });

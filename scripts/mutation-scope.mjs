@@ -267,7 +267,8 @@ const summary = async () => {
   const score = scoreOf(counts);
   const lines = ['| Metric | Value |', '| --- | --- |'];
   lines.push(`| Mutation score | ${score === null ? 'n/a' : `${score.toFixed(2)}%`} |`);
-  for (const status of Object.keys(counts).sort()) lines.push(`| ${status} | ${counts[status]} |`);
+  for (const status of Object.keys(counts).sort((a, b) => a.localeCompare(b)))
+    lines.push(`| ${status} | ${counts[status]} |`);
   console.log(lines.join('\n'));
 };
 
