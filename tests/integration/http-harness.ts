@@ -1,31 +1,42 @@
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import type { Config } from '../../src/config';
+import type { ServerFactory } from '../../src/server';
 import { startHttpTransport } from '../../src/transports/http';
 import { createZendeskOAuthMock, localServerPassthrough } from '../msw-handlers';
 import { mswServer } from '../setup';
-import type { ConnectedClient, IntegrationHarness } from './harness';
+import {
+  type ConnectedClient,
+  clientOptionsFor,
+  type Era,
+  type IntegrationHarness,
+} from './harness';
 import { signInWithDcr } from './oauth-client';
 
 /**
  * Exercises the HTTP path end-to-end: a real `node:http` server, a client that
  * signs in through the authorization server (DCR, the MSW-mocked Zendesk
  * login, consent) and then talks MCP over Streamable HTTP with the access
- * token it obtained. Nothing is stubbed between the client and the tools.
+ * token it obtained, in the protocol era the harness pins. Nothing is stubbed
+ * between the client and the tools.
  */
-export const httpHarness: IntegrationHarness = {
-  name: 'http',
+export const createHttpHarness = (era: Era, serverFactory?: ServerFactory): IntegrationHarness => ({
+  name: era === '2025' ? 'http' : `http-${era}`,
   async connect(config: Config): Promise<ConnectedClient> {
     // The sign-in needs a working Zendesk login, whatever the scenario mocked:
     // the OAuth mock goes on top for it, then the scenario's own handlers are
     // put back above it, so the tool calls see exactly what the scenario set.
     const scenarioHandlers = mswServer.listHandlers();
     mswServer.use(localServerPassthrough, ...createZendeskOAuthMock().handlers);
-    const handle = await startHttpTransport({
-      ...config,
-      transport: 'http',
-      oauthStore: 'memory://',
-      oauthMasterSecret: Buffer.alloc(32, 8).toString('base64'),
-    });
+    const handle = await startHttpTransport(
+      {
+        ...config,
+        transport: 'http',
+        oauthStore: 'memory://',
+        oauthMasterSecret: Buffer.alloc(32, 8).toString('base64'),
+      },
+      undefined,
+      serverFactory ? { serverFactory } : {},
+    );
     const baseUrl = `http://127.0.0.1:${handle.port}`;
     const { tokens } = await signInWithDcr(baseUrl);
     if (!tokens.body.access_token) {
@@ -35,7 +46,10 @@ export const httpHarness: IntegrationHarness = {
 
     mswServer.use(localServerPassthrough, ...scenarioHandlers);
 
-    const client = new Client({ name: 'integration-test', version: '0.0.0' });
+    const client = new Client(
+      { name: 'integration-test', version: '0.0.0' },
+      clientOptionsFor(era),
+    );
     await client.connect(
       new StreamableHTTPClientTransport(new URL(`${baseUrl}/mcp`), {
         requestInit: { headers: { Authorization: `Bearer ${tokens.body.access_token}` } },
@@ -51,4 +65,6 @@ export const httpHarness: IntegrationHarness = {
       },
     };
   },
-};
+});
+
+export const httpHarness = createHttpHarness('2025');

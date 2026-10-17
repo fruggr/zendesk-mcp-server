@@ -89,9 +89,15 @@ describe('createGrantRegistry', () => {
   });
 
   it('ignores closing a grant it does not hold', async () => {
-    const registry = createGrantRegistry<ReturnType<typeof entry>>({ idleTimeoutMs: 100 });
+    const onCloseError = vi.fn();
+    const registry = createGrantRegistry<ReturnType<typeof entry>>({
+      idleTimeoutMs: 100,
+      onCloseError,
+    });
 
-    await expect(registry.close('missing')).resolves.toBeUndefined();
+    await registry.close('missing');
+
+    expect(onCloseError).not.toHaveBeenCalled();
   });
 
   it('closes every entry on closeAll', async () => {

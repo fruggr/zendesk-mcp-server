@@ -1,8 +1,18 @@
 import { randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node';
+import {
+  type NodeIncomingMessageLike,
+  type NodeMcpRequestHandler,
+  NodeStreamableHTTPServerTransport,
+  toNodeHandler,
+  toWebRequest,
+} from '@modelcontextprotocol/node';
 import {
   type AuthInfo,
+  createMcpHandler,
+  isLegacyRequest,
+  type McpHttpHandler,
+  type McpServer,
   OAuthError,
   OAuthErrorCode,
   verifyBearerToken,
@@ -14,7 +24,8 @@ import {
 } from '../auth/server/authorization-server';
 import type { Fetch } from '../auth/server/trusted-clients';
 import type { Config } from '../config';
-import { createMcpServer } from '../server';
+import { createServerCaches, defaultServerFactory, type ServerFactory } from '../server';
+import { createGrantRegistry } from '../utils/grant-registry';
 import { type Logger, silentLogger } from '../utils/logger';
 import { createRequestStateCodec } from '../utils/request-state';
 
@@ -37,10 +48,11 @@ export const DEFAULT_BROWSER_MCP_CLIENT_ORIGINS: readonly string[] = [
 ];
 
 // Methods + headers exposed across CORS for the /mcp endpoint. Headers list
-// covers what the SDK's StreamableHTTPClientTransport sets plus the bearer.
+// covers what the SDK's client transport sets in both protocol eras (2026-07-28
+// adds mcp-method and mcp-name) plus the bearer.
 const CORS_ALLOWED_METHODS = 'GET, POST, DELETE, OPTIONS';
 const CORS_ALLOWED_HEADERS =
-  'Authorization, Content-Type, Accept, mcp-session-id, mcp-protocol-version, last-event-id';
+  'Authorization, Content-Type, Accept, mcp-session-id, mcp-protocol-version, last-event-id, mcp-method, mcp-name';
 // Clients need to read the session ID from the response to send it on
 // subsequent requests; without this header they can't.
 const CORS_EXPOSE_HEADERS = 'mcp-session-id';
@@ -266,6 +278,21 @@ interface Session {
   close(): Promise<void>;
 }
 
+/** What a grant keeps across its 2026-07-28 requests (see utils/grant-registry.ts). */
+interface GrantEntry {
+  /** The grant's latest Zendesk token: requests adopt it, as a session does. */
+  auth: { zendeskToken: string };
+  /** Zendesk refused the grant's token: close the entry after this request. */
+  revoked: boolean;
+  handle: NodeMcpRequestHandler;
+  close(): Promise<void>;
+}
+
+// The SDK's Node adapters take a structural request whose `method` is always
+// set; node:http types it optional, though a server request always carries one.
+const asNodeRequest = (req: IncomingMessage): NodeIncomingMessageLike =>
+  req as NodeIncomingMessageLike;
+
 // JSON-RPC tool calls are small; this is a generous ceiling that exists only
 // so a client can't stream an unbounded body into server memory.
 export const MAX_BODY_BYTES = 4 * 1024 * 1024;
@@ -369,6 +396,8 @@ export interface HttpTransportOptions {
   maxBodyBytes?: number;
   /** Base fetch for CIMD documents (tests serve metadata documents from memory). */
   cimdFetch?: Fetch;
+  /** Builds each server; tests inject one carrying fixture tools and resources. */
+  serverFactory?: ServerFactory;
 }
 
 export const startHttpTransport = async (
@@ -383,6 +412,20 @@ export const startHttpTransport = async (
   const sessions = new Map<string, Session>();
   const idleTimeoutMs = options.sessionIdleTimeoutMs ?? SESSION_IDLE_TIMEOUT_MS;
   const maxBodyBytes = options.maxBodyBytes ?? MAX_BODY_BYTES;
+  const serverFactory = options.serverFactory ?? defaultServerFactory;
+  const grants = createGrantRegistry<GrantEntry>({
+    idleTimeoutMs,
+    onCloseError: (grantId, err) =>
+      logger.warn('grant_close_failed', {
+        grantId,
+        error: err instanceof Error ? err.message : String(err),
+      }),
+  });
+
+  // The granted scope narrows the surface like --read-only does: a client that
+  // asked for `read` alone gets the read tools only.
+  const effectiveConfig = (token: VerifiedAccessToken): Config =>
+    !config.readOnly && token.canWrite ? config : { ...config, readOnly: true };
 
   // Route a request onto an already-established session, adopting the presented
   // token (clients refresh mid-session). Returns false when the id names no live
@@ -393,6 +436,7 @@ export const startHttpTransport = async (
     res: ServerResponse,
     sessionId: string,
     token: VerifiedAccessToken,
+    body: unknown,
   ): Promise<boolean> => {
     const session = sessions.get(sessionId);
     if (!session || session.subject !== token.subject) return false;
@@ -401,15 +445,7 @@ export const startHttpTransport = async (
     session.auth.zendeskToken = token.zendeskAccessToken;
     session.auth.grantId = token.grantId;
     session.lastActivityAt = Date.now();
-    const body =
-      req.method === 'POST'
-        ? await readJsonBody(req, maxBodyBytes)
-        : ({ ok: true, value: undefined } as const);
-    if (!body.ok) {
-      respondBodyError(req, res, body);
-      return true;
-    }
-    await session.transport.handleRequest(req, res, body.value);
+    await session.transport.handleRequest(req, res, body);
     return true;
   };
 
@@ -425,21 +461,20 @@ export const startHttpTransport = async (
     // needed because each session has its own server instance. A Zendesk 401
     // ends the grant, so the client's next request re-runs authorization.
     const auth = { zendeskToken: token.zendeskAccessToken, grantId: token.grantId };
-    // The granted scope narrows the surface like --read-only does: a client
-    // that asked for `read` alone gets the read tools only.
-    const canWrite = !config.readOnly && token.canWrite;
-    const server = createMcpServer(
-      canWrite ? config : { ...config, readOnly: true },
-      () => auth.zendeskToken,
+    const sessionConfig = effectiveConfig(token);
+    const server: McpServer = serverFactory({
+      config: sessionConfig,
+      getToken: () => auth.zendeskToken,
       logger,
-      () => void as.revokeGrant(auth.grantId),
-      {
-        requestStateCodec: createRequestStateCodec({
-          key: as.requestStateKey,
-          principal: () => auth.grantId,
-        }),
+      onUnauthorized: () => void as.revokeGrant(auth.grantId),
+      requestStateCodec: createRequestStateCodec({
+        key: as.requestStateKey,
+        principal: () => auth.grantId,
+      }),
+      notifyResourceUpdated: (uri) => {
+        void server.server.sendResourceUpdated({ uri }).catch(() => undefined);
       },
-    );
+    });
     const transport = new NodeStreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
       onsessioninitialized: (newId) => {
@@ -447,7 +482,7 @@ export const startHttpTransport = async (
           transport,
           auth,
           subject: token.subject,
-          canWrite,
+          canWrite: !sessionConfig.readOnly,
           lastActivityAt: Date.now(),
           close: async () => {
             await transport.close();
@@ -461,6 +496,107 @@ export const startHttpTransport = async (
     };
     await server.connect(transport);
     await transport.handleRequest(req, res, body);
+  };
+
+  // A grant's first 2026-07-28 request: the handler (and its listen bus) and
+  // the caches every later request of the grant reuses. Each request still gets
+  // a fresh server from the factory.
+  const createGrantEntry = (token: VerifiedAccessToken, as: AuthorizationServer): GrantEntry => {
+    const { grantId } = token;
+    const auth = { zendeskToken: token.zendeskAccessToken };
+    const getToken = (): string => auth.zendeskToken;
+    // A Zendesk 401 ends the grant; its entry closes once the request that hit
+    // it has answered (closing now would abort that very response), so listen
+    // streams do not outlive the revocation.
+    const onUnauthorized = (): void => {
+      entry.revoked = true;
+      void as.revokeGrant(grantId);
+    };
+    const caches = createServerCaches(config, getToken, onUnauthorized);
+    const requestStateCodec = createRequestStateCodec({
+      key: as.requestStateKey,
+      principal: () => grantId,
+    });
+    const handler: McpHttpHandler = createMcpHandler(
+      ({ authInfo }) => {
+        const verified = authInfo?.extra?.['verified'] as VerifiedAccessToken | undefined;
+        // Unreachable: the transport hands authInfo to every request it routes here.
+        if (!verified) throw new Error('2026-07-28 request without a verified token');
+        return serverFactory({
+          config: effectiveConfig(verified),
+          getToken,
+          logger,
+          onUnauthorized,
+          caches,
+          requestStateCodec,
+          notifyResourceUpdated: (uri) => handler.notify.resourceUpdated(uri),
+        });
+      },
+      {
+        legacy: 'reject',
+        onerror: (err) => logger.debug('mcp_request_rejected', { error: err.message }),
+      },
+    );
+    const entry: GrantEntry = {
+      auth,
+      revoked: false,
+      handle: toNodeHandler(handler),
+      close: () => handler.close(),
+    };
+    return entry;
+  };
+
+  const serveModern = async (
+    req: IncomingMessage,
+    res: ServerResponse,
+    body: unknown,
+    token: VerifiedAccessToken,
+    as: AuthorizationServer,
+  ): Promise<void> => {
+    const entry = grants.acquire(token.grantId, token.subject, () => createGrantEntry(token, as));
+    // A grant belongs to one subject; another one presenting it is refused.
+    if (!entry) {
+      sendUnauthorized(res, as.issuer);
+      return;
+    }
+    entry.auth.zendeskToken = token.zendeskAccessToken;
+    // The handler's authInfo; the bearer itself stays here: tools act with the
+    // grant's Zendesk token.
+    const request = asNodeRequest(req);
+    request.auth = {
+      token: '',
+      clientId: token.clientId,
+      scopes: [],
+      expiresAt: token.expiresAt,
+      extra: { verified: token },
+    };
+    try {
+      await entry.handle(request, res, body);
+    } finally {
+      if (entry.revoked) await grants.close(token.grantId);
+    }
+  };
+
+  // 2025 traffic: the sessionful wiring, one server per session.
+  const serveLegacy = async (
+    req: IncomingMessage,
+    res: ServerResponse,
+    body: unknown,
+    token: VerifiedAccessToken,
+    as: AuthorizationServer,
+  ): Promise<void> => {
+    const sessionId =
+      typeof req.headers['mcp-session-id'] === 'string' ? req.headers['mcp-session-id'] : undefined;
+
+    if (sessionId && (await dispatchToSession(req, res, sessionId, token, body))) return;
+
+    if (req.method !== 'POST') {
+      // Non-POST without a session ID can't initialize a new session.
+      sendJsonRpcError(res, 400, -32000, 'No active session; initialize via POST first.');
+      return;
+    }
+
+    await openSession(req, res, body, token, as);
   };
 
   const handleMcpRequest = async (
@@ -479,24 +615,28 @@ export const startHttpTransport = async (
       return;
     }
 
-    const sessionId =
-      typeof req.headers['mcp-session-id'] === 'string' ? req.headers['mcp-session-id'] : undefined;
+    let body: unknown;
+    if (req.method === 'POST') {
+      const read = await readJsonBody(req, maxBodyBytes);
+      if (!read.ok) {
+        respondBodyError(req, res, read);
+        return;
+      }
+      body = read.value;
+    }
 
-    if (sessionId && (await dispatchToSession(req, res, sessionId, token))) return;
-
-    if (req.method !== 'POST') {
-      // Non-POST without a session ID can't initialize a new session.
-      sendJsonRpcError(res, 400, -32000, 'No active session; initialize via POST first.');
+    // 2026-07-28 traffic is POST only, carrying its per-request envelope; an
+    // empty body or a GET/DELETE is 2025 by the SDK's own rule, and checking
+    // it here keeps toWebRequest from re-reading a consumed stream.
+    const modern =
+      body !== undefined &&
+      !(await isLegacyRequest(await toWebRequest(asNodeRequest(req), body), body));
+    if (modern) {
+      await serveModern(req, res, body, token, as);
       return;
     }
 
-    const body = await readJsonBody(req, maxBodyBytes);
-    if (!body.ok) {
-      respondBodyError(req, res, body);
-      return;
-    }
-
-    await openSession(req, res, body.value, token, as);
+    await serveLegacy(req, res, body, token, as);
   };
 
   const route = async (
@@ -579,6 +719,7 @@ export const startHttpTransport = async (
         });
       }
     }
+    await grants.sweep();
   };
   const sweeper = setInterval(
     () => void sweepIdleSessions(),
@@ -593,6 +734,7 @@ export const startHttpTransport = async (
       clearInterval(sweeper);
       await Promise.all([...sessions.values()].map((session) => session.close()));
       sessions.clear();
+      await grants.closeAll();
       // server.close() waits for every connection to drain; a wedged or
       // keep-alive socket would stall shutdown forever. Sessions are already
       // closed at this point, so dropping the remaining sockets is safe.

@@ -657,6 +657,19 @@ describe('CORS (HTTP roundtrip)', () => {
     expect(res.headers.get('vary')).toBe('Origin');
   });
 
+  // Every header an SDK client may send, in both protocol eras: a browser
+  // client's preflight fails on any header missing from this list.
+  it('allows the headers of both protocol eras across CORS', async () => {
+    handle = await startHttpTransport(baseConfig);
+    const res = await fetch(`http://127.0.0.1:${handle.port}/mcp`, {
+      method: 'OPTIONS',
+      headers: { Origin: 'https://chatgpt.com', 'Access-Control-Request-Method': 'POST' },
+    });
+    expect(res.headers.get('access-control-allow-headers')).toMatchInlineSnapshot(
+      `"Authorization, Content-Type, Accept, mcp-session-id, mcp-protocol-version, last-event-id, mcp-method, mcp-name"`,
+    );
+  });
+
   it('OPTIONS from an unknown origin returns 204 but without ACAO (browser blocks)', async () => {
     handle = await startHttpTransport(baseConfig);
     const res = await fetch(`http://127.0.0.1:${handle.port}/mcp`, {
