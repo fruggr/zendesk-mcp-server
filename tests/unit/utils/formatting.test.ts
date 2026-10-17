@@ -11,6 +11,7 @@ import {
   formatFieldValue,
   formatList,
   formatMacro,
+  formatNextBreachBlock,
   formatNodeTranslationSummary,
   formatOrganization,
   formatPermissionGroup,
@@ -28,6 +29,7 @@ import {
   formatUser,
   formatUserSegment,
   formatView,
+  nextBreachByTicket,
   truncateIfNeeded,
 } from '../../../src/utils/formatting';
 import {
@@ -1572,5 +1574,55 @@ describe('formatRequestComment', () => {
     const comment = MOCK_REQUEST_COMMENTS.comments[0];
     if (!comment) throw new Error('fixture missing');
     expect(formatRequestComment(comment, new Map())).toContain('Comment by user 456');
+  });
+});
+
+describe('formatNextBreachBlock', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-01T12:00:00Z'));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('renders the one metric a view row carries, saying it is the next breach only', () => {
+    expect(
+      formatNextBreachBlock({
+        metric: 'requester_wait_time',
+        stage: 'active',
+        breach_at: '2026-06-01T13:00:00Z',
+        days: 0,
+      }),
+    ).toMatchInlineSnapshot(`
+      "
+
+      ### SLA (next breach only)
+      - **Next breach**: 2026-06-01T13:00:00Z
+      - **requester_wait_time** — active; due 2026-06-01T13:00:00Z — 60 min remaining"
+    `);
+  });
+
+  it('renders nothing for a row without an SLA metric', () => {
+    expect(formatNextBreachBlock(undefined)).toBe('');
+    expect(formatNextBreachBlock(null)).toBe('');
+  });
+});
+
+describe('nextBreachByTicket', () => {
+  it('keys each row metric by its ticket id, skipping rows without one', () => {
+    const metric = {
+      metric: 'first_reply_time',
+      stage: 'active',
+      breach_at: '2026-06-01T13:00:00Z',
+    };
+    const byId = nextBreachByTicket([
+      { ticket: { id: 1, sla_policy_metric: metric } },
+      { ticket: { id: 2, sla_policy_metric: null } },
+      { ticket: { id: 3 } },
+      { ticket: { sla_policy_metric: metric } },
+      { ticket_id: 4 },
+    ]);
+    expect([...byId]).toEqual([[1, metric]]);
   });
 });

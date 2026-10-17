@@ -45,6 +45,7 @@ import {
   formatFieldValue,
   formatList,
   formatMacro,
+  formatNextBreachBlock,
   formatPagination,
   formatSlaBlock,
   formatSlaPolicy,
@@ -53,6 +54,7 @@ import {
   formatTicket,
   formatTicketField,
   formatView,
+  nextBreachByTicket,
   truncateIfNeeded,
 } from '../utils/formatting';
 import {
@@ -1875,7 +1877,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: true,
       title: 'Get Tickets In A View',
       description:
-        'Read the tickets inside a Zendesk view, in the view\'s own configured sort order — the same order the agent sees in the Zendesk UI — which is the natural way to work a named queue like "Unassigned tickets" or "Breaching today". Accepts the view by title or by numeric id (discover both with list_views); a title is matched case-insensitively against the agent\'s active views, and on no match the available titles are returned so you can retry in one step. Tickets come back with the same fields as list_tickets and are cursor-paginated; there is no live SLA block here (use search_tickets when you need per-ticket SLA state), and sort_by/sort_order override the view\'s order when you want a different cut.',
+        'Read the tickets inside a Zendesk view, in the view\'s own configured sort order — the same order the agent sees in the Zendesk UI — which is the natural way to work a named queue like "Unassigned tickets" or "Breaching today". Accepts the view by title or by numeric id (discover both with list_views); a title is matched case-insensitively against the agent\'s active views, and on no match the available titles are returned so you can retry in one step. Tickets come back with the same fields as list_tickets and are cursor-paginated. Each ticket an SLA policy covers also shows its next SLA breach: only the one metric closest to breaching, read from the view itself at no extra cost (use get_ticket or search_tickets for every metric). sort_by/sort_order override the view\'s order when you want a different cut.',
       inputSchema: z.object({
         view: z
           .union([z.string().min(1), z.number().int().positive()])
@@ -1954,6 +1956,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           .map(extractRowTicketId)
           .filter((id): id is number => typeof id === 'number');
         const tickets = await hydrateViewTickets(subdomain, token, ids);
+        const nextBreach = nextBreachByTicket(rows);
         // Count reflects the tickets actually rendered, not the raw execute rows:
         // a row whose id can't be extracted or that show_many can't resolve is
         // dropped, so rows.length would overstate the list. Pagination (has_more /
@@ -1962,7 +1965,11 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           content: [
             {
               type: 'text',
-              text: formatList(tickets, formatTicket, { ...meta, count: tickets.length }),
+              text: formatList(
+                tickets,
+                (ticket) => formatTicket(ticket) + formatNextBreachBlock(nextBreach.get(ticket.id)),
+                { ...meta, count: tickets.length },
+              ),
             },
           ],
         };

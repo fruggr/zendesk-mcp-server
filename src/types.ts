@@ -204,7 +204,11 @@ export interface ZendeskViewCountManyResponse {
 // take only the view-ordered ids from them and hydrate through
 // /tickets/show_many (#121).
 export interface ZendeskViewExecuteRow {
-  ticket?: { id?: number };
+  // `sla_policy_metric` is the ticket's NEXT breaching metric only, not the
+  // whole `policy_metrics` array (measured, PR #387 spike 1). The row also
+  // carries `sla_next_breach_at` in a `+00:00` form; this one quotes Zendesk's
+  // usual `Z` form, so it is the one read.
+  ticket?: { id?: number; sla_policy_metric?: ZendeskSlaLiveMetric | null };
   [key: string]: unknown;
 }
 
