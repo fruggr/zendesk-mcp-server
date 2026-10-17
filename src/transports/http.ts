@@ -28,6 +28,7 @@ import { createServerCaches, defaultServerFactory, type ServerFactory } from '..
 import { createGrantRegistry } from '../utils/grant-registry';
 import { type Logger, silentLogger } from '../utils/logger';
 import { createRequestStateCodec } from '../utils/request-state';
+import { startSlaRuntime } from '../utils/sla-service';
 
 const WILDCARD_HOSTS = new Set(['0.0.0.0', '::', '*']);
 const TRAILING_SLASHES = /\/+$/;
@@ -417,6 +418,9 @@ export const startHttpTransport = async (
   const buildAuthorizationServer = await prepareAuthorizationServer(config, logger);
   let authorizationServer: AuthorizationServer | undefined;
   const sessions = new Map<string, Session>();
+  // One SLA state for every session: keys carry the Zendesk user id, so users
+  // never share an entry, while one user's sessions share their cache.
+  const sla = startSlaRuntime(config);
   const idleTimeoutMs = options.sessionIdleTimeoutMs ?? SESSION_IDLE_TIMEOUT_MS;
   const maxBodyBytes = options.maxBodyBytes ?? MAX_BODY_BYTES;
   const serverFactory = options.serverFactory ?? defaultServerFactory;
@@ -474,6 +478,7 @@ export const startHttpTransport = async (
       getToken: () => auth.zendeskToken,
       logger,
       onUnauthorized: () => void as.revokeGrant(auth.grantId),
+      slaRuntime: sla.runtime,
       requestStateCodec: createRequestStateCodec({
         key: as.requestStateKey,
         principal: () => auth.grantId,
@@ -536,6 +541,7 @@ export const startHttpTransport = async (
           onUnauthorized,
           caches,
           requestStateCodec,
+          slaRuntime: sla.runtime,
           notifyResourceUpdated: (uri) => handler.notify.resourceUpdated(uri),
         });
       },
@@ -743,6 +749,7 @@ export const startHttpTransport = async (
     port: boundPort,
     close: async () => {
       clearInterval(sweeper);
+      sla.stop();
       await Promise.all([...sessions.values()].map((session) => session.close()));
       sessions.clear();
       await grants.closeAll();

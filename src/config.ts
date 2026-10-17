@@ -195,7 +195,22 @@ export const ConfigSchema = z.object({
    * notifications. Every tool and reading the resource stay available.
    */
   slaPush: z.boolean().default(true),
+  /**
+   * How long one user's SLA scope fetch is reused, in seconds (default 60; 0
+   * turns the cache off). Zendesk charges a 304 revalidation as a full request,
+   * so this lifetime is the only quota saving (PR #387 spike 2).
+   */
+  slaCacheTtlSeconds: z.number().int().min(0).default(60),
+  /**
+   * Where per-user SLA state (cache, preferences) lives. Unset: `memory` on
+   * HTTP, `disk` on stdio so the stdio processes of one machine share it.
+   */
+  slaStateStore: z.enum(['memory', 'disk']).optional(),
 });
+
+/** The store a config resolves to; see `slaStateStore`. */
+export const slaStateStoreOf = (config: Config): 'memory' | 'disk' =>
+  config.slaStateStore ?? (config.transport === 'http' ? 'memory' : 'disk');
 
 export type Config = z.infer<typeof ConfigSchema>;
 
@@ -228,6 +243,8 @@ interface CliResult {
   slaPush?: boolean;
   slaReplyThresholds?: string;
   slaWaitThresholds?: string;
+  slaCacheTtlSeconds?: string;
+  slaStateStore?: string;
 }
 
 // Number.parseInt('8080abc', 10) === 8080 — a numeric prefix passes silently, so
@@ -335,6 +352,8 @@ const CLI_OPTIONS = {
   'no-sla-push': { type: 'boolean' },
   'sla-reply-thresholds': { type: 'string' },
   'sla-wait-thresholds': { type: 'string' },
+  'sla-cache-ttl-seconds': { type: 'string' },
+  'sla-state-store': { type: 'string' },
 } as const satisfies ParseArgsConfig['options'];
 
 // The value-taking subset, spelled as they appear on the command line. Exported
@@ -364,6 +383,8 @@ const FIELD_BY_FLAG = new Map<string, keyof CliResult>([
   ['oauth-trusted-client', 'oauthTrustedClients'],
   ['sla-reply-thresholds', 'slaReplyThresholds'],
   ['sla-wait-thresholds', 'slaWaitThresholds'],
+  ['sla-cache-ttl-seconds', 'slaCacheTtlSeconds'],
+  ['sla-state-store', 'slaStateStore'],
 ]);
 
 // Standalone flags set a fixed value, which is why they cannot go through
@@ -552,6 +573,24 @@ const thresholdSetting = (
   return parsed.threshold;
 };
 
+// Whole seconds; the schema owns the range. Not echoed, like parsePort.
+const secondsSetting = (
+  cliValue: string | undefined,
+  envName: string,
+  flag: string,
+): number | undefined => {
+  const env = readNonEmptyEnv(envName);
+  const raw = cliValue ?? env.value;
+  if (raw === undefined) return undefined;
+  if (!DIGITS_ONLY.test(raw)) {
+    throw createStartupError(
+      `Invalid ${cliValue === undefined ? env.name : flag} value. Expected a whole number of seconds.`,
+      cliValue === undefined ? STARTUP_DOCS.environment : STARTUP_DOCS.invocation,
+    );
+  }
+  return Number(raw);
+};
+
 // The SLA alerting knobs, same precedence as the others (CLI flag > env var >
 // default). Server knobs, hence no ZENDESK_ prefix (AGENTS.md).
 const resolveSlaSettings = (cli: CliResult) => ({
@@ -570,6 +609,12 @@ const resolveSlaSettings = (cli: CliResult) => ({
     ),
   },
   slaPush: cli.slaPush ?? booleanEnv('SLA_PUSH'),
+  slaCacheTtlSeconds: secondsSetting(
+    cli.slaCacheTtlSeconds,
+    'SLA_CACHE_TTL_SECONDS',
+    '--sla-cache-ttl-seconds',
+  ),
+  slaStateStore: cli.slaStateStore ?? requireNonEmptyEnv('SLA_STATE_STORE'),
 });
 
 export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {

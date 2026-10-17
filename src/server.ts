@@ -30,7 +30,12 @@ import { createAllTools, type ToolDefinition } from './tools/index';
 import { type Logger, silentLogger } from './utils/logger';
 import { readPackageInfo } from './utils/package-info';
 import { createRequestStateCodec } from './utils/request-state';
-import { createSlaService } from './utils/sla-service';
+import {
+  createSlaRuntime,
+  createSlaService,
+  createUserIdResolver,
+  type SlaRuntime,
+} from './utils/sla-service';
 import { createStrictParamsParser, toStrictStandardSchema } from './utils/validation';
 
 /**
@@ -191,6 +196,8 @@ export interface ServerCaches {
   topology: TopologyProvider | undefined;
   /** Undefined when the article resources are off. */
   articles: ArticleResourcesProvider | undefined;
+  /** The caller's Zendesk user id, read once per token: SLA state is keyed by it. */
+  resolveUserId: () => Promise<number>;
 }
 
 export const createServerCaches = (
@@ -204,6 +211,7 @@ export const createServerCaches = (
   const resolveBrandSubdomain = createBrandSubdomainResolver(config.subdomain, getToken);
   return {
     resolveBrandSubdomain,
+    resolveUserId: createUserIdResolver(config.subdomain, getToken),
     topology: helpCenterContextEnabled(config)
       ? createTopologyProvider(
           getToken,
@@ -503,6 +511,8 @@ export interface CreateMcpServerOptions {
   caches?: ServerCaches;
   /** Built by the transport, which knows the key and the principal; a random-key one otherwise. */
   requestStateCodec?: RequestStateCodec;
+  /** The process-wide SLA state: every server of a process shares one. */
+  slaRuntime?: SlaRuntime;
 }
 
 export const createMcpServer = (
@@ -513,6 +523,7 @@ export const createMcpServer = (
   {
     caches = createServerCaches(config, getToken, onUnauthorized),
     requestStateCodec,
+    slaRuntime = createSlaRuntime(config),
   }: CreateMcpServerOptions = {},
 ): McpServer => {
   const server = createServerShell(config, requestStateCodec);
@@ -521,7 +532,7 @@ export const createMcpServer = (
     brandIds: config.brandIds,
     resolveBrandSubdomain: caches.resolveBrandSubdomain,
     getToken,
-    sla: createSlaService(config),
+    sla: createSlaService(config, slaRuntime, caches.resolveUserId),
   });
   registerToolset(server, { config, getToken, caches, onUnauthorized, logger }, tools);
   return server;
@@ -539,6 +550,7 @@ export interface ServerBuildContext {
   onUnauthorized?: () => void;
   caches?: ServerCaches;
   requestStateCodec: RequestStateCodec;
+  slaRuntime?: SlaRuntime;
   /**
    * Announces that a resource changed, to whoever listens to it on this
    * connection, session or grant. The URI is the whole payload, and a listen
@@ -557,8 +569,10 @@ export const defaultServerFactory: ServerFactory = ({
   onUnauthorized,
   caches,
   requestStateCodec,
+  slaRuntime,
 }) =>
   createMcpServer(config, getToken, logger, onUnauthorized, {
     ...(caches ? { caches } : {}),
+    ...(slaRuntime ? { slaRuntime } : {}),
     requestStateCodec,
   });

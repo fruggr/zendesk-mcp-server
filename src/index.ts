@@ -13,6 +13,7 @@ import { createAllTools } from './tools/index';
 import { startStdioTransport } from './transports/stdio';
 import { createLogger, type Logger } from './utils/logger';
 import { installShutdown } from './utils/shutdown';
+import { type SlaRuntime, startSlaRuntime } from './utils/sla-service';
 import { isStartupError } from './utils/startup-error';
 
 type StdioTokenStore = ReturnType<typeof import('./auth/token-store').createTokenStore>;
@@ -40,9 +41,10 @@ const connectStdio = (
   config: Config,
   tokenStore: StdioTokenStore,
   logger: Logger,
+  slaRuntime: SlaRuntime,
 ): StdioServerHandle => {
   if (config.dev) {
-    return startDevServer(config, tokenStore.getToken, logger, tokenStore.invalidate);
+    return startDevServer(config, tokenStore.getToken, logger, tokenStore.invalidate, slaRuntime);
   }
   return startStdioTransport(
     (extras) =>
@@ -51,6 +53,7 @@ const connectStdio = (
         getToken: tokenStore.getToken,
         logger,
         onUnauthorized: tokenStore.invalidate,
+        slaRuntime,
         ...extras,
       }),
     logger,
@@ -81,7 +84,8 @@ const main = async (): Promise<void> => {
 
   if (config.transport === 'stdio') {
     const tokenStore = await buildStdioTokenStore(config, logger);
-    const stdio = connectStdio(config, tokenStore, logger);
+    const sla = startSlaRuntime(config);
+    const stdio = connectStdio(config, tokenStore, logger, sla.runtime);
 
     // Installed *after* the transport is connected: the SDK's stdin `data`
     // listener is what puts stdin in flowing mode, and `end` only fires there.
@@ -89,6 +93,7 @@ const main = async (): Promise<void> => {
       watchStdin: true,
       logger,
       cleanup: async () => {
+        sla.stop();
         await stdio.close();
         tokenStore.dispose();
       },
