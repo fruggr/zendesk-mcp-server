@@ -30,6 +30,7 @@ import { createAllTools, type ToolDefinition } from './tools/index';
 import { type Logger, silentLogger } from './utils/logger';
 import { readPackageInfo } from './utils/package-info';
 import { createRequestStateCodec } from './utils/request-state';
+import { createSlaService } from './utils/sla-service';
 import { createStrictParamsParser, toStrictStandardSchema } from './utils/validation';
 
 /**
@@ -520,6 +521,7 @@ export const createMcpServer = (
     brandIds: config.brandIds,
     resolveBrandSubdomain: caches.resolveBrandSubdomain,
     getToken,
+    sla: createSlaService(config),
   });
   registerToolset(server, { config, getToken, caches, onUnauthorized, logger }, tools);
   return server;

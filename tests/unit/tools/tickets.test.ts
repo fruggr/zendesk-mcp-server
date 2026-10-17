@@ -1,9 +1,10 @@
 import { HttpResponse, http } from 'msw';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as z from 'zod/v4';
 import { CHARACTER_LIMIT, MAX_BASE64_INPUT_CHARS } from '../../../src/constants';
 import type { ToolContext } from '../../../src/tools/definitions';
 import { createTicketTools } from '../../../src/tools/tickets';
+import { DEFAULT_SLA_THRESHOLDS } from '../../../src/utils/sla-thresholds';
 import {
   auditsMorePageHandler,
   commentsMorePageHandler,
@@ -1224,6 +1225,79 @@ describe('ticket tools', () => {
       expect(text).toContain('### SLA');
       expect(text).toContain('requester_wait_time');
       expect(text).toContain('- **Next breach**: 2099-06-18T21:37:00Z');
+    });
+  });
+
+  describe('pushed SLA urgency', () => {
+    // MOCK_SLA_SIDELOAD's running metric breaches at 2099-06-18T21:37:00Z; pinning
+    // the clock 97 minutes earlier puts it inside the default 8h critical window.
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2099-06-18T20:00:00Z'));
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    const slaTools = (push: boolean) =>
+      createTicketTools(
+        testToolContext({
+          sla: { push, thresholds: () => Promise.resolve(DEFAULT_SLA_THRESHOLDS) },
+        }),
+      );
+    const run = (push: boolean, name: string, params: Record<string, unknown>) => {
+      const tool = slaTools(push).find((t) => t.name === name);
+      if (!tool) throw new Error(name);
+      return tool.handler(params).then((r) => firstText(r) ?? '');
+    };
+    const URGENCY = '- **Urgency**: CRITICAL — requester_wait_time due in 1h37m';
+
+    it('flags the most urgent metric in get_ticket when push is on', async () => {
+      const text = await run(true, 'get_ticket', { ticket_id: 1, include_comments: false });
+      expect(text).toContain(`- **Next breach**: 2099-06-18T21:37:00Z\n${URGENCY}\n`);
+    });
+
+    it('flags it on each search_tickets result when push is on', async () => {
+      const text = await run(true, 'search_tickets', {
+        query: 'status:open',
+        per_page: 100,
+        page: 1,
+      });
+      expect(text).toContain(URGENCY);
+    });
+
+    it('pushes nothing when push is off', async () => {
+      expect(
+        await run(false, 'get_ticket', { ticket_id: 1, include_comments: false }),
+      ).not.toContain('Urgency');
+      expect(
+        await run(false, 'search_tickets', { query: 'status:open', per_page: 100, page: 1 }),
+      ).not.toContain('Urgency');
+    });
+
+    it('uses the thresholds the service hands over', async () => {
+      const tools = createTicketTools(
+        testToolContext({
+          sla: {
+            push: true,
+            thresholds: () =>
+              Promise.resolve({ ...DEFAULT_SLA_THRESHOLDS, wait: { warning: 60, critical: 30 } }),
+          },
+        }),
+      );
+      const result = await tools
+        .find((t) => t.name === 'search_tickets')
+        ?.handler({ query: 'status:open', per_page: 100, page: 1 });
+      expect(firstText(result ?? { content: [] })).not.toContain('Urgency');
+    });
+
+    it('pushes nothing when no SLA service is wired', async () => {
+      const result = await findTool('search_tickets').handler({
+        query: 'status:open',
+        per_page: 100,
+        page: 1,
+      });
+      expect(firstText(result)).not.toContain('Urgency');
     });
   });
 

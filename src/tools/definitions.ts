@@ -1,5 +1,6 @@
 import type * as z from 'zod/v4';
 import type { Namespace } from '../config';
+import type { SlaService } from '../utils/sla-service';
 
 export interface ToolAnnotations {
   readOnlyHint: boolean;
@@ -55,4 +56,9 @@ export interface ToolContext {
    */
   resolveBrandSubdomain: (idOrSubdomain: string) => Promise<string>;
   getToken: () => string | Promise<string>;
+  /**
+   * SLA alerting for the caller. Absent where nothing wires it (unit tests,
+   * `--print-tools`): no urgency is pushed then.
+   */
+  sla?: SlaService | undefined;
 }

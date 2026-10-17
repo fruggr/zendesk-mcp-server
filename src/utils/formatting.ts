@@ -181,7 +181,7 @@ export const formatMacro = (macro: ZendeskMacro): string => {
     .join('\n');
 };
 
-const minutesUntil = (iso: string, now: number): number | null => {
+export const minutesUntil = (iso: string, now: number): number | null => {
   const t = Date.parse(iso);
   return Number.isNaN(t) ? null : Math.round((t - now) / 60_000);
 };
@@ -199,7 +199,7 @@ const STAGES_WITHOUT_LIVE_DEADLINE: ReadonlySet<string | undefined> = new Set([
 const hasRunningStage = (m: ZendeskSlaLiveMetric): boolean =>
   !STAGES_WITHOUT_LIVE_DEADLINE.has(m.stage);
 
-const hasPendingDeadline = (
+export const hasPendingDeadline = (
   m: ZendeskSlaLiveMetric,
 ): m is ZendeskSlaLiveMetric & { breach_at: string } =>
   hasRunningStage(m) &&
@@ -234,8 +234,12 @@ const formatSlaMetric = (m: ZendeskSlaLiveMetric, now: number): string => {
 // `slas` sideload carries (per-metric stage + breach countdown) — targets and
 // policy identity are not on the wire (see `list_sla_policies`). Returns '' when
 // no policy applies, so concatenating is always safe. `Next breach` speaks only for
-// metrics that are running (#260).
-export const formatSlaBlock = (entry: ZendeskSlaSideloadEntry | undefined): string => {
+// metrics that are running (#260). `urgency` is the pushed `**Urgency**` line, ''
+// when push is off or nothing is urgent.
+export const formatSlaBlock = (
+  entry: ZendeskSlaSideloadEntry | undefined,
+  urgency = '',
+): string => {
   if (!entry?.policy_metrics || entry.policy_metrics.length === 0) return '';
   const now = Date.now();
   const lines = ['### SLA'];
@@ -251,6 +255,7 @@ export const formatSlaBlock = (entry: ZendeskSlaSideloadEntry | undefined): stri
     undefined,
   );
   if (soonest) lines.push(`- **Next breach**: ${soonest.due}`);
+  if (urgency) lines.push(urgency);
   for (const m of entry.policy_metrics) lines.push(formatSlaMetric(m, now));
   return `\n\n${lines.join('\n')}`;
 };

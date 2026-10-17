@@ -1,5 +1,5 @@
 import { HttpResponse, http } from 'msw';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   errorHandlers,
   MOCK_BRAND,
@@ -933,6 +933,40 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
 
         expect(result.isError).toBe(true);
         expect(textOf(result)).toContain('Authentication failed');
+      });
+    });
+
+    describe('SLA alerting', () => {
+      // The mocked running metric breaches at 2099-06-18T21:37:00Z: 97 minutes
+      // after this clock, inside the default 8h critical window for waits.
+      beforeEach(() => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(new Date('2099-06-18T20:00:00Z'));
+      });
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      const searchText = async (slaPush: boolean): Promise<string> => {
+        connected = await harness.connect(makeConfig({ mode: 'all', slaPush }));
+        const result = await connected.client.callTool({
+          name: 'search_tickets',
+          arguments: { query: 'status:open' },
+        });
+        return `${result.isError ? 'ERROR ' : ''}${textOf(result)}`;
+      };
+
+      it('pushes the urgency line into the SLA block by default', async () => {
+        expect(await searchText(true)).toContain(
+          '- **Urgency**: CRITICAL — requester_wait_time due in 1h37m',
+        );
+      });
+
+      it('pushes no urgency line under --no-sla-push, and keeps the SLA block', async () => {
+        const text = await searchText(false);
+        expect(text).toMatch(/^Results: 1\n\n## Ticket #1/);
+        expect(text).toContain('### SLA');
+        expect(text).not.toContain('Urgency');
       });
     });
   });
