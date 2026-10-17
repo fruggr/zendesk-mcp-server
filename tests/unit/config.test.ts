@@ -22,6 +22,9 @@ const LOAD_CONFIG_ENV = [
   'OAUTH_TRUSTED_CLIENTS',
   'HOST',
   'ZENDESK_OAUTH_CALLBACK_PORT',
+  'SLA_PUSH',
+  'SLA_REPLY_THRESHOLDS',
+  'SLA_WAIT_THRESHOLDS',
 ] as const;
 
 const clearLoadConfigEnv = (): void => {
@@ -628,7 +631,7 @@ describe('loadConfig', () => {
 
     it('covers every value-taking flag declared in CLI_OPTIONS', () => {
       // Guards the parametrised cases below against silently shrinking to zero.
-      expect(valueFlags).toHaveLength(15);
+      expect(valueFlags).toHaveLength(17);
     });
 
     it.each(valueFlags)('rejects %s as the last argument (value forgotten)', (flag) => {
@@ -935,12 +938,14 @@ describe('what the flags resolve to when none is passed', () => {
       printTools: config.printTools,
       topology: config.topology,
       promotedArticles: config.promotedArticles,
+      slaPush: config.slaPush,
     }).toStrictEqual({
       readOnly: false,
       dev: false,
       printTools: false,
       topology: true,
       promotedArticles: true,
+      slaPush: true,
     });
   });
 
@@ -955,6 +960,7 @@ describe('what the flags resolve to when none is passed', () => {
         printTools: config.printTools,
         topology: config.topology,
         promotedArticles: config.promotedArticles,
+        slaPush: config.slaPush,
       };
     };
     const off = {
@@ -963,6 +969,7 @@ describe('what the flags resolve to when none is passed', () => {
       printTools: false,
       topology: true,
       promotedArticles: true,
+      slaPush: true,
     };
 
     expect(standalone('--read-only')).toStrictEqual({ ...off, readOnly: true });
@@ -973,6 +980,7 @@ describe('what the flags resolve to when none is passed', () => {
       ...off,
       promotedArticles: false,
     });
+    expect(standalone('--no-sla-push')).toStrictEqual({ ...off, slaPush: false });
   });
 
   it('reads the subdomain from argv when loadConfig is called with no arguments', () => {
@@ -1144,6 +1152,107 @@ describe('loadConfig startup errors', () => {
     expect(thrownBy([])).toHaveProperty(
       'message',
       `subdomain: ZENDESK_SUBDOMAIN is required. See ${STARTUP_DOCS.cliReference}`,
+    );
+  });
+});
+
+describe('SLA settings', () => {
+  beforeEach(clearLoadConfigEnv);
+  afterEach(clearLoadConfigEnv);
+
+  const startupMessage = (argv: string[]): string => {
+    try {
+      loadConfig(['mycompany', ...argv]);
+    } catch (err) {
+      return isStartupError(err) ? err.message : `not a startup error: ${String(err)}`;
+    }
+    throw new Error('expected a startup error');
+  };
+
+  it('defaults to the built-in thresholds and push on', () => {
+    const config = loadConfig(['mycompany']);
+    expect(config.slaThresholds).toEqual({
+      reply: { warning: 240, critical: 60 },
+      wait: { warning: 2880, critical: 480 },
+    });
+    expect(config.slaPush).toBe(true);
+  });
+
+  it('reads the thresholds from the environment, family by family', () => {
+    process.env['SLA_REPLY_THRESHOLDS'] = '2h,30m';
+    const config = loadConfig(['mycompany']);
+    expect(config.slaThresholds).toEqual({
+      reply: { warning: 120, critical: 30 },
+      wait: { warning: 2880, critical: 480 },
+    });
+    process.env['SLA_WAIT_THRESHOLDS'] = '3d,1d';
+    expect(loadConfig(['mycompany']).slaThresholds.wait).toEqual({
+      warning: 4320,
+      critical: 1440,
+    });
+  });
+
+  it('lets the flags win over the environment', () => {
+    process.env['SLA_REPLY_THRESHOLDS'] = '2h,30m';
+    process.env['SLA_WAIT_THRESHOLDS'] = '3d,1d';
+    const config = loadConfig([
+      'mycompany',
+      '--sla-reply-thresholds',
+      '6h,2h',
+      '--sla-wait-thresholds',
+      '1d,4h',
+    ]);
+    expect(config.slaThresholds).toEqual({
+      reply: { warning: 360, critical: 120 },
+      wait: { warning: 1440, critical: 240 },
+    });
+  });
+
+  it('fails at startup on a bad threshold, naming the variable', () => {
+    process.env['SLA_WAIT_THRESHOLDS'] = '1h,2h';
+    expect(startupMessage([])).toBe(
+      `Invalid SLA_WAIT_THRESHOLDS value. The critical threshold (2h) must not be longer than the warning one (1h). See ${STARTUP_DOCS.environment}`,
+    );
+  });
+
+  it('fails at startup on a bad threshold flag, naming the flag', () => {
+    expect(startupMessage(['--sla-reply-thresholds', '4h'])).toBe(
+      `Invalid --sla-reply-thresholds value. Expected two durations separated by a comma, warning first: 4h,1h. See ${STARTUP_DOCS.invocation}`,
+    );
+  });
+
+  it('names the wait flag too', () => {
+    expect(startupMessage(['--sla-wait-thresholds', '1h,2h'])).toBe(
+      `Invalid --sla-wait-thresholds value. The critical threshold (2h) must not be longer than the warning one (1h). See ${STARTUP_DOCS.invocation}`,
+    );
+  });
+
+  it('rejects an empty threshold variable', () => {
+    process.env['SLA_REPLY_THRESHOLDS'] = '';
+    expect(startupMessage([])).toContain('Empty SLA_REPLY_THRESHOLDS.');
+  });
+
+  it.each([
+    ['false', false],
+    ['OFF', false],
+    ['0', false],
+    ['true', true],
+    [' on ', true],
+    ['1', true],
+  ])('reads SLA_PUSH=%j as %s', (raw, value) => {
+    process.env['SLA_PUSH'] = raw;
+    expect(loadConfig(['mycompany']).slaPush).toBe(value);
+  });
+
+  it('lets --no-sla-push win over SLA_PUSH=true', () => {
+    process.env['SLA_PUSH'] = 'true';
+    expect(loadConfig(['mycompany', '--no-sla-push']).slaPush).toBe(false);
+  });
+
+  it('fails at startup on an unreadable SLA_PUSH', () => {
+    process.env['SLA_PUSH'] = 'nope';
+    expect(startupMessage([])).toBe(
+      `Invalid SLA_PUSH value. Expected true or false (on/off and 1/0 are accepted too). See ${STARTUP_DOCS.environment}`,
     );
   });
 });

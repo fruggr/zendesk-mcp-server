@@ -271,6 +271,31 @@ describe('formatSlaBlock', () => {
     expect(formatSlaBlock(entry([]))).toBe('');
   });
 
+  it('places the urgency line right under the next breach', () => {
+    expect(
+      formatSlaBlock(
+        entry([{ metric: 'first_reply_time', stage: 'active', breach_at: at(45) }]),
+        '- **Urgency**: CRITICAL — first_reply_time due in 45m',
+      ),
+    ).toMatchInlineSnapshot(`
+      "
+
+      ### SLA
+      - **Next breach**: 2026-06-01T12:45:00.000Z
+      - **Urgency**: CRITICAL — first_reply_time due in 45m
+      - **first_reply_time** — active; due 2026-06-01T12:45:00.000Z — 45 min remaining"
+    `);
+  });
+
+  it('adds no urgency line for an empty one', () => {
+    expect(
+      formatSlaBlock(
+        entry([{ metric: 'first_reply_time', stage: 'active', breach_at: at(45) }]),
+        '',
+      ),
+    ).not.toContain('Urgency');
+  });
+
   it('states the exact number of minutes remaining', () => {
     expect(
       formatSlaBlock(entry([{ metric: 'first_reply_time', stage: 'active', breach_at: at(90) }])),

@@ -64,6 +64,7 @@ import {
   PAGE_DESC,
   PER_PAGE_DESC,
 } from '../utils/pagination';
+import { formatUrgencyLine, ticketUrgency } from '../utils/sla-urgency';
 import { formatTicketMetrics } from '../utils/ticket-metrics';
 import {
   type AttachmentInput,
@@ -797,6 +798,18 @@ const formatMacroPreviewDiff = (
 export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
   const { subdomain, getToken } = ctx;
 
+  // The pushed `**Urgency**` line for one SLA block, '' when push is off. The
+  // thresholds are the caller's, read once per call.
+  const urgencyRenderer = async (): Promise<
+    (entry: ZendeskSlaSideloadEntry | undefined) => string
+  > => {
+    const sla = ctx.sla;
+    if (!sla?.push) return () => '';
+    const thresholds = await sla.thresholds();
+    const now = Date.now();
+    return (entry) => formatUrgencyLine(ticketUrgency(entry, thresholds, now));
+  };
+
   // One side of a subscriber edit: only the cap and the prose differ between
   // followers and email CCs, and the published `maxItems` is what tells an agent
   // about Zendesk's 48-CC ceiling before it calls.
@@ -812,7 +825,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: true,
       title: 'Get Zendesk Ticket',
       description:
-        'Retrieve a Zendesk ticket by ID, including its live SLA state (per-metric stage and breach countdown) when an SLA policy applies, plus its comments if requested. Returns ticket details (subject, status, priority, assignee, tags, description) and optionally all comments/internal notes. It also lists the followers and email CCs on the ticket, resolved to names, which is how you tell who a ticket update actually reaches: followers are notified of updates including internal notes, email CCs take part in the public correspondence, and being the requester makes someone neither. Both lists come back empty on an account where the "CCs and followers" setting is not enabled in Zendesk. The per-ticket Show endpoint exposes no SLA, so the SLA block is resolved via a scoped search and may be absent for a very high-volume requester or a just-updated ticket; SLA targets and policy conditions live in list_sla_policies. This returns the ticket as it stands now; for the history of changes behind that state (who changed what, and when), use get_ticket_history. The comment thread is appended in one block — the first page of comments Zendesk returns, cut past the response character limit — so on a long ticket read it with list_ticket_comments, which pages the comments and returns the newest first.',
+        'Retrieve a Zendesk ticket by ID, including its live SLA state (per-metric stage and breach countdown) when an SLA policy applies, plus its comments if requested. Returns ticket details (subject, status, priority, assignee, tags, description) and optionally all comments/internal notes. It also lists the followers and email CCs on the ticket, resolved to names, which is how you tell who a ticket update actually reaches: followers are notified of updates including internal notes, email CCs take part in the public correspondence, and being the requester makes someone neither. Both lists come back empty on an account where the "CCs and followers" setting is not enabled in Zendesk. The per-ticket Show endpoint exposes no SLA, so the SLA block is resolved via a scoped search and may be absent for a very high-volume requester or a just-updated ticket; SLA targets and policy conditions live in list_sla_policies. Unless the operator turned SLA push off, the SLA block also carries an Urgency line naming the most urgent running metric as BREACHED, CRITICAL or WARNING against the caller\'s alert thresholds. This returns the ticket as it stands now; for the history of changes behind that state (who changed what, and when), use get_ticket_history. The comment thread is appended in one block — the first page of comments Zendesk returns, cut past the response character limit — so on a long ticket read it with list_ticket_comments, which pages the comments and returns the newest first.',
       inputSchema: z.object({
         ticket_id: z
           .number()
@@ -847,7 +860,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         // Show Ticket exposes no SLA (#92); resolve it via a scoped Search. That
         // search needs only the ticket and the thread needs only its id, so the
         // two go out together instead of one after the other.
-        const [sla, thread] = await Promise.all([
+        const [sla, thread, urgency] = await Promise.all([
           fetchTicketSla(subdomain, token, ticket),
           include_comments
             ? zendeskGet<TicketCommentsResponse>(
@@ -857,6 +870,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
                 { include: 'users', include_inline_images: 'true' },
               )
             : undefined,
+          urgencyRenderer(),
         ]);
         const comments = thread?.comments ?? [];
         // Subscribers and comment authors resolve in the same batch, so the whole
@@ -875,7 +889,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           : '';
         const text =
           formatTicket(ticket) +
-          formatSlaBlock(sla) +
+          formatSlaBlock(sla, urgency(sla)) +
           formatSubscribersBlock(ticket, names) +
           commentsBlock;
         // This tool takes no page or filter, so the default truncation advice
@@ -1145,7 +1159,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: true,
       title: 'Search Zendesk Tickets',
       description:
-        'Search tickets using Zendesk query syntax, returning each result with its live SLA state (per-metric stage and breach countdown) when an SLA policy applies. Examples: "status:open assignee:me", "priority:urgent ticket_type:incident". Returns total count, so queue triage like "breaching today" works without a per-ticket fetch.',
+        'Search tickets using Zendesk query syntax, returning each result with its live SLA state (per-metric stage and breach countdown) when an SLA policy applies. Examples: "status:open assignee:me", "priority:urgent ticket_type:incident". Returns total count, so queue triage like "breaching today" works without a per-ticket fetch. Unless the operator turned SLA push off, each SLA block also carries an Urgency line (BREACHED, CRITICAL or WARNING) against the caller\'s alert thresholds.',
       inputSchema: z.object({
         query: z
           .string()
@@ -1175,20 +1189,18 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           page: number;
         };
         const token = await getToken();
-        const response = await zendeskGet<ZendeskListResponse<ZendeskTicket>>(
-          subdomain,
-          token,
-          '/search',
-          {
+        const [response, urgency] = await Promise.all([
+          zendeskGet<ZendeskListResponse<ZendeskTicket>>(subdomain, token, '/search', {
             query: `type:ticket ${query}`,
             include: 'tickets(slas)',
             ...buildOffsetParams(per_page, page),
-          },
-        );
+          }),
+          urgencyRenderer(),
+        ]);
         // The `slas` sideload is nested on each result (no top-level array, no
         // ticket_id correlation) — read it straight off the ticket.
         const formatTicketWithSla = (ticket: ZendeskTicket): string =>
-          formatTicket(ticket) + formatSlaBlock(ticket.slas);
+          formatTicket(ticket) + formatSlaBlock(ticket.slas, urgency(ticket.slas));
         return {
           content: [
             {

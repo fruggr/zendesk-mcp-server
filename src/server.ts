@@ -26,6 +26,7 @@ import { resolveBrand } from './tools/help-center';
 import { createAllTools, type ToolDefinition } from './tools/index';
 import { type Logger, silentLogger } from './utils/logger';
 import { readPackageInfo } from './utils/package-info';
+import { createSlaService } from './utils/sla-service';
 import { createStrictParamsParser, toStrictStandardSchema } from './utils/validation';
 
 /**
@@ -487,6 +488,7 @@ export const createMcpServer = (
     brandIds: config.brandIds,
     resolveBrandSubdomain,
     getToken,
+    sla: createSlaService(config),
   });
   registerToolset(
     server,

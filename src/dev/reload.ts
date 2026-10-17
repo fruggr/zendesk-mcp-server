@@ -9,6 +9,7 @@ import { createServerShell, registerToolset } from '../server';
 import { createAllTools, type ToolContext, type ToolDefinition } from '../tools/index';
 import { startStdioTransport } from '../transports/stdio';
 import { type Logger, silentLogger } from '../utils/logger';
+import { createSlaService } from '../utils/sla-service';
 
 const thisDir = dirname(fileURLToPath(import.meta.url));
 // `src/tools/` — the leaf factory modules re-imported on reload.
@@ -77,6 +78,7 @@ export const createReloadableServer = (
     brandIds: config.brandIds,
     resolveBrandSubdomain,
     getToken,
+    sla: createSlaService(config),
   };
   const params = { config, getToken, resolveBrandSubdomain, onUnauthorized, logger };
 
