@@ -47,6 +47,7 @@ import {
   type ClientOptions,
   InMemoryTransport,
   type OAuthClientProvider,
+  type OAuthDiscoveryState,
   type StoredOAuthClientInformation,
   type StoredOAuthTokens,
   StreamableHTTPClientTransport,
@@ -143,6 +144,7 @@ interface OAuthState {
   client?: StoredOAuthClientInformation;
   tokens?: StoredOAuthTokens;
   verifier?: string;
+  discovery?: OAuthDiscoveryState;
 }
 
 const requestedScope = readOnlyScope ? 'read offline_access' : 'read write offline_access';
@@ -184,6 +186,9 @@ const oauthProvider = (serverUrl: string): OAuthClientProvider => {
     },
     state: () => expectedState,
     saveCodeVerifier: (verifier) => save({ verifier }),
+    // Lets the SDK check that the callback comes from the server it redirected to.
+    saveDiscoveryState: (discovery) => save({ discovery }),
+    discoveryState: () => load().discovery,
     codeVerifier: () => load().verifier ?? fail('No PKCE verifier saved; run the command again.'),
   };
 };
