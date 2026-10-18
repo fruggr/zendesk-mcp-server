@@ -39,7 +39,8 @@ defaults. Three templates:
 | `zendesk-sla://alerts{?query}` | any Zendesk ticket search |
 
 Unless `--no-sla-push` is set, the server advertises `resources.subscribe`: a
-subscribed URI is re-checked every `SLA_POLL_SECONDS` and the client gets
+URI subscribed to (2025 revisions) or listened to (`subscriptions/listen`,
+2026-07-28) is re-checked every `SLA_POLL_SECONDS` and the client gets
 `notifications/resources/updated` only when its alert set changes. Polling,
 quota and where the per-user cache lives are covered under
 [SLA alerts](configuration.md#sla-alerts); this resource's scheme is fixed,

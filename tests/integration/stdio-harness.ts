@@ -15,10 +15,13 @@ export type StdioTestFactory = (
   extras: StdioBuildExtras,
 ) => ReturnType<typeof createMcpServer>;
 
-const productionServer: StdioTestFactory = (config, { requestStateCodec }) =>
+const productionServer: StdioTestFactory = (config, { requestStateCodec, listens }) =>
   // The token is opaque to the transport: MSW intercepts the Zendesk calls
   // regardless of its value.
-  createMcpServer(config, () => 'test-token', undefined, undefined, { requestStateCodec });
+  createMcpServer(config, () => 'test-token', undefined, undefined, {
+    requestStateCodec,
+    listens,
+  });
 
 /**
  * Exercises the stdio path end-to-end without spawning a process: the same
@@ -32,6 +35,7 @@ export const createStdioHarness = (
   factory: StdioTestFactory = productionServer,
 ): IntegrationHarness => ({
   name: era === '2025' ? 'stdio' : `stdio-${era}`,
+  era,
   async connect(config: Config, clientOptions: ClientOptions = {}): Promise<ConnectedClient> {
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     const handle = startStdioTransport((extras) => factory(config, extras), undefined, {

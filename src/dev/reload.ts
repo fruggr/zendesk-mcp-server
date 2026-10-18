@@ -15,6 +15,7 @@ import {
 import { createAllTools, type ToolContext, type ToolDefinition } from '../tools/index';
 import { createAlertsReader } from '../tools/sla-alerts';
 import { startStdioTransport } from '../transports/stdio';
+import type { ListenFeed } from '../utils/listen-feed';
 import { type Logger, silentLogger } from '../utils/logger';
 import { createSlaRuntime, createSlaService, type SlaRuntime } from '../utils/sla-service';
 
@@ -79,6 +80,7 @@ export const createReloadableServer = (
   loadTools: (ctx: ToolContext) => Promise<ToolDefinition[]> = loadFreshTools,
   requestStateCodec?: RequestStateCodec,
   slaRuntime: SlaRuntime = createSlaRuntime(config),
+  listens?: Pick<ListenFeed, 'attach'>,
 ): { server: McpServer; reload: () => Promise<number> } => {
   const server = createServerShell(config, requestStateCodec);
   // ONE set of caches across every reload generation: tools and the
@@ -94,7 +96,7 @@ export const createReloadableServer = (
   const params = { config, getToken, caches, onUnauthorized, logger, sla: ctx.sla };
   // Subscriptions belong to the long-lived shell, not to a tool generation.
   if (config.slaPush && slaAlertsEnabled(config)) {
-    installAlertSubscriptions(server, config, createAlertsReader(ctx), logger);
+    installAlertSubscriptions(server, config, createAlertsReader(ctx), logger, listens);
   }
 
   // The last generation registered successfully — both the handle (to dispose)
@@ -213,7 +215,7 @@ export const startDevServer = (
   onUnauthorized?: () => void,
   slaRuntime?: SlaRuntime,
 ): StdioServerHandle => {
-  const handle = startStdioTransport(({ requestStateCodec }) => {
+  const handle = startStdioTransport(({ requestStateCodec, listens }) => {
     const { server, reload } = createReloadableServer(
       config,
       getToken,
@@ -222,6 +224,7 @@ export const startDevServer = (
       loadFreshTools,
       requestStateCodec,
       slaRuntime,
+      listens,
     );
     registerReloadTool(server, reload, logger);
     return server;

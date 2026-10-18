@@ -239,13 +239,15 @@ subscribed alert resources. With it off the tools, the resources and the
 server instructions all stay; the server just stops advertising
 `resources.subscribe`.
 
-**Subscriptions.** While a client holds at least one subscription, its session
-re-checks each subscribed URI every `SLA_POLL_SECONDS` and notifies only when
-the alert set (ticket, metric, level) changes, never for minutes counting
-down. Clients subscribe with `resources/subscribe` (MCP 2025 revisions); this
-server's transports do not speak the 2026-07-28 revision, so
-`subscriptions/listen` is not served yet. On HTTP an idle session is evicted
-after 30 minutes without a request
+**Subscriptions.** While a client listens to at least one alert resource, the
+server re-checks each listened URI every `SLA_POLL_SECONDS` and notifies only
+when the alert set (ticket, metric, level) changes, never for minutes counting
+down. A 2025-revision client subscribes with `resources/subscribe`; a
+2026-07-28 one names the URIs in `resourceSubscriptions` of a
+`subscriptions/listen` stream, and polling stops when its last stream closes.
+On HTTP, 2026-07-28 polling belongs to the OAuth grant, so its streams share
+one poll per URI. An idle HTTP session or grant is dropped after 30 minutes
+without a request
 ([why](troubleshooting.md#my-http-session-disappears-after-a-pause-even-though-the-stream-stayed-up)),
 and its subscriptions end with it: a client re-subscribes when it reconnects.
 
@@ -500,8 +502,8 @@ Where per-user SLA state lives: see [SLA alerts](#sla-alerts). Same as
 ### `SLA_POLL_SECONDS`
 **Required:** no · **Default:** `300`
 
-How often, in whole seconds (at least 60), a subscribed alert resource is
-re-checked. Same as `--sla-poll-seconds`.
+How often, in whole seconds (at least 60), a subscribed or listened alert
+resource is re-checked. Same as `--sla-poll-seconds`.
 
 ### `LOG_LEVEL`
 **Required:** no · **Default:** `info`

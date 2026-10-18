@@ -24,8 +24,14 @@ import {
 } from '../auth/server/authorization-server';
 import type { Fetch } from '../auth/server/trusted-clients';
 import type { Config } from '../config';
-import { createServerCaches, defaultServerFactory, type ServerFactory } from '../server';
+import {
+  createServerCaches,
+  defaultServerFactory,
+  type ServerFactory,
+  watchGrantAlerts,
+} from '../server';
 import { createGrantRegistry } from '../utils/grant-registry';
+import { createListenFeed, type ListenFeed, listenedUris } from '../utils/listen-feed';
 import { type Logger, silentLogger } from '../utils/logger';
 import { createRequestStateCodec } from '../utils/request-state';
 import { startSlaRuntime } from '../utils/sla-service';
@@ -287,6 +293,8 @@ interface GrantEntry {
   revoked: boolean;
   /** Requests being answered, listen streams aside: those last until the entry closes. */
   inFlight: number;
+  /** The URIs the grant's listen streams ask for. */
+  listens: ListenFeed;
   handle: NodeMcpRequestHandler;
   close(): Promise<void>;
 }
@@ -295,11 +303,6 @@ interface GrantEntry {
 // set; node:http types it optional, though a server request always carries one.
 const asNodeRequest = (req: IncomingMessage): NodeIncomingMessageLike =>
   req as NodeIncomingMessageLike;
-
-const isListenRequest = (body: unknown): boolean =>
-  typeof body === 'object' &&
-  body !== null &&
-  (body as { method?: unknown }).method === 'subscriptions/listen';
 
 // JSON-RPC tool calls are small; this is a generous ceiling that exists only
 // so a client can't stream an unbounded body into server memory.
@@ -550,12 +553,27 @@ export const startHttpTransport = async (
         onerror: (err) => logger.debug('mcp_request_rejected', { error: err.message }),
       },
     );
+    const listens = createListenFeed();
+    const stopAlerts = watchGrantAlerts({
+      config,
+      getToken,
+      caches,
+      slaRuntime: sla.runtime,
+      logger,
+      listens,
+      notify: (uri) => handler.notify.resourceUpdated(uri),
+    });
     const entry: GrantEntry = {
       auth,
       revoked: false,
       inFlight: 0,
+      listens,
       handle: toNodeHandler(handler),
-      close: () => handler.close(),
+      close: () => {
+        stopAlerts();
+        listens.closeAll();
+        return handler.close();
+      },
     };
     return entry;
   };
@@ -584,7 +602,13 @@ export const startHttpTransport = async (
       expiresAt: token.expiresAt,
       extra: { verified: token },
     };
-    const counted = !isListenRequest(body);
+    const listened = listenedUris(body);
+    const counted = listened === undefined;
+    if (listened) {
+      const stream = Symbol('listen');
+      entry.listens.open(stream, listened);
+      res.once('close', () => entry.listens.close(stream));
+    }
     if (counted) entry.inFlight += 1;
     try {
       await entry.handle(request, res, body);

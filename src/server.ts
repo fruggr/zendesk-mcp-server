@@ -1,4 +1,6 @@
 import {
+  CLIENT_CAPABILITIES_META_KEY,
+  type ClientCapabilities,
   McpServer,
   ProtocolError,
   ProtocolErrorCode,
@@ -37,6 +39,7 @@ import { resolveBrand } from './tools/help-center';
 import { createAllTools, type ToolDefinition } from './tools/index';
 import { type AlertsReader, createAlertsReader } from './tools/sla-alerts';
 import { isInputRequiredError, supportsFormElicitation } from './utils/elicitation';
+import type { ListenFeed } from './utils/listen-feed';
 import { type Logger, silentLogger } from './utils/logger';
 import { readPackageInfo } from './utils/package-info';
 import { createRequestStateCodec } from './utils/request-state';
@@ -91,7 +94,13 @@ const runHandler = async (
 
 /** The parts of the SDK request context a tool handler may use. */
 export const toCallContext = (server: McpServer, ctx: ServerContext): ToolCallContext => ({
-  canElicit: supportsFormElicitation(server.server.getClientCapabilities()),
+  // A 2026-07-28 request declares the client's capabilities itself; the
+  // instance-wide ones are the `initialize` ones, never set on a stdio 2026 connection.
+  canElicit: supportsFormElicitation(
+    (ctx.mcpReq.envelope as Record<string, ClientCapabilities | undefined> | undefined)?.[
+      CLIENT_CAPABILITIES_META_KEY
+    ] ?? server.server.getClientCapabilities(),
+  ),
   inputResponses: ctx.mcpReq.inputResponses,
 });
 
@@ -345,29 +354,52 @@ const registerAlertResources = (server: McpServer, reader: AlertsReader): Remova
   ];
 };
 
-/**
- * The server pushing alert changes on its own: `resources/subscribe` and
- * `unsubscribe` (2025-era clients), a poller re-checking each subscribed URI
- * every `slaPollSeconds`, and `notifications/resources/updated` when a URI's
- * alert set changes. Installed once per server, before it connects, and only
- * with push on. Stops with the session.
- */
-export const installAlertSubscriptions = (
-  server: McpServer,
+/** Re-checks each subscribed URI every `slaPollSeconds`; notifies when its alert set changes. */
+const createAlertsPoller = (
   config: Config,
   reader: AlertsReader,
-  logger: Logger = silentLogger,
-): AlertPoller => {
-  const poller = createAlertPoller({
+  notify: (uri: string) => Promise<void>,
+  logger: Logger,
+): AlertPoller =>
+  createAlertPoller({
     intervalMs: config.slaPollSeconds * 1000,
     check: reader.fingerprint,
-    notify: (uri) => server.server.sendResourceUpdated({ uri }),
+    notify,
     onError: (uri, error) =>
       logger.warn('sla_alerts_poll_failed', {
         uri,
         error: error instanceof Error ? error.message : String(error),
       }),
   });
+
+/** Polls the SLA alert resources a 2026-07-28 client listens to; other URIs are not ours. */
+const pollListenedAlerts = (poller: AlertPoller, listens: Pick<ListenFeed, 'attach'>) =>
+  listens.attach({
+    add: (uri) => {
+      if (parseAlertsUri(uri)) poller.subscribe(uri);
+    },
+    remove: (uri) => poller.unsubscribe(uri),
+  });
+
+/**
+ * The server pushing alert changes on its own, through `resources/subscribe`
+ * for a 2025 client and the `listens` streams for a 2026-07-28 one when the
+ * server lives as long as its connection (stdio). Installed once per server,
+ * before it connects, and only with push on. Stops with the server.
+ */
+export const installAlertSubscriptions = (
+  server: McpServer,
+  config: Config,
+  reader: AlertsReader,
+  logger: Logger = silentLogger,
+  listens?: Pick<ListenFeed, 'attach'>,
+): AlertPoller => {
+  const poller = createAlertsPoller(
+    config,
+    reader,
+    (uri) => server.server.sendResourceUpdated({ uri }),
+    logger,
+  );
   const subscribable = (uri: string): string => {
     if (!parseAlertsUri(uri)) {
       throw new ProtocolError(
@@ -377,6 +409,7 @@ export const installAlertSubscriptions = (
     }
     return uri;
   };
+  // Also what lets a 2026-07-28 listen filter keep its resource URIs.
   server.server.registerCapabilities({ resources: { subscribe: true } });
   server.server.setRequestHandler('resources/subscribe', (request) => {
     poller.subscribe(subscribable(request.params.uri));
@@ -386,12 +419,61 @@ export const installAlertSubscriptions = (
     poller.unsubscribe(request.params.uri);
     return {};
   });
+  const detach = listens ? pollListenedAlerts(poller, listens) : undefined;
   const previous = server.server.onclose;
   server.server.onclose = () => {
+    detach?.();
     poller.stop();
     previous?.();
   };
   return poller;
+};
+
+export interface GrantAlertWatchParams {
+  config: Config;
+  getToken: () => string | Promise<string>;
+  caches: ServerCaches;
+  slaRuntime: SlaRuntime;
+  logger: Logger;
+  listens: Pick<ListenFeed, 'attach'>;
+  notify: (uri: string) => void;
+}
+
+/**
+ * The SLA alert polling of a 2026-07-28 HTTP grant: its servers last one
+ * request each, so the poller lives with the grant, fed by the grant's listen
+ * streams. Returns the stop; a no-op when the push is off.
+ */
+export const watchGrantAlerts = ({
+  config,
+  getToken,
+  caches,
+  slaRuntime,
+  logger,
+  listens,
+  notify,
+}: GrantAlertWatchParams): (() => void) => {
+  if (!(config.slaPush && slaAlertsEnabled(config))) return () => undefined;
+  const reader = createAlertsReader({
+    subdomain: config.subdomain,
+    brandIds: config.brandIds,
+    resolveBrandSubdomain: caches.resolveBrandSubdomain,
+    getToken,
+    sla: createSlaService(config, slaRuntime, caches.resolveUserId),
+  });
+  const poller = createAlertsPoller(
+    config,
+    reader,
+    async (uri) => {
+      notify(uri);
+    },
+    logger,
+  );
+  const detach = pollListenedAlerts(poller, listens);
+  return () => {
+    detach();
+    poller.stop();
+  };
 };
 
 /**
@@ -678,6 +760,8 @@ export interface CreateMcpServerOptions {
   requestStateCodec?: RequestStateCodec;
   /** The process-wide SLA state: every server of a process shares one. */
   slaRuntime?: SlaRuntime;
+  /** The listen streams of the connection this server serves for its lifetime (stdio). */
+  listens?: Pick<ListenFeed, 'attach'>;
 }
 
 export const createMcpServer = (
@@ -689,6 +773,7 @@ export const createMcpServer = (
     caches = createServerCaches(config, getToken, onUnauthorized),
     requestStateCodec,
     slaRuntime = createSlaRuntime(config),
+    listens,
   }: CreateMcpServerOptions = {},
 ): McpServer => {
   const server = createServerShell(config, requestStateCodec);
@@ -706,7 +791,7 @@ export const createMcpServer = (
     createAllTools(ctx),
   );
   if (config.slaPush && slaAlertsEnabled(config)) {
-    installAlertSubscriptions(server, config, createAlertsReader(ctx), logger);
+    installAlertSubscriptions(server, config, createAlertsReader(ctx), logger, listens);
   }
   return server;
 };
@@ -724,6 +809,11 @@ export interface ServerBuildContext {
   caches?: ServerCaches;
   requestStateCodec: RequestStateCodec;
   slaRuntime?: SlaRuntime;
+  /**
+   * The listen streams of the connection the server serves for its lifetime;
+   * absent where a server answers one request (2026-07-28 HTTP).
+   */
+  listens?: Pick<ListenFeed, 'attach'>;
   /**
    * Announces that a resource changed, to whoever listens to it on this
    * connection, session or grant. The URI is the whole payload, and a listen
@@ -743,9 +833,11 @@ export const defaultServerFactory: ServerFactory = ({
   caches,
   requestStateCodec,
   slaRuntime,
+  listens,
 }) =>
   createMcpServer(config, getToken, logger, onUnauthorized, {
     ...(caches ? { caches } : {}),
     ...(slaRuntime ? { slaRuntime } : {}),
+    ...(listens ? { listens } : {}),
     requestStateCodec,
   });

@@ -1016,7 +1016,20 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         mswServer.events.on('request:start', ({ request }) => {
           if (new URL(request.url).pathname.endsWith('/search')) searches += 1;
         });
-        await connected.client.subscribeResource({ uri: 'zendesk-sla://alerts/mine' });
+        // 2025 subscribes; 2026 listens, the article URI riding along unpolled.
+        const client = connected.client;
+        let stop = async (): Promise<void> => {
+          await client.unsubscribeResource({ uri: 'zendesk-sla://alerts/mine' });
+        };
+        if (harness.era === '2025') {
+          await client.subscribeResource({ uri: 'zendesk-sla://alerts/mine' });
+        } else {
+          const listen = await client.listen({
+            resourceSubscriptions: ['zendesk-sla://alerts/mine', 'zendesk-hc://articles/1'],
+          });
+          expect(listen.honoredFilter.resourceSubscriptions).toContain('zendesk-sla://alerts/mine');
+          stop = () => listen.close();
+        }
         // The subscription takes its baseline first.
         await vi.waitFor(() => expect(searches).toBe(1));
         // The CRITICAL metric is now reported breached: the alert set changed.
@@ -1044,6 +1057,10 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         await vi.advanceTimersByTimeAsync(60_000);
         await vi.waitFor(() => expect(searches).toBe(2));
         await vi.waitFor(() => expect(updates).toEqual(['zendesk-sla://alerts/mine']));
+        // No one listening any more: polling stops.
+        await stop();
+        await vi.advanceTimersByTimeAsync(120_000);
+        expect(searches).toBe(2);
       });
 
       it('pushes no urgency line under --no-sla-push, and keeps the SLA block', async () => {

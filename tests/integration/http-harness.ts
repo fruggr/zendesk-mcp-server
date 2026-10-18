@@ -25,6 +25,7 @@ import { signInWithDcr } from './oauth-client';
  */
 export const createHttpHarness = (era: Era, serverFactory?: ServerFactory): IntegrationHarness => ({
   name: era === '2025' ? 'http' : `http-${era}`,
+  era,
   async connect(config: Config, clientOptions: ClientOptions = {}): Promise<ConnectedClient> {
     // The sign-in needs a working Zendesk login, whatever the scenario mocked:
     // the OAuth mock goes on top for it, then the scenario's own handlers are
