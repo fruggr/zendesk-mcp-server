@@ -150,8 +150,9 @@ interface OAuthState {
 const requestedScope = readOnlyScope ? 'read offline_access' : 'read write offline_access';
 
 const oauthProvider = (serverUrl: string): OAuthClientProvider => {
+  // Keyed on the scope asked for: tokens granted for another scope are never reused.
   const key = createHash('sha256')
-    .update(`${serverUrl} ${readOnlyScope}`)
+    .update(`${serverUrl} ${requestedScope}`)
     .digest('hex')
     .slice(0, 16);
   const file = join(configDir(), `mcp-live-${key}.json`);
