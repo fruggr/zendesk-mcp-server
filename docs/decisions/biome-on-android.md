@@ -61,10 +61,9 @@ Two independent causes, both from `platform === 'android'`:
   inside whichever caller runs first — possibly the per-edit hook. An offline
   device fails there rather than at install time. That is the price of not
   provisioning at install time (see the last rejected option).
-- lefthook has no android build either, so on Termux the pre-commit hook is not
-  installed at all: repointing `lefthook.yml` serves the other platforms and
-  will take effect here if lefthook itself becomes runnable. Until then,
-  formatting and import sorting stay CI-only on that device.
+- lefthook ships `lefthook-android-arm64` from 2.2.2 on (hence the `^2.2.2`
+  floor), so the pre-commit hook installs and runs on Termux too, through this
+  shim like everywhere else. A single staged file takes about 15 s there.
 - The hooks invoke `node scripts/biome.mjs` rather than a pnpm script: pnpm 11
   cost 3.7 s of start-up on this device against 0.37 s for `node`, and the
   per-edit hook itself runs in 0.31 s. The pnpm 12 native CLI closes that gap

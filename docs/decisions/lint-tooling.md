@@ -102,8 +102,8 @@ repaired.
 **Why lefthook and not husky + lint-staged.** That was the first implementation
 and it worked, but husky's last release is 2025-01-11 — 18 months stale — and
 lefthook (monthly releases, latest 2026-07-08) covers both jobs in one
-dependency instead of two. `lefthook-linux-arm64` exists, so Termux/PRoot is
-covered. Its `postinstall` stays **blocked** in `allowBuilds` — see the traps
+dependency instead of two. `lefthook-linux-arm64` covers Termux/PRoot, and
+`lefthook-android-arm64` (2.2.2+) native Termux. Its `postinstall` stays **blocked** in `allowBuilds` — see the traps
 below.
 
 **Partial staging is handled, contrary to what the docs suggest.** lefthook's
