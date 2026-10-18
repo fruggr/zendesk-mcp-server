@@ -327,6 +327,14 @@ describe('createAlertsReader', () => {
     expect(viewLookups(calls)).toBe(2);
   });
 
+  it('still reports, on the default thresholds, when the stored preferences cannot be read', async () => {
+    const text = await reader(
+      testSlaService({ preferences: () => Promise.reject(new Error('EIO')) }),
+    ).read('zendesk-sla://alerts/mine');
+    expect(text).toContain('Thresholds: ');
+    expect(text).toContain('server default; set your own with configure_sla_alerts');
+  });
+
   it('never looks a numeric view id up', async () => {
     const calls = recordCalls();
     await reader().read(`zendesk-sla://alerts/views/${MOCK_VIEW.id}`);

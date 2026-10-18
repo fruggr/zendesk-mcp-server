@@ -263,7 +263,11 @@ export const createAlertsReader = (ctx: AlertsReaderContext) => {
     if (!target) throw new Error(`Not an SLA alert resource: ${uri}`);
     const token = await ctx.getToken();
     const scope = target.kind === 'view' ? await viewScope(target.view, token) : target;
-    const prefs = sla.userPreferencesAllowed ? await sla.preferences() : undefined;
+    // Only the report's label reads them: an unreadable store still alerts,
+    // on the thresholds sla.thresholds() falls back to.
+    const prefs = sla.userPreferencesAllowed
+      ? await sla.preferences().catch(() => undefined)
+      : undefined;
     try {
       return await checkAlerts({
         sla,

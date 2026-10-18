@@ -1309,6 +1309,22 @@ describe('ticket tools', () => {
       }
     });
 
+    it('reads the clock when it renders, after the Zendesk answer', async () => {
+      // The answer lands 37 minutes later than the call started.
+      const jump = () => vi.setSystemTime(new Date('2099-06-18T21:00:00Z'));
+      mswServer.events.on('response:mocked', jump);
+      try {
+        const text = await run(true, 'search_tickets', {
+          query: 'status:open',
+          per_page: 100,
+          page: 1,
+        });
+        expect(text).toContain('- **Urgency**: CRITICAL — requester_wait_time due in 37m');
+      } finally {
+        mswServer.events.removeListener('response:mocked', jump);
+      }
+    });
+
     it('pushes nothing when no SLA service is wired', async () => {
       const result = await findTool('search_tickets').handler({
         query: 'status:open',

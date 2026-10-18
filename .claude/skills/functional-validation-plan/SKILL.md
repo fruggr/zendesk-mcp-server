@@ -55,7 +55,7 @@ omitting the plan.
     MCP tools are insufficient on their own: they show rendered text, never the
     raw upstream JSON. In that case a small **read-only capture probe**
     (`scripts/probe-*.ts`) IS warranted. It **reuses the already-present auth**
-    through `scripts/live-auth.ts` (the token the running server persisted) —
+    through `scripts/live-auth.ts` (`ZENDESK_OAUTH_TOKEN` when set, else the token store the server persisted) —
     state the exact command to run, never how to obtain a token. When the shape
     decides the design rather than just the types, capture it before planning:
     the `probe-spike` skill. Make it the first,

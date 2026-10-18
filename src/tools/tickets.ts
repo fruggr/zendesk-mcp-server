@@ -810,8 +810,9 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
     const sla = ctx.sla;
     if (!sla?.push) return () => '';
     const thresholds = await sla.thresholds().catch(() => sla.adminThresholds);
-    const now = Date.now();
-    return (entry) => formatUrgencyLine(ticketUrgency(entry, thresholds, now));
+    // Read at render time, as formatSlaBlock does: a clock taken before the
+    // Zendesk request would let the two lines disagree.
+    return (entry) => formatUrgencyLine(ticketUrgency(entry, thresholds, Date.now()));
   };
 
   // One side of a subscriber edit: only the cap and the prose differ between
