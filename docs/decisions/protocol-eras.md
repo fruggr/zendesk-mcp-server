@@ -2,8 +2,7 @@
 
 > **Build documentation, not user documentation.** This records why the
 > transports serve both protocol eras the way they do. Operator-facing behaviour
-> is described in [`docs/http-deployment.md`](../http-deployment.md#protocol-revisions)
-> and [`docs/configuration.md`](../configuration.md#protocol-revisions).
+> is described in [`docs/http-deployment.md`](../http-deployment.md#protocol-revisions).
 
 | | |
 | --- | --- |

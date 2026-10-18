@@ -44,16 +44,12 @@ web, which generates them: leave those alone, don't imitate the shape by hand.
 
 ## Architecture
 
-Transports serve both MCP eras, 2025 and 2026-07-28
-(`docs/decisions/protocol-eras.md`): stdio through the SDK's `serveStdio`; HTTP is
-a `node:http` server next to its own OAuth authorization server (`auth/server/`,
-on `oidc-provider`) that routes each request by era — 2025 to a per-session
-`McpServer`, 2026 to a per-grant `createMcpHandler` building a server per request.
-Either way the user's Zendesk token is captured in the tools' closure — no shared
-state. Servers come from a `ServerFactory` (`server.ts`). A notification carries
-no sensitive data (a 2026 listen stream is authenticated only when it opens);
-`requestState` goes only through `utils/request-state.ts`; diagnostics go to
-stderr, there is no MCP logging channel.
+Transports: stdio and a `node:http` HTTP transport next to its own OAuth
+authorization server (`auth/server/`, on `oidc-provider`), both serving MCP 2025
+and 2026-07-28 (`docs/decisions/protocol-eras.md`). The user's Zendesk token is
+captured in the tools' closure — no shared state. A notification carries no
+sensitive data; `requestState` goes only through `utils/request-state.ts`;
+diagnostics go to stderr, never to an MCP logging channel.
 `index.ts` imports each transport lazily, and `dist/` inlines every dependency
 (the package declares none): never statically import the HTTP stack, or a
 package only stdio needs (such as `open`), from a module both transports load —

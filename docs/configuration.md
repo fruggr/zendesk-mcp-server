@@ -149,25 +149,6 @@ zendesk-mcp-server acme --transport http --port 8080 \
   --namespace help_center --read-only
 ```
 
-## Protocol revisions
-
-Both transports serve the 2025 MCP revisions and **2026-07-28**; the client
-picks. A client that negotiates as most do today (`initialize`) gets a 2025
-revision, unchanged; a client that probes with `server/discover` or pins
-2026-07-28 gets that revision.
-
-| | stdio | HTTP |
-|---|---|---|
-| 2025 revisions | one server per connection | one server per session (`Mcp-Session-Id`) |
-| 2026-07-28 | one server per connection | one server per request; caches and `subscriptions/listen` streams kept per grant |
-
-In 2026-07-28, change notifications (`notifications/resources/updated`,
-`*/list_changed`) only reach a client with an open `subscriptions/listen`
-stream that asked for them. The server sends no MCP log notifications
-(`notifications/message`) in either revision: diagnostics go to stderr. HTTP
-details: [`http-deployment.md`](http-deployment.md#protocol-revisions); why:
-[the decision record](decisions/protocol-eras.md).
-
 ## Dev mode (`--dev`)
 
 A development-loop convenience for iterating on tool code. With `--dev` the
