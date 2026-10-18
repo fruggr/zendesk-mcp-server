@@ -157,8 +157,25 @@ describe('createListenWireObserver', () => {
     wire.inbound({ jsonrpc: '2.0', method: 'notifications/cancelled' });
     wire.inbound({ jsonrpc: '2.0', method: 'tools/call', params: { requestId: 'l1' } });
     wire.inbound('l1');
+    wire.inbound(null);
     wire.outbound('l1');
     wire.outbound(null);
+    expect(events).toEqual(['+x']);
+  });
+
+  it('opens nothing for another request, so its id stays free for a listen', () => {
+    const { feed, events } = recorded();
+    const wire = createListenWireObserver(feed);
+    wire.inbound({ jsonrpc: '2.0', id: 'l1', method: 'tools/call', params: {} });
+    wire.inbound(listen('l1', ['x']));
+    expect(events).toEqual(['+x']);
+  });
+
+  it('keeps a stream open across a server request that reuses its id', () => {
+    const { feed, events } = recorded();
+    const wire = createListenWireObserver(feed);
+    wire.inbound(listen('l1', ['x']));
+    wire.outbound({ jsonrpc: '2.0', id: 'l1', method: 'elicitation/create', params: {} });
     expect(events).toEqual(['+x']);
   });
 });
