@@ -34,6 +34,11 @@ the mechanical issues; understanding the change is non-negotiable.
 
 External contributions follow the same standard.
 
+Keep issues, pull requests and comments about this project. They are not a
+channel for promoting another product or service, and neither are the
+maintainers' contact details found in the commit history: no sales outreach.
+Promotional content is removed; the contribution itself is judged on its merits.
+
 ## Development setup
 
 ### Toolchain
