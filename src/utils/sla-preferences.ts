@@ -82,7 +82,7 @@ const changeFamily = (
 /**
  * Applies a change to the stored preferences. A half given alone keeps the
  * other half in force (personal, else server default); a family reset goes
- * back to the server default. Returns the new preferences, or why the change
+ * back to the server default, and `all` also forgets the user was introduced. Returns the new preferences, or why the change
  * is refused.
  */
 export const applyPreferenceChange = (
@@ -91,7 +91,8 @@ export const applyPreferenceChange = (
   change: SlaPreferenceChange,
 ): { preferences: SlaPreferences } | { error: string } => {
   const current = effectiveThresholds(admin, prefs);
-  const next: SlaPreferences = { ...prefs };
+  // Resetting everything starts over, introduction included.
+  const next: SlaPreferences = change.reset === 'all' ? {} : { ...prefs };
   for (const family of SLA_FAMILIES) {
     const outcome = changeFamily(family, current[family], change);
     if (outcome === 'reset') delete next[family];

@@ -25,7 +25,7 @@ it('exposes the preferences tool surface unchanged', async () => {
               "type": "string",
             },
             "reset": {
-              "description": "Drop your personal thresholds for one family ("reply" or "wait") or both ("all") and follow the server defaults again. Cannot be combined with new values for the same family.",
+              "description": "Drop your personal thresholds for one family ("reply" or "wait") or both ("all") and follow the server defaults again; "all" also makes your next list_sla_alerts call explain the thresholds again. Cannot be combined with new values for the same family.",
               "enum": [
                 "reply",
                 "wait",

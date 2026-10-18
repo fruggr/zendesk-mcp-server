@@ -80,8 +80,9 @@ describe('applyPreferenceChange', () => {
     expect(applyPreferenceChange(ADMIN, prefs, { reset: 'wait' })).toEqual({
       preferences: { introduced: true, reply: { warning: 1, critical: 1 } },
     });
+    // "all" starts over: the next list_sla_alerts introduces the thresholds again.
     expect(applyPreferenceChange(ADMIN, prefs, { reset: 'all' })).toEqual({
-      preferences: { introduced: true },
+      preferences: {},
     });
   });
 
