@@ -44,7 +44,7 @@ describe('buildAlertsElicitation', () => {
       thresholds: { ...T, wait: { warning: 1440, critical: 90 } },
     });
     expect(form?.message).toBe(
-      'A running SLA metric is flagged WARNING when its breach is closer than the warning threshold, CRITICAL when closer than the critical one, and BREACHED once overdue. In force for you: reply metrics (first_reply_time, next_reply_time) 4h,1h, every other metric 1d,1h30m, as warning,critical. Edit them to keep your own, or later with configure_sla_alerts.',
+      'A running SLA metric is flagged WARNING when its breach is closer than the warning threshold, CRITICAL when closer than the critical one, and BREACHED once overdue. In force for you: reply metrics (first_reply_time, next_reply_time) 4h,1h, every other metric 1d,1h30m, as warning,critical. Edits here apply to this call only; configure_sla_alerts keeps them.',
     );
     expect(form?.requestedSchema).toEqual({
       type: 'object',
@@ -107,7 +107,7 @@ describe('readAlertsAnswer', () => {
     expect(readAlertsAnswer({ reply_thresholds: 'soon', wait_thresholds: '3d,1d' }, T)).toEqual({
       change: { wait_warning: '3d', wait_critical: '1d' },
       notes: [
-        'Your reply thresholds "soon" were not saved: Expected two durations separated by a comma, warning first: 4h,1h.',
+        'Your reply thresholds "soon" were not applied: Expected two durations separated by a comma, warning first: 4h,1h.',
       ],
     });
   });
@@ -128,27 +128,39 @@ describe('overrideThresholds', () => {
     });
   });
 
-  it('keeps each family’s other half when only one is given', () => {
+  it('takes a lone warning as is, lowering a critical that would exceed it', () => {
+    expect(overrideThresholds(T, '2h', undefined)).toEqual({
+      thresholds: { reply: { warning: 120, critical: 60 }, wait: { warning: 120, critical: 120 } },
+    });
     expect(overrideThresholds(T, '9h', undefined)).toEqual({
       thresholds: { reply: { warning: 540, critical: 60 }, wait: { warning: 540, critical: 480 } },
     });
   });
 
-  it('refuses an override that leaves a family critical above warning, naming it', () => {
-    expect(overrideThresholds(T, '2h', undefined)).toEqual({
-      error:
-        'The critical threshold (8h) must not be longer than the warning one (2h). (wait metrics)',
-    });
+  it('takes a lone critical as is, raising a warning that would fall under it', () => {
     expect(overrideThresholds(T, undefined, '5h')).toEqual({
-      error:
-        'The critical threshold (5h) must not be longer than the warning one (4h). (reply metrics)',
+      thresholds: {
+        reply: { warning: 300, critical: 300 },
+        wait: { warning: 2880, critical: 300 },
+      },
+    });
+    expect(overrideThresholds(T, undefined, '30m')).toEqual({
+      thresholds: { reply: { warning: 240, critical: 30 }, wait: { warning: 2880, critical: 30 } },
     });
   });
 
-  it('refuses an unreadable override', () => {
-    expect(overrideThresholds(T, 'x', undefined)).toEqual({
-      error:
-        '"x" is not a duration. Use a number and a unit: 30m, 4h, 2d, 1w, or a mix like 1d4h. (reply metrics)',
+  it('refuses a pair whose critical is above its warning', () => {
+    expect(overrideThresholds(T, '1h', '2h')).toEqual({
+      error: 'The critical threshold (2h) must not be longer than the warning one (1h).',
     });
+  });
+
+  it('refuses an unreadable override, alone or in a pair', () => {
+    const notADuration = (raw: string) => ({
+      error: `"${raw}" is not a duration. Use a number and a unit: 30m, 4h, 2d, 1w, or a mix like 1d4h.`,
+    });
+    expect(overrideThresholds(T, 'x', undefined)).toEqual(notADuration('x'));
+    expect(overrideThresholds(T, undefined, 'y')).toEqual(notADuration('y'));
+    expect(overrideThresholds(T, '1h', 'y')).toEqual(notADuration('y'));
   });
 });

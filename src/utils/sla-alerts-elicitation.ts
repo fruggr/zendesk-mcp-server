@@ -1,5 +1,5 @@
 import type { ElicitRequestFormParams } from '@modelcontextprotocol/server';
-import { formatMinutes } from './durations';
+import { formatMinutes, notADuration, parseDuration } from './durations';
 import type { SlaPreferenceChange } from './sla-preferences';
 import type { NamedScope } from './sla-scope';
 import {
@@ -53,7 +53,7 @@ export const buildAlertsElicitation = (options: {
   }
   if (introduce) {
     message.push(
-      `A running SLA metric is flagged WARNING when its breach is closer than the warning threshold, CRITICAL when closer than the critical one, and BREACHED once overdue. In force for you: reply metrics (first_reply_time, next_reply_time) ${pair(thresholds.reply)}, every other metric ${pair(thresholds.wait)}, as warning,critical. Edit them to keep your own, or later with configure_sla_alerts.`,
+      `A running SLA metric is flagged WARNING when its breach is closer than the warning threshold, CRITICAL when closer than the critical one, and BREACHED once overdue. In force for you: reply metrics (first_reply_time, next_reply_time) ${pair(thresholds.reply)}, every other metric ${pair(thresholds.wait)}, as warning,critical. Edits here apply to this call only; configure_sla_alerts keeps them.`,
     );
     properties['reply_thresholds'] = {
       type: 'string',
@@ -102,7 +102,7 @@ export const readAlertsAnswer = (
     if (typeof raw !== 'string' || raw.trim() === pair(thresholds[family])) continue;
     const parsed = parseThresholdPair(raw);
     if ('error' in parsed) {
-      answer.notes.push(`Your ${family} thresholds "${raw}" were not saved: ${parsed.error}`);
+      answer.notes.push(`Your ${family} thresholds "${raw}" were not applied: ${parsed.error}`);
       continue;
     }
     answer.change[`${family}_warning`] = formatMinutes(parsed.threshold.warning);
@@ -113,24 +113,26 @@ export const readAlertsAnswer = (
 
 /**
  * Applies the per-call `warning` / `critical` overrides to both families. A
- * half given alone keeps the family's other half; the pair must still hold
- * critical <= warning.
+ * pair given together must hold critical <= warning. A half given alone wins:
+ * a lone warning lowers each family's critical to it at most, a lone critical
+ * raises each family's warning to it at least.
  */
 export const overrideThresholds = (
   thresholds: SlaThresholds,
   warning: string | undefined,
   critical: string | undefined,
 ): { thresholds: SlaThresholds } | { error: string } => {
-  // With nothing overridden each family round-trips through toThreshold unchanged.
-  const next: Partial<SlaThresholds> = {};
-  for (const family of ['reply', 'wait'] as const) {
-    const current = thresholds[family];
-    const result = toThreshold(
-      warning ?? formatMinutes(current.warning),
-      critical ?? formatMinutes(current.critical),
-    );
-    if ('error' in result) return { error: `${result.error} (${family} metrics)` };
-    next[family] = result.threshold;
+  if (warning !== undefined && critical !== undefined) {
+    const both = toThreshold(warning, critical);
+    return 'error' in both ? both : { thresholds: { reply: both.threshold, wait: both.threshold } };
   }
-  return { thresholds: next as SlaThresholds };
+  const w = warning === undefined ? undefined : parseDuration(warning);
+  if (warning !== undefined && w === undefined) return { error: notADuration(warning) };
+  const c = critical === undefined ? undefined : parseDuration(critical);
+  if (critical !== undefined && c === undefined) return { error: notADuration(critical) };
+  const apply = (t: SlaThreshold): SlaThreshold => ({
+    warning: w ?? Math.max(t.warning, c ?? 0),
+    critical: c ?? Math.min(t.critical, w ?? t.critical),
+  });
+  return { thresholds: { reply: apply(thresholds.reply), wait: apply(thresholds.wait) } };
 };

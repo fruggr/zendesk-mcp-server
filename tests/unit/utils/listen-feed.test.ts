@@ -76,6 +76,45 @@ describe('createListenFeed', () => {
   });
 });
 
+describe('createListenFeed with a throwing sink', () => {
+  it('keeps its bookkeeping and the other sinks going, and never throws', () => {
+    const feed = createListenFeed();
+    feed.attach({
+      add: () => {
+        throw new Error('add');
+      },
+      remove: () => {
+        throw new Error('remove');
+      },
+    });
+    const { events } = recorded(feed);
+    expect(() => feed.open('a', ['x', 'y'])).not.toThrow();
+    expect(events).toEqual(['+x', '+y']);
+    expect(() => feed.close('a')).not.toThrow();
+    expect(events).toEqual(['+x', '+y', '-x', '-y']);
+    feed.open('b', ['z']);
+    expect(() => feed.closeAll()).not.toThrow();
+    expect(events).toEqual(['+x', '+y', '-x', '-y', '+z', '-z']);
+  });
+
+  it('attaches a sink that throws on replay, and keeps telling it', () => {
+    const feed = createListenFeed();
+    feed.open('a', ['x', 'y']);
+    const seen: string[] = [];
+    expect(() =>
+      feed.attach({
+        add: (uri) => {
+          seen.push(`+${uri}`);
+          throw new Error('add');
+        },
+        remove: (uri) => seen.push(`-${uri}`),
+      }),
+    ).not.toThrow();
+    feed.close('a');
+    expect(seen).toEqual(['+x', '+y', '-x', '-y']);
+  });
+});
+
 describe('listenedUris', () => {
   it('reads the resource URIs of a subscriptions/listen request', () => {
     expect(

@@ -30,6 +30,8 @@ export interface SlaService {
 }
 
 export interface SlaSettings {
+  /** Part of every key: one disk store serves every stdio server of the machine, whatever its tenant. */
+  subdomain: string;
   slaPush: boolean;
   slaThresholds: SlaThresholds;
   slaCacheTtlSeconds: number;
@@ -100,23 +102,26 @@ export const createSlaService = (
   runtime: SlaRuntime,
   userId: () => Promise<number>,
 ): SlaService => {
-  const prefsKey = async (): Promise<string> => `prefs:${await userId()}`;
-  // An unreadable store reads as "no preference": the defaults still alert.
+  const userKey = async (): Promise<string> => `${settings.subdomain}:${await userId()}`;
+  // Rejects when the store cannot be read: a write built on "no preference"
+  // would overwrite the stored ones.
   const preferences = async (): Promise<SlaPreferences | undefined> =>
-    (await runtime.store.get(await prefsKey()).catch(() => undefined)) as
-      | SlaPreferences
-      | undefined;
+    (await runtime.store.get(`prefs:${await userKey()}`)) as SlaPreferences | undefined;
   return {
     push: settings.slaPush,
     userPreferencesAllowed: settings.slaUserPreferences,
     adminThresholds: settings.slaThresholds,
+    // Display only: when the caller's preferences cannot be read, the defaults still alert.
     thresholds: async () =>
       settings.slaUserPreferences
-        ? effectiveThresholds(settings.slaThresholds, await preferences())
+        ? preferences().then(
+            (prefs) => effectiveThresholds(settings.slaThresholds, prefs),
+            () => settings.slaThresholds,
+          )
         : settings.slaThresholds,
     preferences,
-    savePreferences: async (prefs) => runtime.store.set(await prefsKey(), prefs),
+    savePreferences: async (prefs) => runtime.store.set(`prefs:${await userKey()}`, prefs),
     userId,
-    cached: async (scope, load) => runtime.cache(`cache:${await userId()}:${scope}`, load),
+    cached: async (scope, load) => runtime.cache(`cache:${await userKey()}:${scope}`, load),
   };
 };

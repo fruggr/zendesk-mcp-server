@@ -41,13 +41,14 @@ expected values — `expected.md` is off-limits to you.
   "readOnly": true,
   "branch": "claude/laughing-lovelace-HmZOn",
   "assertions": [
-    { "id": "A1", "desc": "tools/list returns exactly 3 entries",                          "pass": null, "actual": null },
-    { "id": "A2", "desc": "tool names are {zendesk_tickets, zendesk_help_center, zendesk_users}", "pass": null, "actual": null },
-    { "id": "A3", "desc": "every tool has annotations.readOnlyHint === true",              "pass": null, "actual": null },
-    { "id": "A4", "desc": "every tool has annotations.destructiveHint === false",          "pass": null, "actual": null },
-    { "id": "A5", "desc": "every tool has annotations.idempotentHint === true",            "pass": null, "actual": null },
-    { "id": "A6", "desc": "every tool has annotations.openWorldHint === true",             "pass": null, "actual": null },
-    { "id": "A7", "desc": "every tool description starts with the literal '[RO] '",        "pass": null, "actual": null }
+    { "id": "A1", "desc": "tools/list returns exactly 4 entries",                          "pass": null, "actual": null },
+    { "id": "A2", "desc": "tool names are {zendesk_tickets, zendesk_help_center, zendesk_users, connector_preferences}", "pass": null, "actual": null },
+    { "id": "A3", "desc": "every zendesk_* tool has annotations.readOnlyHint === true",    "pass": null, "actual": null },
+    { "id": "A4", "desc": "every zendesk_* tool has annotations.destructiveHint === false", "pass": null, "actual": null },
+    { "id": "A5", "desc": "every zendesk_* tool has annotations.idempotentHint === true",  "pass": null, "actual": null },
+    { "id": "A6", "desc": "every zendesk_* tool has annotations.openWorldHint === true",   "pass": null, "actual": null },
+    { "id": "A7", "desc": "every zendesk_* tool description starts with the literal '[RO] '", "pass": null, "actual": null },
+    { "id": "A8", "desc": "connector_preferences: readOnlyHint, destructiveHint, idempotentHint, openWorldHint, and whether its description starts with '[RO]'", "pass": null, "actual": null }
   ],
   "summary": "<one-line synthesis: green / which IDs failed>"
 }

@@ -122,6 +122,50 @@ describe('createAlertPoller', () => {
     expect(errors).toEqual(['a: closed']);
   });
 
+  it('notifies again on the next round when a notification failed', async () => {
+    const errors: string[] = [];
+    const notified: string[] = [];
+    const notify = vi
+      .fn<(uri: string) => Promise<void>>()
+      .mockRejectedValueOnce(new Error('closed'))
+      .mockImplementation((uri) => {
+        notified.push(uri);
+        return Promise.resolve();
+      });
+    const poller = createAlertPoller({
+      intervalMs: 1000,
+      check: vi.fn().mockResolvedValueOnce('one').mockResolvedValue('two'),
+      notify,
+      onError: (uri, error) => errors.push(`${uri}: ${(error as Error).message}`),
+    });
+    poller.subscribe('a');
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(errors).toEqual(['a: closed']);
+    expect(notified).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(notified).toEqual(['a']);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(notified).toEqual(['a']);
+  });
+
+  it('forgets a URI unsubscribed while its notification was on the way', async () => {
+    let release: () => void = () => undefined;
+    const poller = createAlertPoller({
+      intervalMs: 1000,
+      check: vi.fn().mockResolvedValueOnce('one').mockResolvedValue('two'),
+      notify: () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    });
+    poller.subscribe('a');
+    await vi.advanceTimersByTimeAsync(1000);
+    poller.unsubscribe('a');
+    release();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(poller.subscriptions()).toEqual([]);
+  });
+
   it('drops the result of a check that finishes after the unsubscription', async () => {
     let release: (fp: string) => void = () => undefined;
     const notify = vi.fn(() => Promise.resolve());

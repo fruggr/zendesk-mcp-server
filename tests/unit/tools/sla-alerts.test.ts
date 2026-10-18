@@ -1,7 +1,7 @@
 import { HttpResponse, http } from 'msw';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ToolCallContext } from '../../../src/tools/definitions';
-import { createSlaAlertTools } from '../../../src/tools/sla-alerts';
+import { createAlertsReader, createSlaAlertTools } from '../../../src/tools/sla-alerts';
 import { isInputRequiredError } from '../../../src/utils/elicitation';
 import { MAX_ALERT_LINES } from '../../../src/utils/sla-alerts-check';
 import type { SlaService } from '../../../src/utils/sla-service';
@@ -98,8 +98,8 @@ describe('list_sla_alerts', () => {
     const overridden = await run({ scope: 'mine', warning: '3h', critical: '1h' }, sla);
     expect(overridden).toContain('0 breached, 0 critical, 1 warning');
     expect(overridden).toContain('(overridden for this call)');
-    await expect(run({ scope: 'mine', critical: '5h' }, sla)).rejects.toThrow(
-      'The critical threshold (5h) must not be longer than the warning one (4h). (reply metrics)',
+    await expect(run({ scope: 'mine', warning: '2h', critical: '5h' }, sla)).rejects.toThrow(
+      'The critical threshold (5h) must not be longer than the warning one (2h).',
     );
     vi.setSystemTime(new Date('2099-06-18T22:00:00Z'));
     expect(await run({ scope: 'all' }, sla)).toContain('1 breached');
@@ -235,7 +235,7 @@ describe('list_sla_alerts', () => {
       ]);
     });
 
-    it('uses the picked scope and saves edited thresholds', async () => {
+    it('uses the picked scope and applies edited thresholds to this call only', async () => {
       const calls = recordCalls();
       const sla = testSlaService();
       const text = await run({}, sla, {
@@ -243,20 +243,47 @@ describe('list_sla_alerts', () => {
         inputResponses: {
           sla_alerts: {
             action: 'accept',
-            content: { scope: 'all', reply_thresholds: '2h,30m', wait_thresholds: '2d,8h' },
+            content: { scope: 'all', reply_thresholds: '2h,30m', wait_thresholds: '3h,2h' },
           },
         },
       });
-      expect(text).toContain('SLA alerts for all unsolved tickets');
-      expect(text).toContain('(yours; change them with configure_sla_alerts)');
+      expect(text).toContain('SLA alerts for all unsolved tickets: 0 breached, 1 critical');
+      expect(text).toContain(
+        'Thresholds: reply metrics warning 2h, critical 30m; wait and resolution metrics warning 3h, critical 2h (overridden for this call).',
+      );
+      expect(text).toContain(
+        'The thresholds you edited apply to this call only. To keep them, call configure_sla_alerts with reply_warning: "2h", reply_critical: "30m", wait_warning: "3h", wait_critical: "2h".',
+      );
       expect(calls[0]).toContain('query=type%3Aticket+status%3Csolved&');
-      expect(await sla.preferences()).toEqual({
-        introduced: true,
-        reply: { warning: 120, critical: 30 },
-      });
+      // Only the introduction is remembered: the edits are not stored.
+      expect(await sla.preferences()).toEqual({ introduced: true });
     });
 
-    it('says why edited thresholds were not saved, and still answers', async () => {
+    it('lets the per-call overrides win over thresholds edited in the form', async () => {
+      const text = await run({ scope: 'mine', warning: '1d', critical: '1h' }, testSlaService(), {
+        canElicit: true,
+        inputResponses: {
+          sla_alerts: { action: 'accept', content: { wait_thresholds: '3h,2h' } },
+        },
+      });
+      expect(text).toContain('wait and resolution metrics warning 1d, critical 1h');
+      expect(text).toContain('0 breached, 0 critical, 1 warning');
+    });
+
+    it('fails a bad call before any form or write', async () => {
+      const sla = testSlaService();
+      await expect(run({ critical: 'x' }, sla, elicit)).rejects.toThrow('is not a duration');
+      await expect(run({ within: 'soon' }, sla, elicit)).rejects.toThrow('is not a duration');
+      await expect(run({ scope: 'mine', query: 'x' }, sla, elicit)).rejects.toThrow(
+        'Pass only one of scope, view or query.',
+      );
+      expect(await run({ view: 'No such view' }, sla, elicit)).toContain(
+        'No active view matches "No such view". Available views:',
+      );
+      expect(await sla.preferences()).toBeUndefined();
+    });
+
+    it('says why edited thresholds were not applied, and still answers', async () => {
       const sla = testSlaService();
       const text = await run({ scope: 'mine' }, sla, {
         canElicit: true,
@@ -265,7 +292,7 @@ describe('list_sla_alerts', () => {
         },
       });
       expect(text).toContain(
-        'Your reply thresholds "1h,2h" were not saved: The critical threshold (2h) must not be longer than the warning one (1h).',
+        'Your reply thresholds "1h,2h" were not applied: The critical threshold (2h) must not be longer than the warning one (1h).',
       );
       expect(await sla.preferences()).toEqual({ introduced: true });
     });
@@ -280,5 +307,55 @@ describe('list_sla_alerts', () => {
       expect(text).not.toContain('in force for you');
       expect(await sla.preferences()).toEqual({ introduced: true });
     });
+  });
+});
+
+describe('createAlertsReader', () => {
+  const reader = (sla: SlaService = introduced()) =>
+    createAlertsReader({ subdomain: 'testsubdomain', getToken: () => 'token', sla });
+  const viewLookups = (calls: string[]) => calls.filter((c) => c.startsWith('/views?')).length;
+
+  it('resolves a view title once per reader, not on every read', async () => {
+    const calls = recordCalls();
+    const alerts = reader();
+    const uri = `zendesk-sla://alerts/views/${encodeURIComponent(MOCK_VIEW.title)}`;
+    expect(await alerts.read(uri)).toContain(`SLA alerts for view ${MOCK_VIEW.id}`);
+    await alerts.fingerprint(uri);
+    expect(viewLookups(calls)).toBe(1);
+    // Another reader (connection, session or grant) resolves on its own.
+    await reader().read(uri);
+    expect(viewLookups(calls)).toBe(2);
+  });
+
+  it('never looks a numeric view id up', async () => {
+    const calls = recordCalls();
+    await reader().read(`zendesk-sla://alerts/views/${MOCK_VIEW.id}`);
+    expect(viewLookups(calls)).toBe(0);
+  });
+
+  it('resolves the title afresh after a failed read of its view', async () => {
+    const calls = recordCalls();
+    const alerts = reader();
+    const uri = `zendesk-sla://alerts/views/${encodeURIComponent(MOCK_VIEW.title)}`;
+    mswServer.use(
+      http.get(`${BASE}/views/:id/tickets`, () => HttpResponse.json({}, { status: 404 }), {
+        once: true,
+      }),
+    );
+    await expect(alerts.read(uri)).rejects.toThrow();
+    await alerts.read(uri);
+    expect(viewLookups(calls)).toBe(2);
+  });
+
+  it('names the views it knows when the title matches none', async () => {
+    await expect(reader().read('zendesk-sla://alerts/views/nope')).rejects.toThrow(
+      'No active view matches "nope". Available views:',
+    );
+  });
+
+  it('refuses a URI that is not an alert resource', async () => {
+    await expect(reader().read('zendesk-hc://topology')).rejects.toThrow(
+      'Not an SLA alert resource: zendesk-hc://topology',
+    );
   });
 });

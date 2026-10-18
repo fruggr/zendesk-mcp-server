@@ -1291,6 +1291,24 @@ describe('ticket tools', () => {
       expect(firstText(result ?? { content: [] })).not.toContain('Urgency');
     });
 
+    it("falls back to the server thresholds when the caller's cannot be read", async () => {
+      // A failed /users/me (or store) must not fail the ticket read: the urgency
+      // line is pushed with the admin thresholds instead.
+      const tools = createTicketTools(
+        testToolContext({
+          sla: testSlaService({ thresholds: () => Promise.reject(new Error('users/me 500')) }),
+        }),
+      );
+      for (const [name, params] of [
+        ['get_ticket', { ticket_id: 1, include_comments: false }],
+        ['search_tickets', { query: 'status:open', per_page: 100, page: 1 }],
+      ] as const) {
+        const result = await tools.find((t) => t.name === name)?.handler(params);
+        expect(result?.['isError']).toBeFalsy();
+        expect(firstText(result ?? { content: [] })).toContain(URGENCY);
+      }
+    });
+
     it('pushes nothing when no SLA service is wired', async () => {
       const result = await findTool('search_tickets').handler({
         query: 'status:open',

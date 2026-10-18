@@ -25,6 +25,7 @@ import {
   helpCenterContextEnabled,
   promotedArticlesEnabled,
   slaAlertsEnabled,
+  slaPreferencesEnabled,
   topologyResourceUri,
 } from './guidance/instructions';
 import { createTopologyProvider, type TopologyProvider } from './guidance/topology';
@@ -36,13 +37,14 @@ import {
 import { filterTools, groupByNamespace, NAMESPACE_LABELS } from './routing/registry';
 import type { ToolAnnotations, ToolCallContext, ToolResult } from './tools/definitions';
 import { resolveBrand } from './tools/help-center';
-import { createAllTools, type ToolDefinition } from './tools/index';
+import { createAllTools, type ToolContext, type ToolDefinition } from './tools/index';
 import { type AlertsReader, createAlertsReader } from './tools/sla-alerts';
 import { isInputRequiredError, supportsFormElicitation } from './utils/elicitation';
 import type { ListenFeed } from './utils/listen-feed';
 import { type Logger, silentLogger } from './utils/logger';
 import { readPackageInfo } from './utils/package-info';
 import { createRequestStateCodec } from './utils/request-state';
+import { isSignInRequired } from './utils/sign-in-required';
 import { type AlertPoller, createAlertPoller } from './utils/sla-poller';
 import {
   NAMED_SCOPES,
@@ -59,6 +61,10 @@ import {
   type SlaService,
 } from './utils/sla-service';
 import { createStrictParamsParser, toStrictStandardSchema } from './utils/validation';
+
+const noteUnauthorized = (err: unknown, onUnauthorized: (() => void) | undefined): void => {
+  if (onUnauthorized && err instanceof ZendeskApiError && err.status === 401) onUnauthorized();
+};
 
 /**
  * Invoke a tool handler, notifying `onUnauthorized` when Zendesk rejects the
@@ -85,9 +91,7 @@ const runHandler = async (
     // result, which it relays (or, for a 2025-era client, turns into an
     // `elicitation/create` round) before calling the handler again.
     if (isInputRequiredError(err)) return err.inputRequired as unknown as ToolResult;
-    if (onUnauthorized && err instanceof ZendeskApiError && err.status === 401) {
-      onUnauthorized();
-    }
+    noteUnauthorized(err, onUnauthorized);
     throw err;
   }
 };
@@ -200,6 +204,39 @@ const registerProxyTool = (
 };
 
 /**
+ * `single` mode: one `zendesk` proxy for every Zendesk tool. The preferences
+ * configure this server, not Zendesk: they keep their own proxy, so `zendesk`
+ * stays `[RO]` and readOnlyHint under --read-only.
+ */
+const registerSingleProxies = (
+  server: McpServer,
+  tools: ToolDefinition[],
+  readOnlyMode: boolean,
+  onUnauthorized: (() => void) | undefined,
+): Removable[] => {
+  const preferences = tools.filter((tool) => tool.namespace === 'preferences');
+  const zendesk = tools.filter((tool) => tool.namespace !== 'preferences');
+  const label = NAMESPACE_LABELS.preferences;
+  return [
+    ...(zendesk.length > 0 || preferences.length === 0
+      ? [registerProxyTool(server, 'zendesk', 'Zendesk', zendesk, readOnlyMode, onUnauthorized)]
+      : []),
+    ...(preferences.length > 0
+      ? [
+          registerProxyTool(
+            server,
+            label.toolName,
+            label.title,
+            preferences,
+            readOnlyMode,
+            onUnauthorized,
+          ),
+        ]
+      : []),
+  ];
+};
+
+/**
  * Build the bare `McpServer` — identity, `instructions` — with no tools or
  * resources registered yet. Split out from `createMcpServer` so the dev reload
  * (`dev/reload.ts`) can keep this long-lived shell (and its transport/session)
@@ -304,14 +341,18 @@ const ALERTS_MIME = 'text/markdown';
 
 // The three alert resource templates, read through `reader`. The named one
 // lists its three URIs so a client can offer them without guessing.
-const registerAlertResources = (server: McpServer, reader: AlertsReader): Removable[] => {
+const registerAlertResources = (
+  server: McpServer,
+  reader: AlertsReader,
+  push: boolean,
+): Removable[] => {
   const read = async (uri: URL) => ({
     contents: [
       { uri: uri.toString(), mimeType: ALERTS_MIME, text: await reader.read(uri.toString()) },
     ],
   });
-  const describe =
-    'SLA metrics breached or about to breach, one line each, grouped BREACHED / CRITICAL / WARNING and soonest first, against your alert thresholds; the same report as list_sla_alerts. Subscribe to be told when the set of alerts changes.';
+  const subscribe = push ? ' Subscribe to be told when the set of alerts changes.' : '';
+  const describe = `SLA metrics breached or about to breach, one line each, grouped BREACHED / CRITICAL / WARNING and soonest first, against your alert thresholds; the same report as list_sla_alerts.${subscribe}`;
   return [
     server.registerResource(
       'sla-alerts',
@@ -365,12 +406,105 @@ const createAlertsPoller = (
     intervalMs: config.slaPollSeconds * 1000,
     check: reader.fingerprint,
     notify,
-    onError: (uri, error) =>
+    onError: (uri, error) => {
+      // Nobody signed in, and only a user action may open a sign-in: wait for one.
+      if (isSignInRequired(error)) {
+        logger.debug('sla_alerts_poll_skipped', { uri });
+        return;
+      }
       logger.warn('sla_alerts_poll_failed', {
         uri,
         error: error instanceof Error ? error.message : String(error),
-      }),
+      });
+    },
   });
+
+/**
+ * The SLA settings a server applies: personal thresholds only where
+ * `configure_sla_alerts`, the one way to change them, is exposed.
+ */
+export const slaSettings = (config: Config): Config => ({
+  ...config,
+  slaUserPreferences: slaPreferencesEnabled(config),
+});
+
+/** The context the tools and the alert readers share. */
+export const toolContext = (
+  config: Config,
+  getToken: () => string | Promise<string>,
+  resolveBrandSubdomain: BrandSubdomainResolver,
+  sla: SlaService,
+): ToolContext => ({
+  subdomain: config.subdomain,
+  brandIds: config.brandIds,
+  resolveBrandSubdomain,
+  getToken,
+  sla,
+});
+
+/** `reader`, with a Zendesk 401 reported like a tool's: the dead token is dropped, not replayed. */
+const reportingUnauthorized = (
+  reader: AlertsReader,
+  onUnauthorized: (() => void) | undefined,
+): AlertsReader => {
+  const note = (err: unknown): never => {
+    noteUnauthorized(err, onUnauthorized);
+    throw err;
+  };
+  return {
+    read: (uri) => reader.read(uri).catch(note),
+    fingerprint: (uri) => reader.fingerprint(uri).catch(note),
+  };
+};
+
+export interface AlertPollingReaderParams {
+  config: Config;
+  /** A token source that never prompts: polling is nobody's action. */
+  getToken: () => string | Promise<string>;
+  /** The caller's Zendesk user id, read with that same token source. */
+  resolveUserId: () => Promise<number>;
+  caches: ServerCaches;
+  slaRuntime: SlaRuntime;
+  onUnauthorized?: (() => void) | undefined;
+}
+
+/** The reader the SLA alert poller checks with. */
+export const createAlertPollingReader = ({
+  config,
+  getToken,
+  resolveUserId,
+  caches,
+  slaRuntime,
+  onUnauthorized,
+}: AlertPollingReaderParams): AlertsReader =>
+  reportingUnauthorized(
+    createAlertsReader(
+      toolContext(
+        config,
+        getToken,
+        caches.resolveBrandSubdomain,
+        createSlaService(slaSettings(config), slaRuntime, resolveUserId),
+      ),
+    ),
+    onUnauthorized,
+  );
+
+/**
+ * The token source and user-id lookup a poller runs with: a background one
+ * when the transport has it (stdio, whose `getToken` may open a browser).
+ */
+export const pollingIdentity = (
+  config: Config,
+  getToken: () => string | Promise<string>,
+  caches: ServerCaches,
+  getBackgroundToken: (() => string | Promise<string>) | undefined,
+) =>
+  getBackgroundToken
+    ? {
+        getToken: getBackgroundToken,
+        resolveUserId: createUserIdResolver(config.subdomain, getBackgroundToken),
+      }
+    : { getToken, resolveUserId: caches.resolveUserId };
 
 /** Polls the SLA alert resources a 2026-07-28 client listens to; other URIs are not ours. */
 const pollListenedAlerts = (poller: AlertPoller, listens: Pick<ListenFeed, 'attach'>) =>
@@ -437,6 +571,8 @@ export interface GrantAlertWatchParams {
   logger: Logger;
   listens: Pick<ListenFeed, 'attach'>;
   notify: (uri: string) => void;
+  /** A Zendesk 401 while polling: the grant's token is dead. */
+  onUnauthorized?: () => void;
 }
 
 /**
@@ -452,14 +588,16 @@ export const watchGrantAlerts = ({
   logger,
   listens,
   notify,
+  onUnauthorized,
 }: GrantAlertWatchParams): (() => void) => {
   if (!(config.slaPush && slaAlertsEnabled(config))) return () => undefined;
-  const reader = createAlertsReader({
-    subdomain: config.subdomain,
-    brandIds: config.brandIds,
-    resolveBrandSubdomain: caches.resolveBrandSubdomain,
+  const reader = createAlertPollingReader({
+    config,
     getToken,
-    sla: createSlaService(config, slaRuntime, caches.resolveUserId),
+    resolveUserId: caches.resolveUserId,
+    caches,
+    slaRuntime,
+    onUnauthorized,
   });
   const poller = createAlertsPoller(
     config,
@@ -606,14 +744,7 @@ export const registerToolset = (
       }
       case 'single': {
         registered.push(
-          registerProxyTool(
-            server,
-            'zendesk',
-            'Zendesk',
-            filteredTools,
-            config.readOnly,
-            onUnauthorized,
-          ),
+          ...registerSingleProxies(server, filteredTools, config.readOnly, onUnauthorized),
         );
         break;
       }
@@ -733,12 +864,11 @@ export const registerToolset = (
       registered.push(
         ...registerAlertResources(
           server,
-          createAlertsReader({
-            subdomain: config.subdomain,
-            getToken,
-            resolveBrandSubdomain: shared.resolveBrandSubdomain,
-            sla,
-          }),
+          reportingUnauthorized(
+            createAlertsReader(toolContext(config, getToken, shared.resolveBrandSubdomain, sla)),
+            onUnauthorized,
+          ),
+          config.slaPush,
         ),
       );
     }
@@ -762,7 +892,17 @@ export interface CreateMcpServerOptions {
   slaRuntime?: SlaRuntime;
   /** The listen streams of the connection this server serves for its lifetime (stdio). */
   listens?: Pick<ListenFeed, 'attach'>;
+  /** A token source that never prompts, for the alert poller; `getToken` otherwise. */
+  getBackgroundToken?: () => string | Promise<string>;
+  /**
+   * Who polls the subscribed alert resources: this server (default), or the
+   * transport's grant (`grant`, 2026-07-28 HTTP: the server answers one request,
+   * so it only advertises `resources.subscribe` for the listen filter).
+   */
+  alertPolling?: AlertPolling;
 }
+
+export type AlertPolling = 'server' | 'grant';
 
 export const createMcpServer = (
   config: Config,
@@ -774,24 +914,30 @@ export const createMcpServer = (
     requestStateCodec,
     slaRuntime = createSlaRuntime(config),
     listens,
+    getBackgroundToken,
+    alertPolling = 'server',
   }: CreateMcpServerOptions = {},
 ): McpServer => {
   const server = createServerShell(config, requestStateCodec);
-  const sla = createSlaService(config, slaRuntime, caches.resolveUserId);
-  const ctx = {
-    subdomain: config.subdomain,
-    brandIds: config.brandIds,
-    resolveBrandSubdomain: caches.resolveBrandSubdomain,
-    getToken,
-    sla,
-  };
+  const sla = createSlaService(slaSettings(config), slaRuntime, caches.resolveUserId);
   registerToolset(
     server,
     { config, getToken, caches, onUnauthorized, logger, sla },
-    createAllTools(ctx),
+    createAllTools(toolContext(config, getToken, caches.resolveBrandSubdomain, sla)),
   );
   if (config.slaPush && slaAlertsEnabled(config)) {
-    installAlertSubscriptions(server, config, createAlertsReader(ctx), logger, listens);
+    if (alertPolling === 'grant') {
+      server.server.registerCapabilities({ resources: { subscribe: true } });
+    } else {
+      const reader = createAlertPollingReader({
+        config,
+        ...pollingIdentity(config, getToken, caches, getBackgroundToken),
+        caches,
+        slaRuntime,
+        onUnauthorized,
+      });
+      installAlertSubscriptions(server, config, reader, logger, listens);
+    }
   }
   return server;
 };
@@ -814,6 +960,10 @@ export interface ServerBuildContext {
    * absent where a server answers one request (2026-07-28 HTTP).
    */
   listens?: Pick<ListenFeed, 'attach'>;
+  /** A token source that never prompts, for background work; `getToken` otherwise. */
+  getBackgroundToken?: () => string | Promise<string>;
+  /** Who polls subscribed alert resources; see `CreateMcpServerOptions`. */
+  alertPolling?: AlertPolling;
   /**
    * Announces that a resource changed, to whoever listens to it on this
    * connection, session or grant. The URI is the whole payload, and a listen
@@ -834,10 +984,14 @@ export const defaultServerFactory: ServerFactory = ({
   requestStateCodec,
   slaRuntime,
   listens,
+  getBackgroundToken,
+  alertPolling,
 }) =>
   createMcpServer(config, getToken, logger, onUnauthorized, {
     ...(caches ? { caches } : {}),
     ...(slaRuntime ? { slaRuntime } : {}),
     ...(listens ? { listens } : {}),
+    ...(getBackgroundToken ? { getBackgroundToken } : {}),
+    ...(alertPolling ? { alertPolling } : {}),
     requestStateCodec,
   });

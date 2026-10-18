@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ZendeskSlaLiveMetric } from '../../../src/types';
+import { minutesUntil } from '../../../src/utils/formatting';
 import { DEFAULT_SLA_THRESHOLDS } from '../../../src/utils/sla-thresholds';
 import {
   classifyMetric,
@@ -49,17 +50,20 @@ describe('classifyMetric', () => {
     });
   });
 
-  it('reads a deadline at this very instant as BREACHED', () => {
-    expect(classify(metric('first_reply_time', 0))?.level).toBe('BREACHED');
-  });
-
-  it('counts a deadline 30 seconds away as zero minutes left, still CRITICAL', () => {
-    const m = {
-      metric: 'first_reply_time',
-      stage: 'active',
-      breach_at: new Date(NOW + 30_000).toISOString(),
-    };
-    expect(classify(m)).toMatchObject({ level: 'CRITICAL', minutesLeft: 0 });
+  // The SLA block's metric line rounds the minutes left and calls a metric
+  // breached below zero; the Urgency line beside it must say the same.
+  it.each([
+    [-90, 'BREACHED', -1],
+    [-31, 'BREACHED', -1],
+    [-30, 'CRITICAL', 0],
+    [0, 'CRITICAL', 0],
+    [29, 'CRITICAL', 0],
+    [30, 'CRITICAL', 1],
+  ])('counts a deadline %i seconds away as the metric line does: %s', (seconds, level, minutes) => {
+    const breachAt = new Date(NOW + seconds * 1000).toISOString();
+    const u = classify({ metric: 'first_reply_time', stage: 'active', breach_at: breachAt });
+    expect(u).toMatchObject({ level, minutesLeft: minutes });
+    expect(u?.minutesLeft === minutesUntil(breachAt, NOW)).toBe(true);
   });
 
   it.each(['paused', 'achieved', 'fulfilled'])('ignores a %s metric', (stage) => {

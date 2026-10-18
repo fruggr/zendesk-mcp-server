@@ -5,6 +5,7 @@ import { DEFAULT_SLA_THRESHOLDS } from '../src/utils/sla-thresholds';
 export const testSlaService = (overrides: Partial<SlaService> = {}): SlaService => ({
   ...createSlaService(
     {
+      subdomain: 'testsubdomain',
       slaPush: true,
       slaThresholds: DEFAULT_SLA_THRESHOLDS,
       slaCacheTtlSeconds: 60,

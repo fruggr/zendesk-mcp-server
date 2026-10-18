@@ -44,6 +44,12 @@ export const parseAlertsUri = (raw: string): AlertsTarget | undefined => {
   if (named) return { kind: 'scope', scope: named };
   const view = VIEW_PATH.exec(path)?.[1];
   if (!view) return undefined;
-  const decoded = decodeURIComponent(view);
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(view);
+  } catch {
+    // A broken percent-escape names no view.
+    return undefined;
+  }
   return { kind: 'view', view: DIGITS.test(decoded) ? Number(decoded) : decoded };
 };

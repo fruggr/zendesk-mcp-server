@@ -1280,10 +1280,25 @@ describe('SLA settings', () => {
     process.env['SLA_POLL_SECONDS'] = '60';
     expect(loadConfig(['mycompany']).slaPollSeconds).toBe(60);
     expect(loadConfig(['mycompany', '--sla-poll-seconds', '90']).slaPollSeconds).toBe(90);
-    process.env['SLA_POLL_SECONDS'] = '59';
-    expect(startupMessage([])).toContain('slaPollSeconds');
+    process.env['SLA_POLL_SECONDS'] = '86400';
+    expect(loadConfig(['mycompany']).slaPollSeconds).toBe(86400);
     expect(startupMessage(['--sla-poll-seconds', '5m'])).toBe(
       `Invalid --sla-poll-seconds value. Expected a whole number of seconds. See ${STARTUP_DOCS.invocation}`,
+    );
+  });
+
+  it('fails at startup on a poll interval out of range, naming the knob', () => {
+    process.env['SLA_POLL_SECONDS'] = '59';
+    expect(startupMessage([])).toBe(
+      `Invalid SLA_POLL_SECONDS value. Expected 60 to 86400 seconds. See ${STARTUP_DOCS.environment}`,
+    );
+    // Past a day, setInterval would clamp the delay to 1 ms.
+    process.env['SLA_POLL_SECONDS'] = '86401';
+    expect(startupMessage([])).toBe(
+      `Invalid SLA_POLL_SECONDS value. Expected 60 to 86400 seconds. See ${STARTUP_DOCS.environment}`,
+    );
+    expect(startupMessage(['--sla-poll-seconds', '30'])).toBe(
+      `Invalid --sla-poll-seconds value. Expected 60 to 86400 seconds. See ${STARTUP_DOCS.invocation}`,
     );
   });
 
@@ -1297,8 +1312,14 @@ describe('SLA settings', () => {
     );
   });
 
-  it('rejects an unknown state store', () => {
-    expect(startupMessage(['--sla-state-store', 'redis'])).toContain('slaStateStore');
+  it('rejects an unknown state store, naming the knob', () => {
+    expect(startupMessage(['--sla-state-store', 'redis'])).toBe(
+      `Invalid --sla-state-store value. Expected memory or disk. See ${STARTUP_DOCS.invocation}`,
+    );
+    process.env['SLA_STATE_STORE'] = 'Disk';
+    expect(startupMessage([])).toBe(
+      `Invalid SLA_STATE_STORE value. Expected memory or disk. See ${STARTUP_DOCS.environment}`,
+    );
   });
 
   it.each([

@@ -8,9 +8,11 @@ import {
 import type { SlaService } from '../utils/sla-service';
 import type { ToolContext, ToolDefinition } from './definitions';
 
-const DURATION_HINT = 'A readable duration: 30m, 4h, 2d, 1w, or a mix like 1d4h.';
+/** How every SLA duration parameter is spelled, for their descriptions. */
+export const DURATION_HINT = 'A readable duration: 30m, 4h, 2d, 1w, or a mix like 1d4h.';
 
-const requireSla = (sla: SlaService | undefined): SlaService => {
+/** The caller's SLA service, or the plain error of a server that wires none. */
+export const requireSla = (sla: SlaService | undefined): SlaService => {
   if (!sla) throw new Error('SLA alerting is not available on this server.');
   return sla;
 };

@@ -22,6 +22,10 @@ export const parseDuration = (raw: string): number | undefined => {
   );
 };
 
+/** Why `raw` was refused, with the spelling `parseDuration` reads. */
+export const notADuration = (raw: string): string =>
+  `"${raw}" is not a duration. Use a number and a unit: 30m, 4h, 2d, 1w, or a mix like 1d4h.`;
+
 /**
  * Renders a span of minutes in the same spelling `parseDuration` reads, days
  * being the largest unit (`2d1h`, `45m`). The sign is dropped: callers say

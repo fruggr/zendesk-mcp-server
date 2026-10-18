@@ -39,6 +39,8 @@ export const DEFAULT_NAMESPACES: readonly Namespace[] = [
 export const Transport = z.enum(['stdio', 'http']);
 export type Transport = z.infer<typeof Transport>;
 
+export const SLA_POLL_RANGE = { min: 60, max: 86_400 } as const;
+
 const SlaThresholdSchema: z.ZodType<SlaThreshold> = z.object({
   warning: z.number().int().min(0),
   critical: z.number().int().min(0),
@@ -222,9 +224,10 @@ export const ConfigSchema = z.object({
   /**
    * How often, in seconds, a subscribed SLA alert resource is re-checked while
    * at least one subscription is open (default 300, minimum 60, which keeps a
-   * subscriber well inside Zendesk's rate limit).
+   * subscriber well inside Zendesk's rate limit; at most a day, past which
+   * `setInterval` would clamp the delay to 1 ms).
    */
-  slaPollSeconds: z.number().int().min(60).default(300),
+  slaPollSeconds: z.number().int().min(SLA_POLL_RANGE.min).max(SLA_POLL_RANGE.max).default(300),
 });
 
 /** The store a config resolves to; see `slaStateStore`. */
@@ -598,22 +601,40 @@ const thresholdSetting = (
   return parsed.threshold;
 };
 
-// Whole seconds; the schema owns the range. Not echoed, like parsePort.
+// Whole seconds, within `range` when given. Not echoed, like parsePort.
 const secondsSetting = (
   cliValue: string | undefined,
   envName: string,
   flag: string,
+  range?: { min: number; max: number },
 ): number | undefined => {
   const env = readNonEmptyEnv(envName);
   const raw = cliValue ?? env.value;
   if (raw === undefined) return undefined;
-  if (!DIGITS_ONLY.test(raw)) {
+  const fail = (expected: string): never => {
     throw createStartupError(
-      `Invalid ${cliValue === undefined ? env.name : flag} value. Expected a whole number of seconds.`,
+      `Invalid ${cliValue === undefined ? env.name : flag} value. ${expected}`,
       cliValue === undefined ? STARTUP_DOCS.environment : STARTUP_DOCS.invocation,
     );
+  };
+  if (!DIGITS_ONLY.test(raw)) fail('Expected a whole number of seconds.');
+  const seconds = Number(raw);
+  if (range && (seconds < range.min || seconds > range.max)) {
+    fail(`Expected ${range.min} to ${range.max} seconds.`);
   }
-  return Number(raw);
+  return seconds;
+};
+
+const SLA_STATE_STORES = new Set(['memory', 'disk']);
+
+const stateStoreSetting = (cliValue: string | undefined): string | undefined => {
+  const env = readNonEmptyEnv('SLA_STATE_STORE');
+  const raw = cliValue ?? env.value;
+  if (raw === undefined || SLA_STATE_STORES.has(raw)) return raw;
+  throw createStartupError(
+    `Invalid ${cliValue === undefined ? env.name : '--sla-state-store'} value. Expected memory or disk.`,
+    cliValue === undefined ? STARTUP_DOCS.environment : STARTUP_DOCS.invocation,
+  );
 };
 
 // The SLA alerting knobs, same precedence as the others (CLI flag > env var >
@@ -639,9 +660,14 @@ const resolveSlaSettings = (cli: CliResult) => ({
     'SLA_CACHE_TTL_SECONDS',
     '--sla-cache-ttl-seconds',
   ),
-  slaStateStore: cli.slaStateStore ?? requireNonEmptyEnv('SLA_STATE_STORE'),
+  slaStateStore: stateStoreSetting(cli.slaStateStore),
   slaUserPreferences: cli.slaUserPreferences ?? booleanEnv('SLA_USER_PREFERENCES'),
-  slaPollSeconds: secondsSetting(cli.slaPollSeconds, 'SLA_POLL_SECONDS', '--sla-poll-seconds'),
+  slaPollSeconds: secondsSetting(
+    cli.slaPollSeconds,
+    'SLA_POLL_SECONDS',
+    '--sla-poll-seconds',
+    SLA_POLL_RANGE,
+  ),
 });
 
 export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {

@@ -484,11 +484,23 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         expect(names).not.toContain('list_request_forms');
       });
 
-      it('exposes a single proxy in "single" mode', async () => {
+      it('exposes a single Zendesk proxy in "single" mode, the preferences beside it', async () => {
         connected = await harness.connect(makeConfig({ mode: 'single' }));
         const { tools } = await connected.client.listTools();
 
-        expect(toolNames(tools)).toEqual(['zendesk']);
+        expect(toolNames(tools)).toEqual(['zendesk', 'connector_preferences']);
+      });
+
+      it('keeps the single Zendesk proxy read-only under --read-only', async () => {
+        connected = await harness.connect(makeConfig({ mode: 'single', readOnly: true }));
+        const { tools } = await connected.client.listTools();
+        const zendesk = tools.find((tool) => tool.name === 'zendesk');
+        const preferences = tools.find((tool) => tool.name === 'connector_preferences');
+
+        expect(zendesk?.description?.startsWith('[RO] ')).toBe(true);
+        expect(zendesk?.annotations?.readOnlyHint).toBe(true);
+        expect(preferences?.description?.startsWith('[RO]')).toBe(false);
+        expect(preferences?.annotations?.readOnlyHint).toBe(false);
       });
 
       it('applies the namespace filter', async () => {
@@ -1013,54 +1025,65 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
           updates.push(n.params.uri);
         });
         let searches = 0;
-        mswServer.events.on('request:start', ({ request }) => {
+        const countSearches = ({ request }: { request: Request }): void => {
           if (new URL(request.url).pathname.endsWith('/search')) searches += 1;
-        });
+        };
+        mswServer.events.on('request:start', countSearches);
         // 2025 subscribes; 2026 listens, the article URI riding along unpolled.
         const client = connected.client;
         let stop = async (): Promise<void> => {
           await client.unsubscribeResource({ uri: 'zendesk-sla://alerts/mine' });
         };
-        if (harness.era === '2025') {
-          await client.subscribeResource({ uri: 'zendesk-sla://alerts/mine' });
-        } else {
-          const listen = await client.listen({
-            resourceSubscriptions: ['zendesk-sla://alerts/mine', 'zendesk-hc://articles/1'],
-          });
-          expect(listen.honoredFilter.resourceSubscriptions).toContain('zendesk-sla://alerts/mine');
-          stop = () => listen.close();
-        }
-        // The subscription takes its baseline first.
-        await vi.waitFor(() => expect(searches).toBe(1));
-        // The CRITICAL metric is now reported breached: the alert set changed.
-        mswServer.use(
-          http.get('https://testsubdomain.zendesk.com/api/v2/search', () =>
-            HttpResponse.json({
-              results: [
-                {
-                  ...MOCK_TICKET,
-                  slas: {
-                    policy_metrics: [
-                      {
-                        metric: 'requester_wait_time',
-                        stage: 'active',
-                        breach_at: '2099-06-18T19:00:00Z',
-                      },
-                    ],
+        let stopped = false;
+        try {
+          if (harness.era === '2025') {
+            await client.subscribeResource({ uri: 'zendesk-sla://alerts/mine' });
+          } else {
+            const listen = await client.listen({
+              resourceSubscriptions: ['zendesk-sla://alerts/mine', 'zendesk-hc://articles/1'],
+            });
+            expect(listen.honoredFilter.resourceSubscriptions).toContain(
+              'zendesk-sla://alerts/mine',
+            );
+            stop = () => listen.close();
+          }
+          // The subscription takes its baseline first.
+          await vi.waitFor(() => expect(searches).toBe(1));
+          // The CRITICAL metric is now reported breached: the alert set changed.
+          mswServer.use(
+            http.get('https://testsubdomain.zendesk.com/api/v2/search', () =>
+              HttpResponse.json({
+                results: [
+                  {
+                    ...MOCK_TICKET,
+                    slas: {
+                      policy_metrics: [
+                        {
+                          metric: 'requester_wait_time',
+                          stage: 'active',
+                          breach_at: '2099-06-18T19:00:00Z',
+                        },
+                      ],
+                    },
                   },
-                },
-              ],
-              count: 1,
-            }),
-          ),
-        );
-        await vi.advanceTimersByTimeAsync(60_000);
-        await vi.waitFor(() => expect(searches).toBe(2));
-        await vi.waitFor(() => expect(updates).toEqual(['zendesk-sla://alerts/mine']));
-        // No one listening any more: polling stops.
-        await stop();
-        await vi.advanceTimersByTimeAsync(120_000);
-        expect(searches).toBe(2);
+                ],
+                count: 1,
+              }),
+            ),
+          );
+          await vi.advanceTimersByTimeAsync(60_000);
+          await vi.waitFor(() => expect(searches).toBe(2));
+          await vi.waitFor(() => expect(updates).toEqual(['zendesk-sla://alerts/mine']));
+          // No one listening any more: polling stops.
+          stopped = true;
+          await stop();
+          await vi.advanceTimersByTimeAsync(120_000);
+          expect(searches).toBe(2);
+        } finally {
+          // A failed assertion must not leave a counter or a poll behind for the next tests.
+          mswServer.events.removeListener('request:start', countSearches);
+          if (!stopped) await stop().catch(() => undefined);
+        }
       });
 
       it('pushes no urgency line under --no-sla-push, and keeps the SLA block', async () => {

@@ -19,7 +19,10 @@ import { join } from 'node:path';
  * the machine.
  */
 export interface StateStore {
-  /** `undefined` for a missing or expired key, never an error. */
+  /**
+   * `undefined` for a missing or expired key. Rejects only when the store
+   * cannot be read: a caller told "missing" would overwrite what it holds.
+   */
   get(key: string): Promise<unknown>;
   /** `ttlMs` omitted: the entry never expires. */
   set(key: string, value: unknown, ttlMs?: number): Promise<void>;
@@ -83,13 +86,16 @@ const remove = (path: string): Promise<void> => unlink(path).catch(ignore);
 const fileOf = (dir: string, key: string): string =>
   join(dir, `${createHash('sha256').update(key).digest('hex').slice(0, 32)}.json`);
 
-// ENOENT is a miss (a sweep may have just deleted it); an unreadable file is
-// treated the same rather than failing the caller.
+// ENOENT is a miss (a sweep may have just deleted it), and so is a file that is
+// not an entry; any other failure rejects.
 const readEntry = (path: string): Promise<Entry | undefined> =>
   // Stryker disable next-line StringLiteral: without an encoding JSON.parse reads the Buffer as UTF-8 text anyway.
   readFile(path, 'utf8')
     .then((text) => JSON.parse(text) as Entry)
-    .catch(ignore);
+    .catch((err: unknown) => {
+      if (err instanceof SyntaxError || errnoOf(err) === 'ENOENT') return undefined;
+      throw err;
+    });
 
 /**
  * Entries as one file each under `dir` (0600, directory 0700), written to a
@@ -124,13 +130,13 @@ export const createDiskStore = (dir: string, options: DiskStoreOptions = {}): St
       // Stryker disable next-line ConditionalExpression,LogicalOperator: any other error fails the bounded retry below the same way.
       if (code !== 'EEXIST' || !mayTakeOver) return false;
     }
-    const held = (await readEntry(lock)) as { at?: number } | undefined;
+    const held = (await readEntry(lock).catch(ignore)) as { at?: number } | undefined;
     if (typeof held?.at === 'number' && now() - held.at < lockStaleMs) return false;
     await remove(lock);
     return acquireLock(lock, false);
   };
 
-  // A file that is not an entry reads as undefined and is left alone.
+  // A file that is not an entry, or cannot be read, is left alone.
   const sweepFile = async (name: string, at: number): Promise<void> => {
     const path = join(dir, name);
     if (name.endsWith('.tmp')) {
@@ -138,7 +144,7 @@ export const createDiskStore = (dir: string, options: DiskStoreOptions = {}): St
       if (info && at - info.mtimeMs > tempStaleMs) await remove(path);
       return;
     }
-    const entry = await readEntry(path);
+    const entry = await readEntry(path).catch(ignore);
     if (entry && !isLive(entry, at)) await remove(path);
   };
 

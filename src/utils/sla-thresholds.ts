@@ -1,4 +1,4 @@
-import { formatMinutes, parseDuration } from './durations';
+import { formatMinutes, notADuration, parseDuration } from './durations';
 
 /**
  * SLA metrics fall in two families with their own alert thresholds: a reply is
@@ -38,9 +38,7 @@ export const toThreshold = (
   const w = parseDuration(warning);
   const c = parseDuration(critical);
   if (w === undefined || c === undefined) {
-    return {
-      error: `"${w === undefined ? warning : critical}" is not a duration. Use a number and a unit: 30m, 4h, 2d, 1w, or a mix like 1d4h.`,
-    };
+    return { error: notADuration(w === undefined ? warning : critical) };
   }
   if (c > w) {
     return {

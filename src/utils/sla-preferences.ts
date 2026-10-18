@@ -1,4 +1,4 @@
-import { formatMinutes, parseDuration } from './durations';
+import { formatMinutes, notADuration, parseDuration } from './durations';
 import {
   formatThreshold,
   type SlaFamily,
@@ -48,9 +48,7 @@ export const isEmptyChange = (change: SlaPreferenceChange): boolean =>
 const readDuration = (raw: string | undefined, field: string): number | string | undefined => {
   if (raw === undefined) return undefined;
   const minutes = parseDuration(raw);
-  return minutes === undefined
-    ? `${field}: "${raw}" is not a duration. Use a number and a unit: 30m, 4h, 2d, 1w, or a mix like 1d4h.`
-    : minutes;
+  return minutes === undefined ? `${field}: ${notADuration(raw)}` : minutes;
 };
 
 type FamilyOutcome = 'keep' | 'reset' | SlaThreshold | { error: string };

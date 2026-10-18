@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatMinutes, parseDuration } from '../../../src/utils/durations';
+import { formatMinutes, notADuration, parseDuration } from '../../../src/utils/durations';
 
 describe('parseDuration', () => {
   it.each([
@@ -49,5 +49,13 @@ describe('formatMinutes', () => {
     for (const minutes of [0, 1, 59, 61, 1439, 1441, 4321]) {
       expect(parseDuration(formatMinutes(minutes))).toBe(minutes);
     }
+  });
+});
+
+describe('notADuration', () => {
+  it('names the text and the expected spelling', () => {
+    expect(notADuration('soon')).toBe(
+      '"soon" is not a duration. Use a number and a unit: 30m, 4h, 2d, 1w, or a mix like 1d4h.',
+    );
   });
 });

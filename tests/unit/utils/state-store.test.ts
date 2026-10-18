@@ -4,6 +4,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  rmSync,
   statSync,
   utimesSync,
   writeFileSync,
@@ -158,12 +159,26 @@ describe('disk store', () => {
     expect(await store.get('k')).toBeUndefined();
   });
 
-  it('treats an unreadable file as a miss, not an error', async () => {
+  it('treats a file that is not an entry as a miss, not an error', async () => {
     const store = createDiskStore(dir, { now });
     await store.set('k', 'v');
     const [file] = readdirSync(dir);
     writeFileSync(join(dir, file as string), '{not json');
     expect(await store.get('k')).toBeUndefined();
+  });
+
+  it('fails a read the filesystem refuses, rather than calling it a miss', async () => {
+    // A caller told "missing" would overwrite what it cannot read.
+    const store = createDiskStore(dir, { now });
+    await store.set('k', 'v');
+    const [file] = readdirSync(dir);
+    const path = join(dir, file as string);
+    rmSync(path);
+    mkdirSync(path);
+    await expect(store.get('k')).rejects.toMatchObject({ code: 'EISDIR' });
+    // A sweep steps over it.
+    expect(await store.sweep()).toBe(true);
+    expect(readdirSync(dir)).toEqual([file]);
   });
 
   it('reads a missing directory as an empty store, and sweeps it as done', async () => {

@@ -32,11 +32,13 @@ export const classifyMetric = (
   if (!hasPendingDeadline(m)) return undefined;
   // An unreadable `breach_at` parses to NaN, which fails every comparison below
   // and so falls through to `undefined` with no guard of its own.
-  const at = Date.parse(m.breach_at);
-  const minutesLeft = Math.floor((at - now) / MINUTE_MS);
+  // Rounded, and breached below zero, exactly as the SLA block's metric line
+  // (`formatSlaMetric`) counts them, so the two lines never disagree. `+ 0`
+  // turns the -0 of a deadline under 30 s past into 0.
+  const minutesLeft = Math.round((Date.parse(m.breach_at) - now) / MINUTE_MS) + 0;
   const { warning, critical } = thresholds[familyOf(m.metric)];
   let level: UrgencyLevel;
-  if (at <= now) level = 'BREACHED';
+  if (minutesLeft < 0) level = 'BREACHED';
   else if (minutesLeft <= critical) level = 'CRITICAL';
   else if (minutesLeft <= warning) level = 'WARNING';
   else return undefined;

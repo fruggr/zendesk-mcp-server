@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   fetchScope,
+  MAX_SCOPE_GROUPS,
   MAX_SCOPE_PAGES,
   readGroupIds,
   type SlaScope,
@@ -164,6 +165,35 @@ describe('fetchScope', () => {
       'type:ticket group:20 status<solved',
     ]);
     expect(snapshot.tickets.map((t) => t.id)).toEqual([1, 2, 3]);
+  });
+
+  it('searches at most MAX_SCOPE_GROUPS groups, and says the rest were left unread', async () => {
+    const groups = Array.from({ length: MAX_SCOPE_GROUPS + 2 }, (_, i) => ({ group_id: i + 1 }));
+    const { calls, get } = recorder(({ path }) =>
+      path.endsWith('/group_memberships')
+        ? { group_memberships: groups, meta: { has_more: false } }
+        : { results: [], count: 0 },
+    );
+    const snapshot = await fetchScope({ kind: 'scope', scope: 'my_groups' }, get, () =>
+      Promise.resolve(42),
+    );
+    expect(MAX_SCOPE_GROUPS).toBe(10);
+    expect(calls.filter((c) => c.path === '/search')).toHaveLength(MAX_SCOPE_GROUPS);
+    expect(calls.at(-1)?.params['query']).toBe('type:ticket group:10 status<solved');
+    expect(snapshot).toEqual({ tickets: [], truncated: true, unread: 0 });
+  });
+
+  it('reads exactly MAX_SCOPE_GROUPS groups in full', async () => {
+    const groups = Array.from({ length: MAX_SCOPE_GROUPS }, (_, i) => ({ group_id: i + 1 }));
+    const { get } = recorder(({ path }) =>
+      path.endsWith('/group_memberships')
+        ? { group_memberships: groups, meta: { has_more: false } }
+        : { results: [], count: 0 },
+    );
+    const snapshot = await fetchScope({ kind: 'scope', scope: 'my_groups' }, get, () =>
+      Promise.resolve(42),
+    );
+    expect(snapshot.truncated).toBe(false);
   });
 
   it('reads "my_groups" of a caller in no group as empty, with no search', async () => {

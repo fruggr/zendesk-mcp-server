@@ -7,13 +7,16 @@ import * as z from 'zod/v4';
 import type { Config } from '../config';
 import { slaAlertsEnabled } from '../guidance/instructions';
 import {
+  createAlertPollingReader,
   createServerCaches,
   createServerShell,
   installAlertSubscriptions,
+  pollingIdentity,
   registerToolset,
+  slaSettings,
+  toolContext,
 } from '../server';
 import { createAllTools, type ToolContext, type ToolDefinition } from '../tools/index';
-import { createAlertsReader } from '../tools/sla-alerts';
 import { startStdioTransport } from '../transports/stdio';
 import type { ListenFeed } from '../utils/listen-feed';
 import { type Logger, silentLogger } from '../utils/logger';
@@ -81,22 +84,25 @@ export const createReloadableServer = (
   requestStateCodec?: RequestStateCodec,
   slaRuntime: SlaRuntime = createSlaRuntime(config),
   listens?: Pick<ListenFeed, 'attach'>,
+  getBackgroundToken?: () => string | Promise<string>,
 ): { server: McpServer; reload: () => Promise<number> } => {
   const server = createServerShell(config, requestStateCodec);
   // ONE set of caches across every reload generation: tools and the
   // topology/article resources resolve against the same cached brand list.
   const caches = createServerCaches(config, getToken, onUnauthorized);
-  const ctx: ToolContext = {
-    subdomain: config.subdomain,
-    brandIds: config.brandIds,
-    resolveBrandSubdomain: caches.resolveBrandSubdomain,
-    getToken,
-    sla: createSlaService(config, slaRuntime, caches.resolveUserId),
-  };
-  const params = { config, getToken, caches, onUnauthorized, logger, sla: ctx.sla };
+  const sla = createSlaService(slaSettings(config), slaRuntime, caches.resolveUserId);
+  const ctx = toolContext(config, getToken, caches.resolveBrandSubdomain, sla);
+  const params = { config, getToken, caches, onUnauthorized, logger, sla };
   // Subscriptions belong to the long-lived shell, not to a tool generation.
   if (config.slaPush && slaAlertsEnabled(config)) {
-    installAlertSubscriptions(server, config, createAlertsReader(ctx), logger, listens);
+    const reader = createAlertPollingReader({
+      config,
+      ...pollingIdentity(config, getToken, caches, getBackgroundToken),
+      caches,
+      slaRuntime,
+      onUnauthorized,
+    });
+    installAlertSubscriptions(server, config, reader, logger, listens);
   }
 
   // The last generation registered successfully — both the handle (to dispose)
@@ -214,6 +220,7 @@ export const startDevServer = (
   logger: Logger = silentLogger,
   onUnauthorized?: () => void,
   slaRuntime?: SlaRuntime,
+  getBackgroundToken?: () => string | Promise<string>,
 ): StdioServerHandle => {
   const handle = startStdioTransport(({ requestStateCodec, listens }) => {
     const { server, reload } = createReloadableServer(
@@ -225,6 +232,7 @@ export const startDevServer = (
       requestStateCodec,
       slaRuntime,
       listens,
+      getBackgroundToken,
     );
     registerReloadTool(server, reload, logger);
     return server;

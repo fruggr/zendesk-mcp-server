@@ -44,7 +44,14 @@ const connectStdio = (
   slaRuntime: SlaRuntime,
 ): StdioServerHandle => {
   if (config.dev) {
-    return startDevServer(config, tokenStore.getToken, logger, tokenStore.invalidate, slaRuntime);
+    return startDevServer(
+      config,
+      tokenStore.getToken,
+      logger,
+      tokenStore.invalidate,
+      slaRuntime,
+      tokenStore.getTokenSilently,
+    );
   }
   return startStdioTransport(
     (extras) =>
@@ -53,6 +60,8 @@ const connectStdio = (
         getToken: tokenStore.getToken,
         logger,
         onUnauthorized: tokenStore.invalidate,
+        // The alert poller runs unasked: it must never open a browser sign-in.
+        getBackgroundToken: tokenStore.getTokenSilently,
         slaRuntime,
         ...extras,
       }),

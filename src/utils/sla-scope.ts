@@ -39,6 +39,8 @@ export type ZendeskGetter = <T>(path: string, params: Record<string, string>) =>
 
 /** Bounds every scope fetch: at most this many pages of 100 tickets per search or view. */
 export const MAX_SCOPE_PAGES = 5;
+/** Bounds a `my_groups` check: at most this many group searches; the rest count as unread. */
+export const MAX_SCOPE_GROUPS = 10;
 const PAGE_SIZE = 100;
 
 interface OffsetPage {
@@ -112,7 +114,7 @@ export const readGroupIds = async (get: ZendeskGetter, userId: number): Promise<
 
 /**
  * Reads the tickets of a scope with their live SLA, bounded by
- * `MAX_SCOPE_PAGES` per search or view. Every call goes through `get`, so
+ * `MAX_SCOPE_PAGES` per search or view and `MAX_SCOPE_GROUPS` group searches. Every call goes through `get`, so
  * through the client's retry policy.
  */
 export const fetchScope = async (
@@ -124,9 +126,13 @@ export const fetchScope = async (
   if (scope.kind === 'query') return readSearch(get, scope.query.trim());
   if (scope.scope !== 'my_groups') return readSearch(get, SCOPE_QUERIES[scope.scope]);
   // One group at a time: an agent in many groups must not burst the rate limit.
+  const groupIds = await readGroupIds(get, await userId());
   const snapshots: ScopeSnapshot[] = [];
-  for (const id of await readGroupIds(get, await userId())) {
+  for (const id of groupIds.slice(0, MAX_SCOPE_GROUPS)) {
     snapshots.push(await readSearch(get, groupQuery(id)));
   }
+  // Groups past the cap: their tickets are unread, how many is unknown.
+  if (groupIds.length > MAX_SCOPE_GROUPS)
+    snapshots.push({ tickets: [], truncated: true, unread: 0 });
   return mergeSnapshots(snapshots);
 };

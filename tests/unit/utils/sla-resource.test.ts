@@ -36,6 +36,8 @@ describe('alert resource URIs', () => {
       { kind: 'query', query: 'priority:urgent status<solved' },
     ],
     ['zendesk-sla://alerts/?query=x', { kind: 'query', query: 'x' }],
+    // A broken escape in the query decodes leniently, as URLSearchParams does.
+    ['zendesk-sla://alerts?query=a%E0%ZZ', { kind: 'query', query: 'a\uFFFD%ZZ' }],
   ])('reads %s', (uri, target) => {
     expect(parseAlertsUri(uri)).toEqual(target);
   });
@@ -51,6 +53,8 @@ describe('alert resource URIs', () => {
     'zendesk-sla://alerts?query=%20',
     'zendesk-sla://alerts/mine/extra',
     'zendesk-sla://alerts/x/views/25',
+    'zendesk-sla://alerts/views/%E0',
+    'zendesk-sla://alerts/views/%ZZ',
   ])('names no alert set: %s', (uri) => {
     expect(parseAlertsUri(uri)).toBeUndefined();
   });

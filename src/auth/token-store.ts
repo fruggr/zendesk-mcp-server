@@ -1,4 +1,5 @@
 import { type Logger, silentLogger } from '../utils/logger';
+import { signInRequiredError } from '../utils/sign-in-required';
 import { refreshAccessToken, startBrowserAuth } from './browser-oauth';
 import { grantCovers, requestedScope } from './oauth-scopes';
 import {
@@ -248,7 +249,8 @@ export const createTokenStore = (
     return refreshing;
   };
 
-  const getToken = async (): Promise<string> => {
+  // The token in hand, or one refreshed silently: never a browser prompt.
+  const tokenWithoutPrompt = async (): Promise<string | undefined> => {
     // A refresh already in flight owns the next token: wait for it rather than
     // serve a token about to be replaced, or launch a competing refresh. Zendesk
     // rotates the refresh token on every use, so two concurrent refreshes would
@@ -263,8 +265,12 @@ export const createTokenStore = (
 
     // Expired, near-expiry, or unknown-expiry but refreshable → refresh silently
     // before falling back to a browser prompt.
-    const refreshed = await refreshIfPossible();
-    if (refreshed) return refreshed;
+    return refreshIfPossible();
+  };
+
+  const getToken = async (): Promise<string> => {
+    const silent = await tokenWithoutPrompt();
+    if (silent) return silent;
 
     if (starting === undefined) {
       starting = beginAuth();
@@ -317,5 +323,13 @@ export const createTokenStore = (
   // where the process exit reclaims the unref'd timer anyway.
   const dispose = (): void => clearInterval(scheduledRefresh);
 
-  return { getToken, setToken, invalidate, dispose };
+  // For work no user asked for right now (the SLA alert poller): a browser tab
+  // opening on its own every poll would be worse than a skipped poll.
+  const getTokenSilently = async (): Promise<string> => {
+    const silent = await tokenWithoutPrompt();
+    if (silent) return silent;
+    throw signInRequiredError();
+  };
+
+  return { getToken, getTokenSilently, setToken, invalidate, dispose };
 };

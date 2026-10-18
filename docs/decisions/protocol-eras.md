@@ -98,6 +98,8 @@ everywhere, so that class of leak cannot come back.
   `resourceSubscriptions` off the wire themselves (`utils/listen-feed.ts`): a
   listen request opens a stream, its cancellation or any response carrying its
   id ends it. That ties pollers to the wire shape of `subscriptions/listen`.
+  On HTTP the grant owns the poller; a per-request server only advertises
+  `resources.subscribe`, which the SDK needs to honour the filter's URIs.
 - Still one HTTP instance: the per-grant entries live in this process.
 
 ## SDK churn

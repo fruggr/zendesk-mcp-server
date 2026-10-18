@@ -545,6 +545,7 @@ export const startHttpTransport = async (
           caches,
           requestStateCodec,
           slaRuntime: sla.runtime,
+          alertPolling: 'grant',
           notifyResourceUpdated: (uri) => handler.notify.resourceUpdated(uri),
         });
       },
@@ -562,6 +563,7 @@ export const startHttpTransport = async (
       logger,
       listens,
       notify: (uri) => handler.notify.resourceUpdated(uri),
+      onUnauthorized,
     });
     const entry: GrantEntry = {
       auth,
@@ -606,8 +608,9 @@ export const startHttpTransport = async (
     const counted = listened === undefined;
     if (listened) {
       const stream = Symbol('listen');
-      entry.listens.open(stream, listened);
+      // Closing first: whatever `open` runs, the stream ends with its response.
       res.once('close', () => entry.listens.close(stream));
+      entry.listens.open(stream, listened);
     }
     if (counted) entry.inFlight += 1;
     try {

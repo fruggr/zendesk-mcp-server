@@ -156,6 +156,22 @@ describe('buildSlaInstructions', () => {
     expect(buildSlaInstructions(makeConfig({ namespaces: ['help_center'] }))).toBeUndefined();
   });
 
+  it('is absent when --tool leaves list_sla_alerts out, present when it keeps it', () => {
+    expect(buildSlaInstructions(makeConfig({ tools: ['get_ticket'] }))).toBeUndefined();
+    expect(
+      buildSlaInstructions(makeConfig({ tools: ['list_sla_alerts', 'configure_sla_alerts'] })),
+    ).toContain('each user can set their own with configure_sla_alerts.');
+  });
+
+  it('names configure_sla_alerts only where it is exposed', () => {
+    const operator = 'the operator set them for everyone.';
+    expect(buildSlaInstructions(makeConfig({ namespaces: ['tickets'] }))).toContain(operator);
+    expect(buildSlaInstructions(makeConfig({ tools: ['list_sla_alerts'] }))).toContain(operator);
+    expect(buildSlaInstructions(makeConfig({ namespaces: ['tickets', 'preferences'] }))).toContain(
+      'each user can set their own with configure_sla_alerts.',
+    );
+  });
+
   it('says the topology IDs belong to ONE brand in multi mode, naming the first', () => {
     // The topology resource pins to the first allowed brand; without this
     // sentence an agent reads its section ids as valid for every allowed brand.

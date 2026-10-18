@@ -21,6 +21,16 @@ export interface ListenFeed {
   attach: (sink: ListenSink) => () => void;
 }
 
+// A sink runs inside the transport's message path: its failure must neither
+// lose the feed's bookkeeping nor reach the transport.
+const tell = (sink: ListenSink, change: 'add' | 'remove', uri: string): void => {
+  try {
+    sink[change](uri);
+  } catch {
+    // The sink owns its errors.
+  }
+};
+
 export const createListenFeed = (): ListenFeed => {
   const streams = new Map<unknown, readonly string[]>();
   const listeners = new Map<string, number>();
@@ -37,7 +47,7 @@ export const createListenFeed = (): ListenFeed => {
         continue;
       }
       listeners.delete(uri);
-      for (const sink of sinks) sink.remove(uri);
+      for (const sink of sinks) tell(sink, 'remove', uri);
     }
   };
 
@@ -49,7 +59,7 @@ export const createListenFeed = (): ListenFeed => {
       for (const uri of unique) {
         const count = (listeners.get(uri) ?? 0) + 1;
         listeners.set(uri, count);
-        if (count === 1) for (const sink of sinks) sink.add(uri);
+        if (count === 1) for (const sink of sinks) tell(sink, 'add', uri);
       }
     },
     close,
@@ -58,7 +68,7 @@ export const createListenFeed = (): ListenFeed => {
     },
     attach: (sink) => {
       sinks.add(sink);
-      for (const uri of listeners.keys()) sink.add(uri);
+      for (const uri of listeners.keys()) tell(sink, 'add', uri);
       return () => {
         sinks.delete(sink);
       };

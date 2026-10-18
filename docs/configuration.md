@@ -90,7 +90,7 @@ Options:
                           Where per-user SLA state lives (default: memory on
                           HTTP, disk on stdio). Also SLA_STATE_STORE
   --sla-poll-seconds <n>  How often a subscribed alert resource is re-checked
-                          (default 300, minimum 60). Also SLA_POLL_SECONDS
+                          (default 300, 60 to 86400). Also SLA_POLL_SECONDS
 ```
 
 `--namespace` and `--read-only` are applied before the proxies are registered, so they narrow the surface in every mode. In the default `namespace` mode, `--namespace help_center` registers a single proxy (`zendesk_help_center`) instead of the full set of namespace proxies.
@@ -258,7 +258,9 @@ cost one fetch. Zendesk charges a `304 Not Modified` like a full request, so
 there is no conditional revalidation to save quota beyond that lifetime.
 
 **State.** Per-user state — that cache and the preferences — is keyed by the
-Zendesk user id read from `/users/me`, never shared across users. `memory`
+Zendesk subdomain and the user id read from `/users/me`, never shared across
+users or tenants. A store that cannot be read fails a preference change rather
+than overwrite what it holds; alerts then fall back to the default thresholds. `memory`
 (the HTTP default) lives and dies with the process; `disk` (the stdio default)
 lives next to the token files, one `0600` file per entry, so the stdio servers
 of one machine share it. Any process sweeps expired entries about every ten
@@ -496,13 +498,13 @@ cache off. Same as `--sla-cache-ttl-seconds`.
 ### `SLA_STATE_STORE`
 **Required:** no · **Default:** `memory` on HTTP, `disk` on stdio
 
-Where per-user SLA state lives: see [SLA alerts](#sla-alerts). Same as
-`--sla-state-store`.
+Where per-user SLA state lives, `memory` or `disk`: see
+[SLA alerts](#sla-alerts). Same as `--sla-state-store`.
 
 ### `SLA_POLL_SECONDS`
 **Required:** no · **Default:** `300`
 
-How often, in whole seconds (at least 60), a subscribed or listened alert
+How often, in whole seconds (60 to 86400, one day), a subscribed or listened alert
 resource is re-checked. Same as `--sla-poll-seconds`.
 
 ### `LOG_LEVEL`

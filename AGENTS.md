@@ -56,7 +56,7 @@ package only stdio needs (such as `open`), from a module both transports load �
 `tests/unit/module-graph.test.ts` pins it.
 
 **Tool modes** (chosen at startup by `--mode`): `all` (every tool individually),
-`namespace` (default — one proxy per namespace), `single` (one `zendesk` proxy).
+`namespace` (default — one proxy per namespace), `single` (one `zendesk` proxy, plus `connector_preferences` for this server's own settings).
 Proxies take `{ operation, params }` and validate `params` through the original
 Zod schema. Each proxy dispatches only within its own scoped handler map, so a
 `zendesk_tickets` proxy cannot invoke a `help_center` operation. `--namespace` /

@@ -66,9 +66,22 @@ describe('createMcpServer', () => {
     expect(names).toContain('zendesk_users');
   });
 
-  it('creates a server in single mode', () => {
+  it('creates a server in single mode, the preferences keeping their own proxy', () => {
     const server = createMcpServer({ ...baseConfig, mode: 'single' }, getToken);
-    expect(registeredToolNames(server)).toEqual(['zendesk']);
+    expect(registeredToolNames(server)).toEqual(['zendesk', 'connector_preferences']);
+  });
+
+  it('exposes only the proxy whose tools survive the filters in single mode', () => {
+    const tickets = createMcpServer(
+      { ...baseConfig, mode: 'single', namespaces: ['tickets'] },
+      getToken,
+    );
+    expect(registeredToolNames(tickets)).toEqual(['zendesk']);
+    const preferences = createMcpServer(
+      { ...baseConfig, mode: 'single', namespaces: ['preferences'] },
+      getToken,
+    );
+    expect(registeredToolNames(preferences)).toEqual(['connector_preferences']);
   });
 
   it('creates a server with readOnly filter', () => {

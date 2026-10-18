@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { isSignInRequired } from '../../../src/utils/sign-in-required';
 
 interface TokenResult {
   access_token: string;
@@ -535,6 +536,53 @@ describe('createTokenStore', () => {
     expect(isAuthRequiredError(err)).toBe(true);
     expect(clearTokenMock).toHaveBeenCalledWith(expect.any(String), expect.anything());
     expect(startBrowserAuthMock).toHaveBeenCalledTimes(1);
+  });
+
+  describe('getTokenSilently', () => {
+    it('serves the token in hand without any browser flow', async () => {
+      const store = createTokenStore(CONFIG);
+      store.setToken('preset-token');
+
+      await expect(store.getTokenSilently()).resolves.toBe('preset-token');
+      expect(startBrowserAuthMock).not.toHaveBeenCalled();
+    });
+
+    it('refreshes an expired token silently', async () => {
+      loadTokenMock.mockReturnValue({
+        accessToken: 'old',
+        refreshToken: 'r1',
+        expiresAt: Date.now() - 1000,
+      });
+      refreshAccessTokenMock.mockResolvedValue({
+        access_token: 'new',
+        refresh_token: 'r2',
+        expires_in: 3600,
+      });
+      const store = createTokenStore(CONFIG);
+
+      await expect(store.getTokenSilently()).resolves.toBe('new');
+      expect(startBrowserAuthMock).not.toHaveBeenCalled();
+    });
+
+    it('never opens a browser when only a sign-in would help', async () => {
+      loadTokenMock.mockReturnValue({
+        accessToken: 'old',
+        refreshToken: 'bad',
+        expiresAt: Date.now() - 1000,
+      });
+      refreshAccessTokenMock.mockRejectedValue(
+        new Error('Token refresh failed (400): invalid_grant'),
+      );
+      const store = createTokenStore(CONFIG);
+
+      const err = await store.getTokenSilently().catch((e) => e);
+      expect(isSignInRequired(err)).toBe(true);
+      expect(isAuthRequiredError(err)).toBe(false);
+      await expect(createTokenStore(CONFIG).getTokenSilently()).rejects.toThrow(
+        'Not signed in to Zendesk',
+      );
+      expect(startBrowserAuthMock).not.toHaveBeenCalled();
+    });
   });
 
   it('invalidate drops the in-memory and persisted token when there is no refresh token', async () => {

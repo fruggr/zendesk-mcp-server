@@ -801,13 +801,15 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
   const { subdomain, getToken } = ctx;
 
   // The pushed `**Urgency**` line for one SLA block, '' when push is off. The
-  // thresholds are the caller's, read once per call.
+  // thresholds are the caller's, read once per call; the line is decoration, so
+  // a failed read (/users/me, the store) falls back to the server's rather than
+  // failing the ticket read.
   const urgencyRenderer = async (): Promise<
     (entry: ZendeskSlaSideloadEntry | undefined) => string
   > => {
     const sla = ctx.sla;
     if (!sla?.push) return () => '';
-    const thresholds = await sla.thresholds();
+    const thresholds = await sla.thresholds().catch(() => sla.adminThresholds);
     const now = Date.now();
     return (entry) => formatUrgencyLine(ticketUrgency(entry, thresholds, now));
   };

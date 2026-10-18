@@ -6,7 +6,7 @@ or fuzzy-matching section names and uses real IDs instead. This document covers
 what is exposed, what it costs, and how to turn each piece off.
 
 Everything here is active only when the `help_center` namespace is (the SLA
-alert resources, when `tickets` is), and every fetch uses **the caller's own
+alert resources, when `list_sla_alerts` is exposed), and every fetch uses **the caller's own
 OAuth token**, so the context respects that user's
 read permissions exactly like the tools do.
 
@@ -19,17 +19,20 @@ A short, static blob auto-loaded by compliant clients. It names the Zendesk
 subdomain (and the brand scope, when `--brand-ids` restricts the server) and
 points at the topology resource. No Zendesk request is made to build it.
 
-When the `tickets` namespace is active it ends with one SLA line of its own:
-that `list_sla_alerts` and the `zendesk-sla://alerts/...` resources exist, the
-default thresholds in force, and how a user changes theirs. That line stays
-under `--no-topology` and `--no-sla-push` (it just stops mentioning
-subscriptions there); with neither Help Center context nor tickets, there are
-no instructions at all.
+When `list_sla_alerts` is exposed (the `tickets` namespace, and `--tool` if
+set) it ends with one SLA line of its own: that `list_sla_alerts` and the
+`zendesk-sla://alerts/...` resources exist, the default thresholds in force,
+and how a user changes theirs: `configure_sla_alerts` only where it is exposed
+too, otherwise the thresholds apply to everyone. That line stays under
+`--no-topology` and `--no-sla-push` (it just stops mentioning subscriptions
+there); with neither Help Center context nor SLA alerts, there are no
+instructions at all.
 
 ## `zendesk-sla://alerts/...` (SLA alert resources)
 
-Active whenever the `tickets` namespace is; read with the caller's token and
-their alert thresholds, and rendered exactly like `list_sla_alerts` with its
+Active wherever `list_sla_alerts` is exposed; read with the caller's token and
+their alert thresholds (personal ones only where `configure_sla_alerts` is
+exposed), and rendered exactly like `list_sla_alerts` with its
 defaults. Three templates:
 
 | URI | Alert set |
@@ -41,7 +44,11 @@ defaults. Three templates:
 Unless `--no-sla-push` is set, the server advertises `resources.subscribe`: a
 URI subscribed to (2025 revisions) or listened to (`subscriptions/listen`,
 2026-07-28) is re-checked every `SLA_POLL_SECONDS` and the client gets
-`notifications/resources/updated` only when its alert set changes. Polling,
+`notifications/resources/updated` only when its alert set changes; the
+resource descriptions invite a subscription only then. Polling never opens a
+browser sign-in: on stdio, with no token left to refresh, it waits for the next
+tool call to sign in. A Zendesk 401 on a read or a poll drops the token like a
+tool's would. Polling,
 quota and where the per-user cache lives are covered under
 [SLA alerts](configuration.md#sla-alerts); this resource's scheme is fixed,
 unlike the Help Center one below.

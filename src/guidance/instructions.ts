@@ -1,4 +1,4 @@
-import type { Config } from '../config';
+import type { Config, Namespace } from '../config';
 import { SLA_RESOURCE_SCHEME } from '../utils/sla-resource';
 import { describeThresholds } from '../utils/sla-thresholds';
 
@@ -59,13 +59,26 @@ const brandScopedArticles = (config: Config): boolean => {
 const helpCenterNamespaceActive = (config: Config): boolean =>
   !config.namespaces?.length || config.namespaces.includes('help_center');
 
+/** Whether `--namespace` and `--tool` leave the tool `name` of `namespace` exposed. */
+const toolExposed = (config: Config, namespace: Namespace, name: string): boolean =>
+  (!config.namespaces?.length || config.namespaces.includes(namespace)) &&
+  (!config.tools?.length || config.tools.includes(name));
+
 /**
- * Whether the SLA alert resources (`zendesk-sla://alerts/...`) are exposed:
- * whenever the `tickets` namespace is active, like the tools reading the same
- * tickets.
+ * Whether the SLA alerting (the `zendesk-sla://alerts/...` resources, their
+ * polling, the instructions line) is on: wherever `list_sla_alerts`, which
+ * renders the same report, is exposed.
  */
 export const slaAlertsEnabled = (config: Config): boolean =>
-  !config.namespaces?.length || config.namespaces.includes('tickets');
+  toolExposed(config, 'tickets', 'list_sla_alerts');
+
+/**
+ * Whether a user can keep personal SLA thresholds: allowed by the operator, and
+ * `configure_sla_alerts`, the only way to change them, exposed. Otherwise the
+ * server defaults apply, and nothing points a user at a tool they cannot call.
+ */
+export const slaPreferencesEnabled = (config: Config): boolean =>
+  config.slaUserPreferences && toolExposed(config, 'preferences', 'configure_sla_alerts');
 
 /**
  * Whether the Help Center structural context (init instructions + the
@@ -107,7 +120,7 @@ export const promotedArticlesEnabled = (config: Config): boolean =>
 export const buildSlaInstructions = (config: Config): string | undefined => {
   if (!slaAlertsEnabled(config)) return undefined;
   const subscribe = config.slaPush ? ', subscribable for change notifications' : '';
-  const change = config.slaUserPreferences
+  const change = slaPreferencesEnabled(config)
     ? 'each user can set their own with configure_sla_alerts'
     : 'the operator set them for everyone';
   return `SLA alerts: list_sla_alerts lists the SLA metrics breached or about to breach (your tickets, your groups', all, a view or a search), and the ${SLA_RESOURCE_SCHEME}://alerts/... resources hold the same report${subscribe}. Thresholds in force by default: ${describeThresholds(config.slaThresholds)}; ${change}.`;

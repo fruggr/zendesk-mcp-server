@@ -80,6 +80,7 @@ describe('createUserIdResolver', () => {
 
 describe('createSlaService', () => {
   const settings = {
+    subdomain: 'acme',
     slaPush: true,
     slaThresholds: DEFAULT_SLA_THRESHOLDS,
     slaCacheTtlSeconds: 60,
@@ -104,8 +105,23 @@ describe('createSlaService', () => {
     expect(await alice.cached('scope:mine', () => Promise.resolve('alice'))).toBe('alice');
     expect(await bob.cached('scope:mine', () => Promise.resolve('bob'))).toBe('bob');
     expect(await alice.cached('scope:mine', () => Promise.resolve('stale?'))).toBe('alice');
-    expect(await runtime.store.get('cache:1:scope:mine')).toBe('alice');
-    expect(await runtime.store.get('cache:2:scope:mine')).toBe('bob');
+    expect(await runtime.store.get('cache:acme:1:scope:mine')).toBe('alice');
+    expect(await runtime.store.get('cache:acme:2:scope:mine')).toBe('bob');
+  });
+
+  it('keeps the same user id apart on two Zendesk subdomains', async () => {
+    // One disk store serves every stdio server of the machine, whatever its tenant.
+    const runtime = createSlaRuntime(settings);
+    const acme = createSlaService(settings, runtime, () => Promise.resolve(1));
+    const sandbox = createSlaService({ ...settings, subdomain: 'acme-sandbox' }, runtime, () =>
+      Promise.resolve(1),
+    );
+    await acme.savePreferences({ introduced: true });
+    expect(await acme.cached('scope:mine', () => Promise.resolve('acme'))).toBe('acme');
+    expect(await sandbox.preferences()).toBeUndefined();
+    expect(await sandbox.cached('scope:mine', () => Promise.resolve('sandbox'))).toBe('sandbox');
+    expect(await runtime.store.get('prefs:acme:1')).toEqual({ introduced: true });
+    expect(await runtime.store.get('cache:acme-sandbox:1:scope:mine')).toBe('sandbox');
   });
 
   it('shares one user’s cache across that user’s sessions', async () => {
@@ -124,7 +140,9 @@ describe('createSlaService', () => {
     const bob = createSlaService(settings, runtime, () => Promise.resolve(2));
     await alice.savePreferences({ reply: { warning: 30, critical: 10 } });
     expect(await alice.preferences()).toEqual({ reply: { warning: 30, critical: 10 } });
-    expect(await runtime.store.get('prefs:1')).toEqual({ reply: { warning: 30, critical: 10 } });
+    expect(await runtime.store.get('prefs:acme:1')).toEqual({
+      reply: { warning: 30, critical: 10 },
+    });
     expect(await alice.thresholds()).toEqual({
       reply: { warning: 30, critical: 10 },
       wait: DEFAULT_SLA_THRESHOLDS.wait,
@@ -142,11 +160,20 @@ describe('createSlaService', () => {
     expect(await service.thresholds()).toEqual(DEFAULT_SLA_THRESHOLDS);
   });
 
-  it('reads an unreadable store as no preference', async () => {
+  it('fails to read preferences from an unreadable store, so nothing overwrites them', async () => {
     const runtime = createSlaRuntime(settings);
     runtime.store.get = () => Promise.reject(new Error('EIO'));
     const service = createSlaService(settings, runtime, () => Promise.resolve(1));
-    expect(await service.preferences()).toBeUndefined();
+    await expect(service.preferences()).rejects.toThrow('EIO');
+    // The alerts still run, on the defaults.
+    expect(await service.thresholds()).toEqual(DEFAULT_SLA_THRESHOLDS);
+  });
+
+  it('falls back to the defaults when the caller cannot be identified', async () => {
+    const service = createSlaService(settings, createSlaRuntime(settings), () =>
+      Promise.reject(new Error('users/me: 429')),
+    );
+    await expect(service.preferences()).rejects.toThrow('users/me: 429');
     expect(await service.thresholds()).toEqual(DEFAULT_SLA_THRESHOLDS);
   });
 

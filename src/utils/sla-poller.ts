@@ -35,11 +35,12 @@ export const createAlertPoller = (options: AlertPollerOptions): AlertPoller => {
   const refresh = async (uri: string): Promise<void> => {
     try {
       const next = await check(uri);
-      // Unsubscribed while the check ran: drop the result.
-      if (!fingerprints.has(uri)) return;
+      // Unsubscribed while the check ran: no previous fingerprint, so no notification.
       const previous = fingerprints.get(uri);
-      fingerprints.set(uri, next);
       if (previous !== undefined && previous !== next) await notify(uri);
+      // Recorded once announced, so a failed notification is retried next round,
+      // and only while still subscribed.
+      if (fingerprints.has(uri)) fingerprints.set(uri, next);
     } catch (error) {
       onError(uri, error);
     }
