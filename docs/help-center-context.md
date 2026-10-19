@@ -48,8 +48,9 @@ URI subscribed to (2025 revisions) or listened to (`subscriptions/listen`,
 resource descriptions invite a subscription only then. Polling never opens a
 browser sign-in: on stdio, with no token left to refresh, it waits for the next
 tool call to sign in. A Zendesk 401 on a read or a poll drops the token like a
-tool's would. Polling,
-quota and where the per-user cache lives are covered under
+tool's would. On HTTP, a session or grant with no request for 30 minutes is
+dropped with its subscriptions: the client reconnects and subscribes again.
+Polling, quota and where the per-user cache lives are covered under
 [SLA alerts](configuration.md#sla-alerts); this resource's scheme is fixed,
 unlike the Help Center one below.
 
