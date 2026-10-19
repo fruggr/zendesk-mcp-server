@@ -72,8 +72,8 @@ Options:
                           exit. No server, no Zendesk credential, no network
                           call. Use it to check what a combination of --mode /
                           --namespace / --tool / --read-only actually exposes
-  --no-sla-push           Stop the server pushing SLA urgency on its own (see
-                          "SLA alerts" below). Also SLA_PUSH=false
+  --sla-push              Let the server push SLA urgency on its own (off by
+                          default; see "SLA alerts" below). Also SLA_PUSH=true
   --sla-reply-thresholds <warning,critical>
                           Default alert thresholds of the reply metrics
                           (default 4h,1h). Also SLA_REPLY_THRESHOLDS
@@ -232,11 +232,11 @@ or in the form shown on their first `list_sla_alerts` call when the client
 supports it), then the defaults set here. `SLA_USER_PREFERENCES=off` makes the
 defaults apply to everyone.
 
-**Push.** On by default, `SLA_PUSH` / `--no-sla-push` controls only what the
+**Push.** Off by default, `SLA_PUSH` / `--sla-push` controls only what the
 server does unasked: the `**Urgency**` line in the SLA block of `get_ticket`
 and `search_tickets`, and the polling and `notifications/resources/updated` of
 subscribed alert resources. With it off the tools, the resources and the
-server instructions all stay; the server just stops advertising
+server instructions all stay; the server just does not advertise
 `resources.subscribe`.
 
 **Subscriptions.** While a client listens to at least one alert resource, the
@@ -465,10 +465,10 @@ URIs are scoped per server; it is just less self-descriptive in a client
 connected to several servers.
 
 ### `SLA_PUSH`
-**Required:** no · **Default:** `true`
+**Required:** no · **Default:** `false`
 
-`false` (or `off`, `0`) stops the server pushing SLA urgency on its own: see
-[SLA alerts](#sla-alerts). Same as `--no-sla-push`.
+`true` (or `on`, `1`) lets the server push SLA urgency on its own: see
+[SLA alerts](#sla-alerts). Same as `--sla-push`.
 
 ### `SLA_REPLY_THRESHOLDS`
 **Required:** no · **Default:** `4h,1h`

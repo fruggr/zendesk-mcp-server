@@ -1005,7 +1005,7 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         return `${result.isError ? 'ERROR ' : ''}${textOf(result)}`;
       };
 
-      it('pushes the urgency line into the SLA block by default', async () => {
+      it('pushes the urgency line into the SLA block under --sla-push', async () => {
         expect(await searchText(true)).toContain(
           '- **Urgency**: CRITICAL — requester_wait_time due in 1h37m',
         );
@@ -1018,7 +1018,12 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         vi.setSystemTime(new Date('2099-06-18T20:00:00Z'));
         // A cache shorter than the poll, as in production (60s against 300s).
         connected = await harness.connect(
-          makeConfig({ mode: 'namespace', slaPollSeconds: 60, slaCacheTtlSeconds: 30 }),
+          makeConfig({
+            mode: 'namespace',
+            slaPollSeconds: 60,
+            slaCacheTtlSeconds: 30,
+            slaPush: true,
+          }),
         );
         const updates: string[] = [];
         connected.client.setNotificationHandler('notifications/resources/updated', (n) => {
@@ -1086,7 +1091,7 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         }
       });
 
-      it('pushes no urgency line under --no-sla-push, and keeps the SLA block', async () => {
+      it('pushes no urgency line by default, and keeps the SLA block', async () => {
         const text = await searchText(false);
         expect(text).toMatch(/^Results: 1\n\n## Ticket #1/);
         expect(text).toContain('### SLA');

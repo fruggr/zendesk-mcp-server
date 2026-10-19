@@ -197,12 +197,12 @@ export const ConfigSchema = z.object({
     .object({ reply: SlaThresholdSchema, wait: SlaThresholdSchema })
     .default(DEFAULT_SLA_THRESHOLDS),
   /**
-   * Whether the server pushes SLA urgency on its own (`--no-sla-push` /
-   * `SLA_PUSH=false` turn it off): the `**Urgency**` line in the SLA block of
+   * Whether the server pushes SLA urgency on its own (off by default;
+   * `--sla-push` / `SLA_PUSH=true` turn it on): the `**Urgency**` line in the SLA block of
    * get_ticket / search_tickets, and the alert resource's polling and update
    * notifications. Every tool and reading the resource stay available.
    */
-  slaPush: z.boolean().default(true),
+  slaPush: z.boolean().default(false),
   /**
    * How long one user's SLA scope fetch is reused, in seconds (default 60; 0
    * turns the cache off). Zendesk charges a 304 revalidation as a full request,
@@ -373,7 +373,7 @@ const CLI_OPTIONS = {
   'no-promoted-articles': { type: 'boolean' },
   dev: { type: 'boolean' },
   'print-tools': { type: 'boolean' },
-  'no-sla-push': { type: 'boolean' },
+  'sla-push': { type: 'boolean' },
   'no-sla-user-preferences': { type: 'boolean' },
   'sla-reply-thresholds': { type: 'string' },
   'sla-wait-thresholds': { type: 'string' },
@@ -423,7 +423,7 @@ const STANDALONE_EFFECTS = new Map<string, Partial<CliResult>>([
   ['dev', { dev: true }],
   ['print-tools', { printTools: true }],
   ['no-default-trusted-clients', { defaultTrustedClients: false }],
-  ['no-sla-push', { slaPush: false }],
+  ['sla-push', { slaPush: true }],
   ['no-sla-user-preferences', { slaUserPreferences: false }],
 ]);
 

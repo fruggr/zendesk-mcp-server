@@ -24,7 +24,7 @@ set) it ends with one SLA line of its own: that `list_sla_alerts` and the
 `zendesk-sla://alerts/...` resources exist, the default thresholds in force,
 and how a user changes theirs: `configure_sla_alerts` only where it is exposed
 too, otherwise the thresholds apply to everyone. That line stays under
-`--no-topology` and `--no-sla-push` (it just stops mentioning subscriptions
+`--no-topology` and without `--sla-push` (it just does not mention subscriptions
 there); with neither Help Center context nor SLA alerts, there are no
 instructions at all.
 
@@ -41,7 +41,7 @@ defaults. Three templates:
 | `zendesk-sla://alerts/views/{view}` | a view, by title or id |
 | `zendesk-sla://alerts{?query}` | any Zendesk ticket search |
 
-Unless `--no-sla-push` is set, the server advertises `resources.subscribe`: a
+With `--sla-push` (`SLA_PUSH=true`), the server advertises `resources.subscribe`: a
 URI subscribed to (2025 revisions) or listened to (`subscriptions/listen`,
 2026-07-28) is re-checked every `SLA_POLL_SECONDS` and the client gets
 `notifications/resources/updated` only when its alert set changes; the

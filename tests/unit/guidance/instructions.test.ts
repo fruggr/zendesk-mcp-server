@@ -126,12 +126,12 @@ describe('buildInstructions', () => {
 
 describe('buildSlaInstructions', () => {
   it('announces the alerts, the thresholds in force and how to change them', () => {
-    expect(buildSlaInstructions(makeConfig())).toBe(
+    expect(buildSlaInstructions(makeConfig({ slaPush: true }))).toBe(
       "SLA alerts: list_sla_alerts lists the SLA metrics breached or about to breach (your tickets, your groups', all, a view or a search), and the zendesk-sla://alerts/... resources hold the same report, subscribable for change notifications. Thresholds in force by default: reply metrics warning 4h, critical 1h; wait and resolution metrics warning 2d, critical 8h; each user can set their own with configure_sla_alerts.",
     );
   });
 
-  it('stays under --no-sla-push, without the subscription', () => {
+  it('stays without --sla-push, without the subscription', () => {
     const text = buildSlaInstructions(makeConfig({ slaPush: false }));
     expect(text).toContain('resources hold the same report. Thresholds');
     expect(text).not.toContain('subscribable');

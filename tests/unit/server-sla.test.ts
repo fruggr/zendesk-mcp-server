@@ -67,7 +67,7 @@ afterEach(() => {
 
 describe('SLA alert resources', () => {
   it('invites a subscription only where the push is on', async () => {
-    const on = await connect(makeConfig({ mode: 'all' }));
+    const on = await connect(makeConfig({ mode: 'all', slaPush: true }));
     const off = await connect(makeConfig({ mode: 'all', slaPush: false }));
     try {
       const withPush = await slaTemplates(on.client);
@@ -90,7 +90,9 @@ describe('SLA alert resources', () => {
   });
 
   it('are left out, polling included, when --tool drops list_sla_alerts', async () => {
-    const session = await connect(makeConfig({ mode: 'all', tools: ['get_ticket'] }));
+    const session = await connect(
+      makeConfig({ mode: 'all', slaPush: true, tools: ['get_ticket'] }),
+    );
     try {
       expect(await slaTemplates(session.client)).toEqual([]);
       expect(session.client.getServerCapabilities()?.resources?.subscribe).toBeUndefined();
@@ -102,7 +104,7 @@ describe('SLA alert resources', () => {
   it('report a Zendesk 401 on read, so the dead token is dropped', async () => {
     mswServer.use(http.get(SEARCH, () => new HttpResponse('unauthorized', { status: 401 })));
     const onUnauthorized = vi.fn();
-    const session = await connect(makeConfig({ mode: 'all' }), { onUnauthorized });
+    const session = await connect(makeConfig({ mode: 'all', slaPush: true }), { onUnauthorized });
     try {
       await expect(
         session.client.readResource({ uri: 'zendesk-sla://alerts/mine' }),
@@ -129,10 +131,12 @@ describe('personal thresholds', () => {
   };
 
   it('are offered only where configure_sla_alerts is exposed', async () => {
-    expect(await alertsText(makeConfig({ mode: 'all' }))).toContain('configure_sla_alerts');
-    expect(await alertsText(makeConfig({ mode: 'all', namespaces: ['tickets'] }))).not.toContain(
+    expect(await alertsText(makeConfig({ mode: 'all', slaPush: true }))).toContain(
       'configure_sla_alerts',
     );
+    expect(
+      await alertsText(makeConfig({ mode: 'all', slaPush: true, namespaces: ['tickets'] })),
+    ).not.toContain('configure_sla_alerts');
   });
 });
 
@@ -142,7 +146,7 @@ describe('SLA alert polling', () => {
     const getToken = vi.fn(() => 'test-token');
     const getBackgroundToken = vi.fn(() => Promise.reject(signInRequiredError()));
     const { logger, events } = recordingLogger();
-    const session = await connect(makeConfig({ mode: 'all', slaPollSeconds: 60 }), {
+    const session = await connect(makeConfig({ mode: 'all', slaPush: true, slaPollSeconds: 60 }), {
       getToken,
       logger,
       options: { getBackgroundToken },
@@ -163,7 +167,10 @@ describe('SLA alert polling', () => {
     mswServer.use(http.get(SEARCH, () => new HttpResponse('unauthorized', { status: 401 })));
     const onUnauthorized = vi.fn();
     const { logger, events } = recordingLogger();
-    const session = await connect(makeConfig({ mode: 'all' }), { onUnauthorized, logger });
+    const session = await connect(makeConfig({ mode: 'all', slaPush: true }), {
+      onUnauthorized,
+      logger,
+    });
     try {
       await session.client.subscribeResource({ uri: 'zendesk-sla://alerts/mine' });
       await vi.waitFor(() => expect(events).toContain('warn:sla_alerts_poll_failed'));
@@ -174,7 +181,7 @@ describe('SLA alert polling', () => {
   });
 
   it("is the grant's on a per-request server: subscriptions advertised, none served", async () => {
-    const session = await connect(makeConfig({ mode: 'all' }), {
+    const session = await connect(makeConfig({ mode: 'all', slaPush: true }), {
       options: { alertPolling: 'grant' },
     });
     try {
@@ -213,7 +220,7 @@ describe('watchGrantAlerts', () => {
 
   it('reports a 401 met while polling a listened URI', async () => {
     mswServer.use(http.get(SEARCH, () => new HttpResponse('unauthorized', { status: 401 })));
-    const watch = grantWatch(makeConfig({ mode: 'all' }));
+    const watch = grantWatch(makeConfig({ mode: 'all', slaPush: true }));
     try {
       watch.listens.open('l1', ['zendesk-sla://alerts/mine']);
       await vi.waitFor(() => expect(watch.events).toContain('warn:sla_alerts_poll_failed'));
@@ -231,7 +238,7 @@ describe('watchGrantAlerts', () => {
         return HttpResponse.json({ results: [], count: 0 });
       }),
     );
-    const watch = grantWatch(makeConfig({ mode: 'all', tools: ['get_ticket'] }));
+    const watch = grantWatch(makeConfig({ mode: 'all', slaPush: true, tools: ['get_ticket'] }));
     try {
       watch.listens.open('l1', ['zendesk-sla://alerts/mine']);
       await new Promise((resolve) => setTimeout(resolve, 50));

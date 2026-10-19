@@ -151,7 +151,7 @@ describe('SLA alert resources', () => {
     }
   });
 
-  it('can be read under --no-sla-push, but not subscribed to', async () => {
+  it('can be read without --sla-push, but not subscribed to', async () => {
     const session = await connect(makeConfig({ mode: 'namespace', slaPush: false }));
     try {
       expect(session.client.getServerCapabilities()?.resources?.subscribe).toBeFalsy();
@@ -195,7 +195,7 @@ describe('SLA alert subscriptions', () => {
     );
 
   const subscribedSession = async (slaPollSeconds = 60) => {
-    const session = await connect(makeConfig({ mode: 'namespace', slaPollSeconds }));
+    const session = await connect(makeConfig({ mode: 'namespace', slaPollSeconds, slaPush: true }));
     const updates: string[] = [];
     session.client.setNotificationHandler('notifications/resources/updated', (notification) => {
       updates.push(notification.params.uri);
@@ -386,7 +386,7 @@ describe('SLA alert listen streams (2026)', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it('honors no alert subscription under --no-sla-push', async () => {
+  it('honors no alert subscription without --sla-push', async () => {
     const session = await listeningSession('mine', false);
     try {
       const listen = await session.client.listen({

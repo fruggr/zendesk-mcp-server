@@ -962,7 +962,7 @@ describe('what the flags resolve to when none is passed', () => {
       printTools: false,
       topology: true,
       promotedArticles: true,
-      slaPush: true,
+      slaPush: false,
       slaUserPreferences: true,
     });
   });
@@ -988,7 +988,7 @@ describe('what the flags resolve to when none is passed', () => {
       printTools: false,
       topology: true,
       promotedArticles: true,
-      slaPush: true,
+      slaPush: false,
       slaUserPreferences: true,
     };
 
@@ -1000,7 +1000,7 @@ describe('what the flags resolve to when none is passed', () => {
       ...off,
       promotedArticles: false,
     });
-    expect(standalone('--no-sla-push')).toStrictEqual({ ...off, slaPush: false });
+    expect(standalone('--sla-push')).toStrictEqual({ ...off, slaPush: true });
     expect(standalone('--no-sla-user-preferences')).toStrictEqual({
       ...off,
       slaUserPreferences: false,
@@ -1193,13 +1193,13 @@ describe('SLA settings', () => {
     throw new Error('expected a startup error');
   };
 
-  it('defaults to the built-in thresholds and push on', () => {
+  it('defaults to the built-in thresholds and push off', () => {
     const config = loadConfig(['mycompany']);
     expect(config.slaThresholds).toEqual({
       reply: { warning: 240, critical: 60 },
       wait: { warning: 2880, critical: 480 },
     });
-    expect(config.slaPush).toBe(true);
+    expect(config.slaPush).toBe(false);
   });
 
   it('reads the thresholds from the environment, family by family', () => {
@@ -1342,9 +1342,9 @@ describe('SLA settings', () => {
     expect(loadConfig(['mycompany', '--no-sla-user-preferences']).slaUserPreferences).toBe(false);
   });
 
-  it('lets --no-sla-push win over SLA_PUSH=true', () => {
-    process.env['SLA_PUSH'] = 'true';
-    expect(loadConfig(['mycompany', '--no-sla-push']).slaPush).toBe(false);
+  it('lets --sla-push win over SLA_PUSH=false', () => {
+    process.env['SLA_PUSH'] = 'false';
+    expect(loadConfig(['mycompany', '--sla-push']).slaPush).toBe(true);
   });
 
   it('fails at startup on an unreadable SLA_PUSH', () => {
