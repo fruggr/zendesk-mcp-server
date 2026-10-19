@@ -97,7 +97,7 @@
     "hast-util-to-html": "9.0.5",
     "hast-util-to-mdast": "10.1.2",
     "jose": "6.2.12",
-    "lefthook": "^2.1.10",
+    "lefthook": "^2.2.2",
     "msw": "^3.0.0",
     "oidc-provider": "~9.12.2",
     "open": "11.0.4",
