@@ -5,7 +5,7 @@
 # digest; Renovate moves them together, and release.yml republishes the image
 # when only these lines change.
 
-FROM dhi.io/node:24-alpine3.24-dev@sha256:29828201fcab447665e099101c3ee960c2b7e9332198216863bd7b3139b70460 AS build
+FROM dhi.io/node:24-alpine3.24-dev@sha256:7aff626d8cb36fd5a7bc926b6922fb9b40af4cf046f285fa45c1f1712bacd4b1 AS build
 WORKDIR /src
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY patches ./patches
@@ -18,7 +18,7 @@ COPY scripts/bundle-manifest.mjs ./scripts/
 COPY src ./src
 RUN pnpm build && mkdir /data
 
-FROM dhi.io/node:24-alpine3.24@sha256:732e532a85421f18219acffc899b0c41b2376d8f9ac47cf2d9e1ad35e014a957
+FROM dhi.io/node:24-alpine3.24@sha256:0b55cdd8c105b9823b26140f07a26c0fc8531fbc2cdbbdfc6e058f24c1762be5
 ARG VERSION=0.0.0
 # The FROM above, passed in by the publish action: release.yml compares it with
 # the Dockerfile's to know when the published image is on a stale base.
