@@ -1,3 +1,26 @@
+## [3.5.0](https://github.com/fruggr/zendesk-mcp-server/compare/v3.4.0...v3.5.0) (2026-10-21)
+
+### Features
+
+* ticket metrics, SLA alerts and per-user alert preferences ([#387](https://github.com/fruggr/zendesk-mcp-server/issues/387)) ([327d2a6](https://github.com/fruggr/zendesk-mcp-server/commit/327d2a604f3fe71213a3e34a4cc38165087be148)), closes [#122](https://github.com/fruggr/zendesk-mcp-server/issues/122), references [#394](https://github.com/fruggr/zendesk-mcp-server/issues/394) [#392](https://github.com/fruggr/zendesk-mcp-server/issues/392) [#389](https://github.com/fruggr/zendesk-mcp-server/issues/389) [#212](https://github.com/fruggr/zendesk-mcp-server/issues/212) [#309](https://github.com/fruggr/zendesk-mcp-server/issues/309) [#7252](https://github.com/fruggr/zendesk-mcp-server/issues/7252) [#153](https://github.com/fruggr/zendesk-mcp-server/issues/153) [#394](https://github.com/fruggr/zendesk-mcp-server/issues/394)
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Documentation
+
+* **contributing:** keep issues and PRs free of product promotion ([#395](https://github.com/fruggr/zendesk-mcp-server/issues/395)) ([f514b65](https://github.com/fruggr/zendesk-mcp-server/commit/f514b6577ce078eb30970f7a7eb6f6d3a27a50ab))
+
+### Chores
+
+* **deps:** raise lefthook to 2.2.2 so the pre-commit hook runs on Termux ([#397](https://github.com/fruggr/zendesk-mcp-server/issues/397)) ([5efadf6](https://github.com/fruggr/zendesk-mcp-server/commit/5efadf64ac8a803d964dd6ac9f2744d57b2def08))
+* **deps:** update dependency zod to v4.6.7 ([#399](https://github.com/fruggr/zendesk-mcp-server/issues/399)) ([e5ecf7e](https://github.com/fruggr/zendesk-mcp-server/commit/e5ecf7e7e401bc613172e0f6e5c9f1f3ff10ff41))
+* **deps:** update pnpm to v12.13.0 ([#396](https://github.com/fruggr/zendesk-mcp-server/issues/396)) ([04fc153](https://github.com/fruggr/zendesk-mcp-server/commit/04fc153374834e875a24d676bd0aa006b9a3ea2e))
+* **deps:** update pnpm to v12.14.0 ([#400](https://github.com/fruggr/zendesk-mcp-server/issues/400)) ([c600c7e](https://github.com/fruggr/zendesk-mcp-server/commit/c600c7ea9983941ce17c889ebb2bc243f38c1e5d))
+* **dev:** make the English-only PreToolUse hook work on macOS ([#384](https://github.com/fruggr/zendesk-mcp-server/issues/384)) ([5a6fd9e](https://github.com/fruggr/zendesk-mcp-server/commit/5a6fd9ea43bbb696495dcb00a9577946b49f52c5)), closes [#380](https://github.com/fruggr/zendesk-mcp-server/issues/380)
+* **docker:** update container base image ([#398](https://github.com/fruggr/zendesk-mcp-server/issues/398)) ([bff6628](https://github.com/fruggr/zendesk-mcp-server/commit/bff6628dbab06ca9375046479b6dee017704d0f9))
+</details>
+
 ## [3.4.0](https://github.com/fruggr/zendesk-mcp-server/compare/v3.3.1...v3.4.0) (2026-10-18)
 
 ### Features
