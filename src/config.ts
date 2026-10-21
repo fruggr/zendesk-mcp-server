@@ -1,6 +1,11 @@
 import { type ParseArgsConfig, parseArgs } from 'node:util';
 import * as z from 'zod/v4';
 import { readEnv } from './utils/env';
+import {
+  DEFAULT_SLA_THRESHOLDS,
+  parseThresholdPair,
+  type SlaThreshold,
+} from './utils/sla-thresholds';
 import { createStartupError, STARTUP_DOCS } from './utils/startup-error';
 import { formatIssues } from './utils/validation';
 
@@ -10,7 +15,8 @@ export type ToolMode = z.infer<typeof ToolMode>;
 export const LogLevel = z.enum(['debug', 'info', 'warn', 'error']);
 export type LogLevel = z.infer<typeof LogLevel>;
 
-export const Namespace = z.enum(['tickets', 'help_center', 'users', 'requests']);
+// `preferences` holds this server's own per-user settings, not Zendesk data.
+export const Namespace = z.enum(['tickets', 'help_center', 'users', 'requests', 'preferences']);
 export type Namespace = z.infer<typeof Namespace>;
 
 /**
@@ -23,10 +29,22 @@ export type Namespace = z.infer<typeof Namespace>;
  * every agent install would ship an operation that reports success on a no-op.
  * Secondarily, an agent's tool list and context budget stay unchanged.
  */
-export const DEFAULT_NAMESPACES: readonly Namespace[] = ['tickets', 'help_center', 'users'];
+export const DEFAULT_NAMESPACES: readonly Namespace[] = [
+  'tickets',
+  'help_center',
+  'users',
+  'preferences',
+];
 
 export const Transport = z.enum(['stdio', 'http']);
 export type Transport = z.infer<typeof Transport>;
+
+export const SLA_POLL_RANGE = { min: 60, max: 86_400 } as const;
+
+const SlaThresholdSchema: z.ZodType<SlaThreshold> = z.object({
+  warning: z.number().int().min(0),
+  critical: z.number().int().min(0),
+});
 
 export const ConfigSchema = z.object({
   subdomain: z.string().min(1, 'ZENDESK_SUBDOMAIN is required'),
@@ -170,7 +188,51 @@ export const ConfigSchema = z.object({
   oauthTrustedClients: z.array(z.string().url()).default([]),
   /** HTTP only: whether the built-in allowlist (claude.ai, ChatGPT) applies. */
   defaultTrustedClients: z.boolean().default(true),
+  /**
+   * Admin default SLA alert thresholds, in minutes before a breach, per metric
+   * family (`SLA_REPLY_THRESHOLDS` / `SLA_WAIT_THRESHOLDS`, `4h,1h` form).
+   * Parsed in `loadConfig`, so a bad value fails at startup naming the knob.
+   */
+  slaThresholds: z
+    .object({ reply: SlaThresholdSchema, wait: SlaThresholdSchema })
+    .default(DEFAULT_SLA_THRESHOLDS),
+  /**
+   * Whether the server pushes SLA urgency on its own (off by default;
+   * `--sla-push` / `SLA_PUSH=true` turn it on): the `**Urgency**` line in the SLA block of
+   * get_ticket / search_tickets, and the alert resource's polling and update
+   * notifications. Every tool and reading the resource stay available.
+   */
+  slaPush: z.boolean().default(false),
+  /**
+   * How long one user's SLA scope fetch is reused, in seconds (default 60; 0
+   * turns the cache off). Zendesk charges a 304 revalidation as a full request,
+   * so this lifetime is the only quota saving (PR #387 spike 2).
+   */
+  slaCacheTtlSeconds: z.number().int().min(0).default(60),
+  /**
+   * Where per-user SLA state (cache, preferences) lives. Unset: `memory` on
+   * HTTP, `disk` on stdio so the stdio processes of one machine share it.
+   */
+  slaStateStore: z.enum(['memory', 'disk']).optional(),
+  /**
+   * Whether each user may set personal SLA alert thresholds with
+   * `configure_sla_alerts` (`SLA_USER_PREFERENCES=off` /
+   * `--no-sla-user-preferences` turn it off: the admin defaults then apply to
+   * everyone).
+   */
+  slaUserPreferences: z.boolean().default(true),
+  /**
+   * How often, in seconds, a subscribed SLA alert resource is re-checked while
+   * at least one subscription is open (default 300, minimum 60, which keeps a
+   * subscriber well inside Zendesk's rate limit; at most a day, past which
+   * `setInterval` would clamp the delay to 1 ms).
+   */
+  slaPollSeconds: z.number().int().min(SLA_POLL_RANGE.min).max(SLA_POLL_RANGE.max).default(300),
 });
+
+/** The store a config resolves to; see `slaStateStore`. */
+export const slaStateStoreOf = (config: Config): 'memory' | 'disk' =>
+  config.slaStateStore ?? (config.transport === 'http' ? 'memory' : 'disk');
 
 export type Config = z.infer<typeof ConfigSchema>;
 
@@ -200,6 +262,13 @@ interface CliResult {
   oauthStore?: string;
   oauthTrustedClients?: string[];
   defaultTrustedClients?: boolean;
+  slaPush?: boolean;
+  slaReplyThresholds?: string;
+  slaWaitThresholds?: string;
+  slaCacheTtlSeconds?: string;
+  slaStateStore?: string;
+  slaUserPreferences?: boolean;
+  slaPollSeconds?: string;
 }
 
 // Number.parseInt('8080abc', 10) === 8080 — a numeric prefix passes silently, so
@@ -304,6 +373,13 @@ const CLI_OPTIONS = {
   'no-promoted-articles': { type: 'boolean' },
   dev: { type: 'boolean' },
   'print-tools': { type: 'boolean' },
+  'sla-push': { type: 'boolean' },
+  'no-sla-user-preferences': { type: 'boolean' },
+  'sla-reply-thresholds': { type: 'string' },
+  'sla-wait-thresholds': { type: 'string' },
+  'sla-cache-ttl-seconds': { type: 'string' },
+  'sla-state-store': { type: 'string' },
+  'sla-poll-seconds': { type: 'string' },
 } as const satisfies ParseArgsConfig['options'];
 
 // The value-taking subset, spelled as they appear on the command line. Exported
@@ -331,6 +407,11 @@ const FIELD_BY_FLAG = new Map<string, keyof CliResult>([
   ['oauth-master-secret-file', 'oauthMasterSecretFile'],
   ['oauth-store', 'oauthStore'],
   ['oauth-trusted-client', 'oauthTrustedClients'],
+  ['sla-reply-thresholds', 'slaReplyThresholds'],
+  ['sla-wait-thresholds', 'slaWaitThresholds'],
+  ['sla-cache-ttl-seconds', 'slaCacheTtlSeconds'],
+  ['sla-state-store', 'slaStateStore'],
+  ['sla-poll-seconds', 'slaPollSeconds'],
 ]);
 
 // Standalone flags set a fixed value, which is why they cannot go through
@@ -342,6 +423,8 @@ const STANDALONE_EFFECTS = new Map<string, Partial<CliResult>>([
   ['dev', { dev: true }],
   ['print-tools', { printTools: true }],
   ['no-default-trusted-clients', { defaultTrustedClients: false }],
+  ['sla-push', { slaPush: true }],
+  ['no-sla-user-preferences', { slaUserPreferences: false }],
 ]);
 
 // parseArgs throws only for a malformed invocation, so every error it raises is one.
@@ -475,6 +558,118 @@ const resolveOAuthServerSettings = (cli: CliResult) => ({
   defaultTrustedClients: cli.defaultTrustedClients,
 });
 
+// A switch variable reads as the operator would write it in a .env file. Anything
+// else fails naming the variable: a typo must not silently pick a default.
+const BOOLEAN_WORDS = new Map([
+  ['true', true],
+  ['on', true],
+  ['1', true],
+  ['false', false],
+  ['off', false],
+  ['0', false],
+]);
+
+const booleanEnv = (name: string): boolean | undefined => {
+  const env = readNonEmptyEnv(name);
+  if (env.value === undefined) return undefined;
+  const value = BOOLEAN_WORDS.get(env.value.trim().toLowerCase());
+  if (value === undefined) {
+    throw createStartupError(
+      `Invalid ${env.name} value. Expected true or false (on/off and 1/0 are accepted too).`,
+      STARTUP_DOCS.environment,
+    );
+  }
+  return value;
+};
+
+const thresholdSetting = (
+  cliValue: string | undefined,
+  envName: string,
+  flag: string,
+  fallback: SlaThreshold,
+): SlaThreshold => {
+  const env = readNonEmptyEnv(envName);
+  const raw = cliValue ?? env.value;
+  if (raw === undefined) return fallback;
+  const parsed = parseThresholdPair(raw);
+  if ('error' in parsed) {
+    throw createStartupError(
+      `Invalid ${cliValue === undefined ? env.name : flag} value. ${parsed.error}`,
+      cliValue === undefined ? STARTUP_DOCS.environment : STARTUP_DOCS.invocation,
+    );
+  }
+  return parsed.threshold;
+};
+
+// Whole seconds, within `range` when given. Not echoed, like parsePort.
+const secondsSetting = (
+  cliValue: string | undefined,
+  envName: string,
+  flag: string,
+  range?: { min: number; max: number },
+): number | undefined => {
+  const env = readNonEmptyEnv(envName);
+  const raw = cliValue ?? env.value;
+  if (raw === undefined) return undefined;
+  const fail = (expected: string): never => {
+    throw createStartupError(
+      `Invalid ${cliValue === undefined ? env.name : flag} value. ${expected}`,
+      cliValue === undefined ? STARTUP_DOCS.environment : STARTUP_DOCS.invocation,
+    );
+  };
+  if (!DIGITS_ONLY.test(raw)) fail('Expected a whole number of seconds.');
+  const seconds = Number(raw);
+  if (range && (seconds < range.min || seconds > range.max)) {
+    fail(`Expected ${range.min} to ${range.max} seconds.`);
+  }
+  return seconds;
+};
+
+const SLA_STATE_STORES = new Set(['memory', 'disk']);
+
+const stateStoreSetting = (cliValue: string | undefined): string | undefined => {
+  const env = readNonEmptyEnv('SLA_STATE_STORE');
+  const raw = cliValue ?? env.value;
+  if (raw === undefined || SLA_STATE_STORES.has(raw)) return raw;
+  throw createStartupError(
+    `Invalid ${cliValue === undefined ? env.name : '--sla-state-store'} value. Expected memory or disk.`,
+    cliValue === undefined ? STARTUP_DOCS.environment : STARTUP_DOCS.invocation,
+  );
+};
+
+// The SLA alerting knobs, same precedence as the others (CLI flag > env var >
+// default). Server knobs, hence no ZENDESK_ prefix (AGENTS.md).
+const resolveSlaSettings = (cli: CliResult) => ({
+  slaThresholds: {
+    reply: thresholdSetting(
+      cli.slaReplyThresholds,
+      'SLA_REPLY_THRESHOLDS',
+      '--sla-reply-thresholds',
+      DEFAULT_SLA_THRESHOLDS.reply,
+    ),
+    wait: thresholdSetting(
+      cli.slaWaitThresholds,
+      'SLA_WAIT_THRESHOLDS',
+      '--sla-wait-thresholds',
+      DEFAULT_SLA_THRESHOLDS.wait,
+    ),
+  },
+  slaPush: cli.slaPush ?? booleanEnv('SLA_PUSH'),
+  slaCacheTtlSeconds: secondsSetting(
+    cli.slaCacheTtlSeconds,
+    'SLA_CACHE_TTL_SECONDS',
+    '--sla-cache-ttl-seconds',
+  ),
+  slaStateStore: stateStoreSetting(cli.slaStateStore),
+  slaUserPreferences: cli.slaUserPreferences ?? booleanEnv('SLA_USER_PREFERENCES'),
+  slaPollSeconds: secondsSetting(
+    cli.slaPollSeconds,
+    'SLA_POLL_SECONDS',
+    '--sla-poll-seconds',
+    SLA_POLL_RANGE,
+  ),
+});
+
 export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
   const cli = parseCliArgs(argv);
 
@@ -516,5 +711,6 @@ export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
     callbackPort,
     ...resolveTransportSettings(cli),
     ...resolveOAuthServerSettings(cli),
+    ...resolveSlaSettings(cli),
   });
 };

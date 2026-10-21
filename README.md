@@ -224,13 +224,16 @@ clients, MCP client wiring, CORS and what stays the operator's job:
 ## Tool surface
 
 Tools are grouped into namespaces: **Tickets**, **Help Center**, **Users &
-Organizations**, **Search**, and **Requests** — the end-user surface, which is
-opt-in and covered under [End-user mode](#end-user-mode). The server registers
+Organizations**, **Search**, **Connector preferences** — this server's own
+per-user settings, such as SLA alert thresholds, never written to Zendesk — and
+**Requests** — the end-user surface, which is opt-in and covered under
+[End-user mode](#end-user-mode). The server registers
 them in one of three modes, so you can trade granularity against context budget:
 
 - **`all`**: every operation as its own tool, for clients with good tool selection;
 - **`namespace`** (default): one proxy tool per namespace, a balanced middle ground;
-- **`single`**: a single `zendesk` tool, for models with limited tool slots.
+- **`single`**: a single `zendesk` tool, for models with limited tool slots (the
+  connector's own preferences keep their `connector_preferences` proxy beside it).
 
 Proxies take `{ "operation": "<tool_name>", "params": { … } }` and validate
 `params` through the original schema. `--namespace`, `--tool` and `--read-only`

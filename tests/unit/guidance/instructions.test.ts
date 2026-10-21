@@ -4,6 +4,7 @@ import {
   articleResourceUri,
   articleResourceUriTemplate,
   buildInstructions,
+  buildSlaInstructions,
   promotedArticlesEnabled,
   topologyResourceUri,
 } from '../../../src/guidance/instructions';
@@ -102,13 +103,73 @@ describe('buildInstructions', () => {
     expect(buildInstructions(makeConfig({ namespaces: ['help_center'] }))).toBeDefined();
   });
 
-  it('returns undefined when help_center is filtered out', () => {
-    expect(buildInstructions(makeConfig({ namespaces: ['tickets'] }))).toBeUndefined();
+  it('keeps only the SLA line when help_center is filtered out', () => {
+    expect(buildInstructions(makeConfig({ namespaces: ['tickets'] }))).toMatch(/^SLA alerts: /);
     expect(buildInstructions(makeConfig({ namespaces: ['users'] }))).toBeUndefined();
   });
 
-  it('returns undefined when the topology feature is disabled', () => {
-    expect(buildInstructions(makeConfig({ topology: false }))).toBeUndefined();
+  it('keeps only the SLA line when the topology feature is disabled', () => {
+    expect(buildInstructions(makeConfig({ topology: false }))).toMatch(/^SLA alerts: /);
+    expect(
+      buildInstructions(makeConfig({ topology: false, namespaces: ['help_center'] })),
+    ).toBeUndefined();
+  });
+
+  it('puts the SLA line after the Help Center block', () => {
+    const text = buildInstructions(makeConfig({ subdomain: 'acme' })) ?? '';
+    expect(text.startsWith('This MCP server is connected to')).toBe(true);
+    expect(text.endsWith(buildSlaInstructions(makeConfig({ subdomain: 'acme' })) ?? 'x')).toBe(
+      true,
+    );
+  });
+});
+
+describe('buildSlaInstructions', () => {
+  it('announces the alerts, the thresholds in force and how to change them', () => {
+    expect(buildSlaInstructions(makeConfig({ slaPush: true }))).toBe(
+      "SLA alerts: list_sla_alerts lists the SLA metrics breached or about to breach (your tickets, your groups', all, a view or a search), and the zendesk-sla://alerts/... resources hold the same report, subscribable for change notifications. Thresholds in force by default: reply metrics warning 4h, critical 1h; wait and resolution metrics warning 2d, critical 8h; each user can set their own with configure_sla_alerts.",
+    );
+  });
+
+  it('stays without --sla-push, without the subscription', () => {
+    const text = buildSlaInstructions(makeConfig({ slaPush: false }));
+    expect(text).toContain('resources hold the same report. Thresholds');
+    expect(text).not.toContain('subscribable');
+  });
+
+  it('states the operator thresholds, and who sets them when preferences are off', () => {
+    const text = buildSlaInstructions(
+      makeConfig({
+        slaUserPreferences: false,
+        slaThresholds: {
+          reply: { warning: 120, critical: 30 },
+          wait: { warning: 1440, critical: 240 },
+        },
+      }),
+    );
+    expect(text).toContain(
+      'reply metrics warning 2h, critical 30m; wait and resolution metrics warning 1d, critical 4h; the operator set them for everyone.',
+    );
+  });
+
+  it('is absent when tickets is filtered out', () => {
+    expect(buildSlaInstructions(makeConfig({ namespaces: ['help_center'] }))).toBeUndefined();
+  });
+
+  it('is absent when --tool leaves list_sla_alerts out, present when it keeps it', () => {
+    expect(buildSlaInstructions(makeConfig({ tools: ['get_ticket'] }))).toBeUndefined();
+    expect(
+      buildSlaInstructions(makeConfig({ tools: ['list_sla_alerts', 'configure_sla_alerts'] })),
+    ).toContain('each user can set their own with configure_sla_alerts.');
+  });
+
+  it('names configure_sla_alerts only where it is exposed', () => {
+    const operator = 'the operator set them for everyone.';
+    expect(buildSlaInstructions(makeConfig({ namespaces: ['tickets'] }))).toContain(operator);
+    expect(buildSlaInstructions(makeConfig({ tools: ['list_sla_alerts'] }))).toContain(operator);
+    expect(buildSlaInstructions(makeConfig({ namespaces: ['tickets', 'preferences'] }))).toContain(
+      'each user can set their own with configure_sla_alerts.',
+    );
   });
 
   it('says the topology IDs belong to ONE brand in multi mode, naming the first', () => {

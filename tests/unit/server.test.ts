@@ -66,9 +66,22 @@ describe('createMcpServer', () => {
     expect(names).toContain('zendesk_users');
   });
 
-  it('creates a server in single mode', () => {
+  it('creates a server in single mode, the preferences keeping their own proxy', () => {
     const server = createMcpServer({ ...baseConfig, mode: 'single' }, getToken);
-    expect(registeredToolNames(server)).toEqual(['zendesk']);
+    expect(registeredToolNames(server)).toEqual(['zendesk', 'connector_preferences']);
+  });
+
+  it('exposes only the proxy whose tools survive the filters in single mode', () => {
+    const tickets = createMcpServer(
+      { ...baseConfig, mode: 'single', namespaces: ['tickets'] },
+      getToken,
+    );
+    expect(registeredToolNames(tickets)).toEqual(['zendesk']);
+    const preferences = createMcpServer(
+      { ...baseConfig, mode: 'single', namespaces: ['preferences'] },
+      getToken,
+    );
+    expect(registeredToolNames(preferences)).toEqual(['connector_preferences']);
   });
 
   it('creates a server with readOnly filter', () => {
@@ -242,9 +255,19 @@ describe('aggregateAnnotations', () => {
     expect(result.destructiveHint).toBe(true);
   });
 
-  it('always reports openWorldHint=true (this server always hits Zendesk)', () => {
-    const result = aggregateAnnotations([{ annotations: ann({ openWorldHint: false }) }]);
-    expect(result.openWorldHint).toBe(true);
+  it('reports openWorldHint as soon as one op reaches Zendesk', () => {
+    expect(
+      aggregateAnnotations([
+        { annotations: ann({ openWorldHint: false }) },
+        { annotations: ann({ openWorldHint: true }) },
+      ]).openWorldHint,
+    ).toBe(true);
+  });
+
+  it('reports a closed world when no op leaves this server (preferences)', () => {
+    expect(
+      aggregateAnnotations([{ annotations: ann({ openWorldHint: false }) }]).openWorldHint,
+    ).toBe(false);
   });
 
   it('drops idempotentHint as soon as one op is non-idempotent', () => {
@@ -261,7 +284,7 @@ describe('aggregateAnnotations', () => {
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
-      openWorldHint: true,
+      openWorldHint: false,
     });
   });
 });

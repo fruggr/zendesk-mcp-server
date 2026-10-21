@@ -1,5 +1,6 @@
 import type * as z from 'zod/v4';
 import type { Namespace } from '../config';
+import type { SlaService } from '../utils/sla-service';
 
 export interface ToolAnnotations {
   readOnlyHint: boolean;
@@ -31,7 +32,18 @@ export interface ToolDefinition {
   description: string;
   inputSchema: z.ZodObject;
   annotations: ToolAnnotations;
-  handler: (params: Record<string, unknown>) => Promise<ToolResult>;
+  handler: (params: Record<string, unknown>, call?: ToolCallContext) => Promise<ToolResult>;
+}
+
+/**
+ * What a handler may know about the call beyond its parameters. Absent when a
+ * handler is invoked outside an MCP request (unit tests).
+ */
+export interface ToolCallContext {
+  /** Whether the client can answer a form elicitation. */
+  canElicit: boolean;
+  /** Answers to an earlier `input_required` round, keyed as asked. Untrusted input. */
+  inputResponses?: Record<string, unknown> | undefined;
 }
 
 export interface ToolContext {
@@ -55,4 +67,9 @@ export interface ToolContext {
    */
   resolveBrandSubdomain: (idOrSubdomain: string) => Promise<string>;
   getToken: () => string | Promise<string>;
+  /**
+   * SLA alerting for the caller. Absent where nothing wires it (unit tests,
+   * `--print-tools`): no urgency is pushed then.
+   */
+  sla?: SlaService | undefined;
 }

@@ -5,10 +5,22 @@ import type { McpServer, RequestStateCodec } from '@modelcontextprotocol/server'
 import type { StdioServerHandle } from '@modelcontextprotocol/server/stdio';
 import * as z from 'zod/v4';
 import type { Config } from '../config';
-import { createServerCaches, createServerShell, registerToolset } from '../server';
+import { slaAlertsEnabled } from '../guidance/instructions';
+import {
+  createAlertPollingReader,
+  createServerCaches,
+  createServerShell,
+  installAlertSubscriptions,
+  pollingIdentity,
+  registerToolset,
+  slaSettings,
+  toolContext,
+} from '../server';
 import { createAllTools, type ToolContext, type ToolDefinition } from '../tools/index';
 import { startStdioTransport } from '../transports/stdio';
+import type { ListenFeed } from '../utils/listen-feed';
 import { type Logger, silentLogger } from '../utils/logger';
+import { createSlaRuntime, createSlaService, type SlaRuntime } from '../utils/sla-service';
 
 const thisDir = dirname(fileURLToPath(import.meta.url));
 // `src/tools/` — the leaf factory modules re-imported on reload.
@@ -20,10 +32,12 @@ const toolsDir = join(thisDir, '..', 'tools');
 // need a restart. Keep in sync with createAllTools.
 const TOOL_MODULES = [
   { file: 'tickets.ts', factory: 'createTicketTools' },
+  { file: 'sla-alerts.ts', factory: 'createSlaAlertTools' },
   { file: 'requests.ts', factory: 'createRequestTools' },
   { file: 'search.ts', factory: 'createSearchTools' },
   { file: 'help-center.ts', factory: 'createHelpCenterTools' },
   { file: 'users.ts', factory: 'createUserTools' },
+  { file: 'preferences.ts', factory: 'createPreferenceTools' },
 ] as const;
 
 type ToolFactory = (ctx: ToolContext) => ToolDefinition[];
@@ -68,18 +82,28 @@ export const createReloadableServer = (
   // re-registration failure/rollback path deterministically.
   loadTools: (ctx: ToolContext) => Promise<ToolDefinition[]> = loadFreshTools,
   requestStateCodec?: RequestStateCodec,
+  slaRuntime: SlaRuntime = createSlaRuntime(config),
+  listens?: Pick<ListenFeed, 'attach'>,
+  getBackgroundToken?: () => string | Promise<string>,
 ): { server: McpServer; reload: () => Promise<number> } => {
   const server = createServerShell(config, requestStateCodec);
   // ONE set of caches across every reload generation: tools and the
   // topology/article resources resolve against the same cached brand list.
   const caches = createServerCaches(config, getToken, onUnauthorized);
-  const ctx: ToolContext = {
-    subdomain: config.subdomain,
-    brandIds: config.brandIds,
-    resolveBrandSubdomain: caches.resolveBrandSubdomain,
-    getToken,
-  };
-  const params = { config, getToken, caches, onUnauthorized, logger };
+  const sla = createSlaService(slaSettings(config), slaRuntime, caches.resolveUserId);
+  const ctx = toolContext(config, getToken, caches.resolveBrandSubdomain, sla);
+  const params = { config, getToken, caches, onUnauthorized, logger, sla };
+  // Subscriptions belong to the long-lived shell, not to a tool generation.
+  if (config.slaPush && slaAlertsEnabled(config)) {
+    const reader = createAlertPollingReader({
+      config,
+      ...pollingIdentity(config, getToken, caches, getBackgroundToken),
+      caches,
+      slaRuntime,
+      onUnauthorized,
+    });
+    installAlertSubscriptions(server, config, reader, logger, listens);
+  }
 
   // The last generation registered successfully — both the handle (to dispose)
   // and its definitions (to restore if a reload's re-registration fails).
@@ -195,8 +219,10 @@ export const startDevServer = (
   getToken: () => string | Promise<string>,
   logger: Logger = silentLogger,
   onUnauthorized?: () => void,
+  slaRuntime?: SlaRuntime,
+  getBackgroundToken?: () => string | Promise<string>,
 ): StdioServerHandle => {
-  const handle = startStdioTransport(({ requestStateCodec }) => {
+  const handle = startStdioTransport(({ requestStateCodec, listens }) => {
     const { server, reload } = createReloadableServer(
       config,
       getToken,
@@ -204,6 +230,9 @@ export const startDevServer = (
       onUnauthorized,
       loadFreshTools,
       requestStateCodec,
+      slaRuntime,
+      listens,
+      getBackgroundToken,
     );
     registerReloadTool(server, reload, logger);
     return server;

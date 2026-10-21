@@ -57,6 +57,7 @@ import { configDir } from '../src/auth/token-persistence';
 import { loadConfig, VALUE_FLAG_NAMES } from '../src/config';
 import { createMcpServer } from '../src/server';
 import { startStdioTransport } from '../src/transports/stdio';
+import { startSlaRuntime } from '../src/utils/sla-service';
 import { missingTokenHelp, resolveLiveSubdomain, resolveLiveToken } from './live-auth';
 
 const argv = process.argv.slice(2);
@@ -125,16 +126,27 @@ const getToken = (): Promise<string> => {
 
 // An in-process server over the same stdio entry the binary uses.
 const connectLocal = async (): Promise<{ client: Client; close: () => Promise<void> }> => {
+  const slaRuntime = startSlaRuntime(config);
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const handle = startStdioTransport(
     ({ requestStateCodec }) =>
-      createMcpServer(config, getToken, undefined, undefined, { requestStateCodec }),
+      createMcpServer(config, getToken, undefined, undefined, {
+        requestStateCodec,
+        // The binary's SLA state (disk on stdio), so preferences outlive one run.
+        slaRuntime: slaRuntime.runtime,
+      }),
     undefined,
     { transport: serverTransport },
   );
   const client = new Client({ name: 'mcp-live', version: '0.0.0' }, clientOptions);
   await client.connect(clientTransport);
-  return { client, close: () => handle.close() };
+  return {
+    client,
+    close: async () => {
+      slaRuntime.stop();
+      await handle.close();
+    },
+  };
 };
 
 const CALLBACK_PORT = Number(process.env['MCP_LIVE_CALLBACK_PORT'] ?? 27440);

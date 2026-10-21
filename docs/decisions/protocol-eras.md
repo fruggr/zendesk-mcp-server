@@ -94,9 +94,12 @@ everywhere, so that class of leak cannot come back.
 
 - A 2026 HTTP request builds a server: about 4 ms (`--mode all`) to 7.5 ms
   (`--mode namespace`) of CPU, measured. Fine at today's scale.
-- The server cannot learn which URIs a 2026 client listens to: the SDK consumes
-  the listen filter. A poller cannot scope itself the way it can with
-  `resources/subscribe`.
+- The SDK consumes the listen filter, so the transports read
+  `resourceSubscriptions` off the wire themselves (`utils/listen-feed.ts`): a
+  listen request opens a stream, its cancellation or any response carrying its
+  id ends it. That ties pollers to the wire shape of `subscriptions/listen`.
+  On HTTP the grant owns the poller; a per-request server only advertises
+  `resources.subscribe`, which the SDK needs to honour the filter's URIs.
 - Still one HTTP instance: the per-grant entries live in this process.
 
 ## SDK churn

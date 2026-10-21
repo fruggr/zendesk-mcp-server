@@ -21,6 +21,44 @@ export const MOCK_TICKET = {
   custom_fields: [],
 };
 
+// One `ticket_metric` as Zendesk returns it (measured on a live tenant, PR #387
+// spike 1): every `*_in_minutes` field is a `{calendar, business}` pair whose
+// halves stay null until the event happens.
+export const MOCK_TICKET_METRIC = {
+  url: 'https://testsubdomain.zendesk.com/api/v2/ticket_metrics/39965184585245.json',
+  id: 39965184585245,
+  ticket_id: 7560,
+  created_at: '2026-10-16T18:46:26Z',
+  updated_at: '2026-10-16T18:53:52Z',
+  group_stations: 2,
+  assignee_stations: 1,
+  reopens: 0,
+  replies: 1,
+  assignee_updated_at: '2026-10-16T18:53:52Z',
+  requester_updated_at: '2026-10-16T18:46:25Z',
+  status_updated_at: '2026-10-16T18:53:52Z',
+  initially_assigned_at: '2026-10-16T18:53:52Z',
+  assigned_at: '2026-10-16T18:55:00Z',
+  solved_at: null,
+  latest_comment_added_at: '2026-10-16T18:46:25Z',
+  reply_time_in_minutes: { calendar: 4, business: 0 },
+  first_resolution_time_in_minutes: { calendar: null, business: null },
+  full_resolution_time_in_minutes: { calendar: null, business: null },
+  agent_wait_time_in_minutes: { calendar: null, business: null },
+  requester_wait_time_in_minutes: { calendar: 1567, business: 420 },
+  on_hold_time_in_minutes: { calendar: 0, business: 0 },
+  custom_status_updated_at: '2026-10-16T18:53:52Z',
+};
+
+// The single next-breaching metric `/views/{id}/execute` carries on each row's
+// partial ticket (measured, PR #387 spike 1).
+export const MOCK_VIEW_ROW_SLA = {
+  breach_at: '2099-12-15T17:00:00Z',
+  stage: 'active',
+  metric: 'requester_wait_time',
+  days: 59,
+};
+
 export const MOCK_VIEW = {
   id: 25,
   title: 'Unassigned tickets',
@@ -997,7 +1035,16 @@ export const handlers = [
       .split(',')
       .filter(Boolean)
       .map(Number);
-    return HttpResponse.json({ tickets: ids.map((id) => ({ ...MOCK_TICKET, id })) });
+    const tickets = ids.map((id) => ({ ...MOCK_TICKET, id }));
+    // The `metric_sets` sideload comes back as a top-level array matched by
+    // `ticket_id`, not nested on each ticket (measured, PR #387 spike 1).
+    if (new URL(request.url).searchParams.get('include') === 'metric_sets') {
+      return HttpResponse.json({
+        tickets,
+        metric_sets: ids.map((id) => ({ ...MOCK_TICKET_METRIC, ticket_id: id })),
+      });
+    }
+    return HttpResponse.json({ tickets });
   }),
   http.get(`${BASE}/views/count_many`, ({ request }) => {
     const ids = (new URL(request.url).searchParams.get('ids') ?? '')
@@ -1014,10 +1061,17 @@ export const handlers = [
       })),
     });
   }),
+  // `include=slas` is honoured here, nested per ticket like Search (measured,
+  // PR #387 spike 1); offset-paginated with `count` and `next_page`.
+  http.get(`${BASE}/views/:id/tickets`, ({ request }) => {
+    const withSla = new URL(request.url).searchParams.get('include') === 'slas';
+    const ticket = withSla ? { ...MOCK_TICKET, slas: MOCK_SLA_SIDELOAD } : MOCK_TICKET;
+    return HttpResponse.json({ tickets: [ticket], count: 1, next_page: null, previous_page: null });
+  }),
   http.get(`${BASE}/views/:id/execute`, ({ params }) =>
     HttpResponse.json({
       columns: [{ id: 'subject', title: 'Subject' }],
-      rows: [{ ticket: { id: MOCK_TICKET.id } }],
+      rows: [{ ticket: { id: MOCK_TICKET.id, sla_policy_metric: MOCK_VIEW_ROW_SLA } }],
       view: { id: Number(params['id']) },
       meta: { has_more: false, after_cursor: '' },
     }),
@@ -1228,6 +1282,12 @@ export const handlers = [
   // handler instead of matching `:id` = 'show_many'. Both show_many endpoints
   // echo a deterministic `<Entity> <id>` name so name resolution is assertable.
   http.get(`${BASE}/users/me`, () => HttpResponse.json({ user: MOCK_USER })),
+  http.get(`${BASE}/users/:id/group_memberships`, ({ params }) =>
+    HttpResponse.json({
+      group_memberships: [{ user_id: Number(params['id']), group_id: MOCK_TICKET.group_id }],
+      meta: { has_more: false, after_cursor: null },
+    }),
+  ),
   http.get(`${BASE}/users/show_many`, ({ request }) => {
     const ids = (new URL(request.url).searchParams.get('ids') ?? '')
       .split(',')

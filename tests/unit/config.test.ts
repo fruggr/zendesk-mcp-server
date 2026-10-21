@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { ConfigSchema, DEFAULT_NAMESPACES, loadConfig, VALUE_FLAG_NAMES } from '../../src/config';
+import {
+  ConfigSchema,
+  DEFAULT_NAMESPACES,
+  loadConfig,
+  slaStateStoreOf,
+  VALUE_FLAG_NAMES,
+} from '../../src/config';
 import { isStartupError, STARTUP_DOCS } from '../../src/utils/startup-error';
 
 // Cleared as one list: a suite that clears a subset only passes while the one before
@@ -22,6 +28,13 @@ const LOAD_CONFIG_ENV = [
   'OAUTH_TRUSTED_CLIENTS',
   'HOST',
   'ZENDESK_OAUTH_CALLBACK_PORT',
+  'SLA_PUSH',
+  'SLA_REPLY_THRESHOLDS',
+  'SLA_WAIT_THRESHOLDS',
+  'SLA_CACHE_TTL_SECONDS',
+  'SLA_STATE_STORE',
+  'SLA_USER_PREFERENCES',
+  'SLA_POLL_SECONDS',
 ] as const;
 
 const clearLoadConfigEnv = (): void => {
@@ -235,12 +248,12 @@ describe('loadConfig', () => {
   // just as happily if a namespace were dropped from it.
   it('defaults to the agent namespaces, excluding the opt-in requests surface', () => {
     const config = loadConfig(['mycompany']);
-    expect(config.namespaces).toEqual(['tickets', 'help_center', 'users']);
+    expect(config.namespaces).toEqual(['tickets', 'help_center', 'users', 'preferences']);
     expect(config.namespaces).not.toContain('requests');
   });
 
   it('exposes that same list as DEFAULT_NAMESPACES', () => {
-    expect([...DEFAULT_NAMESPACES]).toEqual(['tickets', 'help_center', 'users']);
+    expect([...DEFAULT_NAMESPACES]).toEqual(['tickets', 'help_center', 'users', 'preferences']);
   });
 
   // The default must not survive an explicit --namespace: opting in to the
@@ -268,7 +281,13 @@ describe('loadConfig', () => {
   // ANDs the two filters and `requests` is not in the default set.
   it('opens the namespace filter when --tool names a non-default namespace tool', () => {
     const config = loadConfig(['mycompany', '--tool', 'list_requests']);
-    expect(config.namespaces).toEqual(['tickets', 'help_center', 'users', 'requests']);
+    expect(config.namespaces).toEqual([
+      'tickets',
+      'help_center',
+      'users',
+      'requests',
+      'preferences',
+    ]);
     expect(config.tools).toEqual(['list_requests']);
   });
 
@@ -628,7 +647,7 @@ describe('loadConfig', () => {
 
     it('covers every value-taking flag declared in CLI_OPTIONS', () => {
       // Guards the parametrised cases below against silently shrinking to zero.
-      expect(valueFlags).toHaveLength(15);
+      expect(valueFlags).toHaveLength(20);
     });
 
     it.each(valueFlags)('rejects %s as the last argument (value forgotten)', (flag) => {
@@ -870,7 +889,7 @@ describe('ConfigSchema defaults reached only by a direct parse', () => {
     });
 
   it('applies the default when the field is absent, not only via loadConfig', () => {
-    expect(parse().namespaces).toEqual(['tickets', 'help_center', 'users']);
+    expect(parse().namespaces).toEqual(['tickets', 'help_center', 'users', 'preferences']);
   });
 
   // loadConfig passes printTools explicitly, so its schema default is only ever
@@ -915,7 +934,7 @@ describe('ConfigSchema defaults reached only by a direct parse', () => {
   it('does not mutate DEFAULT_NAMESPACES when a parsed config is edited', () => {
     const config = parse();
     config.namespaces.push('requests');
-    expect([...DEFAULT_NAMESPACES]).toEqual(['tickets', 'help_center', 'users']);
+    expect([...DEFAULT_NAMESPACES]).toEqual(['tickets', 'help_center', 'users', 'preferences']);
   });
 });
 
@@ -935,12 +954,16 @@ describe('what the flags resolve to when none is passed', () => {
       printTools: config.printTools,
       topology: config.topology,
       promotedArticles: config.promotedArticles,
+      slaPush: config.slaPush,
+      slaUserPreferences: config.slaUserPreferences,
     }).toStrictEqual({
       readOnly: false,
       dev: false,
       printTools: false,
       topology: true,
       promotedArticles: true,
+      slaPush: false,
+      slaUserPreferences: true,
     });
   });
 
@@ -955,6 +978,8 @@ describe('what the flags resolve to when none is passed', () => {
         printTools: config.printTools,
         topology: config.topology,
         promotedArticles: config.promotedArticles,
+        slaPush: config.slaPush,
+        slaUserPreferences: config.slaUserPreferences,
       };
     };
     const off = {
@@ -963,6 +988,8 @@ describe('what the flags resolve to when none is passed', () => {
       printTools: false,
       topology: true,
       promotedArticles: true,
+      slaPush: false,
+      slaUserPreferences: true,
     };
 
     expect(standalone('--read-only')).toStrictEqual({ ...off, readOnly: true });
@@ -972,6 +999,11 @@ describe('what the flags resolve to when none is passed', () => {
     expect(standalone('--no-promoted-articles')).toStrictEqual({
       ...off,
       promotedArticles: false,
+    });
+    expect(standalone('--sla-push')).toStrictEqual({ ...off, slaPush: true });
+    expect(standalone('--no-sla-user-preferences')).toStrictEqual({
+      ...off,
+      slaUserPreferences: false,
     });
   });
 
@@ -1135,7 +1167,7 @@ describe('loadConfig startup errors', () => {
   it('names a list entry by its dotted path', () => {
     expect(thrownBy(['mycompany', '--namespace', 'bogus'])).toHaveProperty(
       'message',
-      'namespaces.0: Invalid option: expected one of "tickets"|"help_center"|"users"|"requests". ' +
+      'namespaces.0: Invalid option: expected one of "tickets"|"help_center"|"users"|"requests"|"preferences". ' +
         `See ${STARTUP_DOCS.cliReference}`,
     );
   });
@@ -1144,6 +1176,181 @@ describe('loadConfig startup errors', () => {
     expect(thrownBy([])).toHaveProperty(
       'message',
       `subdomain: ZENDESK_SUBDOMAIN is required. See ${STARTUP_DOCS.cliReference}`,
+    );
+  });
+});
+
+describe('SLA settings', () => {
+  beforeEach(clearLoadConfigEnv);
+  afterEach(clearLoadConfigEnv);
+
+  const startupMessage = (argv: string[]): string => {
+    try {
+      loadConfig(['mycompany', ...argv]);
+    } catch (err) {
+      return isStartupError(err) ? err.message : `not a startup error: ${String(err)}`;
+    }
+    throw new Error('expected a startup error');
+  };
+
+  it('defaults to the built-in thresholds and push off', () => {
+    const config = loadConfig(['mycompany']);
+    expect(config.slaThresholds).toEqual({
+      reply: { warning: 240, critical: 60 },
+      wait: { warning: 2880, critical: 480 },
+    });
+    expect(config.slaPush).toBe(false);
+  });
+
+  it('reads the thresholds from the environment, family by family', () => {
+    process.env['SLA_REPLY_THRESHOLDS'] = '2h,30m';
+    const config = loadConfig(['mycompany']);
+    expect(config.slaThresholds).toEqual({
+      reply: { warning: 120, critical: 30 },
+      wait: { warning: 2880, critical: 480 },
+    });
+    process.env['SLA_WAIT_THRESHOLDS'] = '3d,1d';
+    expect(loadConfig(['mycompany']).slaThresholds.wait).toEqual({
+      warning: 4320,
+      critical: 1440,
+    });
+  });
+
+  it('lets the flags win over the environment', () => {
+    process.env['SLA_REPLY_THRESHOLDS'] = '2h,30m';
+    process.env['SLA_WAIT_THRESHOLDS'] = '3d,1d';
+    const config = loadConfig([
+      'mycompany',
+      '--sla-reply-thresholds',
+      '6h,2h',
+      '--sla-wait-thresholds',
+      '1d,4h',
+    ]);
+    expect(config.slaThresholds).toEqual({
+      reply: { warning: 360, critical: 120 },
+      wait: { warning: 1440, critical: 240 },
+    });
+  });
+
+  it('fails at startup on a bad threshold, naming the variable', () => {
+    process.env['SLA_WAIT_THRESHOLDS'] = '1h,2h';
+    expect(startupMessage([])).toBe(
+      `Invalid SLA_WAIT_THRESHOLDS value. The critical threshold (2h) must not be longer than the warning one (1h). See ${STARTUP_DOCS.environment}`,
+    );
+  });
+
+  it('fails at startup on a bad threshold flag, naming the flag', () => {
+    expect(startupMessage(['--sla-reply-thresholds', '4h'])).toBe(
+      `Invalid --sla-reply-thresholds value. Expected two durations separated by a comma, warning first: 4h,1h. See ${STARTUP_DOCS.invocation}`,
+    );
+  });
+
+  it('names the wait flag too', () => {
+    expect(startupMessage(['--sla-wait-thresholds', '1h,2h'])).toBe(
+      `Invalid --sla-wait-thresholds value. The critical threshold (2h) must not be longer than the warning one (1h). See ${STARTUP_DOCS.invocation}`,
+    );
+  });
+
+  it('rejects an empty threshold variable', () => {
+    process.env['SLA_REPLY_THRESHOLDS'] = '';
+    expect(startupMessage([])).toContain('Empty SLA_REPLY_THRESHOLDS.');
+  });
+
+  it('caches scope fetches for 60 seconds by default, overridable', () => {
+    expect(loadConfig(['mycompany']).slaCacheTtlSeconds).toBe(60);
+    process.env['SLA_CACHE_TTL_SECONDS'] = '0';
+    expect(loadConfig(['mycompany']).slaCacheTtlSeconds).toBe(0);
+    expect(loadConfig(['mycompany', '--sla-cache-ttl-seconds', '120']).slaCacheTtlSeconds).toBe(
+      120,
+    );
+  });
+
+  it('fails at startup on a cache lifetime that is not whole seconds', () => {
+    process.env['SLA_CACHE_TTL_SECONDS'] = '1.5';
+    expect(startupMessage([])).toBe(
+      `Invalid SLA_CACHE_TTL_SECONDS value. Expected a whole number of seconds. See ${STARTUP_DOCS.environment}`,
+    );
+    expect(startupMessage(['--sla-cache-ttl-seconds', '1m'])).toBe(
+      `Invalid --sla-cache-ttl-seconds value. Expected a whole number of seconds. See ${STARTUP_DOCS.invocation}`,
+    );
+  });
+
+  it('polls subscriptions every 300 seconds by default, never under 60', () => {
+    expect(loadConfig(['mycompany']).slaPollSeconds).toBe(300);
+    process.env['SLA_POLL_SECONDS'] = '60';
+    expect(loadConfig(['mycompany']).slaPollSeconds).toBe(60);
+    expect(loadConfig(['mycompany', '--sla-poll-seconds', '90']).slaPollSeconds).toBe(90);
+    process.env['SLA_POLL_SECONDS'] = '86400';
+    expect(loadConfig(['mycompany']).slaPollSeconds).toBe(86400);
+    expect(startupMessage(['--sla-poll-seconds', '5m'])).toBe(
+      `Invalid --sla-poll-seconds value. Expected a whole number of seconds. See ${STARTUP_DOCS.invocation}`,
+    );
+  });
+
+  it('fails at startup on a poll interval out of range, naming the knob', () => {
+    process.env['SLA_POLL_SECONDS'] = '59';
+    expect(startupMessage([])).toBe(
+      `Invalid SLA_POLL_SECONDS value. Expected 60 to 86400 seconds. See ${STARTUP_DOCS.environment}`,
+    );
+    // Past a day, setInterval would clamp the delay to 1 ms.
+    process.env['SLA_POLL_SECONDS'] = '86401';
+    expect(startupMessage([])).toBe(
+      `Invalid SLA_POLL_SECONDS value. Expected 60 to 86400 seconds. See ${STARTUP_DOCS.environment}`,
+    );
+    expect(startupMessage(['--sla-poll-seconds', '30'])).toBe(
+      `Invalid --sla-poll-seconds value. Expected 60 to 86400 seconds. See ${STARTUP_DOCS.invocation}`,
+    );
+  });
+
+  it('picks the state store per transport unless told otherwise', () => {
+    expect(slaStateStoreOf(loadConfig(['mycompany']))).toBe('disk');
+    expect(slaStateStoreOf(loadConfig(['mycompany', '--transport', 'http']))).toBe('memory');
+    process.env['SLA_STATE_STORE'] = 'disk';
+    expect(slaStateStoreOf(loadConfig(['mycompany', '--transport', 'http']))).toBe('disk');
+    expect(slaStateStoreOf(loadConfig(['mycompany', '--sla-state-store', 'memory']))).toBe(
+      'memory',
+    );
+  });
+
+  it('rejects an unknown state store, naming the knob', () => {
+    expect(startupMessage(['--sla-state-store', 'redis'])).toBe(
+      `Invalid --sla-state-store value. Expected memory or disk. See ${STARTUP_DOCS.invocation}`,
+    );
+    process.env['SLA_STATE_STORE'] = 'Disk';
+    expect(startupMessage([])).toBe(
+      `Invalid SLA_STATE_STORE value. Expected memory or disk. See ${STARTUP_DOCS.environment}`,
+    );
+  });
+
+  it.each([
+    ['false', false],
+    ['OFF', false],
+    ['0', false],
+    ['true', true],
+    [' on ', true],
+    ['1', true],
+  ])('reads SLA_PUSH=%j as %s', (raw, value) => {
+    process.env['SLA_PUSH'] = raw;
+    expect(loadConfig(['mycompany']).slaPush).toBe(value);
+  });
+
+  it('reads SLA_USER_PREFERENCES=off, and lets the flag win over on', () => {
+    process.env['SLA_USER_PREFERENCES'] = 'off';
+    expect(loadConfig(['mycompany']).slaUserPreferences).toBe(false);
+    process.env['SLA_USER_PREFERENCES'] = 'on';
+    expect(loadConfig(['mycompany']).slaUserPreferences).toBe(true);
+    expect(loadConfig(['mycompany', '--no-sla-user-preferences']).slaUserPreferences).toBe(false);
+  });
+
+  it('lets --sla-push win over SLA_PUSH=false', () => {
+    process.env['SLA_PUSH'] = 'false';
+    expect(loadConfig(['mycompany', '--sla-push']).slaPush).toBe(true);
+  });
+
+  it('fails at startup on an unreadable SLA_PUSH', () => {
+    process.env['SLA_PUSH'] = 'nope';
+    expect(startupMessage([])).toBe(
+      `Invalid SLA_PUSH value. Expected true or false (on/off and 1/0 are accepted too). See ${STARTUP_DOCS.environment}`,
     );
   });
 });
