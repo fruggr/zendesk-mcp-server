@@ -1051,6 +1051,7 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
             const listen = await client.listen({
               resourceSubscriptions: ['zendesk-sla://alerts/mine', 'zendesk-hc://articles/1'],
             });
+            // biome-ignore lint/suspicious/noConditionalExpect: only the 2026 handshake reports a honored filter to check.
             expect(listen.honoredFilter.resourceSubscriptions).toContain(
               'zendesk-sla://alerts/mine',
             );

@@ -8,8 +8,8 @@
 | | |
 | --- | --- |
 | **Status** | Applied |
-| **Measured on** | Biome 2.5.5, against this branch merged with `main` |
-| **Companion** | [`lint-tooling.md`](lint-tooling.md) (where lint runs), [`biome-on-android.md`](biome-on-android.md) (how it runs) |
+| **Measured on** | Biome 2.5.5, against this branch merged with `main`; rules promoted in 2.6 re-measured on 2.6.2 |
+| **Companion** | [`lint-tooling.md`](lint-tooling.md) (where lint runs), [`biome-on-android.md`](biome-on-android.md) (how it ran on Termux before 2.6) |
 
 `biome.json` rejects comments, so the rationale that cannot live next to the
 config lives here.
@@ -28,10 +28,11 @@ in this document are that measurement, not an estimate.
 
 ## What is on
 
-Of the 432 JS/TS rules Biome 2.5.5 ships, **265 are active**: `recommended`
-plus 85 listed explicitly in `biome.json`, plus the `test` domain, which Biome
-auto-enables because vitest is a dependency (`noFocusedTests`,
-`noDuplicateTestHooks`).
+`recommended`, plus the rules listed explicitly in `biome.json`, plus the `test`
+domain, which Biome auto-enables because vitest is a dependency
+(`noFocusedTests`, `noDuplicateTestHooks`). On 2.5.5 that came to 265 of the 432
+JS/TS rules; the 2.6 bump added the rules listed under
+[Enabled when Biome 2.6 promoted them](#enabled-when-biome-26-promoted-them).
 
 Two overrides narrow that set, both directory-level policy rather than an escape
 hatch for a specific offender:
@@ -40,9 +41,10 @@ hatch for a specific offender:
 | --- | --- | --- |
 | `tests/**`, `scripts/**` | `noExcessiveCognitiveComplexity` | Cognitive complexity counts nested callbacks, so a `describe`/`it` tree trips it structurally. |
 | `tests/**`, `scripts/**` | `useTopLevelRegex` | A regex recompiled in a test or a one-shot probe script has no hot path to slow down. |
+| `tests/**`, `scripts/**` | `noExcessiveNestedCallbacks` | Same structural cause as cognitive complexity: `describe`/`it`/`Array.from` nest callbacks by design. |
 | `**/*.config.ts` | `noDefaultExport` | `vitest.config.ts` and `tsdown.config.ts` legitimately default-export. |
 
-Don't widen either of the first two to `src/`.
+Don't widen any of the first three to `src/`.
 
 ## Off by policy
 
@@ -80,7 +82,8 @@ A further group is inert for the same reason, one line each:
 | --- | --- |
 | `noNoninteractiveElementInteractions` | a11y rule; no JSX or DOM. |
 | `noImplicitBoolean`, `noJsxLiterals`, `useFragmentSyntax`, `useSelfClosingElements`, `useConsistentCurlyBraces` | JSX-only. |
-| `noInlineStyles`, `useDomQuerySelector`, `useIframeSandbox`, `useSortedClasses`, `noUndeclaredClasses` | Browser/DOM-only. |
+| `noInlineStyles`, `useDomQuerySelector`, `useIframeSandbox`, `useTailwindSortedClasses`, `noUndeclaredClasses`, `useBaseline` | Browser/DOM-only. |
+| `noUntrustedLicenses` | Inert without a configured license allow-list. |
 | `noAlert` | Browser-only (`alert`/`confirm`/`prompt`). |
 | `noExcessiveNestedTestSuites` | Test domain, but gated on jest; this repo uses vitest. |
 | `useStrictMode` | The package is ESM, which is always strict. |
@@ -104,7 +107,6 @@ enabled. One line each; the count is diagnostics across `src/ tests/ scripts/`.
 | `useNumericSeparators` | 52 | Mostly 3–4 digit test fixtures where separators add noise. |
 | `noExcessiveLinesPerFunction` | 49 | The big hits are `ToolDefinition[]` factories — line count measures how many tools exist, not complexity. Contradicts the documented architecture. |
 | `noNodejsModules` | 46 | It is a Node application. |
-| `noUnresolvedImports` | 32 | All false positives: Biome cannot read the export maps of `msw` and the `@modelcontextprotocol/*` packages (plus one each for `cheerio` and `tsdown`). Was 110 on 2.5.4; worth re-checking on future bumps. |
 | `noExcessiveLinesPerFile` | 18 | Same as `noExcessiveLinesPerFunction`: a namespace of tools is legitimately long. |
 | `useExportsLast` | 17 | Pure ordering preference; the repo interleaves exports with the code they belong to. |
 | `noUselessUndefined` | 14 | `return undefined` is *clearer* in a function typed `T \| undefined`. |
@@ -129,28 +131,46 @@ enabled. One line each; the count is diagnostics across `src/ tests/ scripts/`.
 | `noForEach` | 2 | Two sites where `forEach` reads better than `for…of`. |
 | `noNestedPromises` | 2 | The OAuth flow's inner `.then` is detached *on purpose* — `beginAuth` returns the URL immediately and the token lands later. Worth revisiting deliberately, not as a lint sweep. |
 | `useForOf` | 1 | One indexed loop that reads fine. |
+| `useUnicodeRegex` | 261 (2.6.2) | Every regex here is an ASCII character class, so the `u` flag is volume without value. |
+| `useNamedCaptureGroup` | 31 (2.6.2) | Names add noise to one- and two-group regexes read right next to their destructuring. |
 
-## Off — nursery rules the tree is nonetheless clean for
+## Enabled when Biome 2.6 promoted them
 
-Listed so the next Biome bump can pick them up cheaply: when one of these is
-promoted out of nursery, it can be enabled with no code change.
-
-`noExcessiveNestedCallbacks`, `noLoopFunc`, `noNegationInEqualityCheck`,
+Measured clean, or cleaned first, while still in nursery, and switched on with
+the 2.6 bump: `noExcessiveNestedCallbacks`, `noLoopFunc`,
 `noUnnecessaryTemplateExpression`, `useArraySome`, `useImportsFirst`,
 `useReduceTypeParameter`, `useRegexpTest`, `useThisInClassMethods`,
-`useVarsOnTop` — all at zero.
+`useVarsOnTop`, `noTopLevelLiterals`, `noEmptyObjectKeys`, and the test-quality
+rules `useConsistentTestIt`, `useTestHooksInOrder`, `useTestHooksOnTop`,
+`noConditionalExpect`, `useExpect` (`noIdenticalTestTitle` and `useMathMinMax`
+came in through `recommended`). One `noConditionalExpect` suppression remains,
+on an assertion only the 2026 protocol era can make.
 
+`noUnresolvedImports` went from 32 false positives on 2.5.5 to none on 2.6.2,
+and still catches a missing export, `@modelcontextprotocol/*` included, so it is
+on too. It costs nothing measurable on the per-edit hook: the module graph is
+already built for `noImportCycles`.
+
+## Off — nursery rules still waiting
+
+`noNegationInEqualityCheck` is at zero and can be enabled once promoted.
 `noBaseToString` (1) is the one nursery rule with a live hit; it is also a
 `types` rule, so it is closed by both policies.
 
-`noIdenticalTestTitle`, `useConsistentTestIt`, `useTestHooksInOrder`,
-`useTestHooksOnTop`, `noConditionalExpect`, `useExpect` — test-quality rules,
-verified working, blocked only by the nursery policy. `useExpect` (3) and
-`noConditionalExpect` (0 after the rejection tests were fixed) are the two worth
-taking first.
-
 `useExplicitReturnType` (99) and `useExplicitType` (112) would need a sweep
-across the codebase before they could go on. `useUnicodeRegex` (92) is a no-op
-here — every regex is an ASCII character class — so it is volume without value.
-`useNamedCaptureGroup` (4), `useRegexpExec` (1), `noUselessTypeConversion` (2),
-`noMisleadingReturnType` (1) are small but sit behind the same policy.
+across the codebase before they could go on. `useRegexpExec` (1),
+`noUselessTypeConversion` (2), `noMisleadingReturnType` (1) are small but sit
+behind the same policy.
+
+## Formatting beyond JS/TS
+
+Biome 2.6 formats YAML and Markdown by default.
+
+- **YAML: on**, with `quoteStyle: "single"` to match the JS style; the tree
+  needed no change. `pnpm-lock.yaml` is excluded: pnpm writes it.
+- **Markdown: off.** Biome pads table columns, with no option to opt out, so a
+  longer cell rewrites every row of its table in the raw diff that agents and
+  review bots read, and the padding alone doubles `docs/mcp-tools-reference.md`.
+  Left at its defaults it also rewrites code inside fenced blocks
+  (`markdown.formatter.formatEmbeds`), which changed what this repo's examples
+  demonstrate. Revisit if table padding becomes optional.
