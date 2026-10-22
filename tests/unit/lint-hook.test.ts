@@ -17,7 +17,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 /**
  * Runs the `PostToolUse` command from `.claude/settings.json` the way Claude
  * Code does: hook input as JSON on stdin, `CLAUDE_PROJECT_DIR` in the env. The
- * project is a scratch copy whose `scripts/biome.mjs` only records its argv, so
+ * project is a scratch copy whose Biome launcher only records its argv, so
  * what is asserted is exactly what Biome would have been handed.
  *
  * Nothing else catches a broken wiring: the hook ends in `|| exit 0`, so a
@@ -31,8 +31,8 @@ const settings = JSON.parse(readFileSync(new URL('.claude/settings.json', repoRo
 const editHook = settings.hooks.PostToolUse.find((h) => h.matcher === 'Edit|Write');
 const command = editHook?.hooks[0]?.command ?? '';
 
-const FAKE_BIOME = `import { writeFileSync } from 'node:fs';
-writeFileSync(process.env.ARGV_LOG, JSON.stringify(process.argv.slice(2)));
+// CommonJS, like the extensionless launcher it stands in for.
+const FAKE_BIOME = `require('node:fs').writeFileSync(process.env.ARGV_LOG, JSON.stringify(process.argv.slice(2)));
 process.exit(Number(process.env.BIOME_EXIT ?? 0));
 `;
 
@@ -62,9 +62,10 @@ beforeEach(() => {
   sandbox = realpathSync(mkdtempSync(join(tmpdir(), 'lint-hook-')));
   project = join(sandbox, 'my project');
   argvLog = join(sandbox, 'argv.json');
-  mkdirSync(join(project, 'scripts'), { recursive: true });
+  const launcherDir = join(project, 'node_modules', '@biomejs', 'biome', 'bin');
+  mkdirSync(launcherDir, { recursive: true });
   mkdirSync(join(project, '.claude', 'hooks'), { recursive: true });
-  writeFileSync(join(project, 'scripts', 'biome.mjs'), FAKE_BIOME);
+  writeFileSync(join(launcherDir, 'biome'), FAKE_BIOME);
   copyFileSync(
     new URL('.claude/hooks/lint-edited-file.sh', repoRoot),
     join(project, '.claude', 'hooks', 'lint-edited-file.sh'),

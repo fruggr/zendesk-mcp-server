@@ -7,7 +7,7 @@
 
 | | |
 | --- | --- |
-| **Status** | Decided and applied |
+| **Status** | Superseded: Biome 2.6 ships an android build, and the shim is deleted ([#401](https://github.com/fruggr/zendesk-mcp-server/issues/401)) |
 | **Date** | 2026-07-29 |
 | **Applied in** | [#191](https://github.com/fruggr/zendesk-mcp-server/pull/191) |
 | **Question** | Biome does not run in native Termux, where `process.platform` is `android`. Fix it in pnpm's install config, or in a wrapper? |
@@ -84,3 +84,19 @@ Two independent causes, both from `platform === 'android'`:
 When Biome publishes an android build. The shim then has nothing left to do and
 should be deleted outright, with the callers going back to `biome` directly —
 not kept as a pass-through.
+
+## Retired
+
+Biome 2.6 publishes `@biomejs/cli-android-arm64` and `@biomejs/cli-android-x64`,
+gated `os: [android]`, and its launcher maps `android` to them. pnpm installs the
+right one on Termux and none elsewhere, so `scripts/biome.mjs` is gone:
+
+- `check` and `check:fix` call `biome`; CI calls `pnpm exec biome`.
+- The `PostToolUse` hook and the pre-commit job call
+  `node node_modules/@biomejs/biome/bin/biome`, keeping the bare `node` the
+  [#279](https://github.com/fruggr/zendesk-mcp-server/issues/279) measurements
+  chose, rather than the `#!/bin/sh` `node_modules/.bin/biome`.
+- `scripts/bench-lint-tooling.mjs` resolves the platform package itself.
+- The musl binaries the shim cached under
+  `$XDG_CACHE_HOME/zendesk-mcp-server/biome` (default `~/.cache`) are no longer
+  read and can be deleted.
