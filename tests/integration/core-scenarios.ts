@@ -21,6 +21,9 @@ const textOf = (result: { content?: Array<{ type: string; text?: string }> }): s
 
 const toolNames = (tools: Array<{ name: string }>): string[] => tools.map((t) => t.name);
 
+/** The first line of a proxy's operation list that mentions `create_article(`. */
+const CREATE_ARTICLE_LINE = /^.*create_article\(.*$/m;
+
 /** Text of a resources/read result, joined for easy asserts. */
 const resourceTextOf = (read: { contents?: Array<{ text: string } | { blob: string }> }): string =>
   (read.contents ?? []).map((c) => ('text' in c ? c.text : '')).join('\n');
@@ -438,13 +441,14 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
             '- get_article_section(article_id*, locale*, section_index*',
           );
           expect(properties?.['params']?.description).toContain('"operation"');
-          if (readOnly) {
-            expect(operationField).not.toContain('create_article(');
-          } else {
-            expect(operationField).toMatch(
-              /- create_article\([^)]*\blabel_names\b[^)]*\): .*\(write\)$/m,
-            );
-          }
+          // Read-only drops the write operation; otherwise it is listed with its params.
+          expect(CREATE_ARTICLE_LINE.exec(operationField)?.[0]).toEqual(
+            readOnly
+              ? undefined
+              : expect.stringMatching(
+                  /^- create_article\([^)]*\blabel_names\b[^)]*\): .*\(write\)$/,
+                ),
+          );
           await connected.close();
           connected = undefined;
         }

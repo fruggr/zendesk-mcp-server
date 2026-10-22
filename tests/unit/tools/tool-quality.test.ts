@@ -1,4 +1,4 @@
-import { describe, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { createAllTools, type ToolContext } from '../../../src/tools';
 import { testToolContext } from '../../tool-context';
 
@@ -77,13 +77,8 @@ const countSentences = (text: string): number =>
     .map((s) => s.trim())
     .filter((s) => s.length > 10).length;
 
-const fail = (problems: string[]): void => {
-  if (problems.length > 0) {
-    throw new Error(
-      `\nTool definition quality gate failed (${problems.length}):\n\n${problems.join('\n\n')}\n`,
-    );
-  }
-};
+const gateReport = (problems: string[]): string =>
+  `\nTool definition quality gate failed (${problems.length}):\n\n${problems.join('\n\n')}\n`;
 
 describe('tool definition quality gate', () => {
   it('RULE A — every parameter description explains the param, not just its name', () => {
@@ -111,7 +106,7 @@ describe('tool definition quality gate', () => {
         }
       }
     }
-    fail(problems);
+    expect(problems.length, gateReport(problems)).toBe(0);
   });
 
   it('RULE B — every tool description is more than one sentence', () => {
@@ -127,7 +122,7 @@ describe('tool definition quality gate', () => {
         );
       }
     }
-    fail(problems);
+    expect(problems.length, gateReport(problems)).toBe(0);
   });
 
   it('RULE C — every write tool states its return value or resulting state', () => {
@@ -144,6 +139,6 @@ describe('tool definition quality gate', () => {
         );
       }
     }
-    fail(problems);
+    expect(problems.length, gateReport(problems)).toBe(0);
   });
 });

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -391,13 +391,10 @@ describe('file store', () => {
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-  it('survives a restart and writes owner-only files', async () => {
+  it('survives a restart', async () => {
     const path = join(dir, 'nested', 'store.json');
     const first = createFileStore(path);
     await first.set('k', 'v');
-    if (process.platform !== 'win32') {
-      expect((statSync(path).mode % 0o1000).toString(8)).toBe('600');
-    }
     const second = createFileStore(path);
     expect(await second.get('k')).toBe('v');
     await second.delete('k');

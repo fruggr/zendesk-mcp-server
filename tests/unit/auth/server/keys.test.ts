@@ -27,11 +27,9 @@ describe('parseSecretList', () => {
     expect(() => parseSecretList(`${SECRET_A},${short}`)).toThrow(
       'OAuth master secret must decode to at least 32 bytes of base64 (generate one with: openssl rand -base64 32).',
     );
-    try {
-      parseSecretList(short);
-    } catch (err) {
-      expect(String(err)).not.toContain(short);
-    }
+    expect(() => parseSecretList(short)).toThrow(
+      expect.objectContaining({ message: expect.not.stringContaining(short) }),
+    );
   });
 
   it('accepts exactly 32 bytes', () => {

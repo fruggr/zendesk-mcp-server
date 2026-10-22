@@ -103,15 +103,13 @@ describe('resolveMasterSecret', () => {
     );
   });
 
-  it('generates, persists with owner-only permissions, and reuses the secret on the next start', () => {
+  it('generates, persists, and reuses the secret on the next start', () => {
     const { logger, events } = recordingLogger();
     const first = resolveMasterSecret({ configDir: dir, storeUri: storeElsewhere() }, logger);
     expect(first.source).toBe('generated');
     expect(Buffer.from(first.value, 'base64')).toHaveLength(32);
     const path = join(dir, MASTER_SECRET_FILE_NAME);
     expect(readFileSync(path, 'utf8')).toBe(`${first.value}\n`);
-    if (process.platform !== 'win32')
-      expect((statSync(path).mode % 0o1000).toString(8)).toBe('600');
     expect(events).toContainEqual(['info', 'oauth_master_secret_generated']);
 
     const second = resolveMasterSecret({ configDir: dir, storeUri: storeElsewhere() });
@@ -271,6 +269,11 @@ describe('resolveMasterSecret', () => {
       writeFileSync(tmp, '');
       chmodSync(tmp, 0o644);
     };
+
+    it('writes a generated secret owner-only', () => {
+      resolveMasterSecret({ configDir: dir, storeUri: storeElsewhere() });
+      expect(modeOf(join(dir, MASTER_SECRET_FILE_NAME))).toBe('600');
+    });
 
     it('resets a stale temp file to owner-only before renaming it', () => {
       leaveStaleTempFile();
