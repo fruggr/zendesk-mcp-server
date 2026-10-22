@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type Provider from 'oidc-provider';
+import { compareCodeUnits } from '../../utils/compare';
 import { type Logger, silentLogger } from '../../utils/logger';
 import { requestedScope } from '../oauth-scopes';
 import { generateCodeChallenge, generateCodeVerifier } from '../pkce';
@@ -57,7 +58,7 @@ export const consentMemoryKey = (
   redirectUris: readonly string[],
 ): string =>
   createHash('sha256')
-    .update(JSON.stringify([accountId, clientId, [...redirectUris].sort()]))
+    .update(JSON.stringify([accountId, clientId, [...redirectUris].sort(compareCodeUnits)]))
     .digest('base64url');
 
 // oidc-provider throws these on a missing or foreign interaction cookie: an

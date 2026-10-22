@@ -201,8 +201,8 @@ describe('disk store', () => {
       const old = (Date.now() - 120_000) / 1000;
       utimesSync(stale, old, old);
       expect(await store.sweep()).toBe(true);
-      expect(readdirSync(dir).sort()).toEqual(
-        ['README', 'b.json.1.y.tmp', readdirSync(dir).find((n) => n.endsWith('.json'))].sort(),
+      expect(new Set(readdirSync(dir))).toEqual(
+        new Set(['README', 'b.json.1.y.tmp', readdirSync(dir).find((n) => n.endsWith('.json'))]),
       );
     });
 

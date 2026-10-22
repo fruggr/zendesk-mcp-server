@@ -7,6 +7,7 @@ import {
   renderSecurityNotes,
   // @ts-expect-error - plain JS semantic-release plugin, no type declarations
 } from '../../scripts/security-release-analyzer.js';
+import { compareCodeUnits } from '../../src/utils/compare';
 
 const advisory = (id: number, module: string, title = `${module} is vulnerable`) => ({
   id,
@@ -29,7 +30,11 @@ const SBOM = {
 
 describe('bundledNames', () => {
   it('reads the package names out of the bundle SBOM', () => {
-    expect([...bundledNames(SBOM)].sort()).toEqual(['@scope/pkg', 'cheerio', 'zod']);
+    expect([...bundledNames(SBOM)].sort(compareCodeUnits)).toEqual([
+      '@scope/pkg',
+      'cheerio',
+      'zod',
+    ]);
   });
 
   it('treats an SBOM without components as an empty bundle', () => {
