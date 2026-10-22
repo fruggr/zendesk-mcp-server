@@ -30,7 +30,7 @@ jobs:
       # through; `migrate` has no check mode, hence write-then-diff.
       - name: Biome config needs no migration
         run: |
-          node scripts/biome.mjs migrate --write
+          pnpm exec biome migrate --write
           git diff --exit-code biome.json
 
       - run: pnpm typecheck

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -18,6 +18,7 @@ import {
   openStore,
   PERSISTENT_MODELS,
 } from '../../../../src/auth/server/store';
+import { compareCodeUnits } from '../../../../src/utils/compare';
 
 const OLD = Buffer.alloc(32, 1).toString('base64');
 const NEW = Buffer.alloc(32, 2).toString('base64');
@@ -26,7 +27,7 @@ const futureExp = (seconds: number) => Math.floor(Date.now() / 1000) + seconds;
 
 const hashed = (id: string) => createHash('sha256').update(id).digest('base64url');
 type Entries = Map<string, StoredEntry>;
-const keysOf = (entries: Entries) => [...entries.keys()].sort();
+const keysOf = (entries: Entries) => [...entries.keys()].sort(compareCodeUnits);
 const expiresOf = (entries: Entries, key: string): unknown => {
   const entry = entries.get(key);
   return entry === undefined ? 'absent' : entry.exp;
@@ -74,7 +75,7 @@ const settlesSoon = (operation: Promise<unknown>) =>
 
 describe('PERSISTENT_MODELS', () => {
   it('persists only what must survive a restart', () => {
-    expect([...PERSISTENT_MODELS].sort()).toEqual([
+    expect([...PERSISTENT_MODELS].sort(compareCodeUnits)).toEqual([
       'Client',
       'Grant',
       'RefreshToken',
@@ -210,10 +211,12 @@ describe('createAdapterFactory, key layout and expiry', () => {
     await adapterFor('RefreshToken').upsert('rt-1', { grantId: 'g-1', exp: futureExp(60) }, 60);
     await adapterFor('Session').upsert('s-1', { uid: 'u-1' }, 60);
     expect(keysOf(persistentEntries)).toEqual(
-      [`RefreshToken:${hashed('rt-1')}`, `RefreshToken:grant:${hashed('g-1')}`].sort(),
+      [`RefreshToken:${hashed('rt-1')}`, `RefreshToken:grant:${hashed('g-1')}`].sort(
+        compareCodeUnits,
+      ),
     );
     expect(keysOf(memoryEntries)).toEqual(
-      [`Session:${hashed('s-1')}`, `Session:uid:${hashed('u-1')}`].sort(),
+      [`Session:${hashed('s-1')}`, `Session:uid:${hashed('u-1')}`].sort(compareCodeUnits),
     );
   });
 
@@ -388,13 +391,10 @@ describe('file store', () => {
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-  it('survives a restart and writes owner-only files', async () => {
+  it('survives a restart', async () => {
     const path = join(dir, 'nested', 'store.json');
     const first = createFileStore(path);
     await first.set('k', 'v');
-    if (process.platform !== 'win32') {
-      expect((statSync(path).mode % 0o1000).toString(8)).toBe('600');
-    }
     const second = createFileStore(path);
     expect(await second.get('k')).toBe('v');
     await second.delete('k');

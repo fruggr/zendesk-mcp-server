@@ -137,14 +137,11 @@ const fetchAllPages = async <T, R extends PagedResponse = ZendeskListResponse<T>
   const items: T[] = [];
   let page = 1;
   while (true) {
+    const query = { ...params, ...buildOffsetParams(MAX_PAGE_SIZE, page) };
     const response = await withForbiddenGuidance(
       tool,
       `GET ${path}`,
-      () =>
-        zendeskGet<R>(subdomain, token, path, {
-          ...params,
-          ...buildOffsetParams(MAX_PAGE_SIZE, page),
-        }),
+      () => zendeskGet<R>(subdomain, token, path, query),
       forbiddenHint,
     );
     items.push(...(extract(response) ?? []));

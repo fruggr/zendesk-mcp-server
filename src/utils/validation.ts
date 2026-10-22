@@ -1,5 +1,6 @@
 import type { StandardSchemaWithJSON } from '@modelcontextprotocol/server';
 import type * as z from 'zod/v4';
+import { compareCodeUnits } from './compare';
 
 type Issue = z.core.$ZodIssue;
 
@@ -44,7 +45,7 @@ const keysAt = (node: SchemaNode, path: readonly PropertyKey[]): string[] | unde
   return child && keysAt(child, rest);
 };
 
-const keyList = (keys: string[]): string => [...keys].sort().join(', ') || '(none)';
+const keyList = (keys: string[]): string => [...keys].sort(compareCodeUnits).join(', ') || '(none)';
 
 /** One sentence per object holding unknown keys, the top level first. */
 const unknownKeysMessage = (

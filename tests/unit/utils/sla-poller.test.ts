@@ -206,14 +206,16 @@ describe('createAlertPoller', () => {
     poller.stop();
   });
 
-  it('ignores errors by default', async () => {
+  it('ignores errors by default and keeps polling', async () => {
+    const check = vi.fn(() => Promise.reject(new Error('x')));
     const poller = createAlertPoller({
       intervalMs: 1000,
-      check: () => Promise.reject(new Error('x')),
+      check,
       notify: () => Promise.resolve(),
     });
     poller.subscribe('a');
     await vi.advanceTimersByTimeAsync(1000);
+    expect(check).toHaveBeenCalledTimes(2);
     poller.stop();
   });
 

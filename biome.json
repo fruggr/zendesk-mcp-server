@@ -1,7 +1,7 @@
 {
   "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
   "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
-  "files": { "includes": ["**", "!!**/node_modules"] },
+  "files": { "includes": ["**", "!!**/node_modules", "!pnpm-lock.yaml"] },
   "assist": { "actions": { "source": { "organizeImports": "on" } } },
   "linter": {
     "enabled": true,
@@ -9,6 +9,10 @@
       "preset": "recommended",
       "complexity": {
         "useLiteralKeys": "off",
+        "noExcessiveNestedCallbacks": "error",
+        "noUnnecessaryTemplateExpression": "error",
+        "useArraySome": "error",
+        "useRegexpTest": "error",
         "useArrayFind": "error",
         "noUselessReturn": "error",
         "noDivRegex": "error",
@@ -21,6 +25,7 @@
       },
       "correctness": {
         "noGlobalDirnameFilename": "error",
+        "noUnresolvedImports": "error",
         "noPrivateImports": "error",
         "noUndeclaredDependencies": "error",
         "noUndeclaredVariables": "error",
@@ -35,6 +40,10 @@
       },
       "suspicious": {
         "useArraySortCompare": "error",
+        "noConditionalExpect": "error",
+        "noEmptyObjectKeys": "error",
+        "noLoopFunc": "error",
+        "useExpect": "error",
         "noDuplicatedSpreadProps": "error",
         "noReturnAssign": "error",
         "noProto": "error",
@@ -60,6 +69,14 @@
       },
       "style": {
         "useErrorCause": "error",
+        "noTopLevelLiterals": "error",
+        "useConsistentTestIt": "error",
+        "useImportsFirst": "error",
+        "useReduceTypeParameter": "error",
+        "useTestHooksInOrder": "error",
+        "useTestHooksOnTop": "error",
+        "useThisInClassMethods": "error",
+        "useVarsOnTop": "error",
         "useGlobalThis": "error",
         "useGroupedAccessorPairs": "error",
         "noCommonJs": "error",
@@ -114,7 +131,10 @@
       "includes": ["tests/**", "scripts/**"],
       "linter": {
         "rules": {
-          "complexity": { "noExcessiveCognitiveComplexity": "off" },
+          "complexity": {
+            "noExcessiveCognitiveComplexity": "off",
+            "noExcessiveNestedCallbacks": "off"
+          },
           "performance": { "useTopLevelRegex": "off" }
         }
       }
@@ -126,6 +146,8 @@
     "indentWidth": 2,
     "lineWidth": 100
   },
+  "markdown": { "formatter": { "enabled": false } },
+  "yaml": { "formatter": { "quoteStyle": "single" } },
   "javascript": {
     "formatter": {
       "quoteStyle": "single",
