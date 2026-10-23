@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import * as z from 'zod/v4';
-import { createStrictParamsParser, toStrictStandardSchema } from '../../../src/utils/validation';
+import {
+  convertingToJsonSchemaOnce,
+  createStrictParamsParser,
+  toStrictStandardSchema,
+} from '../../../src/utils/validation';
 
 const parse = createStrictParamsParser(
   z.object({
@@ -268,5 +272,30 @@ describe('toStrictStandardSchema', () => {
 
     expect(standard.jsonSchema.input(options)).not.toBe(standard.jsonSchema.input(options));
     expect(standard.jsonSchema.output(options)).not.toBe(standard.jsonSchema.output(options));
+  });
+});
+
+describe('convertingToJsonSchemaOnce', () => {
+  const options = { target: 'draft-2020-12' } as const;
+
+  it('keeps the zod schema, its shape and its validation', () => {
+    const schema = z.object({ operation: z.string(), params: z.record(z.string(), z.unknown()) });
+
+    expect(convertingToJsonSchemaOnce(schema)).toBe(schema);
+    expect(schema.shape.operation).toBeDefined();
+    expect(schema['~standard'].validate({ operation: 'x', params: {} })).toEqual({
+      value: { operation: 'x', params: {} },
+    });
+  });
+
+  it('converts to the same JSON Schema as zod, once per direction and target', () => {
+    const plain = z.object({ page_size: z.number().default(1) });
+    const once = convertingToJsonSchemaOnce(z.object({ page_size: z.number().default(1) }));
+    const { jsonSchema } = once['~standard'];
+
+    expect(jsonSchema.input(options)).toEqual(plain['~standard'].jsonSchema.input(options));
+    expect(jsonSchema.input(options)).toBe(jsonSchema.input(options));
+    expect(jsonSchema.output(options)).toEqual(plain['~standard'].jsonSchema.output(options));
+    expect(jsonSchema.output(options)).toBe(jsonSchema.output(options));
   });
 });

@@ -60,7 +60,11 @@ import {
   type SlaRuntime,
   type SlaService,
 } from './utils/sla-service';
-import { createStrictParamsParser, toStrictStandardSchema } from './utils/validation';
+import {
+  convertingToJsonSchemaOnce,
+  createStrictParamsParser,
+  toStrictStandardSchema,
+} from './utils/validation';
 
 const noteUnauthorized = (err: unknown, onUnauthorized: (() => void) | undefined): void => {
   if (onUnauthorized && err instanceof ZendeskApiError && err.status === 401) onUnauthorized();
@@ -171,34 +175,70 @@ interface Removable {
   remove(): void;
 }
 
+interface ProxySurface {
+  annotations: ToolAnnotations;
+  description: string;
+  inputSchema: z.ZodObject;
+}
+
+// Keyed on the toolset the proxy was cut from: servers sharing it (a 2026-07-28
+// grant, #393) register one schema, which zod compiles and the SDK converts once.
+const proxySurfaces = new WeakMap<readonly ToolDefinition[], Map<string, ProxySurface>>();
+
+const proxySurface = (
+  toolset: readonly ToolDefinition[],
+  toolName: string,
+  title: string,
+  tools: ToolDefinition[],
+  readOnlyMode: boolean,
+): ProxySurface => {
+  const byKey = proxySurfaces.get(toolset) ?? new Map<string, ProxySurface>();
+  proxySurfaces.set(toolset, byKey);
+  const key = [toolName, readOnlyMode, ...tools.map((t) => t.name)].join(' ');
+  const known = byKey.get(key);
+  if (known) return known;
+  const annotations = aggregateAnnotations(tools);
+  const surface: ProxySurface = {
+    annotations,
+    // `[RO]` only where the proxy really writes nothing: `--read-only` keeps
+    // the preferences proxy, which writes this server's own settings.
+    description: buildProxyDescription({
+      title,
+      tools,
+      readOnly: readOnlyMode && annotations.readOnlyHint,
+    }),
+    inputSchema: convertingToJsonSchemaOnce(
+      z.object({
+        operation: z.string().describe(buildOperationFieldDescription(tools)),
+        params: z.record(z.string(), z.unknown()).default({}).describe(PARAMS_FIELD_DESCRIPTION),
+      }),
+    ),
+  };
+  byKey.set(key, surface);
+  return surface;
+};
+
 const registerProxyTool = (
   server: McpServer,
+  toolset: readonly ToolDefinition[],
   toolName: string,
   title: string,
   tools: ToolDefinition[],
   readOnlyMode: boolean,
   onUnauthorized: (() => void) | undefined,
 ): Removable => {
-  const annotations = aggregateAnnotations(tools);
+  const { annotations, description, inputSchema } = proxySurface(
+    toolset,
+    toolName,
+    title,
+    tools,
+    readOnlyMode,
+  );
   const dispatch = buildProxyDispatch(tools, onUnauthorized);
 
   return server.registerTool(
     toolName,
-    {
-      title,
-      // `[RO]` only where the proxy really writes nothing: `--read-only` keeps
-      // the preferences proxy, which writes this server's own settings.
-      description: buildProxyDescription({
-        title,
-        tools,
-        readOnly: readOnlyMode && annotations.readOnlyHint,
-      }),
-      inputSchema: z.object({
-        operation: z.string().describe(buildOperationFieldDescription(tools)),
-        params: z.record(z.string(), z.unknown()).default({}).describe(PARAMS_FIELD_DESCRIPTION),
-      }),
-      annotations,
-    },
+    { title, description, inputSchema, annotations },
     async (args, ctx) => dispatch(args as Record<string, unknown>, toCallContext(server, ctx)),
   );
 };
@@ -210,6 +250,7 @@ const registerProxyTool = (
  */
 const registerSingleProxies = (
   server: McpServer,
+  toolset: readonly ToolDefinition[],
   tools: ToolDefinition[],
   readOnlyMode: boolean,
   onUnauthorized: (() => void) | undefined,
@@ -219,12 +260,23 @@ const registerSingleProxies = (
   const label = NAMESPACE_LABELS.preferences;
   return [
     ...(zendesk.length > 0 || preferences.length === 0
-      ? [registerProxyTool(server, 'zendesk', 'Zendesk', zendesk, readOnlyMode, onUnauthorized)]
+      ? [
+          registerProxyTool(
+            server,
+            toolset,
+            'zendesk',
+            'Zendesk',
+            zendesk,
+            readOnlyMode,
+            onUnauthorized,
+          ),
+        ]
       : []),
     ...(preferences.length > 0
       ? [
           registerProxyTool(
             server,
+            toolset,
             label.toolName,
             label.title,
             preferences,
@@ -731,6 +783,7 @@ export const registerToolset = (
             registered.push(
               registerProxyTool(
                 server,
+                tools,
                 label.toolName,
                 label.title,
                 nsTools,
@@ -744,7 +797,7 @@ export const registerToolset = (
       }
       case 'single': {
         registered.push(
-          ...registerSingleProxies(server, filteredTools, config.readOnly, onUnauthorized),
+          ...registerSingleProxies(server, tools, filteredTools, config.readOnly, onUnauthorized),
         );
         break;
       }

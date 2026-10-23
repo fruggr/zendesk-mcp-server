@@ -124,11 +124,16 @@ export const createStrictParamsParser = (schema: z.ZodObject): StrictParamsParse
 };
 
 type StrictStandardSchema = StandardSchemaWithJSON<unknown, Record<string, unknown>>;
-type JsonSchemaConversion = StrictStandardSchema['~standard']['jsonSchema']['input'];
+// zod's and the SDK's Standard Schema option types are structurally alike but distinct.
+type JsonSchemaConversion<Options extends { target: string; libraryOptions?: unknown }> = (
+  options: Options,
+) => Record<string, unknown>;
 
 // zod converts again on every call, and the SDK asks on every `tools/list`.
 // Library options are the caller's own tuning: those calls are not cached.
-const convertOncePerTarget = (convert: JsonSchemaConversion): JsonSchemaConversion => {
+const convertOncePerTarget = <Options extends { target: string; libraryOptions?: unknown }>(
+  convert: JsonSchemaConversion<Options>,
+): JsonSchemaConversion<Options> => {
   const byTarget = new Map<string, Record<string, unknown>>();
   return (options) => {
     if (options.libraryOptions) return convert(options);
@@ -138,6 +143,23 @@ const convertOncePerTarget = (convert: JsonSchemaConversion): JsonSchemaConversi
     byTarget.set(options.target, converted);
     return converted;
   };
+};
+
+/**
+ * `schema`, its JSON Schema converted once per direction and target: for a
+ * schema the SDK validates as is (a proxy's), where a wrapper would hide `shape`.
+ * zod's `~standard` setter stores the override on the instance.
+ */
+export const convertingToJsonSchemaOnce = <T extends z.ZodObject>(schema: T): T => {
+  const standard = schema['~standard'];
+  schema['~standard'] = {
+    ...standard,
+    jsonSchema: {
+      input: convertOncePerTarget(standard.jsonSchema.input),
+      output: convertOncePerTarget(standard.jsonSchema.output),
+    },
+  };
+  return schema;
 };
 
 // Keyed on the definition's schema, so servers sharing a toolset (#393) share

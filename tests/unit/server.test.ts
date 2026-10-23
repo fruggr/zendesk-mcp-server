@@ -265,6 +265,22 @@ describe('createToolsetCache', () => {
     expect(ticketSchema(second)).not.toBe(ticketSchema(first));
   });
 
+  it('registers one proxy schema per toolset in namespace mode', () => {
+    const namespaceMode: Config = { ...baseConfig, mode: 'namespace' };
+    const toolsets = newCache();
+    const build = (config: Config, source = toolsets) =>
+      introspect(createMcpServer(config, getToken, undefined, undefined, { toolsets: source }))[
+        'zendesk_tickets'
+      ]?.inputSchema;
+    const first = build(namespaceMode);
+
+    expect(first).toBeDefined();
+    expect(build(namespaceMode)).toBe(first);
+    expect(build({ ...namespaceMode, readOnly: true })).not.toBe(first);
+    expect(build({ ...namespaceMode, mode: 'single' })).toBeUndefined();
+    expect(build(namespaceMode, newCache())).not.toBe(first);
+  });
+
   it("still filters a cached toolset with the server's own config", () => {
     const toolsets = newCache();
     createMcpServer(allMode, getToken, undefined, undefined, { toolsets });
