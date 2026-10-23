@@ -102,9 +102,8 @@ Four things follow, and they are the honest shape of this change:
    happens: **for tool input schemas in a 2025 session, global mode is marginally
    net-negative**, a few milliseconds per session, only for the tools it calls. A
    2026-07-28 request builds a server too, but its grant keeps the tool definitions
-   (#393), so each tool's schema compiles once per grant and later requests reuse the
-   compiled parse. The `namespace`/`single` proxy's own `{ operation, params }` schema is
-   still built with each server, so it compiles on every 2026-07-28 request (~0.1–0.2 ms).
+   (#393), so each tool's schema, and each proxy's `{ operation, params }` schema in the
+   default modes, compiles once per grant and later requests reuse the compiled parse.
    What stays positive everywhere is the SDK's module-level protocol schemas: compiled
    once per process, hit by every message.
 3. Under stdio (one process, one session) both effects are once-per-launch and the
