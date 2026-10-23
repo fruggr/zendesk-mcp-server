@@ -25,6 +25,14 @@ describe('search tools', () => {
       expect(firstText(result)).toContain('user');
     });
 
+    it('names the next page in its header while more remain', async () => {
+      // The default handler reports count 2; one per page leaves a second page.
+      const result = await tool.handler({ query: 'test', per_page: 1, page: 1 });
+      expect(firstText(result)?.split('\n')[0]).toBe(
+        'Total: 2 | Page 1 (2 results) | Next page: 2',
+      );
+    });
+
     it('is readOnly', () => {
       expect(tool.readOnly).toBe(true);
       expect(tool.annotations.readOnlyHint).toBe(true);

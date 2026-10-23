@@ -76,7 +76,7 @@ export const createSearchTools = (ctx: ToolContext): ToolDefinition[] => {
         );
         const results = response.results ?? [];
         const meta = extractSearchPaginationMeta(response, per_page, page);
-        const header = `Total: ${meta.count} | Page ${page} (${results.length} results)${meta.has_more ? ` | Next page: ${meta.after_cursor}` : ''}`;
+        const header = `Total: ${meta.count} | Page ${page} (${results.length} results)${meta.has_more ? ` | Next page: ${meta.next_page}` : ''}`;
         const body = results.map(formatSearchResult).join('\n\n');
         return {
           content: [

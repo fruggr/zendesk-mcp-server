@@ -66,22 +66,45 @@ const writable = (label: keyof typeof INPUT_NAME_OF): string =>
 export const formatPagination = (meta: PaginationMeta): string => {
   const parts = [`Results: ${meta.count}`];
   if (meta.has_more) {
-    parts.push(`More available (cursor: ${meta.after_cursor})`);
+    // An offset page number is not a cursor: naming it one sent agents looking
+    // for a `cursor` parameter the offset tools do not have (#388).
+    parts.push(
+      meta.next_page === undefined
+        ? `More available (cursor: ${meta.after_cursor})`
+        : `Next page: ${meta.next_page} (pass as page)`,
+    );
   }
   return parts.join(' | ');
 };
 
-export const formatTicket = (ticket: ZendeskTicket): string =>
+const ticketLines = (ticket: ZendeskTicket, body: string): string =>
   [
     `## Ticket #${ticket.id}: ${ticket.subject}`,
     `- **Status**: ${ticket.status} | **Priority**: ${ticket.priority ?? 'none'} | **Type**: ${ticket.type ?? 'none'}`,
     `- **Requester**: ${ticket.requester_id} | ${writable('Assignee')}: ${ticket.assignee_id ?? 'unassigned'}`,
     `- **Tags**: ${ticket.tags.length > 0 ? ticket.tags.join(', ') : 'none'}`,
     `- **Created**: ${ticket.created_at} | **Updated**: ${ticket.updated_at}`,
-    ticket.description ? `\n${ticket.description}` : '',
+    body ? `\n${body}` : '',
   ]
     .filter(Boolean)
     .join('\n');
+
+export const formatTicket = (ticket: ZendeskTicket): string =>
+  ticketLines(ticket, ticket.description);
+
+export const DESCRIPTION_EXCERPT_CHARS = 200;
+
+// The list rendering of a ticket. Descriptions were two thirds of a search page
+// and one alone can fill the response limit, so a list carries an excerpt and
+// get_ticket the full text (#388).
+export const formatTicketSummary = (ticket: ZendeskTicket): string => {
+  const text = (ticket.description ?? '').replace(/\s+/g, ' ').trim();
+  const excerpt =
+    text.length > DESCRIPTION_EXCERPT_CHARS
+      ? `${text.slice(0, DESCRIPTION_EXCERPT_CHARS).trimEnd()}… (excerpt; full text: get_ticket)`
+      : text;
+  return ticketLines(ticket, excerpt);
+};
 
 const formatConditionValue = (value: unknown): string => {
   if (value === null || value === undefined) return '';
@@ -639,4 +662,35 @@ export const formatList = <T>(
   const text = [header, body].filter(Boolean).join('\n\n');
   // `undefined` falls through to truncateIfNeeded's own default sentence.
   return truncateIfNeeded(text, advice);
+};
+
+// formatList for a paginated list whose items must arrive whole: past
+// CHARACTER_LIMIT it stops before the first item that does not fit, instead of
+// cutting mid-item, and the notice closes with `resume(shown, onPage)`, the
+// caller's exact call for the rest. The header then drops its next-page hint,
+// which would skip the items left out. Only a first item too big on its own
+// still falls back to truncateIfNeeded.
+export const formatFittingList = <T>(
+  items: T[],
+  formatter: (item: T) => string,
+  meta: PaginationMeta,
+  resume: (shown: number, onPage: number) => string,
+): string => {
+  const header = formatPagination(meta);
+  const blocks = items.map(formatter);
+  const text = [header, ...blocks].join('\n\n');
+  if (text.length <= CHARACTER_LIMIT) return text;
+  const cutHeader = formatPagination({ ...meta, has_more: false });
+  const notice = (count: number): string =>
+    `\n\n--- Showing ${count} of the ${items.length} results on this page: the next one would pass the ${CHARACTER_LIMIT}-character response limit. ${resume(count, items.length)} ---`;
+  let used = cutHeader.length;
+  let shown = 0;
+  for (const block of blocks) {
+    const next = used + 2 + block.length;
+    if (next + notice(shown + 1).length > CHARACTER_LIMIT) break;
+    used = next;
+    shown += 1;
+  }
+  if (shown === 0) return truncateIfNeeded(text);
+  return [cutHeader, ...blocks.slice(0, shown)].join('\n\n') + notice(shown);
 };

@@ -48,7 +48,7 @@ describe('buildOffsetParams', () => {
 describe('extractOffsetPaginationMeta', () => {
   it('uses offset math when the count wrapper is present', () => {
     const meta = extractOffsetPaginationMeta({ macros: [], count: 150 }, 0, 100, 1);
-    expect(meta).toEqual({ count: 150, has_more: true, after_cursor: '2' });
+    expect(meta).toEqual({ count: 150, has_more: true, after_cursor: null, next_page: 2 });
   });
 
   it('falls back to the returned page length when count is absent', () => {
@@ -70,7 +70,8 @@ describe('extractSearchPaginationMeta', () => {
     expect(extractSearchPaginationMeta({ results: [], count: 101 }, 100, 1)).toEqual({
       count: 101,
       has_more: true,
-      after_cursor: '2',
+      after_cursor: null,
+      next_page: 2,
     });
   });
 
@@ -88,7 +89,8 @@ describe('extractSearchPaginationMeta', () => {
     expect(extractSearchPaginationMeta({ results: [], count: 250 }, 100, 2)).toEqual({
       count: 250,
       has_more: true,
-      after_cursor: '3',
+      after_cursor: null,
+      next_page: 3,
     });
   });
 

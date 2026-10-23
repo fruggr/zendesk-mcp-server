@@ -1227,6 +1227,101 @@ describe('ticket tools', () => {
       expect(text).toContain('requester_wait_time');
       expect(text).toContain('- **Next breach**: 2099-06-18T21:37:00Z');
     });
+
+    it('defaults to a page of 25, the size that fits the response limit (#388)', () => {
+      const parsed = findTool('search_tickets').inputSchema.parse({ query: 'status:open' });
+      expect(parsed).toMatchObject({ per_page: 25, page: 1 });
+    });
+
+    it('renders a long description as an excerpt that points at get_ticket', async () => {
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/search', () =>
+          HttpResponse.json({
+            results: [{ ...MOCK_TICKET, description: 'y'.repeat(5000) }],
+            count: 1,
+          }),
+        ),
+      );
+      const text = firstText(
+        await findTool('search_tickets').handler({ query: 'status:open', per_page: 25, page: 1 }),
+      );
+      expect(text).toContain(`\n\n${'y'.repeat(200)}… (excerpt; full text: get_ticket)`);
+      expect(text).not.toContain('y'.repeat(201));
+    });
+
+    it('names the next offset page as a page, not a cursor', async () => {
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/search', () =>
+          HttpResponse.json({ results: [MOCK_TICKET], count: 44 }),
+        ),
+      );
+      const text = firstText(
+        await findTool('search_tickets').handler({ query: 'status:open', per_page: 10, page: 1 }),
+      );
+      expect(text?.startsWith('Results: 44 | Next page: 2 (pass as page)\n')).toBe(true);
+    });
+
+    describe('when a page overflows the response limit', () => {
+      // 100 tickets whose subjects alone overflow the limit: each renders whole or not at all.
+      const bigPage = () =>
+        mswServer.use(
+          http.get('https://testsubdomain.zendesk.com/api/v2/search', () =>
+            HttpResponse.json({
+              results: Array.from({ length: 100 }, (_, i) => ({
+                ...MOCK_TICKET,
+                id: i + 1,
+                subject: 's'.repeat(CHARACTER_LIMIT / 40),
+              })),
+              count: 300,
+            }),
+          ),
+        );
+      const shownIds = (text: string) =>
+        [...text.matchAll(/^## Ticket #(\d+):/gm)].map((m) => Number(m[1]));
+
+      it('stops at the last whole ticket and resumes right after it from page 1', async () => {
+        bigPage();
+        const text =
+          firstText(
+            await findTool('search_tickets').handler({
+              query: 'status:open',
+              per_page: 100,
+              page: 1,
+            }),
+          ) ?? '';
+        const ids = shownIds(text);
+        const shown = ids.length;
+        expect(shown).toBeGreaterThan(1);
+        expect(ids).toEqual(Array.from({ length: shown }, (_, i) => i + 1));
+        expect(text.length).toBeLessThanOrEqual(CHARACTER_LIMIT);
+        expect(text.startsWith('Results: 300\n\n')).toBe(true);
+        expect(text).not.toContain('Response truncated');
+        expect(
+          text.endsWith(
+            `--- Showing ${shown} of the 100 results on this page: the next one would pass the ${CHARACTER_LIMIT}-character response limit. To continue, call again with per_page: ${shown} and page: 2. ---`,
+          ),
+        ).toBe(true);
+      });
+
+      it('names the results a later page would repeat when the offset is not aligned', async () => {
+        bigPage();
+        const text =
+          firstText(
+            await findTool('search_tickets').handler({
+              query: 'status:open',
+              per_page: 100,
+              page: 2,
+            }),
+          ) ?? '';
+        const shown = shownIds(text).length;
+        const offset = 100 + shown;
+        const repeated = offset % shown;
+        expect(repeated).toBeGreaterThan(0);
+        expect(text).toContain(
+          `To continue, call again with per_page: ${shown} and page: ${Math.floor(offset / shown) + 1}; its first ${repeated} results were already shown. ---`,
+        );
+      });
+    });
   });
 
   describe('pushed SLA urgency', () => {
@@ -1927,6 +2022,36 @@ describe('ticket tools', () => {
       expect(text).not.toContain('Results: 0');
       expect(text).toContain('cursor: NEXT');
     });
+
+    it('defaults to a page of 25 (#388)', () => {
+      expect(findTool('list_tickets').inputSchema.parse({})).toMatchObject({ page_size: 25 });
+    });
+
+    it('stops at the last whole ticket and says how to read the rest of the page', async () => {
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/tickets', () =>
+          HttpResponse.json({
+            tickets: Array.from({ length: 100 }, (_, i) => ({
+              ...MOCK_TICKET,
+              id: i + 1,
+              description: 'd'.repeat(10_000),
+              subject: 's'.repeat(CHARACTER_LIMIT / 40),
+            })),
+            meta: { has_more: true, after_cursor: 'NEXT' },
+          }),
+        ),
+      );
+      const text = firstText(await findTool('list_tickets').handler({ page_size: 100 })) ?? '';
+      const shown = [...text.matchAll(/^## Ticket #/gm)].length;
+      expect(text).toContain('(excerpt; full text: get_ticket)');
+      expect(text.startsWith('Results: 100\n\n')).toBe(true);
+      expect(text).not.toContain('NEXT');
+      expect(
+        text.endsWith(
+          `To read the ${100 - shown} not shown, call again with page_size: ${shown} and the cursor this page was read with (none for the first page). ---`,
+        ),
+      ).toBe(true);
+    });
   });
 
   describe('get_linked_incidents', () => {
@@ -1940,7 +2065,12 @@ describe('ticket tools', () => {
       mswServer.use(
         http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/incidents', () =>
           HttpResponse.json({
-            tickets: [{ ...MOCK_TICKET, description: 'x'.repeat(CHARACTER_LIMIT) }],
+            // Descriptions render as excerpts, so the overflow comes from many subjects.
+            tickets: Array.from({ length: 100 }, (_, i) => ({
+              ...MOCK_TICKET,
+              id: i + 1,
+              subject: 'x'.repeat(CHARACTER_LIMIT / 50),
+            })),
           }),
         ),
       );
@@ -1948,6 +2078,16 @@ describe('ticket tools', () => {
       const text = allTextOf(await tool.handler({ problem_id: 1 }));
       expect(text).toContain('takes no pagination or filter parameters');
       expect(text).not.toContain('Use pagination or filters');
+    });
+
+    it('renders a long description as an excerpt', async () => {
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/incidents', () =>
+          HttpResponse.json({ tickets: [{ ...MOCK_TICKET, description: 'i'.repeat(500) }] }),
+        ),
+      );
+      const text = firstText(await findTool('get_linked_incidents').handler({ problem_id: 1 }));
+      expect(text).toContain(`${'i'.repeat(200)}… (excerpt; full text: get_ticket)`);
     });
   });
 
@@ -2060,6 +2200,46 @@ describe('ticket tools', () => {
         page_size: 100,
       });
       expect(firstText(result)).not.toContain('### SLA');
+    });
+
+    it('defaults to a page of 25 and renders description excerpts (#388)', async () => {
+      const tool = findTool('get_view_tickets');
+      expect(tool.inputSchema.parse({ view: 1 })).toMatchObject({ page_size: 25 });
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/tickets/show_many', () =>
+          HttpResponse.json({ tickets: [{ ...MOCK_TICKET, description: 'v'.repeat(500) }] }),
+        ),
+      );
+      const text = firstText(await tool.handler({ view: MOCK_VIEW.id, page_size: 25 }));
+      expect(text).toContain(`${'v'.repeat(200)}… (excerpt; full text: get_ticket)`);
+    });
+
+    it('stops at the last whole ticket on an overflowing page', async () => {
+      const ids = Array.from({ length: 100 }, (_, i) => i + 1);
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/views/:id/execute', () =>
+          HttpResponse.json({
+            rows: ids.map((id) => ({ ticket: { id, sla_policy_metric: null } })),
+            meta: { has_more: false, after_cursor: '' },
+          }),
+        ),
+        http.get('https://testsubdomain.zendesk.com/api/v2/tickets/show_many', () =>
+          HttpResponse.json({
+            tickets: ids.map((id) => ({
+              ...MOCK_TICKET,
+              id,
+              subject: 's'.repeat(CHARACTER_LIMIT / 40),
+            })),
+          }),
+        ),
+      );
+      const text =
+        firstText(
+          await findTool('get_view_tickets').handler({ view: MOCK_VIEW.id, page_size: 100 }),
+        ) ?? '';
+      const shown = [...text.matchAll(/^## Ticket #/gm)].length;
+      expect(text).toContain(`Showing ${shown} of the 100 results on this page`);
+      expect(text).toContain(`call again with page_size: ${shown}`);
     });
 
     it('accepts a numeric view id directly', async () => {
