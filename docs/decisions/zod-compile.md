@@ -95,14 +95,18 @@ Four things follow, and they are the honest shape of this change:
    first. `createStrictParamsParser` (`src/utils/validation.ts`) turns those issues into
    the "Unknown parameter(s): …" message, so the message itself is unchanged — the
    `unrecognized_keys` issues come through verbatim.
-2. **Compilation is lazy and per schema instance.** The HTTP transport builds a
-   *per-session* `McpServer` (`src/transports/http.ts`), so each session constructs its
-   own tool schemas and pays ~0.27–1.31 ms the first time the proxy parser touches each
-   one. A session would need roughly 1350 parses of the *same* tool's schema to earn that
-   back, which never happens. **For tool input schemas under HTTP, global mode is
-   therefore marginally net-negative** — a few milliseconds per session, and only for the
-   tools actually called in the default modes. What stays positive everywhere is the
-   SDK's module-level protocol schemas: compiled once per process, hit by every message.
+2. **Compilation is lazy and per schema instance.** Over HTTP, a 2025 session builds
+   its own `McpServer` (`src/transports/http.ts`), so it constructs its own tool schemas
+   and pays ~0.27–1.31 ms the first time a parse touches each one. A session would need
+   roughly 1350 parses of the *same* tool's schema to earn that back, which never
+   happens: **for tool input schemas in a 2025 session, global mode is marginally
+   net-negative**, a few milliseconds per session, only for the tools it calls. A
+   2026-07-28 request builds a server too, but its grant keeps the tool definitions
+   (#393), so each tool's schema compiles once per grant and later requests reuse the
+   compiled parse. The `namespace`/`single` proxy's own `{ operation, params }` schema is
+   still built with each server, so it compiles on every 2026-07-28 request (~0.1–0.2 ms).
+   What stays positive everywhere is the SDK's module-level protocol schemas: compiled
+   once per process, hit by every message.
 3. Under stdio (one process, one session) both effects are once-per-launch and the
    break-even on protocol messages arrives after ~35 messages.
 4. In `all` mode, on SDK v1, there was neither cost nor gain on tool inputs: that

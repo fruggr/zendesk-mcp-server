@@ -889,7 +889,6 @@ export interface Toolset {
   tools: ToolDefinition[];
 }
 
-/** The toolset for a server's config. */
 export type ToolsetSource = (config: Config) => Toolset;
 
 const buildToolset = (
