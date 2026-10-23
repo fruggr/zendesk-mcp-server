@@ -6,11 +6,14 @@ import {
   aggregateAnnotations,
   buildProxyDispatch,
   createMcpServer,
+  createServerCaches,
   createServerShell,
+  createToolsetCache,
   registerToolset,
 } from '../../src/server';
 import type { ToolAnnotations } from '../../src/tools/definitions';
 import { createAllTools } from '../../src/tools/index';
+import { createSlaRuntime } from '../../src/utils/sla-service';
 import { makeConfig } from '../integration/harness';
 import { testToolContext } from '../tool-context';
 
@@ -222,6 +225,61 @@ describe('createMcpServer', () => {
       destructiveHint: true,
       openWorldHint: true,
     });
+  });
+});
+
+// A 2026-07-28 HTTP request builds a server; its grant keeps the toolset, whose
+// construction is most of that cost (#393).
+describe('createToolsetCache', () => {
+  const allMode: Config = { ...baseConfig, mode: 'all' };
+  const newCache = () =>
+    createToolsetCache(getToken, createServerCaches(allMode, getToken), createSlaRuntime(allMode));
+  const ticketSchema = (server: McpServer) => introspect(server)['get_ticket']?.inputSchema;
+
+  it('builds a toolset once per read-only setting', () => {
+    const toolsets = newCache();
+    const writable = toolsets(allMode);
+
+    expect(toolsets({ ...allMode })).toBe(writable);
+    expect(toolsets({ ...allMode, readOnly: true })).not.toBe(writable);
+    expect(toolsets({ ...allMode, readOnly: true })).toBe(toolsets({ ...allMode, readOnly: true }));
+  });
+
+  it('never hands one cache the toolset of another', () => {
+    expect(newCache()(allMode)).not.toBe(newCache()(allMode));
+  });
+
+  it('registers the cached definitions on every server built from it', () => {
+    const toolsets = newCache();
+    const first = createMcpServer(allMode, getToken, undefined, undefined, { toolsets });
+    const second = createMcpServer(allMode, getToken, undefined, undefined, { toolsets });
+
+    expect(ticketSchema(first)).toBeDefined();
+    expect(ticketSchema(second)).toBe(ticketSchema(first));
+  });
+
+  it('builds a toolset per server when none is cached', () => {
+    const first = createMcpServer(allMode, getToken);
+    const second = createMcpServer(allMode, getToken);
+
+    expect(ticketSchema(second)).not.toBe(ticketSchema(first));
+  });
+
+  it("still filters a cached toolset with the server's own config", () => {
+    const toolsets = newCache();
+    createMcpServer(allMode, getToken, undefined, undefined, { toolsets });
+    const readOnly = createMcpServer(
+      { ...allMode, readOnly: true },
+      getToken,
+      undefined,
+      undefined,
+      {
+        toolsets,
+      },
+    );
+
+    expect(registeredToolNames(readOnly)).toContain('get_ticket');
+    expect(registeredToolNames(readOnly)).not.toContain('update_ticket');
   });
 });
 

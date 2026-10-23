@@ -115,17 +115,39 @@ export const createStrictParamsParser = (
   };
 };
 
+type StrictStandardSchema = StandardSchemaWithJSON<unknown, Record<string, unknown>>;
+type JsonSchemaConversion = StrictStandardSchema['~standard']['jsonSchema']['input'];
+
+// zod converts again on every call, and the SDK asks on every `tools/list`.
+// Library options are the caller's own tuning: those calls are not cached.
+const convertOncePerTarget = (convert: JsonSchemaConversion): JsonSchemaConversion => {
+  const byTarget = new Map<string, Record<string, unknown>>();
+  return (options) => {
+    if (options.libraryOptions) return convert(options);
+    const known = byTarget.get(options.target);
+    if (known) return known;
+    const converted = convert(options);
+    byTarget.set(options.target, converted);
+    return converted;
+  };
+};
+
+// Keyed on the definition's schema, so servers sharing a toolset (#393) share
+// the wrapper and its conversions.
+const strictStandardSchemas = new WeakMap<z.ZodObject, StrictStandardSchema>();
+
 /**
  * The same validator as a Standard Schema, for `all` mode: the SDK calls this
  * `validate` and prints our pathless issue after its own prefix, so all three
- * modes word an error alike. The JSON Schema is zod's own, untouched.
+ * modes word an error alike. The JSON Schema is zod's own, converted once.
  */
-export const toStrictStandardSchema = (
-  schema: z.ZodObject,
-): StandardSchemaWithJSON<unknown, Record<string, unknown>> => {
+export const toStrictStandardSchema = (schema: z.ZodObject): StrictStandardSchema => {
+  const known = strictStandardSchemas.get(schema);
+  if (known) return known;
   const strict = schema.strict();
   const validate = createStrictValidator(schema, strict);
-  return {
+  const { jsonSchema } = strict['~standard'];
+  const standard: StrictStandardSchema = {
     '~standard': {
       version: 1,
       // Stryker disable next-line StringLiteral: informational; the SDK reads vendor only when jsonSchema is absent.
@@ -134,7 +156,12 @@ export const toStrictStandardSchema = (
         const result = validate(value);
         return result.success ? { value: result.data } : { issues: [{ message: result.message }] };
       },
-      jsonSchema: strict['~standard'].jsonSchema,
+      jsonSchema: {
+        input: convertOncePerTarget(jsonSchema.input),
+        output: convertOncePerTarget(jsonSchema.output),
+      },
     },
   };
+  strictStandardSchemas.set(schema, standard);
+  return standard;
 };

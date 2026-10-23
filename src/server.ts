@@ -883,9 +883,54 @@ export const registerToolset = (
   return { count: filteredTools.length, dispose };
 };
 
+/** The tool definitions and the SLA service they and the alert resources share. */
+export interface Toolset {
+  sla: SlaService;
+  tools: ToolDefinition[];
+}
+
+/** The toolset for a server's config. */
+export type ToolsetSource = (config: Config) => Toolset;
+
+const buildToolset = (
+  config: Config,
+  getToken: () => string | Promise<string>,
+  caches: ServerCaches,
+  slaRuntime: SlaRuntime,
+): Toolset => {
+  const sla = createSlaService(slaSettings(config), slaRuntime, caches.resolveUserId);
+  return {
+    sla,
+    tools: createAllTools(toolContext(config, getToken, caches.resolveBrandSubdomain, sla)),
+  };
+};
+
+/**
+ * A grant's toolsets (HTTP 2026-07-28), built on its first request and reused by
+ * the next ones: building the definitions is most of a server's cost (#393).
+ * They close over the grant's token and caches, so they never cross grants.
+ * Keyed on `readOnly`, the one setting that differs between a grant's requests.
+ */
+export const createToolsetCache = (
+  getToken: () => string | Promise<string>,
+  caches: ServerCaches,
+  slaRuntime: SlaRuntime,
+): ToolsetSource => {
+  const built = new Map<boolean, Toolset>();
+  return (config) => {
+    const known = built.get(config.readOnly);
+    if (known) return known;
+    const toolset = buildToolset(config, getToken, caches, slaRuntime);
+    built.set(config.readOnly, toolset);
+    return toolset;
+  };
+};
+
 export interface CreateMcpServerOptions {
   /** Caches kept by the caller across servers; built per server when omitted. */
   caches?: ServerCaches;
+  /** Toolsets kept by the caller across servers; built per server when omitted. */
+  toolsets?: ToolsetSource;
   /** Built by the transport, which knows the key and the principal; a random-key one otherwise. */
   requestStateCodec?: RequestStateCodec;
   /** The process-wide SLA state: every server of a process shares one. */
@@ -916,15 +961,12 @@ export const createMcpServer = (
     listens,
     getBackgroundToken,
     alertPolling = 'server',
+    toolsets = (cfg) => buildToolset(cfg, getToken, caches, slaRuntime),
   }: CreateMcpServerOptions = {},
 ): McpServer => {
   const server = createServerShell(config, requestStateCodec);
-  const sla = createSlaService(slaSettings(config), slaRuntime, caches.resolveUserId);
-  registerToolset(
-    server,
-    { config, getToken, caches, onUnauthorized, logger, sla },
-    createAllTools(toolContext(config, getToken, caches.resolveBrandSubdomain, sla)),
-  );
+  const { sla, tools } = toolsets(config);
+  registerToolset(server, { config, getToken, caches, onUnauthorized, logger, sla }, tools);
   if (config.slaPush && slaAlertsEnabled(config)) {
     if (alertPolling === 'grant') {
       server.server.registerCapabilities({ resources: { subscribe: true } });
@@ -953,6 +995,7 @@ export interface ServerBuildContext {
   logger: Logger;
   onUnauthorized?: () => void;
   caches?: ServerCaches;
+  toolsets?: ToolsetSource;
   requestStateCodec: RequestStateCodec;
   slaRuntime?: SlaRuntime;
   /**
@@ -981,6 +1024,7 @@ export const defaultServerFactory: ServerFactory = ({
   logger,
   onUnauthorized,
   caches,
+  toolsets,
   requestStateCodec,
   slaRuntime,
   listens,
@@ -989,6 +1033,7 @@ export const defaultServerFactory: ServerFactory = ({
 }) =>
   createMcpServer(config, getToken, logger, onUnauthorized, {
     ...(caches ? { caches } : {}),
+    ...(toolsets ? { toolsets } : {}),
     ...(slaRuntime ? { slaRuntime } : {}),
     ...(listens ? { listens } : {}),
     ...(getBackgroundToken ? { getBackgroundToken } : {}),

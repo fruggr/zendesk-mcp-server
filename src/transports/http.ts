@@ -26,6 +26,7 @@ import type { Fetch } from '../auth/server/trusted-clients';
 import type { Config } from '../config';
 import {
   createServerCaches,
+  createToolsetCache,
   defaultServerFactory,
   type ServerFactory,
   watchGrantAlerts,
@@ -514,8 +515,8 @@ export const startHttpTransport = async (
   };
 
   // A grant's first 2026-07-28 request: the handler (and its listen bus) and
-  // the caches every later request of the grant reuses. Each request still gets
-  // a fresh server from the factory.
+  // the caches and toolsets every later request of the grant reuses. Each
+  // request still gets a fresh server from the factory.
   const createGrantEntry = (token: VerifiedAccessToken, as: AuthorizationServer): GrantEntry => {
     const { grantId } = token;
     const auth = { zendeskToken: token.zendeskAccessToken };
@@ -528,6 +529,7 @@ export const startHttpTransport = async (
       void as.revokeGrant(grantId);
     };
     const caches = createServerCaches(config, getToken, onUnauthorized);
+    const toolsets = createToolsetCache(getToken, caches, sla.runtime);
     const requestStateCodec = createRequestStateCodec({
       key: as.requestStateKey,
       principal: () => grantId,
@@ -543,6 +545,7 @@ export const startHttpTransport = async (
           logger,
           onUnauthorized,
           caches,
+          toolsets,
           requestStateCodec,
           slaRuntime: sla.runtime,
           alertPolling: 'grant',

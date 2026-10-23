@@ -231,4 +231,31 @@ describe('toStrictStandardSchema', () => {
       schema.strict()['~standard'].jsonSchema.output(options),
     );
   });
+
+  // A 2026-07-28 HTTP request registers its tools on a fresh server: the wrapper
+  // and its conversion must outlive the server, or every request redoes them.
+  it('wraps a zod schema once', () => {
+    expect(toStrictStandardSchema(schema)).toBe(toStrictStandardSchema(schema));
+  });
+
+  it('converts to JSON Schema once per direction and target', () => {
+    const draft2020 = { target: 'draft-2020-12' } as const;
+    const draft07 = { target: 'draft-07' } as const;
+    const input = standard.jsonSchema.input(draft2020);
+
+    expect(standard.jsonSchema.input(draft2020)).toBe(input);
+    expect(standard.jsonSchema.output(draft2020)).toBe(standard.jsonSchema.output(draft2020));
+    expect(standard.jsonSchema.output(draft2020)).not.toBe(input);
+    expect(standard.jsonSchema.input(draft07)).not.toBe(input);
+    expect(standard.jsonSchema.input(draft07)).toEqual(
+      schema.strict()['~standard'].jsonSchema.input(draft07),
+    );
+  });
+
+  it('converts afresh when the caller passes library options', () => {
+    const options = { target: 'draft-2020-12', libraryOptions: {} } as const;
+
+    expect(standard.jsonSchema.input(options)).not.toBe(standard.jsonSchema.input(options));
+    expect(standard.jsonSchema.output(options)).not.toBe(standard.jsonSchema.output(options));
+  });
 });

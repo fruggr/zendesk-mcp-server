@@ -252,6 +252,28 @@ describe('[http-2026] grant entries', () => {
     await expect(listenA.closed).resolves.toMatch(/graceful|remote/);
   });
 
+  it('hands every request of a grant the same toolsets, and another grant its own', async () => {
+    const seen: unknown[] = [];
+    const recording: ServerFactory = (ctx) => {
+      seen.push(ctx.toolsets);
+      return fixtureServerFactory(ctx);
+    };
+    const { grant } = await startServer({ serverFactory: recording });
+
+    const a = await grant();
+    await a.listTools();
+    await a.listTools();
+    const ofA = seen.splice(0);
+    const b = await grant();
+    await b.listTools();
+
+    expect(ofA.length).toBeGreaterThanOrEqual(2);
+    expect(ofA[0]).toBeTypeOf('function');
+    expect(new Set(ofA).size).toBe(1);
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen).not.toContain(ofA[0]);
+  });
+
   it('fetches the Help Center topology once per grant within its cache lifetime', async () => {
     let localesCalls = 0;
     mswServer.use(
