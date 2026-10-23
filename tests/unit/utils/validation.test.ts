@@ -36,6 +36,17 @@ describe('createStrictParamsParser', () => {
     );
   });
 
+  // A proxy is rebuilt with every server, one per 2026-07-28 HTTP request: its
+  // parsers must outlive the server, or every request rebuilds them.
+  it('builds one parser per schema', () => {
+    const schema = z.object({ id: z.number() });
+
+    expect(createStrictParamsParser(schema)).toBe(createStrictParamsParser(schema));
+    expect(createStrictParamsParser(z.object({ id: z.number() }))).not.toBe(
+      createStrictParamsParser(schema),
+    );
+  });
+
   it('says "(none)" rather than trailing off when the tool takes no parameters', () => {
     const parseNoParams = createStrictParamsParser(z.object({}));
     expect(() => parseNoParams({ anything: 1 })).toThrow(

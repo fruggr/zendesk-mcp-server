@@ -215,18 +215,19 @@ request by what it carries:
 - **2026-07-28** (every request carries its protocol version and capabilities):
   no session. Each request gets a fresh server built from its own token, so the
   scope and the Zendesk token are checked per request. What must outlive a
-  request lives per **grant** (one client sign-in): the Help Center caches and
-  the `subscriptions/listen` streams. A grant's state goes 30 minutes after its
-  last request, closing its listen streams, and as soon as its requests in
-  flight have answered when Zendesk rejects its token on one of them. A grant
-  ended elsewhere (a 2025 session, a revocation at the authorization server)
+  request lives per **grant** (one client sign-in): the Help Center caches, the
+  tool definitions and the `subscriptions/listen` streams. A grant's state goes
+  30 minutes after its last request, closing its listen streams, and as soon as
+  its requests in flight have answered when Zendesk rejects its token on one of
+  them. A grant ended elsewhere (a 2025 session, a revocation at the authorization server)
   refuses new requests at once; its open streams close at the idle timeout.
   A listen stream is authenticated when it opens; it carries change
   notifications only (a URI, never content), and a client that keeps listening
   keeps making requests or listens again.
 
-Building a server costs a few milliseconds of CPU, paid on every 2026-07-28
-request. Why the two revisions are served this way:
+A grant's first 2026-07-28 request builds its tool definitions, a few
+milliseconds of CPU; every later request reuses them, and the server around
+them costs well under a millisecond. Why the two revisions are served this way:
 [the decision record](decisions/protocol-eras.md).
 
 ## Verify discovery endpoints
