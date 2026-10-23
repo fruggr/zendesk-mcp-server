@@ -3,6 +3,7 @@ import { CHARACTER_LIMIT } from '../../../src/constants';
 import type { ZendeskViewCount } from '../../../src/types';
 import {
   DESCRIPTION_EXCERPT_CHARS,
+  descriptionExcerpt,
   formatArticle,
   formatArticleSummary,
   formatAudit,
@@ -137,6 +138,32 @@ describe('formatTicket', () => {
       - **Tags**: none
       - **Created**: 2026-01-01T00:00:00Z | **Updated**: 2026-01-02T00:00:00Z"
     `);
+  });
+});
+
+describe('descriptionExcerpt', () => {
+  it('returns an empty string for a missing description', () => {
+    expect(descriptionExcerpt(undefined)).toBe('');
+    expect(descriptionExcerpt(null)).toBe('');
+  });
+});
+
+describe('formatFittingList header', () => {
+  it('renders the header through headerOf, hint dropped once cut', () => {
+    const items = Array.from({ length: 20 }, (_, i) => ({
+      ...MOCK_CATEGORY,
+      id: i + 10,
+      name: 'x'.repeat(CHARACTER_LIMIT / 10),
+    }));
+    const headerOf = (m: { count: number; has_more: boolean }) =>
+      `Total ${m.count}${m.has_more ? ' (more)' : ''}`;
+    const meta = { has_more: true, after_cursor: null, count: 99 };
+    expect(formatFittingList(items.slice(0, 1), formatCategory, meta, () => '', headerOf)).toMatch(
+      /^Total 99 \(more\)\n\n/,
+    );
+    expect(formatFittingList(items, formatCategory, meta, () => 'R.', headerOf)).toMatch(
+      /^Total 99\n\n/,
+    );
   });
 });
 

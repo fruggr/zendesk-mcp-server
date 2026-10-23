@@ -127,7 +127,7 @@ deliberately cannot do.
 
 | Tool | Description | Mode |
 |------|-------------|------|
-| `search` | Unified search across tickets, users, and organizations | read |
+| `search` | Unified search across tickets, users, and organizations; 25 per page by default, ticket descriptions as excerpts | read |
 
 </details>
 

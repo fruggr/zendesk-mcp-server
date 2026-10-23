@@ -98,18 +98,19 @@ export const DESCRIPTION_EXCERPT_CHARS = 200;
 // surrogate, which is not valid UTF-8 on the wire.
 const TRAILING_HIGH_SURROGATE = /[\uD800-\uDBFF]$/;
 
+/** A ticket description on one line, cut to DESCRIPTION_EXCERPT_CHARS with a pointer to get_ticket. */
+export const descriptionExcerpt = (description: string | null | undefined): string => {
+  const text = (description ?? '').replace(/\s+/g, ' ').trim();
+  if (text.length <= DESCRIPTION_EXCERPT_CHARS) return text;
+  const cut = text.slice(0, DESCRIPTION_EXCERPT_CHARS).replace(TRAILING_HIGH_SURROGATE, '');
+  return `${cut.trimEnd()}… (excerpt; full text: get_ticket)`;
+};
+
 // The list rendering of a ticket. Descriptions were two thirds of a search page
 // and one alone can fill the response limit, so a list carries an excerpt and
 // get_ticket the full text (#388).
-export const formatTicketSummary = (ticket: ZendeskTicket): string => {
-  const text = (ticket.description ?? '').replace(/\s+/g, ' ').trim();
-  const cut = text.slice(0, DESCRIPTION_EXCERPT_CHARS).replace(TRAILING_HIGH_SURROGATE, '');
-  const excerpt =
-    text.length > DESCRIPTION_EXCERPT_CHARS
-      ? `${cut.trimEnd()}… (excerpt; full text: get_ticket)`
-      : text;
-  return ticketLines(ticket, excerpt);
-};
+export const formatTicketSummary = (ticket: ZendeskTicket): string =>
+  ticketLines(ticket, descriptionExcerpt(ticket.description));
 
 const formatConditionValue = (value: unknown): string => {
   if (value === null || value === undefined) return '';
@@ -676,18 +677,20 @@ export const formatList = <T>(
  * caller's exact call for the rest. The header then drops its next-page hint,
  * which would skip the items left out. Only a first item too big on its own
  * still falls back to truncateIfNeeded, resuming after it when others follow.
+ * `headerOf` renders the header from the meta, formatPagination by default.
  */
 export const formatFittingList = <T>(
   items: T[],
   formatter: (item: T) => string,
   meta: PaginationMeta,
   resume: (shown: number, onPage: number) => string,
+  headerOf: (meta: PaginationMeta) => string = formatPagination,
 ): string => {
-  const header = formatPagination(meta);
+  const header = headerOf(meta);
   const blocks = items.map(formatter);
   const text = [header, ...blocks].join('\n\n');
   if (text.length <= CHARACTER_LIMIT) return text;
-  const cutHeader = formatPagination({ ...meta, has_more: false });
+  const cutHeader = headerOf({ ...meta, has_more: false });
   const notice = (count: number): string =>
     `\n\n--- Showing ${count} of the ${items.length} results on this page: the next one would pass the ${CHARACTER_LIMIT}-character response limit. ${resume(count, items.length)} ---`;
   let used = cutHeader.length;

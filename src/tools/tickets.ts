@@ -67,6 +67,7 @@ import {
   extractOffsetPaginationMeta,
   extractPaginationMeta,
   extractSearchPaginationMeta,
+  offsetResume,
   PAGE_DESC,
   PER_PAGE_DESC,
 } from '../utils/pagination';
@@ -402,16 +403,6 @@ const fetchViewCounts = async (
   }
   return counts;
 };
-
-// Zendesk search offsets are page-aligned, so the call resuming after the last
-// ticket a cut response showed keeps that fitted size and may repeat a few.
-const offsetResume =
-  (page: number, perPage: number) =>
-  (shown: number): string => {
-    const offset = (page - 1) * perPage + shown;
-    const repeated = offset % shown;
-    return `To continue, call again with per_page: ${shown} and page: ${Math.floor(offset / shown) + 1}${repeated > 0 ? `; its first ${repeated} results were already shown` : ''}.`;
-  };
 
 // A Zendesk cursor resumes after the whole page fetched, past the tickets left
 // out, and cannot skip: re-reading just the shown part yields the cursor between

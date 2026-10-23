@@ -71,3 +71,13 @@ export const extractSearchPaginationMeta = <T>(
     ? { has_more, after_cursor: null, count, next_page: page + 1 }
     : { has_more, after_cursor: null, count };
 };
+
+// Zendesk search offsets are page-aligned, so the call resuming after the last
+// ticket a cut response showed keeps that fitted size and may repeat a few.
+export const offsetResume =
+  (page: number, perPage: number) =>
+  (shown: number): string => {
+    const offset = (page - 1) * perPage + shown;
+    const repeated = offset % shown;
+    return `To continue, call again with per_page: ${shown} and page: ${Math.floor(offset / shown) + 1}${repeated > 0 ? `; its first ${repeated} results were already shown` : ''}.`;
+  };
