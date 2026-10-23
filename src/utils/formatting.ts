@@ -94,14 +94,19 @@ export const formatTicket = (ticket: ZendeskTicket): string =>
 
 export const DESCRIPTION_EXCERPT_CHARS = 200;
 
+// A cut between the halves of a surrogate pair (an emoji) leaves a lone
+// surrogate, which is not valid UTF-8 on the wire.
+const TRAILING_HIGH_SURROGATE = /[\uD800-\uDBFF]$/;
+
 // The list rendering of a ticket. Descriptions were two thirds of a search page
 // and one alone can fill the response limit, so a list carries an excerpt and
 // get_ticket the full text (#388).
 export const formatTicketSummary = (ticket: ZendeskTicket): string => {
   const text = (ticket.description ?? '').replace(/\s+/g, ' ').trim();
+  const cut = text.slice(0, DESCRIPTION_EXCERPT_CHARS).replace(TRAILING_HIGH_SURROGATE, '');
   const excerpt =
     text.length > DESCRIPTION_EXCERPT_CHARS
-      ? `${text.slice(0, DESCRIPTION_EXCERPT_CHARS).trimEnd()}… (excerpt; full text: get_ticket)`
+      ? `${cut.trimEnd()}… (excerpt; full text: get_ticket)`
       : text;
   return ticketLines(ticket, excerpt);
 };
@@ -664,12 +669,14 @@ export const formatList = <T>(
   return truncateIfNeeded(text, advice);
 };
 
-// formatList for a paginated list whose items must arrive whole: past
-// CHARACTER_LIMIT it stops before the first item that does not fit, instead of
-// cutting mid-item, and the notice closes with `resume(shown, onPage)`, the
-// caller's exact call for the rest. The header then drops its next-page hint,
-// which would skip the items left out. Only a first item too big on its own
-// still falls back to truncateIfNeeded.
+/**
+ * formatList for a paginated list whose items must arrive whole: past
+ * CHARACTER_LIMIT it stops before the first item that does not fit, instead of
+ * cutting mid-item, and the notice closes with `resume(shown, onPage)`, the
+ * caller's exact call for the rest. The header then drops its next-page hint,
+ * which would skip the items left out. Only a first item too big on its own
+ * still falls back to truncateIfNeeded, resuming after it when others follow.
+ */
 export const formatFittingList = <T>(
   items: T[],
   formatter: (item: T) => string,
@@ -691,6 +698,13 @@ export const formatFittingList = <T>(
     used = next;
     shown += 1;
   }
-  if (shown === 0) return truncateIfNeeded(text);
+  if (shown === 0) {
+    // Resume after the cut first item; when the cut page fits after all, only
+    // the next-page hint overflowed and the plain truncation keeps it.
+    const cut = [cutHeader, ...blocks].join('\n\n');
+    return items.length > 1 && cut.length > CHARACTER_LIMIT
+      ? truncateIfNeeded(cut, resume(1, items.length))
+      : truncateIfNeeded(text);
+  }
   return [cutHeader, ...blocks.slice(0, shown)].join('\n\n') + notice(shown);
 };

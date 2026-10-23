@@ -2048,7 +2048,7 @@ describe('ticket tools', () => {
       expect(text).not.toContain('NEXT');
       expect(
         text.endsWith(
-          `To read the ${100 - shown} not shown, call again with page_size: ${shown} and the cursor this page was read with (none for the first page). ---`,
+          `To read the ${100 - shown} not shown, call again with page_size: ${shown} and the cursor this page was read with (none for the first page): it returns these ${shown} again, with a cursor that resumes right after them. ---`,
         ),
       ).toBe(true);
     });
@@ -2239,7 +2239,36 @@ describe('ticket tools', () => {
         ) ?? '';
       const shown = [...text.matchAll(/^## Ticket #/gm)].length;
       expect(text).toContain(`Showing ${shown} of the 100 results on this page`);
-      expect(text).toContain(`call again with page_size: ${shown}`);
+      expect(text).toContain(`call again with page_size: ${shown} and`);
+    });
+
+    it('counts the rows a dropped ticket used in the page_size to resume with', async () => {
+      const ids = Array.from({ length: 100 }, (_, i) => i + 1);
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/views/:id/execute', () =>
+          HttpResponse.json({
+            rows: ids.map((id) => ({ ticket: { id, sla_policy_metric: null } })),
+            meta: { has_more: true, after_cursor: 'NEXT' },
+          }),
+        ),
+        // show_many cannot resolve ticket 2: its row still counts toward page_size.
+        http.get('https://testsubdomain.zendesk.com/api/v2/tickets/show_many', () =>
+          HttpResponse.json({
+            tickets: ids
+              .filter((id) => id !== 2)
+              .map((id) => ({ ...MOCK_TICKET, id, subject: 's'.repeat(CHARACTER_LIMIT / 40) })),
+          }),
+        ),
+      );
+      const text =
+        firstText(
+          await findTool('get_view_tickets').handler({ view: MOCK_VIEW.id, page_size: 100 }),
+        ) ?? '';
+      const shown = [...text.matchAll(/^## Ticket #/gm)].length;
+      expect(text).toContain(
+        `To read the ${99 - shown} not shown, call again with page_size: ${shown + 1} and`,
+      );
+      expect(text).toContain(`it returns these ${shown} again`);
     });
 
     it('accepts a numeric view id directly', async () => {

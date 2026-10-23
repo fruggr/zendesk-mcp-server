@@ -165,6 +165,20 @@ describe('formatTicketSummary', () => {
     `);
   });
 
+  it('never ends an excerpt on half a surrogate pair', () => {
+    const description = `${'a'.repeat(DESCRIPTION_EXCERPT_CHARS - 1)}😀 tail`;
+    expect(
+      formatTicketSummary({ ...MOCK_TICKET, description }).endsWith(
+        `\n\n${'a'.repeat(DESCRIPTION_EXCERPT_CHARS - 1)}… (excerpt; full text: get_ticket)`,
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps a whole surrogate pair that ends the excerpt', () => {
+    const description = `${'a'.repeat(DESCRIPTION_EXCERPT_CHARS - 2)}😀 tail`;
+    expect(formatTicketSummary({ ...MOCK_TICKET, description })).toContain('a😀… (excerpt');
+  });
+
   it('collapses whitespace so a multi-line description stays one excerpt line', () => {
     const text = formatTicketSummary({ ...MOCK_TICKET, description: '  first\n\n\tsecond  ' });
     expect(text.endsWith('\n\nfirst second')).toBe(true);
@@ -1444,6 +1458,24 @@ describe('formatFittingList', () => {
   it('falls back to a plain truncation when even the first item is too big', () => {
     const text = formatFittingList([item(1, CHARACTER_LIMIT)], formatCategory, meta, resume);
     expect(text).toContain('--- Response truncated');
+    expect(text).not.toContain('Resume after');
+  });
+
+  it('resumes after a too-big first item rather than skip the rest of the page', () => {
+    const items = [item(1, CHARACTER_LIMIT), item(2, 10)];
+    const text = formatFittingList(items, formatCategory, meta, resume);
+    expect(text.startsWith('Results: 500\n\n')).toBe(true);
+    expect(text).not.toContain('NEXT');
+    expect(text.endsWith('Resume after 1 of 2. ---')).toBe(true);
+  });
+
+  it('keeps the next-page hint when only that hint overflowed', () => {
+    // The page without its hint is exactly the limit, the notice would not fit.
+    const small = formatCategory(item(2, 0)).length;
+    const base = formatCategory(item(1, 0)).length;
+    const size = CHARACTER_LIMIT - 'Results: 500'.length - 4 - small - base;
+    const text = formatFittingList([item(1, size), item(2, 0)], formatCategory, meta, resume);
+    expect(text).toContain('cursor: NEXT');
     expect(text).not.toContain('Resume after');
   });
 });

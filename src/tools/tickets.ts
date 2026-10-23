@@ -413,9 +413,14 @@ const offsetResume =
     return `To continue, call again with per_page: ${shown} and page: ${Math.floor(offset / shown) + 1}${repeated > 0 ? `; its first ${repeated} results were already shown` : ''}.`;
   };
 
-// A Zendesk cursor resumes after the whole page fetched, past the tickets left out.
-const cursorResume = (shown: number, onPage: number): string =>
-  `To read the ${onPage - shown} not shown, call again with page_size: ${shown} and the cursor this page was read with (none for the first page).`;
+// A Zendesk cursor resumes after the whole page fetched, past the tickets left
+// out, and cannot skip: re-reading just the shown part yields the cursor between
+// them. `pageSizeFor` maps shown tickets to the page_size covering them, which a
+// view's dropped rows make larger.
+const cursorResume =
+  (pageSizeFor: (shown: number) => number = (shown) => shown) =>
+  (shown: number, onPage: number): string =>
+    `To read the ${onPage - shown} not shown, call again with page_size: ${pageSizeFor(shown)} and the cursor this page was read with (none for the first page): it returns these ${shown} again, with a cursor that resumes right after them.`;
 
 const EXCERPT_NOTE = `Each ticket's description is cut to a ${DESCRIPTION_EXCERPT_CHARS}-character excerpt; get_ticket returns it in full.`;
 
@@ -1563,7 +1568,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
                 tickets,
                 formatTicketSummary,
                 extractPaginationMeta(response, tickets.length),
-                cursorResume,
+                cursorResume(),
               ),
             },
           ],
@@ -1973,9 +1978,8 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           }
           throw error;
         }
-        const ids = rows
-          .map(extractRowTicketId)
-          .filter((id): id is number => typeof id === 'number');
+        const rowIds = rows.map(extractRowTicketId);
+        const ids = rowIds.filter((id): id is number => typeof id === 'number');
         const tickets = await hydrateViewTickets(subdomain, token, ids);
         const nextBreach = nextBreachByTicket(rows);
         // Count reflects the tickets actually rendered, not the raw execute rows:
@@ -1991,7 +1995,8 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
                 (ticket) =>
                   formatTicketSummary(ticket) + formatNextBreachBlock(nextBreach.get(ticket.id)),
                 { ...meta, count: tickets.length },
-                cursorResume,
+                // page_size counts execute rows, dropped ones included.
+                cursorResume((shown) => rowIds.indexOf(tickets[shown - 1]?.id) + 1),
               ),
             },
           ],
