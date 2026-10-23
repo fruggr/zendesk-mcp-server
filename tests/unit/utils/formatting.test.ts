@@ -1412,6 +1412,35 @@ describe('formatFittingList', () => {
     expect(text.length).toBeLessThanOrEqual(CHARACTER_LIMIT);
   });
 
+  describe('at the exact limit', () => {
+    // Two-digit ids keep every block the same length; only the tenth item's size varies.
+    const firstNine = Array.from({ length: 9 }, (_, i) => item(10 + i, 1000));
+    const fitting = (size: number) => [...firstNine, item(19, size)];
+    const overflowing = (size: number) => [...fitting(size), item(20, CHARACTER_LIMIT)];
+    const render = (items: ReturnType<typeof item>[]) =>
+      formatFittingList(items, formatCategory, meta, resume);
+    const sizeFor = (build: (size: number) => ReturnType<typeof item>[]) =>
+      10 + CHARACTER_LIMIT - render(build(10)).length;
+
+    it('returns a page of exactly the limit unchanged', () => {
+      const text = render(fitting(sizeFor(fitting)));
+      expect(text.length).toBe(CHARACTER_LIMIT);
+      expect(text).not.toContain('---');
+    });
+
+    it('keeps an item that fills the limit exactly, notice included', () => {
+      const text = render(overflowing(sizeFor(overflowing)));
+      expect(text.length).toBe(CHARACTER_LIMIT);
+      expect(text).toContain('Showing 10 of the 11 results');
+    });
+
+    it('leaves out an item one character too big', () => {
+      const text = render(overflowing(sizeFor(overflowing) + 1));
+      expect(text.length).toBeLessThanOrEqual(CHARACTER_LIMIT);
+      expect(text).toContain('Showing 9 of the 11 results');
+    });
+  });
+
   it('falls back to a plain truncation when even the first item is too big', () => {
     const text = formatFittingList([item(1, CHARACTER_LIMIT)], formatCategory, meta, resume);
     expect(text).toContain('--- Response truncated');
