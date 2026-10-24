@@ -121,7 +121,11 @@ for a library socket or the OAuth callback server), serves tool calls over
 stdio, an article one included so its lazy chunk loads, then closes stdin: the
 process must exit with code 0 within 10 s. With `watchStdin` turned off it
 lingers, and the test fails; that was checked. Over HTTP, the same suite sends
-`SIGTERM` to a server holding the loop and expects a clean exit.
+`SIGTERM` to a server holding the loop and expects a clean exit. Its first CI
+run caught a real window: the handlers were installed after `startHttpTransport`
+returned, so a `SIGTERM` sent on `http_transport_ready` could still hit Node's
+default and kill the process by signal. They are now installed before the
+server starts.
 
 ## A practice worth spreading
 
