@@ -95,17 +95,15 @@ Four things follow, and they are the honest shape of this change:
    first. `createStrictParamsParser` (`src/utils/validation.ts`) turns those issues into
    the "Unknown parameter(s): …" message, so the message itself is unchanged — the
    `unrecognized_keys` issues come through verbatim.
-2. **Compilation is lazy and per schema instance.** Over HTTP, a 2025 session builds
-   its own `McpServer` (`src/transports/http.ts`), so it constructs its own tool schemas
-   and pays ~0.27–1.31 ms the first time a parse touches each one. A session would need
-   roughly 1350 parses of the *same* tool's schema to earn that back, which never
-   happens: **for tool input schemas in a 2025 session, global mode is marginally
-   net-negative**, a few milliseconds per session, only for the tools it calls. A
-   2026-07-28 request builds a server too, but its grant keeps the tool definitions
-   (#393), so each tool's schema, and each proxy's `{ operation, params }` schema in the
-   default modes, compiles once per grant and later requests reuse the compiled parse.
-   What stays positive everywhere is the SDK's module-level protocol schemas: compiled
-   once per process, hit by every message.
+2. **Compilation is lazy and per schema instance.** A tool schema compiles the first
+   time a parse touches it, ~0.27–1.31 ms, and roughly 1350 parses of that same schema
+   earn it back. Until #393 every HTTP session, and every 2026-07-28 request, built its
+   own schemas and paid that again for each tool it called: for tool inputs over HTTP,
+   global mode was marginally net-negative. The definitions are now built once per
+   process and shared by every server ([`tool-definitions-lifetime.md`](tool-definitions-lifetime.md)),
+   the proxies' `{ operation, params }` schemas included, so each schema compiles once
+   per process and every later call reuses the compiled parse. The SDK's module-level
+   protocol schemas were already compiled once per process, and hit by every message.
 3. Under stdio (one process, one session) both effects are once-per-launch and the
    break-even on protocol messages arrives after ~35 messages.
 4. In `all` mode, on SDK v1, there was neither cost nor gain on tool inputs: that
@@ -189,7 +187,7 @@ console.log(`first=${first.toFixed(2)}ms second=${(Number(process.hrtime.bigint(
 ```
 
 Per-schema throughput: put a throwaway test under `tests/unit/`, build the schemas with
-`createAllTools({ subdomain: 'testsubdomain', getToken: () => 'test-token' })`, and run
+`createAllTools({ subdomain: 'testsubdomain' })`, and run
 it twice — once normally (compiled, via `tests/setup.ts`) and once against a config with
 `setupFiles: []` (the baseline). Compile cost is `z.compile()` timed over freshly built,
 never-parsed schemas.

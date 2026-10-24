@@ -45,9 +45,6 @@ entry per **grant**:
   depend on the caller's Zendesk role (an agent lists only the brands they
   belong to unless they hold `assign_tickets_to_any_brand`), so a cache shared by
   all users would be wrong for some and too permissive for others.
-- **The toolset** (tool definitions, their parsers and JSON Schemas): building
-  it is most of a server's cost. It closes over the grant's token and caches,
-  so it is never shared beyond the grant (#393).
 - **The listen bus.** `createMcpHandler`'s bus filters on notification type and
   URI, not on user. One handler per grant isolates them using public API only:
   the same calls as a single handler, several instances. Partitioning one bus by
@@ -95,9 +92,10 @@ everywhere, so that class of leak cannot come back.
 
 ## Costs and limits
 
-- A 2026 HTTP request builds a server. A grant's first one also builds the
-  toolset, about 4 ms of CPU; the later ones reuse it, and the server around it
-  costs well under a millisecond, measured in every mode.
+- A 2026 HTTP request builds a server and registers the tools on it: ~0.15 ms
+  (`single`) to ~0.7 ms (`all`), measured. The tool definitions themselves are
+  built once per process and hold no user, so neither a request nor a grant
+  builds them ([`tool-definitions-lifetime.md`](tool-definitions-lifetime.md)).
 - The SDK consumes the listen filter, so the transports read
   `resourceSubscriptions` off the wire themselves (`utils/listen-feed.ts`): a
   listen request opens a stream, its cancellation or any response carrying its

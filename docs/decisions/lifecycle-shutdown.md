@@ -109,6 +109,34 @@ stdin against a running HTTP server pins the user-visible contract, but cannot
 tell the flag apart from the paused stream and would keep passing if only one of
 the two survived.
 
+## Tested on what ships
+
+The unit suite drives `installShutdown` with a fake stdin, and
+`scripts/smoke-test.mjs` checks that an idle bundle exits on EOF. Neither shows
+that a server which has served calls still exits, and an idle process proves
+little: with no handle open, Node exits on its own whether EOF is watched or
+not. `tests/bundle/bundle.test.ts` therefore runs `dist/index.js` with a handle
+holding the event loop (`HOLD_EVENT_LOOP=1` in its preloaded mock, standing in
+for a library socket or the OAuth callback server), serves tool calls over
+stdio, an article one included so its lazy chunk loads, then closes stdin: the
+process must exit with code 0 within 10 s. With `watchStdin` turned off it
+lingers, and the test fails; that was checked. Over HTTP, the same suite sends
+`SIGTERM` to a server holding the loop and expects a clean exit.
+
+## A practice worth spreading
+
+Any MCP server that runs over stdio can be orphaned this way: a client that
+crashes, or a launcher that does not relay signals (`npx`, `sh -c`), leaves the
+server running with nobody on the other end, and processes pile up session
+after session. The fix is small and general:
+
+1. Treat EOF on stdin as the client leaving. The TypeScript SDK does not (see
+   *Why EOF at all*): it reads `'data'` and never listens for `'end'`.
+2. On EOF and on `SIGINT`/`SIGTERM`, run one idempotent cleanup.
+3. End with an explicit `exit`, bounded by an `unref()`'d watchdog, rather than
+   waiting for the event loop to drain: any open handle would hold it.
+4. Test it on the built artifact, with a handle holding the loop.
+
 ## Why the runtime is injected
 
 `installShutdown` takes its `process` access through a `ShutdownRuntime`, and
