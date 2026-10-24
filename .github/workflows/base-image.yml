@@ -1,0 +1,61 @@
+name: Base image
+
+# When a PR moves the container base image (the Dockerfile's FROM lines),
+# Docker Scout compares the new runtime base with the base branch's and
+# comments what changed: packages, Node included, and CVEs. A digest bump says
+# nothing on its own. Own workflow so a README edit does not rebuild the image
+# (container.yml).
+on:
+  pull_request:
+    paths:
+      - Dockerfile
+      - .github/workflows/base-image.yml
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # The runtime stage is the last FROM; the build stage is never shipped.
+      - id: base
+        run: |
+          set -euo pipefail
+          runtime() { grep -E '^FROM ' | tail -n 1 | awk '{print $2}'; }
+          after=$(runtime < Dockerfile)
+          before=$(git show "${{ github.event.pull_request.base.sha }}:Dockerfile" | runtime)
+          echo "after=$after" >> "$GITHUB_OUTPUT"
+          echo "before=$before" >> "$GITHUB_OUTPUT"
+          if [ "$before" != "$after" ]; then echo "changed=true" >> "$GITHUB_OUTPUT"; fi
+
+      # Same read-only repository secret as container.yml: one Docker account,
+      # which both pulls from dhi.io and authenticates Scout on Docker Hub.
+      - if: steps.base.outputs.changed == 'true'
+        uses: docker/login-action@v4
+        with:
+          registry: dhi.io
+          username: ${{ secrets.DHI_USERNAME }}
+          password: ${{ secrets.DHI_TOKEN }}
+
+      - if: steps.base.outputs.changed == 'true'
+        uses: docker/scout-action@v1
+        with:
+          command: compare
+          image: registry://${{ steps.base.outputs.after }}
+          to: registry://${{ steps.base.outputs.before }}
+          platform: linux/amd64
+          ignore-unchanged: true
+          dockerhub-user: ${{ secrets.DHI_USERNAME }}
+          dockerhub-password: ${{ secrets.DHI_TOKEN }}
+          registry-user: ${{ secrets.DHI_USERNAME }}
+          registry-password: ${{ secrets.DHI_TOKEN }}
