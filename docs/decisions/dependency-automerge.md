@@ -81,14 +81,24 @@ tests in `tests/functional/`, which are run on demand.
 
 **Human review does not detect a compromised package.** Nobody reads
 `"open": "11.0.1"` → `"11.0.2"` in a diff and sees a malicious postinstall. What
-catches that class of attack is time. This repo has two independent delays, and
-they do not cover the same ground:
+catches that class of attack is time. This repo has two independent delays on
+packages, and they do not cover the same ground:
 
-- `minimumReleaseAge: "5 days"` in `renovate.json`, on every **ordinary** update
+- `minimumReleaseAge: "3 days"` in `renovate.json`, on every **ordinary** update
   Renovate proposes;
-- `minimumReleaseAge: 7200` (minutes) in `pnpm-workspace.yaml`, which pnpm
+- `minimumReleaseAge: 4320` (minutes) in `pnpm-workspace.yaml`, which pnpm
   enforces natively at resolution time and which therefore also covers the
   transitive tree Renovate does not manage.
+
+The container base image (the Dockerfile's `FROM` lines) has no Renovate gate.
+It is the technical base we ship and are answerable for, so a Node or Alpine
+CVE fix has to reach the published image fast. A 24-hour gate was the intent,
+but dhi.io serves no release timestamp (Renovate reads one from Docker Hub
+only), and under Renovate's default `minimumReleaseAgeBehaviour:
+timestamp-required` any gate there holds every tag update forever. The delay
+that remains is upstream's: Docker builds and signs these images from Node and
+Alpine releases, a curated pipeline rather than an open registry anyone can
+publish to.
 
 Removing the human step does not remove that protection, because the human step
 was never the protection.
@@ -103,7 +113,7 @@ docs do not say. In `lib/config/options`, the `vulnerabilityAlerts` option ships
 `schedule: []`, `prCreation: "immediate"` and `dependencyDashboardApproval: false`).
 That option is `mergeable`, so an explicit key in `renovate.json` wins over the
 default, and `mergeChildConfig` then applies the whole block as `force`, which also
-beats `packageRules`. Setting `"minimumReleaseAge": "5 days"` inside the block
+beats `packageRules`. Setting `"minimumReleaseAge": "3 days"` inside the block
 therefore puts vulnerability updates back under the same quarantine as everything
 else — which is what this repo does.
 
@@ -117,15 +127,15 @@ it.** Three mechanisms, only one of which is load-bearing:
 
 1. Renovate marks the update pending and posts `renovate/stability-days` as a yellow
    commit status. With `internalChecksFilter: "flexible"` in the block, the PR is
-   still opened immediately, so a CVE is visible the day it lands rather than five
+   still opened immediately, so a CVE is visible the day it lands rather than three
    days later. This status is **documentation, not enforcement**: it is not in the
    `main` ruleset's required checks, and it cannot reasonably be added — Renovate
    only posts it on branches where the age gate applies, so requiring it would leave
    every other PR, human ones included, permanently unmergeable.
 2. `platformAutomerge` arms GitHub's auto-merge on the PR as soon as it opens, and
    GitHub waits only on *required* checks. So point 1 does not hold the merge.
-3. **pnpm does.** `minimumReleaseAge: 7200` in `pnpm-workspace.yaml` refuses to
-   resolve a version younger than five days, and `minimumReleaseAgeStrict` defaults
+3. **pnpm does.** `minimumReleaseAge: 4320` in `pnpm-workspace.yaml` refuses to
+   resolve a version younger than three days, and `minimumReleaseAgeStrict` defaults
    to `true` once the age is set explicitly, so it is a hard resolution failure
    rather than a silent fallback to an older version. Renovate cannot update the
    lockfile, CI runs `pnpm install --frozen-lockfile` and goes red, and GitHub's

@@ -5,6 +5,7 @@
 [![npm version](https://img.shields.io/npm/v/@fruggr/zendesk-mcp-server?logo=npm&color=cb3837)](https://www.npmjs.com/package/@fruggr/zendesk-mcp-server)
 [![License: MIT](https://img.shields.io/npm/l/@fruggr/zendesk-mcp-server?color=blue)](LICENSE)
 [![Node.js](https://img.shields.io/node/v/@fruggr/zendesk-mcp-server?logo=nodedotjs&logoColor=white&color=339933)](https://nodejs.org)
+[![Container base](https://img.shields.io/static/v1?label=container%20base&message=dhi.io%2Fnode%3A24.22.0-alpine3.24&logo=docker&logoColor=white&color=2496ED)](https://github.com/fruggr/zendesk-mcp-server/blob/main/docs/http-deployment.md#container)
 
 A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that
 puts Zendesk inside your AI assistant, for **both sides of the conversation**.
