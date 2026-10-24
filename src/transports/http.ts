@@ -28,8 +28,10 @@ import {
   createServerCaches,
   defaultServerFactory,
   type ServerFactory,
+  toolEnv,
   watchGrantAlerts,
 } from '../server';
+import { createAllTools } from '../tools/index';
 import { createGrantRegistry } from '../utils/grant-registry';
 import { createListenFeed, type ListenFeed, listenedUris } from '../utils/listen-feed';
 import { type Logger, silentLogger } from '../utils/logger';
@@ -427,6 +429,9 @@ export const startHttpTransport = async (
   const idleTimeoutMs = options.sessionIdleTimeoutMs ?? SESSION_IDLE_TIMEOUT_MS;
   const maxBodyBytes = options.maxBodyBytes ?? MAX_BODY_BYTES;
   const serverFactory = options.serverFactory ?? defaultServerFactory;
+  // Built once, warm before the first request: every session's and every
+  // request's server registers these; the caller comes with each call.
+  const tools = createAllTools(toolEnv(config));
   const grants = createGrantRegistry<GrantEntry>({
     idleTimeoutMs,
     onCloseError: (grantId, err) =>
@@ -481,6 +486,7 @@ export const startHttpTransport = async (
       getToken: () => auth.zendeskToken,
       logger,
       onUnauthorized: () => void as.revokeGrant(auth.grantId),
+      tools,
       slaRuntime: sla.runtime,
       requestStateCodec: createRequestStateCodec({
         key: as.requestStateKey,
@@ -514,8 +520,8 @@ export const startHttpTransport = async (
   };
 
   // A grant's first 2026-07-28 request: the handler (and its listen bus) and
-  // the caches every later request of the grant reuses. Each request still gets
-  // a fresh server from the factory.
+  // the caches every later request of the grant reuses. Each
+  // request still gets a fresh server from the factory.
   const createGrantEntry = (token: VerifiedAccessToken, as: AuthorizationServer): GrantEntry => {
     const { grantId } = token;
     const auth = { zendeskToken: token.zendeskAccessToken };
@@ -543,6 +549,7 @@ export const startHttpTransport = async (
           logger,
           onUnauthorized,
           caches,
+          tools,
           requestStateCodec,
           slaRuntime: sla.runtime,
           alertPolling: 'grant',

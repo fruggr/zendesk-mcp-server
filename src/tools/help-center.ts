@@ -35,6 +35,7 @@ import type {
   ZendeskTranslation,
   ZendeskUserSegment,
 } from '../types';
+import { loadArticleFormat } from '../utils/article-format';
 import {
   arrangeDesiredOrder,
   computePositionWrites,
@@ -44,15 +45,7 @@ import {
   type ReorderTarget,
   type ReorderWrite,
 } from '../utils/article-order';
-import {
-  applySectionUpdate,
-  htmlToMarkdown,
-  type IntroLoss,
-  markdownToHtml,
-  parseSections,
-  type Section,
-  type StrippedHeading,
-} from '../utils/article-sections';
+import type { IntroLoss, Section, StrippedHeading } from '../utils/article-sections';
 import {
   formatArticle,
   formatArticleSummary,
@@ -78,7 +71,7 @@ import {
   PAGE_DESC,
   PER_PAGE_DESC,
 } from '../utils/pagination';
-import type { ToolContext, ToolDefinition } from './definitions';
+import type { ToolCaller, ToolDefinition, ToolEnv } from './definitions';
 
 // Byte-identical across the seven read/section/attachment tools that take an
 // article id. Kept as one constant (like PER_PAGE_DESC/PAGE_DESC) so the "how to
@@ -706,8 +699,8 @@ const sectionUpdateNotes = (r: SectionUpdateReport): string[] => [
  * carry no `brand_id` field, and the tool stays hidden. In multi mode (not
  * 'all') the listing is filtered to the allowed brands.
  */
-const createListBrandsTool = (ctx: ToolContext): ToolDefinition[] => {
-  const { subdomain, brandIds, getToken } = ctx;
+const createListBrandsTool = (env: ToolEnv): ToolDefinition[] => {
+  const { subdomain, brandIds } = env;
   if (brandIds === undefined) return [];
   const isAll = brandIds.length === 1 && brandIds[0] === 'all';
   if (brandIds.length === 1 && !isAll) return [];
@@ -726,8 +719,8 @@ const createListBrandsTool = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async () => {
-        const token = await getToken();
+      handler: async (_params, { caller }) => {
+        const token = await caller.getToken();
         // Account-wide Support API, so unscoped. Same walk as the resolver but
         // not its cache: discovery must show a fresh, complete listing.
         const brands = await fetchAllBrands(subdomain, token);
@@ -752,8 +745,8 @@ const createListBrandsTool = (ctx: ToolContext): ToolDefinition[] => {
   ];
 };
 
-export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
-  const { subdomain, brandIds, resolveBrandSubdomain, getToken } = ctx;
+export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
+  const { subdomain, brandIds } = env;
   const brandIdSchema = brandIdField(brandIds);
   // Spread of an empty object adds no field: in unset/single mode the schemas
   // carry no brand_id at all (strict parsing then rejects it); in multi/all
@@ -766,8 +759,11 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
   // resolver maps the entry to its subdomain — a brand is only ever
   // <subdomain>.zendesk.com, so that subdomain IS the helpCenter* argument.
   // Undefined means the account default brand — no resolution, no extra request.
-  const resolveHcSubdomain = async (brand_id: number | string | undefined): Promise<string> => {
-    const brandSub = await resolveBrand(brand_id, brandIds, resolveBrandSubdomain);
+  const resolveHcSubdomain = async (
+    caller: ToolCaller,
+    brand_id: number | string | undefined,
+  ): Promise<string> => {
+    const brandSub = await resolveBrand(brand_id, brandIds, caller.resolveBrandSubdomain);
     return brandSub ?? subdomain;
   };
 
@@ -863,7 +859,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
     // brands (or 'all'): it is the discovery source for the required per-call
     // brand_id. In single-lock or unset mode it is absent — the brand is
     // implicit and the schema carries no brand_id field at all.
-    ...createListBrandsTool(ctx),
+    ...createListBrandsTool(env),
     {
       name: 'search_articles',
       namespace: 'help_center',
@@ -895,7 +891,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { query, locale, per_page, page, brand_id } = params as {
           query: string;
           locale?: string;
@@ -903,8 +899,8 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           page: number;
           brand_id?: number | string;
         };
-        const token = await getToken();
-        const hcSubdomain = await resolveHcSubdomain(brand_id);
+        const token = await caller.getToken();
+        const hcSubdomain = await resolveHcSubdomain(caller, brand_id);
         const p: Record<string, string> = { query, ...buildOffsetParams(per_page, page) };
         if (locale) p['locale'] = locale;
         const response = await helpCenterGet<ZendeskListResponse<ZendeskArticle>>(
@@ -945,14 +941,14 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { article_id, locale, brand_id } = params as {
           article_id: number;
           locale?: string;
           brand_id?: number | string;
         };
-        const token = await getToken();
-        const hcSubdomain = await resolveHcSubdomain(brand_id);
+        const token = await caller.getToken();
+        const hcSubdomain = await resolveHcSubdomain(caller, brand_id);
         const path = locale ? `/${locale}/articles/${article_id}` : `/articles/${article_id}`;
         const { article } = await helpCenterGet<{ article: ZendeskArticle }>(
           hcSubdomain,
@@ -961,6 +957,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           undefined,
         );
         const translations = await listTranslations(hcSubdomain, token, article_id);
+        const { parseSections } = await loadArticleFormat();
         const hint = largeArticleHint(article.body, parseSections(article.body).length);
         const text =
           (hint ?? '') +
@@ -1012,15 +1009,15 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { locale, page_size, cursor, brand_id } = params as {
           locale?: string;
           page_size: number;
           cursor?: string;
           brand_id?: number | string;
         };
-        const token = await getToken();
-        const hcSubdomain = await resolveHcSubdomain(brand_id);
+        const token = await caller.getToken();
+        const hcSubdomain = await resolveHcSubdomain(caller, brand_id);
         const path = `${localePrefix(locale)}/categories`;
         const response = await helpCenterGet<ZendeskListResponse<ZendeskCategory>>(
           hcSubdomain,
@@ -1083,7 +1080,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { category_id, locale, page_size, cursor, brand_id } = params as {
           category_id?: number;
           locale?: string;
@@ -1091,8 +1088,8 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           cursor?: string;
           brand_id?: number | string;
         };
-        const token = await getToken();
-        const hcSubdomain = await resolveHcSubdomain(brand_id);
+        const token = await caller.getToken();
+        const hcSubdomain = await resolveHcSubdomain(caller, brand_id);
         const response = await helpCenterGet<ZendeskListResponse<ZendeskSection>>(
           hcSubdomain,
           token,
@@ -1168,7 +1165,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const {
           section_id,
           locale,
@@ -1188,8 +1185,8 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           include_translations: boolean;
           brand_id?: number | string;
         };
-        const token = await getToken();
-        const hcSubdomain = await resolveHcSubdomain(brand_id);
+        const token = await caller.getToken();
+        const hcSubdomain = await resolveHcSubdomain(caller, brand_id);
         const response = await helpCenterGet<ZendeskListResponse<ZendeskArticle>>(
           hcSubdomain,
           token,
@@ -1242,10 +1239,10 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { brand_id } = params as { brand_id?: number | string };
-        const token = await getToken();
-        const hcSubdomain = await resolveHcSubdomain(brand_id);
+        const token = await caller.getToken();
+        const hcSubdomain = await resolveHcSubdomain(caller, brand_id);
         const { articles, truncated, pagesScanned } = await fetchPromotedArticles(
           hcSubdomain,
           token,
@@ -1290,13 +1287,13 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { article_id, brand_id } = params as {
           article_id: number;
           brand_id?: number | string;
         };
-        const token = await getToken();
-        const hcSubdomain = await resolveHcSubdomain(brand_id);
+        const token = await caller.getToken();
+        const hcSubdomain = await resolveHcSubdomain(caller, brand_id);
         const translations = await listTranslations(hcSubdomain, token, article_id);
         return {
           content: [
@@ -1339,7 +1336,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: false,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { article_id, locale, title, body, draft, brand_id } = params as {
           article_id: number;
           locale: string;
@@ -1348,8 +1345,8 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           draft: boolean;
           brand_id?: number | string;
         };
-        const token = await getToken();
-        const hcSubdomain = await resolveHcSubdomain(brand_id);
+        const token = await caller.getToken();
+        const hcSubdomain = await resolveHcSubdomain(caller, brand_id);
         const { translation } = await helpCenterPost<{ translation: ZendeskTranslation }>(
           hcSubdomain,
           token,
@@ -1407,14 +1404,14 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { article_id, locale, brand_id, ...updates } = params as {
           article_id: number;
           locale: string;
           brand_id?: number | string;
         } & Record<string, unknown>;
-        const token = await getToken();
-        const hcSubdomain = await resolveHcSubdomain(brand_id);
+        const token = await caller.getToken();
+        const hcSubdomain = await resolveHcSubdomain(caller, brand_id);
         const { translation } = await helpCenterPut<{ translation: ZendeskTranslation }>(
           hcSubdomain,
           token,
@@ -1453,13 +1450,13 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { section_id, brand_id } = params as {
           section_id: number;
           brand_id?: number | string;
         };
-        const token = await getToken();
-        const hcSubdomain = await resolveHcSubdomain(brand_id);
+        const token = await caller.getToken();
+        const hcSubdomain = await resolveHcSubdomain(caller, brand_id);
         const translations = await listNodeTranslations(
           hcSubdomain,
           token,
@@ -1504,13 +1501,13 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { category_id, brand_id } = params as {
           category_id: number;
           brand_id?: number | string;
         };
-        const token = await getToken();
-        const hcSubdomain = await resolveHcSubdomain(brand_id);
+        const token = await caller.getToken();
+        const hcSubdomain = await resolveHcSubdomain(caller, brand_id);
         const translations = await listNodeTranslations(
           hcSubdomain,
           token,
@@ -1561,14 +1558,14 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { locale, category_id, brand_id } = params as {
           locale: string;
           category_id?: number;
           brand_id?: number | string;
         };
-        const token = await getToken();
-        const hcSubdomain = await resolveHcSubdomain(brand_id);
+        const token = await caller.getToken();
+        const hcSubdomain = await resolveHcSubdomain(caller, brand_id);
         const [locales, categoryScope, sectionsRes] = await Promise.all([
           helpCenterGet<ZendeskLocalesResponse>(hcSubdomain, token, '/locales', undefined),
           fetchGapCategories(hcSubdomain, token, category_id),
@@ -1659,7 +1656,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { section_id, brand_id, ...input } = params as {
           section_id: number;
           locale: string;
@@ -1668,8 +1665,8 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           draft?: boolean;
           brand_id?: number | string;
         };
-        const token = await getToken();
-        const hcSubdomain = await resolveHcSubdomain(brand_id);
+        const token = await caller.getToken();
+        const hcSubdomain = await resolveHcSubdomain(caller, brand_id);
         const { translation, created } = await upsertNodeTranslation(
           hcSubdomain,
           token,
@@ -1733,7 +1730,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { category_id, brand_id, ...input } = params as {
           category_id: number;
           locale: string;
@@ -1742,8 +1739,8 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           draft?: boolean;
           brand_id?: number | string;
         };
-        const token = await getToken();
-        const hcSubdomain = await resolveHcSubdomain(brand_id);
+        const token = await caller.getToken();
+        const hcSubdomain = await resolveHcSubdomain(caller, brand_id);
         const { translation, created } = await upsertNodeTranslation(
           hcSubdomain,
           token,
@@ -1775,8 +1772,8 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async () => {
-        const token = await getToken();
+      handler: async (_params, { caller }) => {
+        const token = await caller.getToken();
         let response: { permission_groups: ZendeskPermissionGroup[]; count: number };
         try {
           response = await zendeskGet<{
@@ -1879,13 +1876,13 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: false,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { section_id, brand_id, ...articleData } = params as {
           section_id: number;
           brand_id?: number | string;
         } & Record<string, unknown>;
-        const token = await getToken();
-        const hcSubdomain = await resolveHcSubdomain(brand_id);
+        const token = await caller.getToken();
+        const hcSubdomain = await resolveHcSubdomain(caller, brand_id);
         const { article } = await helpCenterPost<{ article: ZendeskArticle }>(
           hcSubdomain,
           token,
@@ -1971,13 +1968,13 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { article_id, brand_id, ...updates } = params as {
           article_id: number;
           brand_id?: number | string;
         } & Record<string, unknown>;
-        const token = await getToken();
-        const hcSubdomain = await resolveHcSubdomain(brand_id);
+        const token = await caller.getToken();
+        const hcSubdomain = await resolveHcSubdomain(caller, brand_id);
         const { article } = await helpCenterPut<{ article: ZendeskArticle }>(
           hcSubdomain,
           token,
@@ -2037,7 +2034,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const {
           article_id,
           target,
@@ -2059,8 +2056,8 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         assertReorderParamsCoherent(article_id, target, reference_article_id);
         const needsReference = needsReferenceArticle(target);
 
-        const token = await getToken();
-        const hcSubdomain = await resolveHcSubdomain(brand_id);
+        const token = await caller.getToken();
+        const hcSubdomain = await resolveHcSubdomain(caller, brand_id);
 
         // Resolve the article's section (also validates the article exists).
         const { article } = await helpCenterGet<{ article: ZendeskArticle }>(
@@ -2167,7 +2164,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { article_id, confirm, brand_id } = params as {
           article_id: number;
           confirm: boolean;
@@ -2178,8 +2175,8 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
             'Archiving is guarded: pass confirm: true to archive (soft-delete) this article. No changes were made.',
           );
         }
-        const token = await getToken();
-        const hcSubdomain = await resolveHcSubdomain(brand_id);
+        const token = await caller.getToken();
+        const hcSubdomain = await resolveHcSubdomain(caller, brand_id);
         await helpCenterDelete(hcSubdomain, token, `/articles/${article_id}`);
         return {
           content: [
@@ -2234,7 +2231,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { name_prefix, sort_by, sort_order, page_size, cursor } = params as {
           name_prefix?: string;
           sort_by: string;
@@ -2242,7 +2239,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           page_size: number;
           cursor?: string;
         };
-        const token = await getToken();
+        const token = await caller.getToken();
         // /guide/content_tags takes a single `sort` param, `-` prefix for
         // descending; the tool surface keeps the sort_by/sort_order convention
         // shared with the sibling list tools and translates to the wire format.
@@ -2289,9 +2286,9 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: false,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { name } = params as { name: string };
-        const token = await getToken();
+        const token = await caller.getToken();
         const { content_tag } = await zendeskPost<{ content_tag: ZendeskContentTag }>(
           subdomain,
           token,
@@ -2321,10 +2318,10 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { brand_id } = params as { brand_id?: number | string };
-        const token = await getToken();
-        const hcSubdomain = await resolveHcSubdomain(brand_id);
+        const token = await caller.getToken();
+        const hcSubdomain = await resolveHcSubdomain(caller, brand_id);
         const response = await helpCenterGet<{ labels: ZendeskLabel[]; count: number }>(
           hcSubdomain,
           token,
@@ -2360,8 +2357,8 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async () => {
-        const token = await getToken();
+      handler: async (_params, { caller }) => {
+        const token = await caller.getToken();
         // User segments are ACCOUNT-WIDE (shared across brands — the endpoint
         // has no brand dimension), so this call is deliberately NOT brand-scoped,
         // matching the topology resource's unscoped fetch.
@@ -2418,13 +2415,13 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { article_id, brand_id } = params as {
           article_id: number;
           brand_id?: number | string;
         };
-        const token = await getToken();
-        const hcSubdomain = await resolveHcSubdomain(brand_id);
+        const token = await caller.getToken();
+        const hcSubdomain = await resolveHcSubdomain(caller, brand_id);
         const response = await helpCenterGet<{
           article_attachments: ZendeskArticleAttachment[];
           count: number;
@@ -2471,14 +2468,14 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { article_id, locale, brand_id } = params as {
           article_id: number;
           locale?: string;
           brand_id?: number | string;
         };
-        const token = await getToken();
-        const hcSubdomain = await resolveHcSubdomain(brand_id);
+        const token = await caller.getToken();
+        const hcSubdomain = await resolveHcSubdomain(caller, brand_id);
         const { article } = await helpCenterGet<{ article: ZendeskArticle }>(
           hcSubdomain,
           token,
@@ -2493,6 +2490,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           undefined,
         );
         const translations = await listTranslations(hcSubdomain, token, article_id);
+        const { parseSections } = await loadArticleFormat();
         const sections = parseSections(translation.body);
 
         const outlineLines = sections.length
@@ -2549,7 +2547,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { article_id, locale, section_index, format, brand_id } = params as {
           article_id: number;
           locale: string;
@@ -2557,14 +2555,15 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           format: 'html' | 'markdown';
           brand_id?: number | string;
         };
-        const token = await getToken();
-        const hcSubdomain = await resolveHcSubdomain(brand_id);
+        const token = await caller.getToken();
+        const hcSubdomain = await resolveHcSubdomain(caller, brand_id);
         const { translation } = await helpCenterGet<{ translation: ZendeskTranslation }>(
           hcSubdomain,
           token,
           `/articles/${article_id}/translations/${locale}`,
           undefined,
         );
+        const { htmlToMarkdown, parseSections } = await loadArticleFormat();
         const sections = parseSections(translation.body);
         const section = sections[section_index];
         if (!section) {
@@ -2627,7 +2626,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { article_id, locale, section_index, content, format, brand_id } = params as {
           article_id: number;
           locale: string;
@@ -2636,14 +2635,15 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           format: 'html' | 'markdown';
           brand_id?: number | string;
         };
-        const token = await getToken();
-        const hcSubdomain = await resolveHcSubdomain(brand_id);
+        const token = await caller.getToken();
+        const hcSubdomain = await resolveHcSubdomain(caller, brand_id);
         const { translation } = await helpCenterGet<{ translation: ZendeskTranslation }>(
           hcSubdomain,
           token,
           `/articles/${article_id}/translations/${locale}`,
           undefined,
         );
+        const { applySectionUpdate, markdownToHtml, parseSections } = await loadArticleFormat();
         const newSectionHtml = format === 'markdown' ? markdownToHtml(content) : content;
         const {
           body: newBody,
@@ -2702,15 +2702,15 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { article_id, source_locale, target_locale, brand_id } = params as {
           article_id: number;
           source_locale: string;
           target_locale: string;
           brand_id?: number | string;
         };
-        const token = await getToken();
-        const hcSubdomain = await resolveHcSubdomain(brand_id);
+        const token = await caller.getToken();
+        const hcSubdomain = await resolveHcSubdomain(caller, brand_id);
         const [sourceRes, targetRes, translations] = await Promise.all([
           helpCenterGet<{ translation: ZendeskTranslation }>(
             hcSubdomain,
@@ -2728,6 +2728,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           // single-translation GET — same reason get_article_outline lists too.
           listTranslations(hcSubdomain, token, article_id),
         ]);
+        const { parseSections } = await loadArticleFormat();
         const sourceSections = parseSections(sourceRes.translation.body);
         const targetSections = parseSections(targetRes.translation.body);
 
@@ -2799,7 +2800,7 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: false,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { article_id, file_name, file_base64, content_type, brand_id } = params as {
           article_id: number;
           file_name: string;
@@ -2807,8 +2808,8 @@ export const createHelpCenterTools = (ctx: ToolContext): ToolDefinition[] => {
           content_type: string;
           brand_id?: number | string;
         };
-        const token = await getToken();
-        const hcSubdomain = await resolveHcSubdomain(brand_id);
+        const token = await caller.getToken();
+        const hcSubdomain = await resolveHcSubdomain(caller, brand_id);
         const buffer = Buffer.from(file_base64, 'base64');
         const blob = new Blob([buffer], { type: content_type });
         const formData = new FormData();

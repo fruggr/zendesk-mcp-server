@@ -77,14 +77,7 @@ const main = async (): Promise<void> => {
   // tool definitions are pure — auth only fires inside a handler — so this
   // never needs a credential or a network call.
   if (config.printTools) {
-    const tools = createAllTools({
-      subdomain: config.subdomain,
-      brandIds: config.brandIds,
-      // --print-tools never invokes a handler, so the resolver is never called;
-      // a stub satisfies the context without a credential or a network call.
-      resolveBrandSubdomain: () => Promise.resolve(''),
-      getToken: () => '',
-    });
+    const tools = createAllTools({ subdomain: config.subdomain, brandIds: config.brandIds });
     console.log(renderToolSurface(config, tools));
     return;
   }
@@ -117,15 +110,17 @@ const main = async (): Promise<void> => {
     logger.warn('dev_mode_ignored_http');
   }
 
+  // Signals only: an HTTP server has no client on stdin to lose. Nothing reads
+  // stdin here, so it stays paused and never reports EOF anyway — but saying so
+  // explicitly keeps that from becoming load-bearing. Installed before the
+  // server starts, so `http_transport_ready` already means a SIGTERM is handled.
+  let http: { close: () => Promise<void> } | undefined;
+  installShutdown({ watchStdin: false, logger, cleanup: async () => http?.close() });
+
   // Loaded on demand: the authorization server is HTTP's alone, so a stdio
   // start never parses it.
   const { startHttpTransport } = await import('./transports/http');
-  const http = await startHttpTransport(config, logger);
-
-  // Signals only: an HTTP server has no client on stdin to lose. Nothing reads
-  // stdin here, so it stays paused and never reports EOF anyway — but saying so
-  // explicitly keeps that from becoming load-bearing.
-  installShutdown({ watchStdin: false, logger, cleanup: http.close });
+  http = await startHttpTransport(config, logger);
 };
 
 main().catch((error) => {

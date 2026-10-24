@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import * as z from 'zod/v4';
-import { createStrictParamsParser, toStrictStandardSchema } from '../../../src/utils/validation';
+import {
+  convertingToJsonSchemaOnce,
+  createStrictParamsParser,
+  toStrictStandardSchema,
+} from '../../../src/utils/validation';
 
 const parse = createStrictParamsParser(
   z.object({
@@ -33,6 +37,17 @@ describe('createStrictParamsParser', () => {
     // whole message can be pinned here too rather than an order-agnostic regex.
     expect(() => parse({ per_page: 3, sort_by: 'id' })).toThrow(
       'Unknown parameter(s): per_page, sort_by. Valid parameters: cursor, page_size.',
+    );
+  });
+
+  // A proxy is rebuilt with every server, one per 2026-07-28 HTTP request: its
+  // parsers must outlive the server, or every request rebuilds them.
+  it('builds one parser per schema', () => {
+    const schema = z.object({ id: z.number() });
+
+    expect(createStrictParamsParser(schema)).toBe(createStrictParamsParser(schema));
+    expect(createStrictParamsParser(z.object({ id: z.number() }))).not.toBe(
+      createStrictParamsParser(schema),
     );
   });
 
@@ -230,5 +245,57 @@ describe('toStrictStandardSchema', () => {
     expect(standard.jsonSchema.output(options)).toEqual(
       schema.strict()['~standard'].jsonSchema.output(options),
     );
+  });
+
+  // A 2026-07-28 HTTP request registers its tools on a fresh server: the wrapper
+  // and its conversion must outlive the server, or every request redoes them.
+  it('wraps a zod schema once', () => {
+    expect(toStrictStandardSchema(schema)).toBe(toStrictStandardSchema(schema));
+  });
+
+  it('converts to JSON Schema once per direction and target', () => {
+    const draft2020 = { target: 'draft-2020-12' } as const;
+    const draft07 = { target: 'draft-07' } as const;
+    const input = standard.jsonSchema.input(draft2020);
+
+    expect(standard.jsonSchema.input(draft2020)).toBe(input);
+    expect(standard.jsonSchema.output(draft2020)).toBe(standard.jsonSchema.output(draft2020));
+    expect(standard.jsonSchema.output(draft2020)).not.toBe(input);
+    expect(standard.jsonSchema.input(draft07)).not.toBe(input);
+    expect(standard.jsonSchema.input(draft07)).toEqual(
+      schema.strict()['~standard'].jsonSchema.input(draft07),
+    );
+  });
+
+  it('converts afresh when the caller passes library options', () => {
+    const options = { target: 'draft-2020-12', libraryOptions: {} } as const;
+
+    expect(standard.jsonSchema.input(options)).not.toBe(standard.jsonSchema.input(options));
+    expect(standard.jsonSchema.output(options)).not.toBe(standard.jsonSchema.output(options));
+  });
+});
+
+describe('convertingToJsonSchemaOnce', () => {
+  const options = { target: 'draft-2020-12' } as const;
+
+  it('keeps the zod schema, its shape and its validation', () => {
+    const schema = z.object({ operation: z.string(), params: z.record(z.string(), z.unknown()) });
+
+    expect(convertingToJsonSchemaOnce(schema)).toBe(schema);
+    expect(schema.shape.operation).toBeDefined();
+    expect(schema['~standard'].validate({ operation: 'x', params: {} })).toEqual({
+      value: { operation: 'x', params: {} },
+    });
+  });
+
+  it('converts to the same JSON Schema as zod, once per direction and target', () => {
+    const plain = z.object({ page_size: z.number().default(1) });
+    const once = convertingToJsonSchemaOnce(z.object({ page_size: z.number().default(1) }));
+    const { jsonSchema } = once['~standard'];
+
+    expect(jsonSchema.input(options)).toEqual(plain['~standard'].jsonSchema.input(options));
+    expect(jsonSchema.input(options)).toBe(jsonSchema.input(options));
+    expect(jsonSchema.output(options)).toEqual(plain['~standard'].jsonSchema.output(options));
+    expect(jsonSchema.output(options)).toBe(jsonSchema.output(options));
   });
 });

@@ -22,7 +22,7 @@ import { parseAlertsUri } from '../utils/sla-resource';
 import type { NamedScope, SlaScope } from '../utils/sla-scope';
 import type { SlaService } from '../utils/sla-service';
 import type { SlaThresholds } from '../utils/sla-thresholds';
-import type { ToolCallContext, ToolContext, ToolDefinition } from './definitions';
+import type { ToolCallContext, ToolContext, ToolDefinition, ToolEnv } from './definitions';
 import { DURATION_HINT, requireSla } from './preferences';
 import { resolveViewId } from './tickets';
 
@@ -106,8 +106,8 @@ const keepEditedNote = (change: SlaPreferenceChange): string => {
   return `The thresholds you edited apply to this call only. To keep them, call configure_sla_alerts with ${args}.`;
 };
 
-export const createSlaAlertTools = (ctx: ToolContext): ToolDefinition[] => {
-  const { subdomain, getToken } = ctx;
+export const createSlaAlertTools = (env: ToolEnv): ToolDefinition[] => {
+  const { subdomain } = env;
 
   // The scope the caller named, the one the user picked in the form, or `mine`
   // by default: with a note saying which.
@@ -193,9 +193,10 @@ export const createSlaAlertTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (rawParams, call?: ToolCallContext) => {
+      handler: async (rawParams, call) => {
+        const { caller } = call;
         const params = rawParams as unknown as AlertParams;
-        const sla = requireSla(ctx.sla);
+        const sla = requireSla(caller.sla);
         // Every input is checked, and the view resolved, before the form is
         // shown or anything is written: a bad call fails without side effects.
         const given = [params.scope, params.view, params.query].filter((v) => v !== undefined);
@@ -205,7 +206,7 @@ export const createSlaAlertTools = (ctx: ToolContext): ToolDefinition[] => {
         const checked = overrideThresholds(await sla.thresholds(), params.warning, params.critical);
         if ('error' in checked) throw new Error(checked.error);
 
-        const token = await getToken();
+        const token = await caller.getToken();
         const view = params.view === undefined ? undefined : await resolveView(token, params.view);
         if (typeof view === 'string') return { content: [{ type: 'text', text: view }] };
 

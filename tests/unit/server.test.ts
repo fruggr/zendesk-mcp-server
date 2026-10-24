@@ -8,6 +8,7 @@ import {
   createMcpServer,
   createServerShell,
   registerToolset,
+  toolEnv,
 } from '../../src/server';
 import type { ToolAnnotations } from '../../src/tools/definitions';
 import { createAllTools } from '../../src/tools/index';
@@ -148,7 +149,10 @@ describe('createMcpServer', () => {
 
     // get_article belongs to the help_center namespace; the tickets-scoped
     // dispatch must reject it without ever reaching a real handler.
-    const out = await dispatch({ operation: 'get_article', params: { article_id: 1 } });
+    const out = await dispatch(
+      { operation: 'get_article', params: { article_id: 1 } },
+      { canElicit: false, caller: testToolContext() },
+    );
     expect(out.content[0]?.type).toBe('text');
     const text = (out.content[0] as { type: 'text'; text: string }).text;
     expect(text).toMatch(/Unknown operation "get_article"/);
@@ -168,7 +172,10 @@ describe('createMcpServer', () => {
 
     // The throw propagates to the SDK, which wraps it as an isError result; the
     // pure dispatch helper surfaces it as a rejection.
-    const error = await dispatch({ operation: 'list_tickets', params: { per_page: 3 } }).then(
+    const error = await dispatch(
+      { operation: 'list_tickets', params: { per_page: 3 } },
+      { canElicit: false, caller: testToolContext() },
+    ).then(
       () => {
         throw new Error('expected dispatch to reject the unknown param');
       },
@@ -222,6 +229,50 @@ describe('createMcpServer', () => {
       destructiveHint: true,
       openWorldHint: true,
     });
+  });
+});
+
+// The transport builds the definitions once and every server registers them:
+// a 2026-07-28 HTTP request builds a server, never its tools (#393).
+describe('shared tool definitions', () => {
+  const allMode: Config = { ...baseConfig, mode: 'all' };
+  const namespaceMode: Config = { ...baseConfig, mode: 'namespace' };
+  const definitions = () => createAllTools(toolEnv(baseConfig));
+  const schemaOf = (server: McpServer, name: string) => introspect(server)[name]?.inputSchema;
+  const build = (config: Config, tools?: ReturnType<typeof definitions>) =>
+    createMcpServer(config, getToken, undefined, undefined, tools ? { tools } : {});
+
+  it('registers the same definitions on every server built from them', () => {
+    const tools = definitions();
+    const first = build(allMode, tools);
+
+    expect(schemaOf(first, 'get_ticket')).toBeDefined();
+    expect(schemaOf(build(allMode, tools), 'get_ticket')).toBe(schemaOf(first, 'get_ticket'));
+  });
+
+  it('builds its own definitions when none are given', () => {
+    expect(schemaOf(build(allMode), 'get_ticket')).not.toBe(schemaOf(build(allMode), 'get_ticket'));
+  });
+
+  it('shares one proxy schema per set of definitions in namespace mode', () => {
+    const tools = definitions();
+    const first = schemaOf(build(namespaceMode, tools), 'zendesk_tickets');
+
+    expect(first).toBeDefined();
+    expect(schemaOf(build(namespaceMode, tools), 'zendesk_tickets')).toBe(first);
+    expect(
+      schemaOf(build({ ...namespaceMode, readOnly: true }, tools), 'zendesk_tickets'),
+    ).not.toBe(first);
+    expect(schemaOf(build(namespaceMode, definitions()), 'zendesk_tickets')).not.toBe(first);
+  });
+
+  it("filters shared definitions with each server's own config", () => {
+    const tools = definitions();
+    build(allMode, tools);
+    const readOnly = build({ ...allMode, readOnly: true }, tools);
+
+    expect(registeredToolNames(readOnly)).toContain('get_ticket');
+    expect(registeredToolNames(readOnly)).not.toContain('update_ticket');
   });
 });
 

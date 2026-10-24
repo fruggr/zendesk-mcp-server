@@ -32,6 +32,7 @@
     "test:mutation:summary": "node scripts/mutation-scope.mjs summary",
     "test:smoke": "pnpm build && node scripts/smoke-test.mjs",
     "test:bundle": "pnpm build && vitest run --config vitest.bundle.config.ts",
+    "bundle:size": "pnpm build && node scripts/bundle-size.mjs",
     "mcp:live": "tsx scripts/mcp-live.ts"
   },
   "keywords": [

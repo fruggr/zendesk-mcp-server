@@ -34,7 +34,7 @@ import {
   formatAttachmentSuffix,
   uploadAttachments,
 } from './attachments';
-import type { ToolContext, ToolDefinition } from './definitions';
+import type { ToolDefinition, ToolEnv } from './definitions';
 
 // Zendesk reserves `/api/v2/requests` for requesters and answers 403 on the
 // agent paths for an end user, so this replaces the generic "Permission denied"
@@ -495,8 +495,8 @@ const validateSubmission = (
 
 const REQUEST_STATUS = z.enum(['new', 'open', 'pending', 'hold', 'solved', 'closed']);
 
-export const createRequestTools = (ctx: ToolContext): ToolDefinition[] => {
-  const { subdomain, getToken } = ctx;
+export const createRequestTools = (env: ToolEnv): ToolDefinition[] => {
+  const { subdomain } = env;
 
   // Resolve a form id to the form and the fields it needs, in one place: both
   // get_request_form and create_request start from exactly this.
@@ -552,8 +552,8 @@ export const createRequestTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async () => {
-        const token = await getToken();
+      handler: async (_params, { caller }) => {
+        const token = await caller.getToken();
         const forms = await fetchEndUserForms(subdomain, token, 'list_request_forms');
         if (forms.length === 0) {
           return {
@@ -609,9 +609,9 @@ export const createRequestTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { form_id } = params as { form_id?: number };
-        const token = await getToken();
+        const token = await caller.getToken();
         const { form, fields } = await resolveForm('get_request_form', token, form_id);
         return {
           content: [
@@ -669,7 +669,7 @@ export const createRequestTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: false,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { subject, body, form_id, custom_fields, attachments } = params as {
           subject: string;
           body: string;
@@ -677,7 +677,7 @@ export const createRequestTools = (ctx: ToolContext): ToolDefinition[] => {
           custom_fields?: Array<{ id: number; value: unknown }>;
           attachments?: AttachmentInput[];
         };
-        const token = await getToken();
+        const token = await caller.getToken();
         const { form, fields } = await resolveForm('create_request', token, form_id);
         validateSubmission(form, fields, custom_fields ?? []);
 
@@ -755,7 +755,7 @@ export const createRequestTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { query, status, sort_by, sort_order, per_page, page } = params as {
           query?: string;
           status?: string[];
@@ -764,7 +764,7 @@ export const createRequestTools = (ctx: ToolContext): ToolDefinition[] => {
           per_page: number;
           page: number;
         };
-        const token = await getToken();
+        const token = await caller.getToken();
         // `per_page` is passed on BOTH paths on purpose: the search endpoint
         // otherwise defaults to 15 while the listing defaults to 100, and one
         // tool that silently paginates two ways is a trap.
@@ -827,12 +827,12 @@ export const createRequestTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { request_id, include_comments } = params as {
           request_id: number;
           include_comments: boolean;
         };
-        const token = await getToken();
+        const token = await caller.getToken();
         const { request } = await withForbiddenGuidance(
           'get_request',
           `GET /requests/${request_id}`,
@@ -886,13 +886,13 @@ export const createRequestTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: false,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { request_id, body, attachments } = params as {
           request_id: number;
           body: string;
           attachments?: AttachmentInput[];
         };
-        const token = await getToken();
+        const token = await caller.getToken();
         const uploads = attachments?.length
           ? [await uploadAttachments(subdomain, token, attachments)]
           : undefined;
@@ -937,9 +937,9 @@ export const createRequestTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { request_id } = params as { request_id: number };
-        const token = await getToken();
+        const token = await caller.getToken();
         const endpoint = `/requests/${request_id}`;
 
         // Read before writing. Zendesk accepts `solved: true` on a request the

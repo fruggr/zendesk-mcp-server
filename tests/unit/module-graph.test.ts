@@ -37,7 +37,36 @@ const STDIO_ONLY = [
   resolve('src/auth/token-store.ts'),
 ];
 
+// The HTML <-> Markdown pipeline only Help Center articles need: loaded by the
+// first call that converts one, never by a start (#393).
+const ARTICLE_PIPELINE = [
+  resolve('src/utils/article-sections.ts'),
+  'cheerio',
+  'unified',
+  'remark-parse',
+  'remark-gfm',
+  'remark-rehype',
+  'remark-stringify',
+  'rehype-parse',
+  'rehype-raw',
+  'rehype-remark',
+  'rehype-stringify',
+  'hast-util-to-html',
+];
+
 describe('module graph', () => {
+  it('keeps the article pipeline out of what a start loads, on either transport', () => {
+    for (const entry of ['src/index.ts', 'src/transports/http.ts', 'src/transports/stdio.ts']) {
+      const loaded = staticClosure(entry);
+      expect(ARTICLE_PIPELINE.filter((m) => loaded.has(m))).toEqual([]);
+    }
+  });
+
+  it('still reaches the article pipeline from its loader', () => {
+    const loader = readFileSync('src/utils/article-format.ts', 'utf8');
+    expect(loader).toContain("import('./article-sections')");
+  });
+
   it('keeps the stdio sign-in path out of what every start loads', () => {
     const loaded = staticClosure('src/index.ts');
     expect(STDIO_ONLY.filter((m) => loaded.has(m))).toEqual([]);

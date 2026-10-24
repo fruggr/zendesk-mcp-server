@@ -32,13 +32,11 @@ export interface ToolDefinition {
   description: string;
   inputSchema: z.ZodObject;
   annotations: ToolAnnotations;
-  handler: (params: Record<string, unknown>, call?: ToolCallContext) => Promise<ToolResult>;
+  /** Built once per process: the caller the call acts for comes with each call. */
+  handler: (params: Record<string, unknown>, call: ToolCall) => Promise<ToolResult>;
 }
 
-/**
- * What a handler may know about the call beyond its parameters. Absent when a
- * handler is invoked outside an MCP request (unit tests).
- */
+/** What a handler may know about the MCP request beyond its parameters. */
 export interface ToolCallContext {
   /** Whether the client can answer a form elicitation. */
   canElicit: boolean;
@@ -46,7 +44,11 @@ export interface ToolCallContext {
   inputResponses?: Record<string, unknown> | undefined;
 }
 
-export interface ToolContext {
+/**
+ * What a tool's definition is built from: this server's own config, the same
+ * for every caller, so one set of definitions serves the whole process.
+ */
+export interface ToolEnv {
   subdomain: string;
   /**
    * Deploy-time brand allow-list (multi-brand accounts): Help Center operations
@@ -59,6 +61,13 @@ export interface ToolContext {
    * straight in under exactOptionalPropertyTypes.
    */
   brandIds?: string[] | undefined;
+}
+
+/**
+ * The user a call acts for. The transport builds it for that user and hands it
+ * to the handler with each call: a definition never holds one.
+ */
+export interface ToolCaller {
   /**
    * Resolves a brand id-or-subdomain to the brand's subdomain, cached. Zendesk
    * addresses brands by host (`<brand.subdomain>.zendesk.com`), so every
@@ -72,4 +81,11 @@ export interface ToolContext {
    * `--print-tools`): no urgency is pushed then.
    */
   sla?: SlaService | undefined;
+}
+
+export type ToolContext = ToolEnv & ToolCaller;
+
+/** Everything a handler learns besides its parameters. */
+export interface ToolCall extends ToolCallContext {
+  caller: ToolCaller;
 }
