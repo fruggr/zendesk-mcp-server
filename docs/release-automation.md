@@ -156,7 +156,8 @@ instead, and the canary gates that merge like any other.
 
 Two things decide what happens to an update: **which dependency it touches**, and whether it is
 a security fix. The semver level only refines those two. Everything auto-merged that is not a
-security fix arrives in the weekly batch.
+security fix arrives in the weekly batch, except `pnpm` and the container base image, which get
+their own PR.
 
 | Update kind                                                         | Vulnerability (security) | Non-vulnerability                |
 | ------------------------------------------------------------------- | ------------------------ | -------------------------------- |
@@ -168,7 +169,7 @@ security fix arrives in the weekly batch.
 | **patch / minor** on a `pnpm-workspace.yaml` `overrides` entry       | never proposed\*\*\*     | never proposed\*\*\*            |
 | `lockFileMaintenance` (Tuesday and Friday before 8am, Europe/Paris) | auto-merge               | auto-merge                       |
 | GitHub Actions (`uses: org/action@…`)                               | manual review            | manual review                    |
-| Container base image (`Dockerfile` `FROM`), digest / Alpine         | auto-merge, own PR       | auto-merge, own PR, within a day |
+| Container base image (`Dockerfile` `FROM`), digest / Alpine         | auto-merge, own PR       | auto-merge, own PR, any day      |
 
 \* Vulnerability-minor updates carry the `fix(security):` prefix, so merging them publishes a release. We keep them under manual review to allow an impact assessment first.
 
