@@ -6,7 +6,7 @@
 # when only these lines change. The tag names the full Node and Alpine versions;
 # a PR that moves them gets a Docker Scout comparison (base-image.yml).
 
-FROM dhi.io/node:24.22.0-alpine3.24-dev@sha256:7aff626d8cb36fd5a7bc926b6922fb9b40af4cf046f285fa45c1f1712bacd4b1 AS build
+FROM dhi.io/node:24.22.0-alpine3.24-dev@sha256:b106c78e205545c0989e5107cd5c47141bcdc553340accdac32386f0fe219b39 AS build
 WORKDIR /src
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY patches ./patches
@@ -19,7 +19,7 @@ COPY scripts/bundle-manifest.mjs ./scripts/
 COPY src ./src
 RUN pnpm build && mkdir /data
 
-FROM dhi.io/node:24.22.0-alpine3.24@sha256:0b55cdd8c105b9823b26140f07a26c0fc8531fbc2cdbbdfc6e058f24c1762be5
+FROM dhi.io/node:24.22.0-alpine3.24@sha256:77ff330717a5eac05ae49c07752d99b91a76d047b18b8687834dcf305e246964
 ARG VERSION=0.0.0
 # The FROM above, passed in by the publish action: release.yml compares it with
 # the Dockerfile's to know when the published image is on a stale base.
