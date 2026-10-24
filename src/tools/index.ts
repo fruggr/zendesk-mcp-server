@@ -27,7 +27,7 @@ export const createAllTools = (ctx: ToolContext): ToolDefinition[] => [
   ...bindCaller(createSlaAlertTools(ctx), ctx),
   ...bindCaller(createRequestTools(ctx), ctx),
   ...bindCaller(createSearchTools(ctx), ctx),
-  ...createHelpCenterTools(ctx),
+  ...bindCaller(createHelpCenterTools(ctx), ctx),
   ...bindCaller(createUserTools(ctx), ctx),
   ...bindCaller(createPreferenceTools(), ctx),
 ];
