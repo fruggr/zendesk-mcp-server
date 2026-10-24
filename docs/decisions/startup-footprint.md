@@ -122,11 +122,11 @@ The ceiling in force (bytes):
 <!-- bundle-ceiling:start -->
 | Entry | Baseline | Ceiling |
 | --- | ---: | ---: |
-| `index` | 1432715 | 2149072 |
+| `index` | 1435990 | 2153985 |
 | `http` | 1213251 | 1819876 |
-| `total` | 5331592 | 7997388 |
+| `total` | 5334867 | 8002300 |
 
-Factor 1.5, baseline measured at `b13796e` on 2026-10-24.
+Factor 1.5, baseline measured at `40c49a8` on 2026-10-24.
 <!-- bundle-ceiling:end -->
 
 ### Why sizes and not timings
