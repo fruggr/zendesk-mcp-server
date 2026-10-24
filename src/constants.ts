@@ -29,6 +29,12 @@ export const CONTENT_TAGS_MAX_PAGE_SIZE = 30;
 // truncate almost every first page — the failure this tool exists to fix (#265).
 // Callers who want more follow the cursor.
 export const DEFAULT_TICKET_COMMENT_PAGE_SIZE = 20;
+
+// Same constraint for ticket lists (#388): measured on a live tenant, a list item
+// is ~750 characters at p90 even with its description cut to an excerpt, so 100
+// never fits CHARACTER_LIMIT and 25 leaves room for long subjects and tags. The
+// unified search, whose results are mostly tickets, shares it.
+export const DEFAULT_TICKET_LIST_PAGE_SIZE = 25;
 export const TOKEN_CACHE_TTL_MS = 5 * 60 * 1000;
 
 // TTL for the per-session Help Center topology cache (zendesk-hc://topology).
