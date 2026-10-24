@@ -169,7 +169,7 @@ their own PR.
 | **patch / minor** on a `pnpm-workspace.yaml` `overrides` entry       | never proposed\*\*\*     | never proposed\*\*\*            |
 | `lockFileMaintenance` (Tuesday and Friday before 8am, Europe/Paris) | auto-merge               | auto-merge                       |
 | GitHub Actions (`uses: org/action@…`)                               | manual review            | manual review                    |
-| Container base image (`Dockerfile` `FROM`), digest / Alpine         | auto-merge, own PR       | auto-merge, own PR, any day      |
+| Container base image (`Dockerfile` `FROM`), digest / Alpine         | not raised\*\*\*\*\*     | auto-merge, own PR, any day      |
 
 \* Vulnerability-minor updates carry the `fix(security):` prefix, so merging them publishes a release. We keep them under manual review to allow an impact assessment first.
 
@@ -178,6 +178,8 @@ their own PR.
 \*\*\* Both columns read that way for the same reason: the three overrides are caret ranges. Pin one to an exact version and it behaves like any other dependency. See **The overrides** below.
 
 \*\*\*\* The `@modelcontextprotocol/*` packages travel as one `mcp sdk` group, never split: they release in lockstep over one shared `@modelcontextprotocol/core`, and a split bump would leave two copies of it in the lockfile.
+
+\*\*\*\*\* Renovate's advisory sources (GitHub alerts and OSV) do not cover container images, so a base-image CVE fix arrives as an ordinary digest rebuild, with no `fix(security):` prefix and no release; `release.yml` republishes the image instead.
 
 **The weekly batch.** Everything auto-merged and non-security is grouped into one PR,
 `chore(deps): update dependencies`, opened Monday before 8am (Europe/Paris). One group, because

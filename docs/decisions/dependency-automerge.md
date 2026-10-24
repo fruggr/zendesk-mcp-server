@@ -81,14 +81,21 @@ tests in `tests/functional/`, which are run on demand.
 
 **Human review does not detect a compromised package.** Nobody reads
 `"open": "11.0.1"` → `"11.0.2"` in a diff and sees a malicious postinstall. What
-catches that class of attack is time. This repo has two independent delays, and
-they do not cover the same ground:
+catches that class of attack is time. This repo has two independent delays on
+packages, and they do not cover the same ground:
 
 - `minimumReleaseAge: "3 days"` in `renovate.json`, on every **ordinary** update
   Renovate proposes;
 - `minimumReleaseAge: 4320` (minutes) in `pnpm-workspace.yaml`, which pnpm
   enforces natively at resolution time and which therefore also covers the
   transitive tree Renovate does not manage.
+
+The container base image (the Dockerfile's `FROM` lines) has its own, shorter
+gate: 24 hours on a new tag, none on a digest, which carries no release date.
+It is the technical base we ship and are answerable for, so a Node or Alpine
+CVE fix has to reach the published image within a day; Node, Alpine and the
+Docker Hardened Images rebuilds on top of them are maintained upstream with a
+release process that makes a day enough.
 
 Removing the human step does not remove that protection, because the human step
 was never the protection.
