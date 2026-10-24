@@ -23,7 +23,7 @@ export const bindCaller = (
   }));
 
 export const createAllTools = (ctx: ToolContext): ToolDefinition[] => [
-  ...createTicketTools(ctx),
+  ...bindCaller(createTicketTools(ctx), ctx),
   ...bindCaller(createSlaAlertTools(ctx), ctx),
   ...bindCaller(createRequestTools(ctx), ctx),
   ...bindCaller(createSearchTools(ctx), ctx),

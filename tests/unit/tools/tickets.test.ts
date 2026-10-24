@@ -20,7 +20,7 @@ import {
 } from '../../msw-handlers';
 import { mswServer } from '../../setup';
 import { testSlaService } from '../../sla-service';
-import { testToolContext } from '../../tool-context';
+import { testToolContext, withCaller } from '../../tool-context';
 import { allTextOf, firstText, textAt } from '../../tool-result';
 
 const ctx: ToolContext = testToolContext({
@@ -28,8 +28,10 @@ const ctx: ToolContext = testToolContext({
   getToken: () => 'test-token',
 });
 
+const ticketTools = (context: ToolContext) => withCaller(createTicketTools(context), context);
+
 const findTool = (name: string) => {
-  const tools = createTicketTools(ctx);
+  const tools = ticketTools(ctx);
   const tool = tools.find((t) => t.name === name);
   if (!tool) throw new Error(`Tool ${name} not found`);
   return tool;
@@ -55,7 +57,7 @@ const captureShowMany = (): URLSearchParams[] => {
 
 describe('ticket tools', () => {
   it('creates 19 tools (search_tickets lives here; the unified search is elsewhere)', () => {
-    const tools = createTicketTools(ctx);
+    const tools = ticketTools(ctx);
     expect(tools).toHaveLength(19);
   });
 
@@ -1008,7 +1010,9 @@ describe('ticket tools', () => {
         const { createTicketTools: createTicketToolsFresh } = await import(
           '../../../src/tools/tickets'
         );
-        const tool = createTicketToolsFresh(ctx).find((t) => t.name === 'get_ticket_attachments');
+        const tool = withCaller(createTicketToolsFresh(ctx), ctx).find(
+          (t) => t.name === 'get_ticket_attachments',
+        );
         if (!tool) throw new Error('get_ticket_attachments not found');
         return tool;
       };
@@ -1241,7 +1245,7 @@ describe('ticket tools', () => {
     });
 
     const slaTools = (push: boolean) =>
-      createTicketTools(
+      ticketTools(
         testToolContext({
           sla: testSlaService({ push }),
         }),
@@ -1277,7 +1281,7 @@ describe('ticket tools', () => {
     });
 
     it('uses the thresholds the service hands over', async () => {
-      const tools = createTicketTools(
+      const tools = ticketTools(
         testToolContext({
           sla: testSlaService({
             thresholds: () =>
@@ -1294,7 +1298,7 @@ describe('ticket tools', () => {
     it("falls back to the server thresholds when the caller's cannot be read", async () => {
       // A failed /users/me (or store) must not fail the ticket read: the urgency
       // line is pushed with the admin thresholds instead.
-      const tools = createTicketTools(
+      const tools = ticketTools(
         testToolContext({
           sla: testSlaService({ thresholds: () => Promise.reject(new Error('users/me 500')) }),
         }),

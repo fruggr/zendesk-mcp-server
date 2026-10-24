@@ -66,6 +66,7 @@ import {
   PAGE_DESC,
   PER_PAGE_DESC,
 } from '../utils/pagination';
+import type { SlaService } from '../utils/sla-service';
 import { formatUrgencyLine, ticketUrgency } from '../utils/sla-urgency';
 import { formatTicketMetrics } from '../utils/ticket-metrics';
 import {
@@ -74,7 +75,12 @@ import {
   formatAttachmentSuffix,
   uploadAttachments,
 } from './attachments';
-import type { ToolContext, ToolDefinition, ToolImageContent, ToolTextContent } from './definitions';
+import type {
+  SharedToolDefinition,
+  ToolEnv,
+  ToolImageContent,
+  ToolTextContent,
+} from './definitions';
 
 // The per-image cap in MB, for the skip message. Derived once: both operands
 // are module constants.
@@ -797,17 +803,16 @@ const formatMacroPreviewDiff = (
   return lines.join('\n');
 };
 
-export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
-  const { subdomain, getToken } = ctx;
+export const createTicketTools = (env: ToolEnv): SharedToolDefinition[] => {
+  const { subdomain } = env;
 
   // The pushed `**Urgency**` line for one SLA block, '' when push is off. The
   // thresholds are the caller's, read once per call; the line is decoration, so
   // a failed read (/users/me, the store) falls back to the server's rather than
   // failing the ticket read.
-  const urgencyRenderer = async (): Promise<
-    (entry: ZendeskSlaSideloadEntry | undefined) => string
-  > => {
-    const sla = ctx.sla;
+  const urgencyRenderer = async (
+    sla: SlaService | undefined,
+  ): Promise<(entry: ZendeskSlaSideloadEntry | undefined) => string> => {
     if (!sla?.push) return () => '';
     const thresholds = await sla.thresholds().catch(() => sla.adminThresholds);
     // Read at render time, as formatSlaBlock does: a clock taken before the
@@ -851,12 +856,12 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { ticket_id, include_comments } = params as {
           ticket_id: number;
           include_comments: boolean;
         };
-        const token = await getToken();
+        const token = await caller.getToken();
         const { ticket } = await zendeskGet<{ ticket: ZendeskTicket }>(
           subdomain,
           token,
@@ -875,7 +880,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
                 { include: 'users', include_inline_images: 'true' },
               )
             : undefined,
-          urgencyRenderer(),
+          urgencyRenderer(caller.sla),
         ]);
         const comments = thread?.comments ?? [];
         // Subscribers and comment authors resolve in the same batch, so the whole
@@ -941,13 +946,13 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { ticket_id, page_size, cursor } = params as {
           ticket_id: number;
           page_size: number;
           cursor?: string;
         };
-        const token = await getToken();
+        const token = await caller.getToken();
         let response: ZendeskListResponse<ZendeskAudit>;
         try {
           response = await zendeskGet<ZendeskListResponse<ZendeskAudit>>(
@@ -1035,14 +1040,14 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { ticket_id, sort_order, page_size, cursor } = params as {
           ticket_id: number;
           sort_order: 'asc' | 'desc';
           page_size: number;
           cursor?: string;
         };
-        const token = await getToken();
+        const token = await caller.getToken();
         const response = await zendeskGet<TicketCommentsResponse>(
           subdomain,
           token,
@@ -1124,12 +1129,12 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { ticket_id, attachment_ids } = params as {
           ticket_id: number;
           attachment_ids?: number[];
         };
-        const token = await getToken();
+        const token = await caller.getToken();
 
         const attachments =
           attachment_ids && attachment_ids.length > 0
@@ -1187,20 +1192,20 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { query, per_page, page } = params as {
           query: string;
           per_page: number;
           page: number;
         };
-        const token = await getToken();
+        const token = await caller.getToken();
         const [response, urgency] = await Promise.all([
           zendeskGet<ZendeskListResponse<ZendeskTicket>>(subdomain, token, '/search', {
             query: `type:ticket ${query}`,
             include: 'tickets(slas)',
             ...buildOffsetParams(per_page, page),
           }),
-          urgencyRenderer(),
+          urgencyRenderer(caller.sla),
         ]);
         // The `slas` sideload is nested on each result (no top-level array, no
         // ticket_id correlation) — read it straight off the ticket.
@@ -1273,9 +1278,9 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: false,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { subject, description, ...rest } = params as Record<string, unknown>;
-        const token = await getToken();
+        const token = await caller.getToken();
         const { ticket } = await zendeskPost<{ ticket: ZendeskTicket }>(
           subdomain,
           token,
@@ -1369,7 +1374,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         // `followers` and `email_ccs` are pulled out of the spread on purpose:
         // every other key goes to Zendesk verbatim, so leaving the add/remove
         // wrapper in would send a shape Zendesk quietly ignores.
@@ -1378,7 +1383,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           followers?: SubscriberEdit;
           email_ccs?: SubscriberEdit;
         } & Record<string, unknown>;
-        const token = await getToken();
+        const token = await caller.getToken();
         const sent: SubscriberActions = {};
         const followerActions = toSubscriberActions(followers);
         const ccActions = toSubscriberActions(email_ccs);
@@ -1432,13 +1437,13 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: false,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { ticket_id, body, attachments } = params as {
           ticket_id: number;
           body: string;
           attachments?: AttachmentInput[];
         };
-        const token = await getToken();
+        const token = await caller.getToken();
         const uploads = attachments?.length
           ? [await uploadAttachments(subdomain, token, attachments)]
           : undefined;
@@ -1479,13 +1484,13 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: false,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { ticket_id, body, attachments } = params as {
           ticket_id: number;
           body: string;
           attachments?: AttachmentInput[];
         };
-        const token = await getToken();
+        const token = await caller.getToken();
         const uploads = attachments?.length
           ? [await uploadAttachments(subdomain, token, attachments)]
           : undefined;
@@ -1526,9 +1531,9 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { page_size, cursor } = params as { page_size: number; cursor?: string };
-        const token = await getToken();
+        const token = await caller.getToken();
         const response = await zendeskGet<ZendeskListResponse<ZendeskTicket>>(
           subdomain,
           token,
@@ -1571,9 +1576,9 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { problem_id } = params as { problem_id: number };
-        const token = await getToken();
+        const token = await caller.getToken();
         const response = await zendeskGet<ZendeskListResponse<ZendeskTicket>>(
           subdomain,
           token,
@@ -1630,13 +1635,13 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { ticket_id, add, remove } = params as {
           ticket_id: number;
           add?: string[];
           remove?: string[];
         };
-        const token = await getToken();
+        const token = await caller.getToken();
         const { ticket } = await zendeskGet<{ ticket: ZendeskTicket }>(
           subdomain,
           token,
@@ -1688,9 +1693,9 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { per_page, page } = params as { per_page: number; page: number };
-        const token = await getToken();
+        const token = await caller.getToken();
         let response: ZendeskListResponse<ZendeskSlaPolicy>;
         try {
           response = await zendeskGet<ZendeskListResponse<ZendeskSlaPolicy>>(
@@ -1744,9 +1749,9 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const ids = [...new Set((params as { ticket_ids: number[] }).ticket_ids)];
-        const token = await getToken();
+        const token = await caller.getToken();
         const response = await zendeskGet<{
           tickets?: ZendeskTicket[];
           metric_sets?: ZendeskTicketMetric[];
@@ -1795,9 +1800,9 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { page_size, cursor } = params as { page_size: number; cursor?: string };
-        const token = await getToken();
+        const token = await caller.getToken();
         const response = await zendeskGet<ZendeskListResponse<ZendeskTicketField>>(
           subdomain,
           token,
@@ -1845,9 +1850,9 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { page_size, cursor } = params as { page_size: number; cursor?: string };
-        const token = await getToken();
+        const token = await caller.getToken();
         const response = await zendeskGet<ZendeskListResponse<ZendeskView>>(
           subdomain,
           token,
@@ -1917,7 +1922,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { view, sort_by, sort_order, page_size, cursor } = params as {
           view: string | number;
           sort_by?: string;
@@ -1925,7 +1930,7 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
           page_size: number;
           cursor?: string;
         };
-        const token = await getToken();
+        const token = await caller.getToken();
         const resolved = await resolveViewId(subdomain, token, view);
         if ('available' in resolved) {
           const text =
@@ -2001,9 +2006,9 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { per_page, page } = params as { per_page: number; page: number };
-        const token = await getToken();
+        const token = await caller.getToken();
         const response = await zendeskGet<ZendeskListResponse<ZendeskMacro>>(
           subdomain,
           token,
@@ -2048,9 +2053,9 @@ export const createTicketTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { ticket_id, macro_id } = params as { ticket_id: number; macro_id: number };
-        const token = await getToken();
+        const token = await caller.getToken();
         // Two reads in parallel: the ticket as it is now, and the ticket as the
         // macro would leave it. Diffing them isolates the macro's actual effect.
         const [{ ticket: before }, { result }] = await Promise.all([
