@@ -1,0 +1,60 @@
+name: Scanner comparison (throwaway)
+
+# One-off experiment: do Docker Scout and Trivy see the Node.js runtime inside
+# the DHI base image, and flag the October 2026 Node security release? Delete
+# with the branch; never merge.
+on:
+  pull_request:
+    paths:
+      - .github/workflows/scanner-comparison.yml
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        tag: ['24.22.0-alpine3.24', '24.22.1-alpine3.24']
+    env:
+      IMAGE: dhi.io/node:${{ matrix.tag }}
+    steps:
+      - uses: docker/login-action@v4
+        with:
+          registry: dhi.io
+          username: ${{ secrets.DHI_USERNAME }}
+          password: ${{ secrets.DHI_TOKEN }}
+
+      # Scout needs a Docker Hub login; same Docker account.
+      - uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DHI_USERNAME }}
+          password: ${{ secrets.DHI_TOKEN }}
+
+      - run: docker pull --platform linux/amd64 "$IMAGE"
+
+      - name: Node version inside the image
+        run: docker run --rm --platform linux/amd64 --entrypoint node "$IMAGE" --version
+
+      - name: Install Docker Scout CLI
+        run: curl -fsSL https://raw.githubusercontent.com/docker/scout-cli/main/install.sh | sh -s --
+
+      - name: Scout - packages (SBOM)
+        run: docker scout sbom --format list --platform linux/amd64 "registry://$IMAGE"
+
+      - name: Scout - CVEs
+        run: docker scout cves --platform linux/amd64 "registry://$IMAGE" || true
+
+      - name: Trivy - packages
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:latest \
+            image --quiet --scanners vuln --list-all-pkgs --format json "$IMAGE" \
+            | jq -r '.Results[] | "== \(.Target) [\(.Type)]", (.Packages // [] | .[] | "  \(.Name) \(.Version)")'
+
+      - name: Trivy - CVEs
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:latest \
+            image --quiet --scanners vuln "$IMAGE"
