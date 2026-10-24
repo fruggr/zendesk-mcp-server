@@ -187,3 +187,87 @@ describe('dist bundle over HTTP', () => {
     expect(textOf(after)).toContain('SLA contractuels fruggr - Bugs/Incidents');
   });
 });
+
+// A client that goes away without a word (a closed editor, a crashed session)
+// leaves EOF on stdin and nothing else: the server must notice and exit, even
+// with a handle holding the event loop, after serving calls that loaded lazy
+// chunks. Without the explicit exit, such a process lingers forever.
+describe('dist bundle lifecycle', () => {
+  const EXIT_TIMEOUT_MS = 10_000;
+
+  const exitOf = (proc: ChildProcess): Promise<{ code: number | null; signal: string | null }> =>
+    new Promise((done, fail) => {
+      const timer = setTimeout(() => {
+        proc.kill('SIGKILL');
+        fail(new Error(`still running ${EXIT_TIMEOUT_MS} ms after its client left`));
+      }, EXIT_TIMEOUT_MS);
+      proc.once('exit', (code, signal) => {
+        clearTimeout(timer);
+        done({ code, signal });
+      });
+    });
+
+  it('exits on stdin EOF after serving tools, an article one included', async () => {
+    const tokenFile = join(workDir, 'lifecycle-token.json');
+    writeFileSync(tokenFile, JSON.stringify({ accessToken: 'zd-test', scope: 'read write' }));
+    const proc = spawn(process.execPath, [...NODE_ARGS, ENTRY, 'testsubdomain', '--mode', 'all'], {
+      env: { ...process.env, OAUTH_TOKEN_FILE: tokenFile, HOLD_EVENT_LOOP: '1' },
+      stdio: ['pipe', 'pipe', 'ignore'],
+    });
+    const replies = new Map<number, (message: { result?: unknown; error?: unknown }) => void>();
+    let pending = '';
+    proc.stdout?.on('data', (chunk: Buffer) => {
+      pending += chunk.toString();
+      for (let end = pending.indexOf('\n'); end >= 0; end = pending.indexOf('\n')) {
+        const message = JSON.parse(pending.slice(0, end)) as {
+          id?: number;
+          result?: unknown;
+          error?: unknown;
+        };
+        pending = pending.slice(end + 1);
+        if (message.id !== undefined) replies.get(message.id)?.(message);
+      }
+    });
+    let nextId = 0;
+    const request = (method: string, params: unknown) =>
+      new Promise<{ result?: unknown; error?: unknown }>((done) => {
+        nextId += 1;
+        replies.set(nextId, done);
+        proc.stdin?.write(`${JSON.stringify({ jsonrpc: '2.0', id: nextId, method, params })}\n`);
+      });
+
+    await request('initialize', {
+      protocolVersion: '2025-06-18',
+      capabilities: {},
+      clientInfo: { name: 'dist-test', version: '0.0.0' },
+    });
+    proc.stdin?.write(
+      `${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`,
+    );
+    const sla = await request('tools/call', { name: 'list_sla_policies', arguments: {} });
+    const article = await request('tools/call', {
+      name: 'get_article',
+      arguments: { article_id: 5000 },
+    });
+    expect(textOf(sla.result as { content?: unknown })).toContain('SLA contractuels fruggr');
+    expect(textOf(article.result as { content?: unknown })).toContain('How to test');
+
+    const exited = exitOf(proc);
+    proc.stdin?.end();
+
+    await expect(exited).resolves.toEqual({ code: 0, signal: null });
+  });
+
+  it('exits cleanly on SIGTERM over HTTP', async () => {
+    const port = await freePort();
+    const { proc } = await startHttpServer(port, {
+      OAUTH_MASTER_SECRET: Buffer.alloc(32, 8).toString('base64'),
+      OAUTH_STORE: 'memory://',
+      HOLD_EVENT_LOOP: '1',
+    });
+    const exited = exitOf(proc);
+    proc.kill('SIGTERM');
+
+    await expect(exited).resolves.toEqual({ code: 0, signal: null });
+  });
+});

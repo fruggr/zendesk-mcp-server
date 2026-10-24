@@ -35,3 +35,7 @@ relay.unref();
 relay.listen(0, '127.0.0.1', () => {
   console.error(`zendesk_relay_ready port=${(relay.address() as AddressInfo).port}`);
 });
+
+// A handle that holds the event loop, as a library socket or the OAuth callback
+// server can: the shutdown must not rely on the loop draining by itself.
+if (process.env['HOLD_EVENT_LOOP'] === '1') setInterval(() => undefined, 60_000);
