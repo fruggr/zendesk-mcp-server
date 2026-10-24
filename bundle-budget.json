@@ -1,0 +1,13 @@
+{
+  "tolerance": 0.1,
+  "floorBytes": 4096,
+  "shrinkNote": 0.8,
+  "references": {
+    "article-sections": 2646851,
+    "http": 1213251,
+    "index": 1432715,
+    "pkce": 3088,
+    "rolldown-runtime": 1613,
+    "token-store": 34074
+  }
+}

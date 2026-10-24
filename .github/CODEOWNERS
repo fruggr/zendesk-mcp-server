@@ -1,0 +1,7 @@
+# The bundle-size ceiling and what enforces it are the repository owner's call:
+# docs/decisions/startup-footprint.md. Effective once "Require review from Code
+# Owners" is on in main's branch protection.
+/bundle-ceiling.json @dlecan
+/scripts/bundle-size.mjs @dlecan
+/.github/workflows/bundle-ceiling-guard.yml @dlecan
+/.github/CODEOWNERS @dlecan

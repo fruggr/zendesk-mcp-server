@@ -1,0 +1,12 @@
+{
+  "factor": 1.5,
+  "baseline": {
+    "commit": "b13796e",
+    "date": "2026-10-24",
+    "bytes": {
+      "index": 1432715,
+      "http": 1213251,
+      "total": 5331592
+    }
+  }
+}
