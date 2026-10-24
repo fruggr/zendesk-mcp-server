@@ -1,3 +1,25 @@
+## [3.5.1](https://github.com/fruggr/zendesk-mcp-server/compare/v3.5.0...v3.5.1) (2026-10-24)
+
+### Bug Fixes
+
+* **tickets:** fit ticket list pages within the response limit ([#405](https://github.com/fruggr/zendesk-mcp-server/issues/405)) ([b6227a6](https://github.com/fruggr/zendesk-mcp-server/commit/b6227a6273f3ea0a4ff70beab0213d63477838de)), closes [#388](https://github.com/fruggr/zendesk-mcp-server/issues/388), references [#265](https://github.com/fruggr/zendesk-mcp-server/issues/265)
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Chores
+
+* **deps:** lock file maintenance ([#404](https://github.com/fruggr/zendesk-mcp-server/issues/404)) ([ff408f5](https://github.com/fruggr/zendesk-mcp-server/commit/ff408f5b8b394db723a37de48a213141679d8783))
+</details>
+
+### Security
+
+* **undici:** undici vulnerable to Denial of Service via unbounded memory in the EventSource parser ([GHSA-4qv8-2p9j-2685](https://github.com/advisories/GHSA-4qv8-2p9j-2685), moderate)
+* **undici:** undici vulnerable to Denial of Service via unbounded memory in the EventSource parser ([GHSA-4qv8-2p9j-2685](https://github.com/advisories/GHSA-4qv8-2p9j-2685), moderate)
+* **undici:** undici vulnerable to Subresource Integrity bypass via non-lowercase algorithm tokens ([GHSA-f72v-6w45-q472](https://github.com/advisories/GHSA-f72v-6w45-q472), moderate)
+* **undici:** undici vulnerable to Denial of Service via unhandled error on excessive content-encodings ([GHSA-xjj6-f33q-929c](https://github.com/advisories/GHSA-xjj6-f33q-929c), high)
+* **undici:** undici vulnerable to Denial of Service via unhandled error on excessive content-encodings ([GHSA-xjj6-f33q-929c](https://github.com/advisories/GHSA-xjj6-f33q-929c), high)
+
 ## [3.5.0](https://github.com/fruggr/zendesk-mcp-server/compare/v3.4.0...v3.5.0) (2026-10-21)
 
 ### Features
