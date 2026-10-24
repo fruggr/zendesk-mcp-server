@@ -240,10 +240,10 @@ versioning reads the Node version as major.minor.patch and the Alpine release as
 and treats `-dev` as a compatibility marker, so a digest update re-resolves the *same* tag, a tag
 update never leaves Node's major line without dashboard approval, and the build stage never
 swaps to the runtime image. The README badge carries the same tag and moves in the same PR.
-`.github/workflows/base-image.yml` runs `scripts/base-image-report.mjs` on every PR touching
-them: it runs `node` inside each image, fails when the Node or Alpine version it finds differs
-from the tag, or when the badge and the two `FROM` lines disagree, and posts a before/after
-comment when the base moves. It has no age gate: dhi.io serves no release timestamp, and
+When a PR moves the runtime `FROM` line, `.github/workflows/base-image.yml` runs the official
+[`docker/scout-action`](https://github.com/docker/scout-action) `compare` between the new base
+and the base branch's, and Scout comments on the PR the packages that changed (Node included) and
+the CVEs fixed or introduced. The base has no age gate: dhi.io serves no release timestamp, and
 Renovate's default `timestamp-required` would hold every tag update forever.
 
 **Dashboard approval** means: no PR is opened automatically. The update appears in the Renovate-managed "Dependency Dashboard" issue with a checkbox. Ticking the checkbox triggers PR creation. This is intentional for majors, which usually require reading the upstream CHANGELOG and following a migration procedure.
@@ -260,7 +260,7 @@ Concrete examples:
 - Minor update of `vitest` (tooling) → joins the same `chore(deps): update dependencies` batch → auto-merge → no release.
 - Major update of `vitest` (tooling) → entry in the dashboard, manual approval required.
 - Patch or minor bump of `pnpm` (via `packageManager` field) → PR `chore(deps): update pnpm to X`, on its own → auto-merge → no release. The corepack hash in `packageManager` is updated automatically by Renovate when the format is `pnpm@VERSION+sha512.HASH`. Since pnpm 12 records itself in `pnpm-lock.yaml` under `packageManagerDependencies`, such a PR also has to refresh the lockfile, or CI fails at `pnpm install --frozen-lockfile` with `ERR_PNPM_FROZEN_LOCKFILE_WITH_OUTDATED_LOCKFILE`. Whether Renovate does that for a bare `packageManager` bump is unverified, and it fails closed either way: the PR goes red at install and auto-merge cannot fire, the same shape as a security PR waiting out the age gate.
-- Container base image (DHI Node/Alpine): a Node minor or patch, an Alpine 3.x release or a digest rebuild of the same tag → one `chore(docker)` PR moving both `FROM` lines and the README badge, at any time, no age gate → the **Base image** workflow comments on the PR what changed inside the image (Node, OpenSSL, Alpine, apk packages before/after) → auto-merge → no release; `release.yml` republishes the latest release on the new base. A Node major goes to the dashboard like any major.
+- Container base image (DHI Node/Alpine): a Node minor or patch, an Alpine 3.x release or a digest rebuild of the same tag → one `chore(docker)` PR moving both `FROM` lines and the README badge, at any time, no age gate → the **Base image** workflow posts a Docker Scout comparison (packages, Node included, and CVEs before/after) → auto-merge → no release; `release.yml` republishes the latest release on the new base. A Node major goes to the dashboard like any major.
 - GitHub Action digest bump → PR `chore(deps): update actions/X` → manual review → no release.
 - Non-vuln patch of `qs` behind the `^6.15.3` override → **no PR**; the range still holds, so the resolved version moves with the next lockfile maintenance run.
 - Advisory against `qs` behind that same override → **no PR either**; a caret range is not a version, so the entry is skipped. Remediation is the next lockfile maintenance run, or raising the floor by hand.
