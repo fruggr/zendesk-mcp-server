@@ -26,7 +26,12 @@ import type {
   ZendeskView,
   ZendeskViewExecuteResponse,
 } from '../src/types';
-import { formatNextBreachBlock, formatSlaBlock, formatTicket } from '../src/utils/formatting';
+import {
+  formatNextBreachBlock,
+  formatSlaBlock,
+  formatTicket,
+  formatTicketSummary,
+} from '../src/utils/formatting';
 import { missingTokenHelp, resolveLiveSubdomain, resolveLiveToken } from './live-auth';
 
 const fail = (message: string): never => {
@@ -39,7 +44,8 @@ const flag = (name: string): string | undefined => {
   return i === -1 ? undefined : process.argv[i + 1];
 };
 
-const query = flag('--query') ?? 'status<solved';
+const cliQuery = flag('--query');
+const query = cliQuery ?? 'status<solved';
 const cliViewId = flag('--view');
 if (cliViewId !== undefined && !/^\d+$/.test(cliViewId)) fail('--view takes a numeric id');
 
@@ -105,8 +111,12 @@ const report = (label: string, tickets: ZendeskTicket[], extra: (t: ZendeskTicke
     '  descriptions over 200 / 500 / 2000 chars:',
     [200, 500, 2000].map((n) => rawDescription.filter((d) => d > n).length).join(' / '),
   );
+  const summaries = tickets.map((t) => formatTicketSummary(t) + extra(t));
   console.log(
-    `  whole tickets fitting the limit: ${wholeItemsThatFit(blocks, 40)} of ${tickets.length}`,
+    `  whole tickets fitting the limit, full descriptions (pre-#388 baseline): ${wholeItemsThatFit(blocks, 40)} of ${tickets.length}`,
+  );
+  console.log(
+    `  whole tickets fitting the limit, excerpts (current list rendering): ${wholeItemsThatFit(summaries, 40)} of ${tickets.length}`,
   );
   console.log(
     '  per-ticket sizes (id: header+description+sla):',
@@ -121,7 +131,10 @@ const main = async (): Promise<void> => {
   const token = await source.getToken();
   console.log(`Probing ${subdomain} with the ${source.origin}.`);
 
-  section(`Q1-Q3. search_tickets "${query}" (per_page 100, include=tickets(slas))`);
+  // The query can carry a name or an email, so it stays out of the pasteable output.
+  section(
+    `Q1-Q3. search_tickets (${cliQuery === undefined ? 'default query' : '--query value'}, per_page 100, include=tickets(slas))`,
+  );
   const search = await attempt('GET /search', () =>
     zendeskGet<ZendeskListResponse<ZendeskTicket>>(subdomain, token, '/search', {
       query: `type:ticket ${query}`,
