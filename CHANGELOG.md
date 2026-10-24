@@ -1,3 +1,19 @@
+## [3.5.2](https://github.com/fruggr/zendesk-mcp-server/compare/v3.5.1...v3.5.2) (2026-10-24)
+
+### Bug Fixes
+
+* **docker:** move the container base to Node.js 24.22.1 ([#411](https://github.com/fruggr/zendesk-mcp-server/issues/411)) ([b0b685e](https://github.com/fruggr/zendesk-mcp-server/commit/b0b685ed580ea5221b678f0edb1e69dbd8df6216)), references [#408](https://github.com/fruggr/zendesk-mcp-server/issues/408) [#410](https://github.com/fruggr/zendesk-mcp-server/issues/410) [#410](https://github.com/fruggr/zendesk-mcp-server/issues/410)
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Chores
+
+* **deps:** update pnpm to v12.15.0 ([#409](https://github.com/fruggr/zendesk-mcp-server/issues/409)) ([84e69fd](https://github.com/fruggr/zendesk-mcp-server/commit/84e69fd776df96c4e0183e5990479698066a51ec))
+* **docker:** update container base image ([#408](https://github.com/fruggr/zendesk-mcp-server/issues/408)) ([6762528](https://github.com/fruggr/zendesk-mcp-server/commit/67625289eb883818d7b2f0026089c083b63269ce))
+* **renovate:** 3-day dependency gate, traceable fast-moving container base ([#407](https://github.com/fruggr/zendesk-mcp-server/issues/407)) ([6b71a86](https://github.com/fruggr/zendesk-mcp-server/commit/6b71a86e4ebad75d9c3333d2de3eb30ca08ae648))
+</details>
+
 ## [3.5.1](https://github.com/fruggr/zendesk-mcp-server/compare/v3.5.0...v3.5.1) (2026-10-24)
 
 ### Bug Fixes
