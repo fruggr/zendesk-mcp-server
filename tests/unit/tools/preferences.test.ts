@@ -2,20 +2,18 @@ import { describe, expect, it } from 'vitest';
 import { createPreferenceTools } from '../../../src/tools/preferences';
 import type { SlaService } from '../../../src/utils/sla-service';
 import { testSlaService } from '../../sla-service';
-import { testToolContext } from '../../tool-context';
+import { testToolContext, withCaller } from '../../tool-context';
 import { firstText } from '../../tool-result';
 
 const configure = (sla: SlaService | undefined) => {
-  const [tool] = createPreferenceTools(testToolContext({ sla }));
+  const [tool] = withCaller(createPreferenceTools(), testToolContext({ sla }));
   if (!tool) throw new Error('configure_sla_alerts missing');
   return (params: Record<string, unknown>) => tool.handler(params).then((r) => firstText(r) ?? '');
 };
 
 describe('configure_sla_alerts', () => {
   it('is the only preferences tool', () => {
-    expect(createPreferenceTools(testToolContext()).map((t) => t.name)).toEqual([
-      'configure_sla_alerts',
-    ]);
+    expect(createPreferenceTools().map((t) => t.name)).toEqual(['configure_sla_alerts']);
   });
 
   it('reports the thresholds in force, and changes nothing, when called with no input', async () => {

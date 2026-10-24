@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ToolContext } from '../../../src/tools/definitions';
 import { createUserTools } from '../../../src/tools/users';
-import { testToolContext } from '../../tool-context';
+import { testToolContext, withCaller } from '../../tool-context';
 import { firstText } from '../../tool-result';
 
 const ctx: ToolContext = testToolContext({
@@ -10,7 +10,7 @@ const ctx: ToolContext = testToolContext({
 });
 
 const findTool = (name: string) => {
-  const tools = createUserTools(ctx);
+  const tools = withCaller(createUserTools(ctx), ctx);
   const tool = tools.find((t) => t.name === name);
   if (!tool) throw new Error(`Tool ${name} not found`);
   return tool;
@@ -31,7 +31,7 @@ describe('user tools', () => {
     });
 
     it('has all readOnly tools', () => {
-      const tools = createUserTools(ctx);
+      const tools = withCaller(createUserTools(ctx), ctx);
       for (const tool of tools) {
         expect(tool.readOnly).toBe(true);
       }

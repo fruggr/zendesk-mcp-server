@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ToolContext } from '../../../src/tools/definitions';
 import { createSearchTools } from '../../../src/tools/search';
-import { testToolContext } from '../../tool-context';
+import { testToolContext, withCaller } from '../../tool-context';
 import { firstText } from '../../tool-result';
 
 const ctx: ToolContext = testToolContext({
@@ -15,7 +15,7 @@ describe('search tools', () => {
   });
 
   describe('search', () => {
-    const [tool] = createSearchTools(ctx);
+    const [tool] = withCaller(createSearchTools(ctx), ctx);
     if (!tool) throw new Error('search tool not registered');
 
     it('performs unified search with total count', async () => {

@@ -9,7 +9,7 @@ import {
   PAGE_DESC,
   PER_PAGE_DESC,
 } from '../utils/pagination';
-import type { ToolContext, ToolDefinition } from './definitions';
+import type { SharedToolDefinition, ToolEnv } from './definitions';
 
 const formatSearchResult = (result: Record<string, unknown>): string => {
   const lines: string[] = [`## [${result['result_type']}] #${result['id']}`];
@@ -25,8 +25,8 @@ const formatSearchResult = (result: Record<string, unknown>): string => {
   return lines.join('\n');
 };
 
-export const createSearchTools = (ctx: ToolContext): ToolDefinition[] => {
-  const { subdomain, getToken } = ctx;
+export const createSearchTools = (env: ToolEnv): SharedToolDefinition[] => {
+  const { subdomain } = env;
 
   return [
     {
@@ -58,13 +58,13 @@ export const createSearchTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { query, per_page, page } = params as {
           query: string;
           per_page: number;
           page: number;
         };
-        const token = await getToken();
+        const token = await caller.getToken();
         const response = await zendeskGet<ZendeskListResponse<Record<string, unknown>>>(
           subdomain,
           token,

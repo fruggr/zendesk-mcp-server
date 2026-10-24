@@ -11,10 +11,10 @@ import {
   PAGE_DESC,
   PER_PAGE_DESC,
 } from '../utils/pagination';
-import type { ToolContext, ToolDefinition } from './definitions';
+import type { SharedToolDefinition, ToolEnv } from './definitions';
 
-export const createUserTools = (ctx: ToolContext): ToolDefinition[] => {
-  const { subdomain, getToken } = ctx;
+export const createUserTools = (env: ToolEnv): SharedToolDefinition[] => {
+  const { subdomain } = env;
 
   return [
     {
@@ -31,8 +31,8 @@ export const createUserTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async () => {
-        const token = await getToken();
+      handler: async (_params, { caller }) => {
+        const token = await caller.getToken();
         const { user } = await zendeskGet<{ user: ZendeskUser }>(subdomain, token, '/users/me');
         return { content: [{ type: 'text', text: formatUser(user) }] };
       },
@@ -66,13 +66,13 @@ export const createUserTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { query, per_page, page } = params as {
           query: string;
           per_page: number;
           page: number;
         };
-        const token = await getToken();
+        const token = await caller.getToken();
         const response = await zendeskGet<ZendeskListResponse<ZendeskUser>>(
           subdomain,
           token,
@@ -117,9 +117,9 @@ export const createUserTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { user_id } = params as { user_id: number };
-        const token = await getToken();
+        const token = await caller.getToken();
         const { user } = await zendeskGet<{ user: ZendeskUser }>(
           subdomain,
           token,
@@ -149,9 +149,9 @@ export const createUserTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { organization_id } = params as { organization_id: number };
-        const token = await getToken();
+        const token = await caller.getToken();
         const { organization } = await zendeskGet<{ organization: ZendeskOrganization }>(
           subdomain,
           token,
@@ -186,9 +186,9 @@ export const createUserTools = (ctx: ToolContext): ToolDefinition[] => {
         idempotentHint: true,
         openWorldHint: true,
       },
-      handler: async (params) => {
+      handler: async (params, { caller }) => {
         const { page_size, cursor } = params as { page_size: number; cursor?: string };
-        const token = await getToken();
+        const token = await caller.getToken();
         const response = await zendeskGet<ZendeskListResponse<ZendeskOrganization>>(
           subdomain,
           token,
