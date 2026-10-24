@@ -6,7 +6,7 @@ import {
   type SlaPreferenceChange,
 } from '../utils/sla-preferences';
 import type { SlaService } from '../utils/sla-service';
-import type { SharedToolDefinition } from './definitions';
+import type { ToolDefinition } from './definitions';
 
 /** How every SLA duration parameter is spelled, for their descriptions. */
 export const DURATION_HINT = 'A readable duration: 30m, 4h, 2d, 1w, or a mix like 1d4h.';
@@ -17,7 +17,7 @@ export const requireSla = (sla: SlaService | undefined): SlaService => {
   return sla;
 };
 
-export const createPreferenceTools = (): SharedToolDefinition[] => [
+export const createPreferenceTools = (): ToolDefinition[] => [
   {
     name: 'configure_sla_alerts',
     namespace: 'preferences',

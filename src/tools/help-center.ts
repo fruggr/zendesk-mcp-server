@@ -78,7 +78,7 @@ import {
   PAGE_DESC,
   PER_PAGE_DESC,
 } from '../utils/pagination';
-import type { SharedToolDefinition, ToolCaller, ToolEnv } from './definitions';
+import type { ToolCaller, ToolDefinition, ToolEnv } from './definitions';
 
 // Byte-identical across the seven read/section/attachment tools that take an
 // article id. Kept as one constant (like PER_PAGE_DESC/PAGE_DESC) so the "how to
@@ -706,7 +706,7 @@ const sectionUpdateNotes = (r: SectionUpdateReport): string[] => [
  * carry no `brand_id` field, and the tool stays hidden. In multi mode (not
  * 'all') the listing is filtered to the allowed brands.
  */
-const createListBrandsTool = (env: ToolEnv): SharedToolDefinition[] => {
+const createListBrandsTool = (env: ToolEnv): ToolDefinition[] => {
   const { subdomain, brandIds } = env;
   if (brandIds === undefined) return [];
   const isAll = brandIds.length === 1 && brandIds[0] === 'all';
@@ -752,7 +752,7 @@ const createListBrandsTool = (env: ToolEnv): SharedToolDefinition[] => {
   ];
 };
 
-export const createHelpCenterTools = (env: ToolEnv): SharedToolDefinition[] => {
+export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
   const { subdomain, brandIds } = env;
   const brandIdSchema = brandIdField(brandIds);
   // Spread of an empty object adds no field: in unset/single mode the schemas

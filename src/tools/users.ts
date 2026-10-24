@@ -11,9 +11,9 @@ import {
   PAGE_DESC,
   PER_PAGE_DESC,
 } from '../utils/pagination';
-import type { SharedToolDefinition, ToolEnv } from './definitions';
+import type { ToolDefinition, ToolEnv } from './definitions';
 
-export const createUserTools = (env: ToolEnv): SharedToolDefinition[] => {
+export const createUserTools = (env: ToolEnv): ToolDefinition[] => {
   const { subdomain } = env;
 
   return [

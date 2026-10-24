@@ -6,14 +6,12 @@ import {
   aggregateAnnotations,
   buildProxyDispatch,
   createMcpServer,
-  createServerCaches,
   createServerShell,
-  createToolsetCache,
   registerToolset,
+  toolEnv,
 } from '../../src/server';
 import type { ToolAnnotations } from '../../src/tools/definitions';
 import { createAllTools } from '../../src/tools/index';
-import { createSlaRuntime } from '../../src/utils/sla-service';
 import { makeConfig } from '../integration/harness';
 import { testToolContext } from '../tool-context';
 
@@ -151,7 +149,10 @@ describe('createMcpServer', () => {
 
     // get_article belongs to the help_center namespace; the tickets-scoped
     // dispatch must reject it without ever reaching a real handler.
-    const out = await dispatch({ operation: 'get_article', params: { article_id: 1 } });
+    const out = await dispatch(
+      { operation: 'get_article', params: { article_id: 1 } },
+      { canElicit: false, caller: testToolContext() },
+    );
     expect(out.content[0]?.type).toBe('text');
     const text = (out.content[0] as { type: 'text'; text: string }).text;
     expect(text).toMatch(/Unknown operation "get_article"/);
@@ -171,7 +172,10 @@ describe('createMcpServer', () => {
 
     // The throw propagates to the SDK, which wraps it as an isError result; the
     // pure dispatch helper surfaces it as a rejection.
-    const error = await dispatch({ operation: 'list_tickets', params: { per_page: 3 } }).then(
+    const error = await dispatch(
+      { operation: 'list_tickets', params: { per_page: 3 } },
+      { canElicit: false, caller: testToolContext() },
+    ).then(
       () => {
         throw new Error('expected dispatch to reject the unknown param');
       },
@@ -228,71 +232,44 @@ describe('createMcpServer', () => {
   });
 });
 
-// A 2026-07-28 HTTP request builds a server; its grant keeps the toolset, whose
-// construction is most of that cost (#393).
-describe('createToolsetCache', () => {
+// The transport builds the definitions once and every server registers them:
+// a 2026-07-28 HTTP request builds a server, never its tools (#393).
+describe('shared tool definitions', () => {
   const allMode: Config = { ...baseConfig, mode: 'all' };
-  const newCache = () =>
-    createToolsetCache(getToken, createServerCaches(allMode, getToken), createSlaRuntime(allMode));
-  const ticketSchema = (server: McpServer) => introspect(server)['get_ticket']?.inputSchema;
+  const namespaceMode: Config = { ...baseConfig, mode: 'namespace' };
+  const definitions = () => createAllTools(toolEnv(baseConfig));
+  const schemaOf = (server: McpServer, name: string) => introspect(server)[name]?.inputSchema;
+  const build = (config: Config, tools?: ReturnType<typeof definitions>) =>
+    createMcpServer(config, getToken, undefined, undefined, tools ? { tools } : {});
 
-  it('builds a toolset once per read-only setting', () => {
-    const toolsets = newCache();
-    const writable = toolsets(allMode);
+  it('registers the same definitions on every server built from them', () => {
+    const tools = definitions();
+    const first = build(allMode, tools);
 
-    expect(toolsets({ ...allMode })).toBe(writable);
-    expect(toolsets({ ...allMode, readOnly: true })).not.toBe(writable);
-    expect(toolsets({ ...allMode, readOnly: true })).toBe(toolsets({ ...allMode, readOnly: true }));
+    expect(schemaOf(first, 'get_ticket')).toBeDefined();
+    expect(schemaOf(build(allMode, tools), 'get_ticket')).toBe(schemaOf(first, 'get_ticket'));
   });
 
-  it('never hands one cache the toolset of another', () => {
-    expect(newCache()(allMode)).not.toBe(newCache()(allMode));
+  it('builds its own definitions when none are given', () => {
+    expect(schemaOf(build(allMode), 'get_ticket')).not.toBe(schemaOf(build(allMode), 'get_ticket'));
   });
 
-  it('registers the cached definitions on every server built from it', () => {
-    const toolsets = newCache();
-    const first = createMcpServer(allMode, getToken, undefined, undefined, { toolsets });
-    const second = createMcpServer(allMode, getToken, undefined, undefined, { toolsets });
-
-    expect(ticketSchema(first)).toBeDefined();
-    expect(ticketSchema(second)).toBe(ticketSchema(first));
-  });
-
-  it('builds a toolset per server when none is cached', () => {
-    const first = createMcpServer(allMode, getToken);
-    const second = createMcpServer(allMode, getToken);
-
-    expect(ticketSchema(second)).not.toBe(ticketSchema(first));
-  });
-
-  it('registers one proxy schema per toolset in namespace mode', () => {
-    const namespaceMode: Config = { ...baseConfig, mode: 'namespace' };
-    const toolsets = newCache();
-    const build = (config: Config, source = toolsets) =>
-      introspect(createMcpServer(config, getToken, undefined, undefined, { toolsets: source }))[
-        'zendesk_tickets'
-      ]?.inputSchema;
-    const first = build(namespaceMode);
+  it('shares one proxy schema per set of definitions in namespace mode', () => {
+    const tools = definitions();
+    const first = schemaOf(build(namespaceMode, tools), 'zendesk_tickets');
 
     expect(first).toBeDefined();
-    expect(build(namespaceMode)).toBe(first);
-    expect(build({ ...namespaceMode, readOnly: true })).not.toBe(first);
-    expect(build({ ...namespaceMode, mode: 'single' })).toBeUndefined();
-    expect(build(namespaceMode, newCache())).not.toBe(first);
+    expect(schemaOf(build(namespaceMode, tools), 'zendesk_tickets')).toBe(first);
+    expect(
+      schemaOf(build({ ...namespaceMode, readOnly: true }, tools), 'zendesk_tickets'),
+    ).not.toBe(first);
+    expect(schemaOf(build(namespaceMode, definitions()), 'zendesk_tickets')).not.toBe(first);
   });
 
-  it("still filters a cached toolset with the server's own config", () => {
-    const toolsets = newCache();
-    createMcpServer(allMode, getToken, undefined, undefined, { toolsets });
-    const readOnly = createMcpServer(
-      { ...allMode, readOnly: true },
-      getToken,
-      undefined,
-      undefined,
-      {
-        toolsets,
-      },
-    );
+  it("filters shared definitions with each server's own config", () => {
+    const tools = definitions();
+    build(allMode, tools);
+    const readOnly = build({ ...allMode, readOnly: true }, tools);
 
     expect(registeredToolNames(readOnly)).toContain('get_ticket');
     expect(registeredToolNames(readOnly)).not.toContain('update_ticket');

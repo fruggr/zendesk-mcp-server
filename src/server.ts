@@ -35,7 +35,14 @@ import {
   PARAMS_FIELD_DESCRIPTION,
 } from './routing/proxy-schema';
 import { filterTools, groupByNamespace, NAMESPACE_LABELS } from './routing/registry';
-import type { ToolAnnotations, ToolCallContext, ToolResult } from './tools/definitions';
+import type {
+  ToolAnnotations,
+  ToolCall,
+  ToolCallContext,
+  ToolCaller,
+  ToolEnv,
+  ToolResult,
+} from './tools/definitions';
 import { resolveBrand } from './tools/help-center';
 import { createAllTools, type ToolContext, type ToolDefinition } from './tools/index';
 import { type AlertsReader, createAlertsReader } from './tools/sla-alerts';
@@ -86,7 +93,7 @@ const runHandler = async (
   def: ToolDefinition,
   params: Record<string, unknown>,
   onUnauthorized: (() => void) | undefined,
-  call: ToolCallContext | undefined,
+  call: ToolCall,
 ): Promise<ToolResult> => {
   try {
     return await def.handler(params, call);
@@ -127,7 +134,7 @@ export const aggregateAnnotations = (
   openWorldHint: tools.some((t) => t.annotations.openWorldHint),
 });
 
-type ProxyDispatch = (args: Record<string, unknown>, call?: ToolCallContext) => Promise<ToolResult>;
+type ProxyDispatch = (args: Record<string, unknown>, call: ToolCall) => Promise<ToolResult>;
 
 // Each proxy carries its OWN handler map, scoped to the operations it
 // advertises. In `namespace` mode this is essential: without it, a caller
@@ -181,8 +188,8 @@ interface ProxySurface {
   inputSchema: z.ZodObject;
 }
 
-// Keyed on the toolset the proxy was cut from: servers sharing it (a 2026-07-28
-// grant, #393) register one schema, which zod compiles and the SDK converts once.
+// Keyed on the definitions the proxy was cut from: every server of a transport
+// shares them, so a proxy's schema is compiled by zod and converted by the SDK once.
 const proxySurfaces = new WeakMap<readonly ToolDefinition[], Map<string, ProxySurface>>();
 
 const proxySurface = (
@@ -218,14 +225,22 @@ const proxySurface = (
   return surface;
 };
 
+/** What every proxy of one server registers with. */
+interface ProxyRegistration {
+  server: McpServer;
+  /** The definitions the proxies are cut from: their surface is shared by it. */
+  toolset: readonly ToolDefinition[];
+  /** The user this server's calls act for. */
+  caller: ToolCaller;
+  readOnlyMode: boolean;
+  onUnauthorized: (() => void) | undefined;
+}
+
 const registerProxyTool = (
-  server: McpServer,
-  toolset: readonly ToolDefinition[],
+  { server, toolset, caller, readOnlyMode, onUnauthorized }: ProxyRegistration,
   toolName: string,
   title: string,
   tools: ToolDefinition[],
-  readOnlyMode: boolean,
-  onUnauthorized: (() => void) | undefined,
 ): Removable => {
   const { annotations, description, inputSchema } = proxySurface(
     toolset,
@@ -239,7 +254,8 @@ const registerProxyTool = (
   return server.registerTool(
     toolName,
     { title, description, inputSchema, annotations },
-    async (args, ctx) => dispatch(args as Record<string, unknown>, toCallContext(server, ctx)),
+    async (args, ctx) =>
+      dispatch(args as Record<string, unknown>, { ...toCallContext(server, ctx), caller }),
   );
 };
 
@@ -249,41 +265,18 @@ const registerProxyTool = (
  * stays `[RO]` and readOnlyHint under --read-only.
  */
 const registerSingleProxies = (
-  server: McpServer,
-  toolset: readonly ToolDefinition[],
+  registration: ProxyRegistration,
   tools: ToolDefinition[],
-  readOnlyMode: boolean,
-  onUnauthorized: (() => void) | undefined,
 ): Removable[] => {
   const preferences = tools.filter((tool) => tool.namespace === 'preferences');
   const zendesk = tools.filter((tool) => tool.namespace !== 'preferences');
   const label = NAMESPACE_LABELS.preferences;
   return [
     ...(zendesk.length > 0 || preferences.length === 0
-      ? [
-          registerProxyTool(
-            server,
-            toolset,
-            'zendesk',
-            'Zendesk',
-            zendesk,
-            readOnlyMode,
-            onUnauthorized,
-          ),
-        ]
+      ? [registerProxyTool(registration, 'zendesk', 'Zendesk', zendesk)]
       : []),
     ...(preferences.length > 0
-      ? [
-          registerProxyTool(
-            server,
-            toolset,
-            label.toolName,
-            label.title,
-            preferences,
-            readOnlyMode,
-            onUnauthorized,
-          ),
-        ]
+      ? [registerProxyTool(registration, label.toolName, label.title, preferences)]
       : []),
   ];
 };
@@ -725,6 +718,19 @@ export const registerToolset = (
 ): { dispose(): void; count: number } => {
   const shared = caches ?? createServerCaches(config, getToken, onUnauthorized);
   const { topology, articles } = shared;
+  // The user every call registered here acts for; the definitions hold no user.
+  const caller: ToolCaller = {
+    getToken,
+    resolveBrandSubdomain: shared.resolveBrandSubdomain,
+    sla,
+  };
+  const proxies: ProxyRegistration = {
+    server,
+    toolset: tools,
+    caller,
+    readOnlyMode: config.readOnly,
+    onUnauthorized,
+  };
   const registered: Removable[] = [];
   const dispose = (): void => {
     for (const handle of registered) handle.remove();
@@ -761,12 +767,10 @@ export const registerToolset = (
                 annotations: tool.annotations,
               },
               async (params, ctx) =>
-                runHandler(
-                  tool,
-                  params as Record<string, unknown>,
-                  onUnauthorized,
-                  toCallContext(server, ctx),
-                ),
+                runHandler(tool, params as Record<string, unknown>, onUnauthorized, {
+                  ...toCallContext(server, ctx),
+                  caller,
+                }),
             ),
           );
         }
@@ -780,25 +784,13 @@ export const registerToolset = (
           // The guard is only here for noUncheckedIndexedAccess.
           const label = NAMESPACE_LABELS[namespace];
           if (label) {
-            registered.push(
-              registerProxyTool(
-                server,
-                tools,
-                label.toolName,
-                label.title,
-                nsTools,
-                config.readOnly,
-                onUnauthorized,
-              ),
-            );
+            registered.push(registerProxyTool(proxies, label.toolName, label.title, nsTools));
           }
         }
         break;
       }
       case 'single': {
-        registered.push(
-          ...registerSingleProxies(server, tools, filteredTools, config.readOnly, onUnauthorized),
-        );
+        registered.push(...registerSingleProxies(proxies, filteredTools));
         break;
       }
       default: {
@@ -936,53 +928,21 @@ export const registerToolset = (
   return { count: filteredTools.length, dispose };
 };
 
-/** The tool definitions and the SLA service they and the alert resources share. */
-export interface Toolset {
-  sla: SlaService;
-  tools: ToolDefinition[];
-}
-
-export type ToolsetSource = (config: Config) => Toolset;
-
-const buildToolset = (
-  config: Config,
-  getToken: () => string | Promise<string>,
-  caches: ServerCaches,
-  slaRuntime: SlaRuntime,
-): Toolset => {
-  const sla = createSlaService(slaSettings(config), slaRuntime, caches.resolveUserId);
-  return {
-    sla,
-    tools: createAllTools(toolContext(config, getToken, caches.resolveBrandSubdomain, sla)),
-  };
-};
-
-/**
- * A grant's toolsets (HTTP 2026-07-28), built on its first request and reused by
- * the next ones: building the definitions is most of a server's cost (#393).
- * They close over the grant's token and caches, so they never cross grants.
- * Keyed on `readOnly`, the one setting that differs between a grant's requests.
- */
-export const createToolsetCache = (
-  getToken: () => string | Promise<string>,
-  caches: ServerCaches,
-  slaRuntime: SlaRuntime,
-): ToolsetSource => {
-  const built = new Map<boolean, Toolset>();
-  return (config) => {
-    const known = built.get(config.readOnly);
-    if (known) return known;
-    const toolset = buildToolset(config, getToken, caches, slaRuntime);
-    built.set(config.readOnly, toolset);
-    return toolset;
-  };
-};
+/** What this server's tool definitions are built from: its config, never a user. */
+export const toolEnv = (config: Config): ToolEnv => ({
+  subdomain: config.subdomain,
+  brandIds: config.brandIds,
+});
 
 export interface CreateMcpServerOptions {
   /** Caches kept by the caller across servers; built per server when omitted. */
   caches?: ServerCaches;
-  /** Toolsets kept by the caller across servers; built per server when omitted. */
-  toolsets?: ToolsetSource;
+  /**
+   * The tool definitions, built once by the transport and shared by all its
+   * servers: they hold no user, the caller comes with each call. Built for this
+   * server when omitted.
+   */
+  tools?: ToolDefinition[];
   /** Built by the transport, which knows the key and the principal; a random-key one otherwise. */
   requestStateCodec?: RequestStateCodec;
   /** The process-wide SLA state: every server of a process shares one. */
@@ -1013,11 +973,11 @@ export const createMcpServer = (
     listens,
     getBackgroundToken,
     alertPolling = 'server',
-    toolsets = (cfg) => buildToolset(cfg, getToken, caches, slaRuntime),
+    tools = createAllTools(toolEnv(config)),
   }: CreateMcpServerOptions = {},
 ): McpServer => {
   const server = createServerShell(config, requestStateCodec);
-  const { sla, tools } = toolsets(config);
+  const sla = createSlaService(slaSettings(config), slaRuntime, caches.resolveUserId);
   registerToolset(server, { config, getToken, caches, onUnauthorized, logger, sla }, tools);
   if (config.slaPush && slaAlertsEnabled(config)) {
     if (alertPolling === 'grant') {
@@ -1047,7 +1007,8 @@ export interface ServerBuildContext {
   logger: Logger;
   onUnauthorized?: () => void;
   caches?: ServerCaches;
-  toolsets?: ToolsetSource;
+  /** The transport's tool definitions, shared by every server it builds. */
+  tools?: ToolDefinition[];
   requestStateCodec: RequestStateCodec;
   slaRuntime?: SlaRuntime;
   /**
@@ -1076,7 +1037,7 @@ export const defaultServerFactory: ServerFactory = ({
   logger,
   onUnauthorized,
   caches,
-  toolsets,
+  tools,
   requestStateCodec,
   slaRuntime,
   listens,
@@ -1085,7 +1046,7 @@ export const defaultServerFactory: ServerFactory = ({
 }) =>
   createMcpServer(config, getToken, logger, onUnauthorized, {
     ...(caches ? { caches } : {}),
-    ...(toolsets ? { toolsets } : {}),
+    ...(tools ? { tools } : {}),
     ...(slaRuntime ? { slaRuntime } : {}),
     ...(listens ? { listens } : {}),
     ...(getBackgroundToken ? { getBackgroundToken } : {}),

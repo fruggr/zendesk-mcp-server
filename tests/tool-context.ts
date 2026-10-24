@@ -1,10 +1,10 @@
 import type {
-  SharedToolDefinition,
+  ToolCallContext,
   ToolCaller,
   ToolContext,
   ToolDefinition,
+  ToolResult,
 } from '../src/tools/definitions';
-import { bindCaller } from '../src/tools/index';
 
 /**
  * A tool context for tests that never select a brand. Resolving one rejects
@@ -19,8 +19,17 @@ export const testToolContext = (overrides: Partial<ToolContext> = {}): ToolConte
   ...overrides,
 });
 
-/** Shared definitions bound to a test caller, so a test calls `handler(params)` as before. */
+/** A handler as a test calls it: `handler(params, call?)`, acting for `caller`. */
+export interface BoundTool extends Omit<ToolDefinition, 'handler'> {
+  handler: (params: Record<string, unknown>, call?: ToolCallContext) => Promise<ToolResult>;
+}
+
+/** Definitions bound to a test caller, so a test calls `handler(params)` without building a call. */
 export const withCaller = (
-  tools: readonly SharedToolDefinition[],
+  tools: readonly ToolDefinition[],
   caller: ToolCaller = testToolContext(),
-): ToolDefinition[] => bindCaller(tools, caller);
+): BoundTool[] =>
+  tools.map((tool) => ({
+    ...tool,
+    handler: (params, call) => tool.handler(params, { canElicit: false, ...call, caller }),
+  }));

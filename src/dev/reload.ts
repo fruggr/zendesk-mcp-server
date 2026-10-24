@@ -14,9 +14,9 @@ import {
   pollingIdentity,
   registerToolset,
   slaSettings,
-  toolContext,
+  toolEnv,
 } from '../server';
-import { createAllTools, type ToolContext, type ToolDefinition } from '../tools/index';
+import { createAllTools, type ToolDefinition, type ToolEnv } from '../tools/index';
 import { startStdioTransport } from '../transports/stdio';
 import type { ListenFeed } from '../utils/listen-feed';
 import { type Logger, silentLogger } from '../utils/logger';
@@ -40,7 +40,7 @@ const TOOL_MODULES = [
   { file: 'preferences.ts', factory: 'createPreferenceTools' },
 ] as const;
 
-type ToolFactory = (ctx: ToolContext) => ToolDefinition[];
+type ToolFactory = (env: ToolEnv) => ToolDefinition[];
 
 /**
  * Re-import every leaf tool-factory module with a fresh cache-busting query so
@@ -49,7 +49,7 @@ type ToolFactory = (ctx: ToolContext) => ToolDefinition[];
  * import specifier unique (Node caches modules by specifier, so a repeated
  * query would serve stale code) without any shared module state.
  */
-const loadFreshTools = async (ctx: ToolContext): Promise<ToolDefinition[]> => {
+const loadFreshTools = async (env: ToolEnv): Promise<ToolDefinition[]> => {
   const nonce = randomUUID();
   const modules = await Promise.all(
     TOOL_MODULES.map(async ({ file, factory }) => {
@@ -58,7 +58,7 @@ const loadFreshTools = async (ctx: ToolContext): Promise<ToolDefinition[]> => {
       const create = mod[factory];
       /* v8 ignore next 2 -- defensive guard: only hit if a factory export is renamed */
       if (!create) throw new Error(`Tool module ${file} has no export ${factory}`);
-      return create(ctx);
+      return create(env);
     }),
   );
   return modules.flat();
@@ -80,7 +80,7 @@ export const createReloadableServer = (
   // Test seam: how a reload obtains the fresh tool definitions. Defaults to
   // re-importing the leaf modules from disk; tests inject a stub to drive the
   // re-registration failure/rollback path deterministically.
-  loadTools: (ctx: ToolContext) => Promise<ToolDefinition[]> = loadFreshTools,
+  loadTools: (env: ToolEnv) => Promise<ToolDefinition[]> = loadFreshTools,
   requestStateCodec?: RequestStateCodec,
   slaRuntime: SlaRuntime = createSlaRuntime(config),
   listens?: Pick<ListenFeed, 'attach'>,
@@ -91,7 +91,7 @@ export const createReloadableServer = (
   // topology/article resources resolve against the same cached brand list.
   const caches = createServerCaches(config, getToken, onUnauthorized);
   const sla = createSlaService(slaSettings(config), slaRuntime, caches.resolveUserId);
-  const ctx = toolContext(config, getToken, caches.resolveBrandSubdomain, sla);
+  const env = toolEnv(config);
   const params = { config, getToken, caches, onUnauthorized, logger, sla };
   // Subscriptions belong to the long-lived shell, not to a tool generation.
   if (config.slaPush && slaAlertsEnabled(config)) {
@@ -109,14 +109,14 @@ export const createReloadableServer = (
   // and its definitions (to restore if a reload's re-registration fails).
   // Initial generation is the static import (fast; reload only matters after an
   // edit).
-  let currentTools = createAllTools(ctx);
+  let currentTools = createAllTools(env);
   let current = registerToolset(server, params, currentTools);
 
   const reload = async (): Promise<number> => {
     // Import fresh code BEFORE touching the live registration, so a syntax
     // error in an edited file rejects here and leaves the current generation
     // untouched.
-    const tools = await loadTools(ctx);
+    const tools = await loadTools(env);
     // Dispose the old generation BEFORE registering the new one: both share the
     // same tool names, and the SDK rejects registering a name that is still
     // registered. Safe to do so — JS is single-threaded, so no tool call can

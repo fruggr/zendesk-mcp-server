@@ -75,12 +75,7 @@ import {
   formatAttachmentSuffix,
   uploadAttachments,
 } from './attachments';
-import type {
-  SharedToolDefinition,
-  ToolEnv,
-  ToolImageContent,
-  ToolTextContent,
-} from './definitions';
+import type { ToolDefinition, ToolEnv, ToolImageContent, ToolTextContent } from './definitions';
 
 // The per-image cap in MB, for the skip message. Derived once: both operands
 // are module constants.
@@ -803,7 +798,7 @@ const formatMacroPreviewDiff = (
   return lines.join('\n');
 };
 
-export const createTicketTools = (env: ToolEnv): SharedToolDefinition[] => {
+export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
   const { subdomain } = env;
 
   // The pushed `**Urgency**` line for one SLA block, '' when push is off. The

@@ -32,13 +32,11 @@ export interface ToolDefinition {
   description: string;
   inputSchema: z.ZodObject;
   annotations: ToolAnnotations;
-  handler: (params: Record<string, unknown>, call?: ToolCallContext) => Promise<ToolResult>;
+  /** Built once per process: the caller the call acts for comes with each call. */
+  handler: (params: Record<string, unknown>, call: ToolCall) => Promise<ToolResult>;
 }
 
-/**
- * What a handler may know about the call beyond its parameters. Absent when a
- * handler is invoked outside an MCP request (unit tests).
- */
+/** What a handler may know about the MCP request beyond its parameters. */
 export interface ToolCallContext {
   /** Whether the client can answer a form elicitation. */
   canElicit: boolean;
@@ -90,9 +88,4 @@ export type ToolContext = ToolEnv & ToolCaller;
 /** Everything a handler learns besides its parameters. */
 export interface ToolCall extends ToolCallContext {
   caller: ToolCaller;
-}
-
-/** A definition built once per process: its handler learns the caller from the call. */
-export interface SharedToolDefinition extends Omit<ToolDefinition, 'handler'> {
-  handler: (params: Record<string, unknown>, call: ToolCall) => Promise<ToolResult>;
 }

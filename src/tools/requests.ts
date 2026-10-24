@@ -34,7 +34,7 @@ import {
   formatAttachmentSuffix,
   uploadAttachments,
 } from './attachments';
-import type { SharedToolDefinition, ToolEnv } from './definitions';
+import type { ToolDefinition, ToolEnv } from './definitions';
 
 // Zendesk reserves `/api/v2/requests` for requesters and answers 403 on the
 // agent paths for an end user, so this replaces the generic "Permission denied"
@@ -495,7 +495,7 @@ const validateSubmission = (
 
 const REQUEST_STATUS = z.enum(['new', 'open', 'pending', 'hold', 'solved', 'closed']);
 
-export const createRequestTools = (env: ToolEnv): SharedToolDefinition[] => {
+export const createRequestTools = (env: ToolEnv): ToolDefinition[] => {
   const { subdomain } = env;
 
   // Resolve a form id to the form and the fields it needs, in one place: both

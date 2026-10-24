@@ -9,7 +9,7 @@ import {
   PAGE_DESC,
   PER_PAGE_DESC,
 } from '../utils/pagination';
-import type { SharedToolDefinition, ToolEnv } from './definitions';
+import type { ToolDefinition, ToolEnv } from './definitions';
 
 const formatSearchResult = (result: Record<string, unknown>): string => {
   const lines: string[] = [`## [${result['result_type']}] #${result['id']}`];
@@ -25,7 +25,7 @@ const formatSearchResult = (result: Record<string, unknown>): string => {
   return lines.join('\n');
 };
 
-export const createSearchTools = (env: ToolEnv): SharedToolDefinition[] => {
+export const createSearchTools = (env: ToolEnv): ToolDefinition[] => {
   const { subdomain } = env;
 
   return [

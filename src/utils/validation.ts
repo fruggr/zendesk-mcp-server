@@ -105,8 +105,8 @@ const createStrictValidator = (
 
 type StrictParamsParser = (params: unknown) => Record<string, unknown>;
 
-// Keyed on the definition's schema: a proxy is rebuilt with every server, and
-// servers sharing a toolset (#393) then share its parsers.
+// Keyed on the definition's schema: a proxy is rebuilt with every server, while
+// the definitions, and so their parsers, are the transport's (#393).
 const strictParamsParsers = new WeakMap<z.ZodObject, StrictParamsParser>();
 
 /** The proxy dispatch path (namespace/single modes): throws the validator's message. */
@@ -162,8 +162,8 @@ export const convertingToJsonSchemaOnce = <T extends z.ZodObject>(schema: T): T 
   return schema;
 };
 
-// Keyed on the definition's schema, so servers sharing a toolset (#393) share
-// the wrapper and its conversions.
+// Keyed on the definition's schema, so every server sharing the definitions
+// (#393) shares the wrapper and its conversions.
 const strictStandardSchemas = new WeakMap<z.ZodObject, StrictStandardSchema>();
 
 /**

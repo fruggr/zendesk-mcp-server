@@ -7,7 +7,7 @@ import {
 import { HttpResponse, http } from 'msw';
 import { afterEach, describe, expect, it } from 'vitest';
 import * as z from 'zod/v4';
-import type { ServerFactory } from '../../src/server';
+import { defaultServerFactory, type ServerFactory } from '../../src/server';
 import { type HttpTransportOptions, startHttpTransport } from '../../src/transports/http';
 import { startStdioTransport } from '../../src/transports/stdio';
 import {
@@ -15,6 +15,7 @@ import {
   errorHandlers,
   localServerPassthrough,
   MOCK_LOCALES,
+  MOCK_USER,
 } from '../msw-handlers';
 import { mswServer } from '../setup';
 import { fixtureServerFactory, fixtureStdioFactory, PING_URI } from './fixture-server';
@@ -30,6 +31,7 @@ import { signInWithDcr } from './oauth-client';
 import { createStdioHarness } from './stdio-harness';
 
 const HC_BASE = 'https://testsubdomain.zendesk.com/api/v2/help_center';
+const ZENDESK_BASE = 'https://testsubdomain.zendesk.com/api/v2';
 
 /** Text of a tool call result, joined. */
 const textOf = (result: Awaited<ReturnType<Client['callTool']>>): string =>
@@ -123,11 +125,11 @@ describe('[http-2026] grant entries', () => {
     for (const close of closers.splice(0).reverse()) await close();
   });
 
-  const startServer = async (options: HttpTransportOptions = {}) => {
+  const startServer = async (options: HttpTransportOptions = {}, config = makeConfig()) => {
     mswServer.use(localServerPassthrough, ...createZendeskOAuthMock().handlers);
     const handle = await startHttpTransport(
       {
-        ...makeConfig(),
+        ...config,
         transport: 'http',
         oauthStore: 'memory://',
         oauthMasterSecret: Buffer.alloc(32, 8).toString('base64'),
@@ -252,10 +254,10 @@ describe('[http-2026] grant entries', () => {
     await expect(listenA.closed).resolves.toMatch(/graceful|remote/);
   });
 
-  it('hands every request of a grant the same toolsets, and another grant its own', async () => {
-    const seen: unknown[] = [];
+  it("hands every request the transport's tool definitions, and each grant its own token", async () => {
+    const seen: { tools: unknown; getToken: unknown }[] = [];
     const recording: ServerFactory = (ctx) => {
-      seen.push(ctx.toolsets);
+      seen.push({ tools: ctx.tools, getToken: ctx.getToken });
       return fixtureServerFactory(ctx);
     };
     const { grant } = await startServer({ serverFactory: recording });
@@ -268,10 +270,40 @@ describe('[http-2026] grant entries', () => {
     await b.listTools();
 
     expect(ofA.length).toBeGreaterThanOrEqual(2);
-    expect(ofA[0]).toBeTypeOf('function');
-    expect(new Set(ofA).size).toBe(1);
+    expect(ofA[0]?.tools).toBeInstanceOf(Array);
+    expect(new Set([...ofA, ...seen].map((s) => s.tools)).size).toBe(1);
+    expect(new Set(ofA.map((s) => s.getToken)).size).toBe(1);
     expect(seen.length).toBeGreaterThan(0);
-    expect(seen).not.toContain(ofA[0]);
+    expect(seen.map((s) => s.getToken)).not.toContain(ofA[0]?.getToken);
+  });
+
+  // The definitions are shared by every grant: only the caller a call carries
+  // decides whose token it runs with. Interleaved calls must never cross.
+  it("runs each grant's calls with its own Zendesk token, interleaved", async () => {
+    const { grant } = await startServer(
+      { serverFactory: defaultServerFactory },
+      makeConfig({ mode: 'all' }),
+    );
+    const a = await grant();
+    const b = await grant();
+    mswServer.use(
+      http.get(`${ZENDESK_BASE}/users/me`, ({ request }) => {
+        const token = (request.headers.get('authorization') ?? '').replace(/^Bearer /i, '');
+        return HttpResponse.json({ user: { ...MOCK_USER, name: `Owner of ${token}` } });
+      }),
+    );
+    const whoAmI = async (client: Client) =>
+      textOf(await client.callTool({ name: 'get_current_user', arguments: {} }));
+
+    const [a1, b1, a2, b2] = await Promise.all([whoAmI(a), whoAmI(b), whoAmI(a), whoAmI(b)]);
+
+    const ownerA = a1.match(/Owner of (\S+)/)?.[1];
+    const ownerB = b1.match(/Owner of (\S+)/)?.[1];
+    expect(ownerA).toMatch(/^zd-access-/);
+    expect(ownerB).toMatch(/^zd-access-/);
+    expect(ownerA).not.toBe(ownerB);
+    expect(a2).toContain(`Owner of ${ownerA}`);
+    expect(b2).toContain(`Owner of ${ownerB}`);
   });
 
   it('fetches the Help Center topology once per grant within its cache lifetime', async () => {

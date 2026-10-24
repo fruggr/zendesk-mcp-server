@@ -22,7 +22,7 @@ import { parseAlertsUri } from '../utils/sla-resource';
 import type { NamedScope, SlaScope } from '../utils/sla-scope';
 import type { SlaService } from '../utils/sla-service';
 import type { SlaThresholds } from '../utils/sla-thresholds';
-import type { SharedToolDefinition, ToolCallContext, ToolContext, ToolEnv } from './definitions';
+import type { ToolCallContext, ToolContext, ToolDefinition, ToolEnv } from './definitions';
 import { DURATION_HINT, requireSla } from './preferences';
 import { resolveViewId } from './tickets';
 
@@ -106,7 +106,7 @@ const keepEditedNote = (change: SlaPreferenceChange): string => {
   return `The thresholds you edited apply to this call only. To keep them, call configure_sla_alerts with ${args}.`;
 };
 
-export const createSlaAlertTools = (env: ToolEnv): SharedToolDefinition[] => {
+export const createSlaAlertTools = (env: ToolEnv): ToolDefinition[] => {
   const { subdomain } = env;
 
   // The scope the caller named, the one the user picked in the form, or `mine`
