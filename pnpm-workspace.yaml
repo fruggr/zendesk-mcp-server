@@ -6,13 +6,14 @@ allowBuilds:
   lefthook: false
   msw: true
 
-# 5 days. This is the gate that governs transitive dependencies: Renovate does
+# 3 days. This is the gate that governs transitive dependencies: Renovate does
 # not manage them, so a vulnerable indirect package is only ever bumped by the
-# weekly lockFileMaintenance run, and pnpm refuses any version younger than this
-# when that run resolves the tree. Supply-chain compromises are typically caught
-# and yanked within 24-48h, so 7 days bought little over 5 while adding two days
-# to every remediation.
-minimumReleaseAge: 7200
+# twice-weekly lockFileMaintenance run, and pnpm refuses any version younger than
+# this when that run resolves the tree. Supply-chain compromises are typically
+# caught and yanked within 24-48h, so 3 days keeps a margin over that window
+# while 5 added two days to every remediation for little more protection.
+# Keep it equal to minimumReleaseAge in renovate.json.
+minimumReleaseAge: 4320
 
 overrides:
   ip-address: ^10.2.0

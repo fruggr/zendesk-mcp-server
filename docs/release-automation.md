@@ -168,6 +168,7 @@ security fix arrives in the weekly batch.
 | **patch / minor** on a `pnpm-workspace.yaml` `overrides` entry       | never proposed\*\*\*     | never proposed\*\*\*            |
 | `lockFileMaintenance` (Tuesday and Friday before 8am, Europe/Paris) | auto-merge               | auto-merge                       |
 | GitHub Actions (`uses: org/action@…`)                               | manual review            | manual review                    |
+| Container base image (`Dockerfile` `FROM`), digest / Alpine         | auto-merge, own PR       | auto-merge, own PR, within a day |
 
 \* Vulnerability-minor updates carry the `fix(security):` prefix, so merging them publishes a release. We keep them under manual review to allow an impact assessment first.
 
@@ -182,7 +183,7 @@ security fix arrives in the weekly batch.
 `dist/` inlines every package and they are all devDependencies: no dependency type is left to
 split production from tooling. Monday and not the `lockFileMaintenance` window (Tuesday and Friday),
 because both rewrite `pnpm-lock.yaml` and overlapping windows cost a rebase cascade. A member
-that has not yet cleared the 5-day `minimumReleaseAge` is left out of the batch and joins the
+that has not yet cleared the 3-day `minimumReleaseAge` is left out of the batch and joins the
 next one. The cost of batching is that one member breaking CI holds the whole batch open — the
 way out is in [Pause or disable](#pause-or-disable).
 
@@ -220,7 +221,7 @@ purpose: a security update swept into a batch would inherit its `chore(deps)` ti
 publishing a release. It fails silently, hence the explicit pin on top of Renovate's own
 default of keeping alerted packages out of groups.
 
-**They do wait out the 5-day delay, and that takes one line.** Renovate's docs say security
+**They do wait out the 3-day delay, and that takes one line.** Renovate's docs say security
 updates bypass `minimumReleaseAge`; that bypass is a *default value* of the `vulnerabilityAlerts`
 block, not fixed behaviour, so setting `minimumReleaseAge` inside that block restores the gate.
 What you see during the wait: the PR is opened immediately (so a CVE is never hidden), carries a
@@ -234,7 +235,7 @@ check is not simply made required:
 
 Concrete examples:
 
-- Patch vulnerability in `open` (bundled) → PR `fix(security): update open to X`, on its own, immediately → red and pending until the fix is 5 days old → auto-merge → patch release published.
+- Patch vulnerability in `open` (bundled) → PR `fix(security): update open to X`, on its own, immediately → red and pending until the fix is 3 days old → auto-merge → patch release published.
 - Minor vulnerability in `open` (bundled) → same PR and same wait → **manual review** → patch release published on merge.
 - Major vulnerability in `open` (bundled) → PR opened too, labelled `needs-review` (the dashboard gate does not apply to advisories) → **manual review**.
 - Non-vuln patch update of `open` (bundled) → joins `chore(deps): update dependencies` on Monday → auto-merge → no release on merge.
@@ -244,6 +245,7 @@ Concrete examples:
 - Minor update of `vitest` (tooling) → joins the same `chore(deps): update dependencies` batch → auto-merge → no release.
 - Major update of `vitest` (tooling) → entry in the dashboard, manual approval required.
 - Patch or minor bump of `pnpm` (via `packageManager` field) → PR `chore(deps): update pnpm to X`, on its own → auto-merge → no release. The corepack hash in `packageManager` is updated automatically by Renovate when the format is `pnpm@VERSION+sha512.HASH`. Since pnpm 12 records itself in `pnpm-lock.yaml` under `packageManagerDependencies`, such a PR also has to refresh the lockfile, or CI fails at `pnpm install --frozen-lockfile` with `ERR_PNPM_FROZEN_LOCKFILE_WITH_OUTDATED_LOCKFILE`. Whether Renovate does that for a bare `packageManager` bump is unverified, and it fails closed either way: the PR goes red at install and auto-merge cannot fire, the same shape as a security PR waiting out the age gate.
+- Container base image (DHI Node/Alpine) digest rebuild or Alpine bump → one `chore(docker)` PR for both `FROM` lines, at any time → auto-merge once the container smoke test passes → no release; `release.yml` republishes the latest release on the new base. A new tag waits 24 hours, a digest has no age gate; a Node major goes to the dashboard like any major.
 - GitHub Action digest bump → PR `chore(deps): update actions/X` → manual review → no release.
 - Non-vuln patch of `qs` behind the `^6.15.3` override → **no PR**; the range still holds, so the resolved version moves with the next lockfile maintenance run.
 - Advisory against `qs` behind that same override → **no PR either**; a caret range is not a version, so the entry is skipped. Remediation is the next lockfile maintenance run, or raising the floor by hand.
