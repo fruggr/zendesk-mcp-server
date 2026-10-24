@@ -90,12 +90,15 @@ packages, and they do not cover the same ground:
   enforces natively at resolution time and which therefore also covers the
   transitive tree Renovate does not manage.
 
-The container base image (the Dockerfile's `FROM` lines) has its own, shorter
-gate: 24 hours on a new tag, none on a digest, which carries no release date.
+The container base image (the Dockerfile's `FROM` lines) has no Renovate gate.
 It is the technical base we ship and are answerable for, so a Node or Alpine
-CVE fix has to reach the published image within a day; Node, Alpine and the
-Docker Hardened Images rebuilds on top of them are maintained upstream with a
-release process that makes a day enough.
+CVE fix has to reach the published image fast. A 24-hour gate was the intent,
+but dhi.io serves no release timestamp (Renovate reads one from Docker Hub
+only), and under Renovate's default `minimumReleaseAgeBehaviour:
+timestamp-required` any gate there holds every tag update forever. The delay
+that remains is upstream's: Docker builds and signs these images from Node and
+Alpine releases, a curated pipeline rather than an open registry anyone can
+publish to.
 
 Removing the human step does not remove that protection, because the human step
 was never the protection.

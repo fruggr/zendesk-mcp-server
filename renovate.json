@@ -46,6 +46,16 @@
       "password": "{{ secrets.DHI_TOKEN }}"
     }
   ],
+  "customManagers": [
+    {
+      "description": "The README badge names the container base tag, so it moves in the same PR as the Dockerfile (grouped by the dhi.io/node rule below). No digest here: the badge is for readers, the Dockerfile pins.",
+      "customType": "regex",
+      "managerFilePatterns": ["/^README\\.md$/"],
+      "matchStrings": ["message=dhi\\.io%2Fnode%3A(?<currentValue>[^&)]+)"],
+      "datasourceTemplate": "docker",
+      "depNameTemplate": "dhi.io/node"
+    }
+  ],
   "packageRules": [
     {
       "description": "lockFileMaintenance updates are synthetic lockfile refreshes with no releaseTimestamp, so the inherited 3-day minimumReleaseAge can never be evaluated and Renovate raises a dashboard warning (and, from Renovate 42 on, would stop running lockfile maintenance entirely). Opt them out of the age gate, mirroring Renovate's own security:minimumReleaseAgeNpm preset. The supply-chain delay for the packages bumped here is still enforced natively by pnpm via minimumReleaseAge in pnpm-workspace.yaml.",
@@ -103,20 +113,17 @@
       "allowedVersions": ">=12.9.0"
     },
     {
-      "description": "The container base image: both FROM lines of the Dockerfile, one Docker Hardened Images tag pinned by digest, moved together in one PR. This is the technical base we ship and are answerable for: a Node or Alpine CVE fix has to reach the published image within a day, so unlike the package.json batches it has no weekly window and a 24-hour age gate instead of 3 days. Node and Alpine are maintained upstream with a disciplined release process, and DHI rebuilds on top of them, so a day covers the yank window that matters for them. Tags read <node major>-alpine<alpine version>[-dev], so this versioning makes a Node major a Renovate major (dashboard approval, like any major) and an Alpine release a minor or patch; the -dev suffix is a compatibility marker, never swapped for the runtime tag. Digest bumps (DHI rebuilding the same tag, mostly for CVE fixes) and Alpine updates are auto-merged once the container smoke test passes, and release.yml republishes the latest release on the new base without cutting a release.",
-      "matchManagers": ["dockerfile"],
-      "versioning": "regex:^(?<major>\\d+)-alpine(?<minor>\\d+)\\.(?<patch>\\d+)(?<compatibility>-dev)?$",
+      "description": "The container base image: both FROM lines of the Dockerfile and the README badge, one Docker Hardened Images tag, pinned by digest in the Dockerfile, moved together in one PR. It is the technical base we ship and answer for, so a Node or Alpine CVE fix has to reach the published image fast: no weekly window, and no age gate either. dhi.io serves no release timestamp (Renovate reads one from Docker Hub only), and under the default minimumReleaseAgeBehaviour timestamp-required any gate here would hold every tag update forever; the delay that matters is upstream's, since Docker builds and signs these images from Node and Alpine releases. Tags read <node x.y.z>-alpine3.<y>[-dev], so a Node major is a Renovate major (dashboard approval, like any major), a Node minor or patch and an Alpine 3.x release are minor or patch, and -dev is a compatibility marker never swapped for the runtime tag. A digest bump is DHI rebuilding the same tag, mostly for OS CVE fixes. Everything non-major auto-merges once CI passes: the Container workflow smoke-tests the image, and the Base image workflow (scripts/base-image-report.mjs) checks the images carry the versions their tag names and comments the before/after on the PR. release.yml then republishes the latest release on the new base without cutting a release.",
+      "matchDepNames": ["dhi.io/node"],
+      "versioning": "regex:^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)-alpine3\\.(?<build>\\d+)(?<compatibility>-dev)?$",
       "groupName": "container base image",
       "semanticCommitScope": "docker",
       "schedule": ["at any time"],
-      "minimumReleaseAge": "24 hours",
-      "automerge": true
-    },
-    {
-      "description": "A digest has no release timestamp, so the 24-hour age gate is lifted for it, as for lockFileMaintenance. Tag updates keep the gate.",
-      "matchManagers": ["dockerfile"],
-      "matchUpdateTypes": ["digest"],
-      "minimumReleaseAge": null
+      "minimumReleaseAge": null,
+      "automerge": true,
+      "prBodyNotes": [
+        "The Base image workflow comments on this PR what changes inside the base image: Node.js, OpenSSL and Alpine versions, and the Alpine packages updated, added or removed."
+      ]
     },
     {
       "matchManagers": ["github-actions"],

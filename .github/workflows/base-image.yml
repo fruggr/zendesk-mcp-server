@@ -1,0 +1,61 @@
+name: Base image
+
+# What the container base image really carries (Node, OpenSSL, Alpine, apk
+# packages), checked against the Dockerfile tags and the README badge, and
+# compared with the base branch's image in a PR comment when the FROM lines
+# move: a digest bump says nothing on its own. Own workflow so a README edit
+# does not rebuild the image (container.yml).
+on:
+  pull_request:
+    paths:
+      - Dockerfile
+      - README.md
+      - scripts/base-image-report.mjs
+      - .github/workflows/base-image.yml
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+
+      # Same read-only repository secret as container.yml.
+      - uses: docker/login-action@v4
+        with:
+          registry: dhi.io
+          username: ${{ secrets.DHI_USERNAME }}
+          password: ${{ secrets.DHI_TOKEN }}
+
+      - id: report
+        run: node scripts/base-image-report.mjs --base "${{ github.event.pull_request.base.sha }}" --out "$RUNNER_TEMP/base-image.md"
+
+      - if: always()
+        run: if [ -f "$RUNNER_TEMP/base-image.md" ]; then cat "$RUNNER_TEMP/base-image.md" >> "$GITHUB_STEP_SUMMARY"; fi
+
+      # One comment per PR, edited in place on every run.
+      - if: always() && steps.report.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          id=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR/comments" \
+            --jq '.[] | select(.body | startswith("<!-- base-image-report -->")) | .id' | head -n 1)
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -F "body=@$RUNNER_TEMP/base-image.md" > /dev/null
+          else
+            gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" -F "body=@$RUNNER_TEMP/base-image.md" > /dev/null
+          fi

@@ -3,9 +3,11 @@
 # Hardened, distroless image for the HTTP transport only: docs/http-deployment.md
 # (Container). Both stages track one Docker Hardened Images tag, pinned by
 # digest; Renovate moves them together, and release.yml republishes the image
-# when only these lines change.
+# when only these lines change. The tag names the full Node and Alpine versions,
+# and the Base image workflow checks the images really carry them
+# (scripts/base-image-report.mjs).
 
-FROM dhi.io/node:24-alpine3.24-dev@sha256:7aff626d8cb36fd5a7bc926b6922fb9b40af4cf046f285fa45c1f1712bacd4b1 AS build
+FROM dhi.io/node:24.22.1-alpine3.24-dev@sha256:7aff626d8cb36fd5a7bc926b6922fb9b40af4cf046f285fa45c1f1712bacd4b1 AS build
 WORKDIR /src
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY patches ./patches
@@ -18,7 +20,7 @@ COPY scripts/bundle-manifest.mjs ./scripts/
 COPY src ./src
 RUN pnpm build && mkdir /data
 
-FROM dhi.io/node:24-alpine3.24@sha256:0b55cdd8c105b9823b26140f07a26c0fc8531fbc2cdbbdfc6e058f24c1762be5
+FROM dhi.io/node:24.22.1-alpine3.24@sha256:0b55cdd8c105b9823b26140f07a26c0fc8531fbc2cdbbdfc6e058f24c1762be5
 ARG VERSION=0.0.0
 # The FROM above, passed in by the publish action: release.yml compares it with
 # the Dockerfile's to know when the published image is on a stale base.
