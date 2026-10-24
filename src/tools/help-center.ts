@@ -35,6 +35,7 @@ import type {
   ZendeskTranslation,
   ZendeskUserSegment,
 } from '../types';
+import { loadArticleFormat } from '../utils/article-format';
 import {
   arrangeDesiredOrder,
   computePositionWrites,
@@ -44,15 +45,7 @@ import {
   type ReorderTarget,
   type ReorderWrite,
 } from '../utils/article-order';
-import {
-  applySectionUpdate,
-  htmlToMarkdown,
-  type IntroLoss,
-  markdownToHtml,
-  parseSections,
-  type Section,
-  type StrippedHeading,
-} from '../utils/article-sections';
+import type { IntroLoss, Section, StrippedHeading } from '../utils/article-sections';
 import {
   formatArticle,
   formatArticleSummary,
@@ -964,6 +957,7 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
           undefined,
         );
         const translations = await listTranslations(hcSubdomain, token, article_id);
+        const { parseSections } = await loadArticleFormat();
         const hint = largeArticleHint(article.body, parseSections(article.body).length);
         const text =
           (hint ?? '') +
@@ -2496,6 +2490,7 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
           undefined,
         );
         const translations = await listTranslations(hcSubdomain, token, article_id);
+        const { parseSections } = await loadArticleFormat();
         const sections = parseSections(translation.body);
 
         const outlineLines = sections.length
@@ -2568,6 +2563,7 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
           `/articles/${article_id}/translations/${locale}`,
           undefined,
         );
+        const { htmlToMarkdown, parseSections } = await loadArticleFormat();
         const sections = parseSections(translation.body);
         const section = sections[section_index];
         if (!section) {
@@ -2647,6 +2643,7 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
           `/articles/${article_id}/translations/${locale}`,
           undefined,
         );
+        const { applySectionUpdate, markdownToHtml, parseSections } = await loadArticleFormat();
         const newSectionHtml = format === 'markdown' ? markdownToHtml(content) : content;
         const {
           body: newBody,
@@ -2731,6 +2728,7 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
           // single-translation GET — same reason get_article_outline lists too.
           listTranslations(hcSubdomain, token, article_id),
         ]);
+        const { parseSections } = await loadArticleFormat();
         const sourceSections = parseSections(sourceRes.translation.body);
         const targetSections = parseSections(targetRes.translation.body);
 

@@ -6,7 +6,7 @@ import {
   MAX_PAGE_SIZE,
 } from '../constants';
 import type { ZendeskArticle, ZendeskListResponse } from '../types';
-import { htmlToMarkdown } from '../utils/article-sections';
+import { loadArticleFormat } from '../utils/article-format';
 import { formatArticleSummary, truncateIfNeeded } from '../utils/formatting';
 import { buildCursorParams, extractPaginationMeta } from '../utils/pagination';
 
@@ -104,6 +104,7 @@ export const fetchArticleMarkdown = async (
 ): Promise<string> => {
   const path = locale ? `/${locale}/articles/${id}` : `/articles/${id}`;
   const { article } = await helpCenterGet<{ article: ZendeskArticle }>(subdomain, token, path);
+  const { htmlToMarkdown } = await loadArticleFormat();
   const text = [formatArticleSummary(article), '', htmlToMarkdown(article.body)].join('\n');
   return truncateIfNeeded(
     text,
