@@ -19,15 +19,15 @@ this server's own per-user settings, never Zendesk, so `--read-only` keeps it.
 | `list_ticket_comments` | Read a ticket's conversation (public replies and internal notes, full bodies) newest-first and cursor-paginated, with comment ids and authors resolved to names — the paged alternative to `get_ticket(include_comments=true)` on a long thread | read |
 | `get_ticket_history` | Read a ticket's change history (audit trail) as a chronological, oldest-first timeline of who changed what and when: field changes as before → after with actor names, comment presence (not bodies), system noise filtered; cursor-paginated | read |
 | `get_ticket_attachments` | Download ticket attachments. Images are delivered as native multimodal content for the client's own model to analyze; oversize/over-limit images and non-images come back as text references, and a listing that would exceed the response budget is truncated with a block naming how many attachments were omitted | read |
-| `search_tickets` | Search tickets using Zendesk query syntax, with per-result SLA state and, when the server pushes SLA urgency, an Urgency line (BREACHED / CRITICAL / WARNING) | read |
-| `list_tickets` | List tickets with cursor-based pagination | read |
-| `get_linked_incidents` | Get incidents linked to a problem ticket | read |
+| `search_tickets` | Search tickets using Zendesk query syntax, with per-result SLA state and, when the server pushes SLA urgency, an Urgency line (BREACHED / CRITICAL / WARNING); 25 per page by default, descriptions as excerpts (full text: `get_ticket`) | read |
+| `list_tickets` | List tickets with cursor-based pagination, 25 per page by default, descriptions as excerpts | read |
+| `get_linked_incidents` | Get incidents linked to a problem ticket, descriptions as excerpts | read |
 | `list_sla_policies` | List SLA policies with filter conditions and per-priority targets (requires an admin token, or a custom role with the SLA-management permission) | read |
 | `list_sla_alerts` | List the SLA metrics breached or about to breach across your tickets, your groups', all unsolved tickets, a view or any search query — one compact line each, grouped BREACHED / CRITICAL / WARNING, soonest first, against your thresholds (overridable per call); asks for the set through a form when the client supports it, else defaults to your own tickets; never changes Zendesk, and only remembers that you were shown the thresholds | read |
 | `get_ticket_metrics` | Read the elapsed-time metrics of up to 100 tickets in one call: reply, resolution, wait and on-hold times in calendar and business minutes, reopens, replies, stations and key timestamps — recorded even where no SLA policy applies | read |
 | `list_ticket_fields` | List ticket field definitions (system + custom) with ids, types, and dropdown/multiselect option values, to resolve `custom_fields` ids and accepted values for create_ticket / update_ticket | read |
 | `list_views` | List the agent's active views (saved ticket queues) with best-effort (cached, may show "(count updating)") ticket counts, to see where the workload sits before opening a queue | read |
-| `get_view_tickets` | Read the tickets inside a view (by title or id) in the view's own configured sort order, cursor-paginated, each ticket with its next SLA breach read from the view at no extra cost (every metric: get_ticket / search_tickets) | read |
+| `get_view_tickets` | Read the tickets inside a view (by title or id) in the view's own configured sort order, cursor-paginated, each ticket with its next SLA breach read from the view at no extra cost (every metric: get_ticket / search_tickets); 25 per page by default, descriptions as excerpts | read |
 | `list_macros` | List the active macros available to the authenticated user, with each macro's id, title, scope, and ordered actions | read |
 | `create_ticket` | Create a new ticket with subject, description, priority, tags... | write |
 | `update_ticket` | Update ticket status, priority, assignee, tags, custom fields, and add or remove followers and email CCs by user id | write |
@@ -127,7 +127,7 @@ deliberately cannot do.
 
 | Tool | Description | Mode |
 |------|-------------|------|
-| `search` | Unified search across tickets, users, and organizations | read |
+| `search` | Unified search across tickets, users, and organizations; 25 per page by default, ticket descriptions as excerpts | read |
 
 </details>
 

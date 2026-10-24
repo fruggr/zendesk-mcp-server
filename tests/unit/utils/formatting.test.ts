@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CHARACTER_LIMIT } from '../../../src/constants';
 import type { ZendeskViewCount } from '../../../src/types';
 import {
+  DESCRIPTION_EXCERPT_CHARS,
+  descriptionExcerpt,
   formatArticle,
   formatArticleSummary,
   formatAudit,
@@ -9,6 +11,7 @@ import {
   formatCategory,
   formatComment,
   formatFieldValue,
+  formatFittingList,
   formatList,
   formatMacro,
   formatNextBreachBlock,
@@ -24,6 +27,7 @@ import {
   formatTagDiff,
   formatTicket,
   formatTicketField,
+  formatTicketSummary,
   formatTranslation,
   formatTranslationSummary,
   formatUser,
@@ -134,6 +138,85 @@ describe('formatTicket', () => {
       - **Tags**: none
       - **Created**: 2026-01-01T00:00:00Z | **Updated**: 2026-01-02T00:00:00Z"
     `);
+  });
+});
+
+describe('descriptionExcerpt', () => {
+  it('returns an empty string for a missing description', () => {
+    expect(descriptionExcerpt(undefined)).toBe('');
+    expect(descriptionExcerpt(null)).toBe('');
+  });
+});
+
+describe('formatFittingList header', () => {
+  it('renders the header through headerOf, hint dropped once cut', () => {
+    const items = Array.from({ length: 20 }, (_, i) => ({
+      ...MOCK_CATEGORY,
+      id: i + 10,
+      name: 'x'.repeat(CHARACTER_LIMIT / 10),
+    }));
+    const headerOf = (m: { count: number; has_more: boolean }) =>
+      `Total ${m.count}${m.has_more ? ' (more)' : ''}`;
+    const meta = { has_more: true, after_cursor: null, count: 99 };
+    expect(formatFittingList(items.slice(0, 1), formatCategory, meta, () => '', headerOf)).toMatch(
+      /^Total 99 \(more\)\n\n/,
+    );
+    expect(formatFittingList(items, formatCategory, meta, () => 'R.', headerOf)).toMatch(
+      /^Total 99\n\n/,
+    );
+  });
+});
+
+describe('formatTicketSummary', () => {
+  it('renders a short description as formatTicket does', () => {
+    expect(formatTicketSummary(MOCK_TICKET)).toBe(formatTicket(MOCK_TICKET));
+  });
+
+  it('keeps a description of exactly the excerpt length whole', () => {
+    const description = 'a'.repeat(DESCRIPTION_EXCERPT_CHARS);
+    expect(
+      formatTicketSummary({ ...MOCK_TICKET, description }).endsWith(`\n\n${description}`),
+    ).toBe(true);
+  });
+
+  it('cuts a long description to an excerpt that points at get_ticket', () => {
+    const description = `${'word '.repeat(39)}word\n\nsecond   paragraph that is cut`;
+    expect(formatTicketSummary({ ...MOCK_TICKET, description })).toMatchInlineSnapshot(`
+      "## Ticket #1: Test ticket
+      - **Status**: open | **Priority**: normal | **Type**: incident
+      - **Requester**: 200 | **Assignee** (assignee_id): 100
+      - **Tags**: test, mock
+      - **Created**: 2026-01-01T00:00:00Z | **Updated**: 2026-01-02T00:00:00Z
+
+      word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word… (excerpt; full text: get_ticket)"
+    `);
+  });
+
+  it('never ends an excerpt on half a surrogate pair', () => {
+    const description = `${'a'.repeat(DESCRIPTION_EXCERPT_CHARS - 1)}😀 tail`;
+    expect(
+      formatTicketSummary({ ...MOCK_TICKET, description }).endsWith(
+        `\n\n${'a'.repeat(DESCRIPTION_EXCERPT_CHARS - 1)}… (excerpt; full text: get_ticket)`,
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps a whole surrogate pair that ends the excerpt', () => {
+    const description = `${'a'.repeat(DESCRIPTION_EXCERPT_CHARS - 2)}😀 tail`;
+    expect(formatTicketSummary({ ...MOCK_TICKET, description })).toContain('a😀… (excerpt');
+  });
+
+  it('collapses whitespace so a multi-line description stays one excerpt line', () => {
+    const text = formatTicketSummary({ ...MOCK_TICKET, description: '  first\n\n\tsecond  ' });
+    expect(text.endsWith('\n\nfirst second')).toBe(true);
+  });
+
+  it('drops the body when the description is empty or missing', () => {
+    const bare = formatTicket({ ...MOCK_TICKET, description: '' });
+    expect(formatTicketSummary({ ...MOCK_TICKET, description: '' })).toBe(bare);
+    expect(formatTicketSummary({ ...MOCK_TICKET, description: null as unknown as string })).toBe(
+      bare,
+    );
   });
 });
 
@@ -1308,6 +1391,119 @@ describe('formatList', () => {
 
       - **General** (800) — General category"
     `);
+  });
+});
+
+describe('formatPagination for offset pages', () => {
+  it('names the next offset page as a page, not a cursor (#388)', () => {
+    expect(
+      formatList([MOCK_CATEGORY], formatCategory, {
+        has_more: true,
+        after_cursor: null,
+        count: 44,
+        next_page: 2,
+      }),
+    ).toMatchInlineSnapshot(`
+      "Results: 44 | Next page: 2 (pass as page)
+
+      - **General** (800) — General category"
+    `);
+  });
+});
+
+describe('formatFittingList', () => {
+  const item = (id: number, size: number) => ({ ...MOCK_CATEGORY, id, name: 'x'.repeat(size) });
+  const meta = { has_more: true, after_cursor: 'NEXT', count: 500 };
+  const resume = (shown: number, onPage: number) => `Resume after ${shown} of ${onPage}.`;
+
+  it('renders exactly as formatList when everything fits', () => {
+    const items = [item(1, 10), item(2, 10)];
+    expect(formatFittingList(items, formatCategory, meta, resume)).toBe(
+      formatList(items, formatCategory, meta),
+    );
+  });
+
+  it('stops before the first item that does not fit and hands over the resume call', () => {
+    const size = Math.floor(CHARACTER_LIMIT / 10);
+    const items = Array.from({ length: 20 }, (_, i) => item(i + 1, size));
+    const text = formatFittingList(items, formatCategory, meta, resume);
+    expect(text.length).toBeLessThanOrEqual(CHARACTER_LIMIT);
+    const shown = (text.match(/^- \*\*x+\*\* \(\d+\)/gm) ?? []).length;
+    expect(shown).toBe(9);
+    expect(text).not.toContain('(10)');
+    expect(text).not.toContain('Response truncated');
+    // The header's next-page hint would skip the items left out.
+    expect(text.startsWith('Results: 500\n\n')).toBe(true);
+    expect(text).not.toContain('NEXT');
+    expect(
+      text.endsWith(
+        `\n\n--- Showing 9 of the 20 results on this page: the next one would pass the ${CHARACTER_LIMIT}-character response limit. Resume after 9 of 20. ---`,
+      ),
+    ).toBe(true);
+  });
+
+  it('reserves room for its notice: an item that only fits without it is left out', () => {
+    // Five items fill the limit exactly, with no room left for the notice.
+    const header = 'Results: 500'.length;
+    const base = formatCategory(item(1, 0)).length;
+    const size = Math.floor((CHARACTER_LIMIT - header) / 5) - 2 - base;
+    const items = Array.from({ length: 6 }, (_, i) => item(i + 1, size));
+    const text = formatFittingList(items, formatCategory, meta, resume);
+    expect(text).toContain('Showing 4 of the 6 results');
+    expect(text.length).toBeLessThanOrEqual(CHARACTER_LIMIT);
+  });
+
+  describe('at the exact limit', () => {
+    // Two-digit ids keep every block the same length; only the tenth item's size varies.
+    const firstNine = Array.from({ length: 9 }, (_, i) => item(10 + i, 1000));
+    const fitting = (size: number) => [...firstNine, item(19, size)];
+    const overflowing = (size: number) => [...fitting(size), item(20, CHARACTER_LIMIT)];
+    const render = (items: ReturnType<typeof item>[]) =>
+      formatFittingList(items, formatCategory, meta, resume);
+    const sizeFor = (build: (size: number) => ReturnType<typeof item>[]) =>
+      10 + CHARACTER_LIMIT - render(build(10)).length;
+
+    it('returns a page of exactly the limit unchanged', () => {
+      const text = render(fitting(sizeFor(fitting)));
+      expect(text.length).toBe(CHARACTER_LIMIT);
+      expect(text).not.toContain('---');
+    });
+
+    it('keeps an item that fills the limit exactly, notice included', () => {
+      const text = render(overflowing(sizeFor(overflowing)));
+      expect(text.length).toBe(CHARACTER_LIMIT);
+      expect(text).toContain('Showing 10 of the 11 results');
+    });
+
+    it('leaves out an item one character too big', () => {
+      const text = render(overflowing(sizeFor(overflowing) + 1));
+      expect(text.length).toBeLessThanOrEqual(CHARACTER_LIMIT);
+      expect(text).toContain('Showing 9 of the 11 results');
+    });
+  });
+
+  it('falls back to a plain truncation when even the first item is too big', () => {
+    const text = formatFittingList([item(1, CHARACTER_LIMIT)], formatCategory, meta, resume);
+    expect(text).toContain('--- Response truncated');
+    expect(text).not.toContain('Resume after');
+  });
+
+  it('resumes after a too-big first item rather than skip the rest of the page', () => {
+    const items = [item(1, CHARACTER_LIMIT), item(2, 10)];
+    const text = formatFittingList(items, formatCategory, meta, resume);
+    expect(text.startsWith('Results: 500\n\n')).toBe(true);
+    expect(text).not.toContain('NEXT');
+    expect(text.endsWith('Resume after 1 of 2. ---')).toBe(true);
+  });
+
+  it('keeps the next-page hint when only that hint overflowed', () => {
+    // The page without its hint is exactly the limit, the notice would not fit.
+    const small = formatCategory(item(2, 0)).length;
+    const base = formatCategory(item(1, 0)).length;
+    const size = CHARACTER_LIMIT - 'Results: 500'.length - 4 - small - base;
+    const text = formatFittingList([item(1, size), item(2, 0)], formatCategory, meta, resume);
+    expect(text).toContain('cursor: NEXT');
+    expect(text).not.toContain('Resume after');
   });
 });
 

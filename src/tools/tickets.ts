@@ -9,6 +9,7 @@ import {
 import {
   DEFAULT_PAGE_SIZE,
   DEFAULT_TICKET_COMMENT_PAGE_SIZE,
+  DEFAULT_TICKET_LIST_PAGE_SIZE,
   MAX_ATTACHMENT_BYTES,
   MAX_COMMENT_PAGES,
   MAX_EMBEDDED_IMAGE_COUNT,
@@ -40,9 +41,11 @@ import type {
 import {
   AUDIT_ENTITY_FIELDS,
   type AuditNames,
+  DESCRIPTION_EXCERPT_CHARS,
   formatAudit,
   formatComment,
   formatFieldValue,
+  formatFittingList,
   formatList,
   formatMacro,
   formatNextBreachBlock,
@@ -53,6 +56,7 @@ import {
   formatTagDiff,
   formatTicket,
   formatTicketField,
+  formatTicketSummary,
   formatView,
   nextBreachByTicket,
   truncateIfNeeded,
@@ -63,6 +67,7 @@ import {
   extractOffsetPaginationMeta,
   extractPaginationMeta,
   extractSearchPaginationMeta,
+  offsetResume,
   PAGE_DESC,
   PER_PAGE_DESC,
 } from '../utils/pagination';
@@ -399,6 +404,17 @@ const fetchViewCounts = async (
   }
   return counts;
 };
+
+// A Zendesk cursor resumes after the whole page fetched, past the tickets left
+// out, and cannot skip: re-reading just the shown part yields the cursor between
+// them. `pageSizeFor` maps shown tickets to the page_size covering them, which a
+// view's dropped rows make larger.
+const cursorResume =
+  (pageSizeFor: (shown: number) => number = (shown) => shown) =>
+  (shown: number, onPage: number): string =>
+    `To read the ${onPage - shown} not shown, call again with page_size: ${pageSizeFor(shown)} and the cursor this page was read with (none for the first page): it returns these ${shown} again, with a cursor that resumes right after them.`;
+
+const EXCERPT_NOTE = `Each ticket's description is cut to a ${DESCRIPTION_EXCERPT_CHARS}-character excerpt; get_ticket returns it in full.`;
 
 // A string reference is always a title, even an all-digits one, matched
 // case-insensitively. The active-views list is paginated to completion so a title
@@ -1163,8 +1179,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
       namespace: 'tickets',
       readOnly: true,
       title: 'Search Zendesk Tickets',
-      description:
-        'Search tickets using Zendesk query syntax, returning each result with its live SLA state (per-metric stage and breach countdown) when an SLA policy applies. Examples: "status:open assignee:me", "priority:urgent ticket_type:incident". Returns total count, so queue triage like "breaching today" works without a per-ticket fetch. When the operator turned SLA push on, each SLA block also carries an Urgency line (BREACHED, CRITICAL or WARNING) against the caller\'s alert thresholds.',
+      description: `Search tickets using Zendesk query syntax, returning each result with its live SLA state (per-metric stage and breach countdown) when an SLA policy applies. Examples: "status:open assignee:me", "priority:urgent ticket_type:incident". Returns total count, so queue triage like "breaching today" works without a per-ticket fetch. When the operator turned SLA push on, each SLA block also carries an Urgency line (BREACHED, CRITICAL or WARNING) against the caller's alert thresholds. ${EXCERPT_NOTE}`,
       inputSchema: z.object({
         query: z
           .string()
@@ -1177,7 +1192,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
           .int()
           .min(1)
           .max(MAX_PAGE_SIZE)
-          .default(DEFAULT_PAGE_SIZE)
+          .default(DEFAULT_TICKET_LIST_PAGE_SIZE)
           .describe(PER_PAGE_DESC),
         page: z.number().int().min(1).default(1).describe(PAGE_DESC),
       }),
@@ -1205,15 +1220,16 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
         // The `slas` sideload is nested on each result (no top-level array, no
         // ticket_id correlation) — read it straight off the ticket.
         const formatTicketWithSla = (ticket: ZendeskTicket): string =>
-          formatTicket(ticket) + formatSlaBlock(ticket.slas, urgency(ticket.slas));
+          formatTicketSummary(ticket) + formatSlaBlock(ticket.slas, urgency(ticket.slas));
         return {
           content: [
             {
               type: 'text',
-              text: formatList(
+              text: formatFittingList(
                 response.results ?? [],
                 formatTicketWithSla,
                 extractSearchPaginationMeta(response, per_page, page),
+                offsetResume(page, per_page),
               ),
             },
           ],
@@ -1505,16 +1521,15 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
       namespace: 'tickets',
       readOnly: true,
       title: 'List Zendesk Tickets',
-      description:
-        "List tickets with cursor-based pagination, in Zendesk's default order (ascending ticket id), not by recency. Page size is controlled by page_size (not per_page, which is the offset-based parameter used by search_tickets); paginate by passing the returned cursor. To find tickets by recency or any other criterion, use search_tickets with a query.",
+      description: `List tickets with cursor-based pagination, in Zendesk's default order (ascending ticket id), not by recency. Page size is controlled by page_size (not per_page, which is the offset-based parameter used by search_tickets); paginate by passing the returned cursor. To find tickets by recency or any other criterion, use search_tickets with a query. ${EXCERPT_NOTE}`,
       inputSchema: z.object({
         page_size: z
           .number()
           .int()
           .min(1)
           .max(MAX_PAGE_SIZE)
-          .default(DEFAULT_PAGE_SIZE)
-          .describe('Tickets per page (1-100, default 100).'),
+          .default(DEFAULT_TICKET_LIST_PAGE_SIZE)
+          .describe(`Tickets per page (1-100, default ${DEFAULT_TICKET_LIST_PAGE_SIZE}).`),
         cursor: z
           .string()
           .optional()
@@ -1540,10 +1555,11 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
           content: [
             {
               type: 'text',
-              text: formatList(
+              text: formatFittingList(
                 tickets,
-                formatTicket,
+                formatTicketSummary,
                 extractPaginationMeta(response, tickets.length),
+                cursorResume(),
               ),
             },
           ],
@@ -1555,8 +1571,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
       namespace: 'tickets',
       readOnly: true,
       title: 'Get Linked Incidents',
-      description:
-        "Get all incident tickets linked to a problem ticket. Returns the list of incidents that reference the given problem (Zendesk problem/incident relationship); useful to gauge a problem's blast radius before resolving it.",
+      description: `Get all incident tickets linked to a problem ticket. Returns the list of incidents that reference the given problem (Zendesk problem/incident relationship); useful to gauge a problem's blast radius before resolving it. ${EXCERPT_NOTE}`,
       inputSchema: z.object({
         problem_id: z
           .number()
@@ -1582,7 +1597,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
         const incidents = response.tickets ?? [];
         const text =
           incidents.length > 0
-            ? `# Incidents linked to problem #${problem_id}\n\n${incidents.map(formatTicket).join('\n\n')}`
+            ? `# Incidents linked to problem #${problem_id}\n\n${incidents.map(formatTicketSummary).join('\n\n')}`
             : `No incidents linked to problem #${problem_id}.`;
         return {
           content: [
@@ -1879,8 +1894,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
       namespace: 'tickets',
       readOnly: true,
       title: 'Get Tickets In A View',
-      description:
-        'Read the tickets inside a Zendesk view, in the view\'s own configured sort order — the same order the agent sees in the Zendesk UI — which is the natural way to work a named queue like "Unassigned tickets" or "Breaching today". Accepts the view by title or by numeric id (discover both with list_views); a title is matched case-insensitively against the agent\'s active views, and on no match the available titles are returned so you can retry in one step. Tickets come back with the same fields as list_tickets and are cursor-paginated. Each ticket an SLA policy covers also shows its next SLA breach: only the one metric closest to breaching, read from the view itself at no extra cost (use get_ticket or search_tickets for every metric). sort_by/sort_order override the view\'s order when you want a different cut.',
+      description: `Read the tickets inside a Zendesk view, in the view's own configured sort order — the same order the agent sees in the Zendesk UI — which is the natural way to work a named queue like "Unassigned tickets" or "Breaching today". Accepts the view by title or by numeric id (discover both with list_views); a title is matched case-insensitively against the agent's active views, and on no match the available titles are returned so you can retry in one step. Tickets come back with the same fields as list_tickets and are cursor-paginated. Each ticket an SLA policy covers also shows its next SLA breach: only the one metric closest to breaching, read from the view itself at no extra cost (use get_ticket or search_tickets for every metric). sort_by/sort_order override the view's order when you want a different cut. ${EXCERPT_NOTE}`,
       inputSchema: z.object({
         view: z
           .union([z.string().min(1), z.number().int().positive()])
@@ -1904,8 +1918,8 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
           .int()
           .min(1)
           .max(MAX_PAGE_SIZE)
-          .default(DEFAULT_PAGE_SIZE)
-          .describe('Tickets per page (1-100, default 100).'),
+          .default(DEFAULT_TICKET_LIST_PAGE_SIZE)
+          .describe(`Tickets per page (1-100, default ${DEFAULT_TICKET_LIST_PAGE_SIZE}).`),
         cursor: z
           .string()
           .optional()
@@ -1955,9 +1969,8 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
           }
           throw error;
         }
-        const ids = rows
-          .map(extractRowTicketId)
-          .filter((id): id is number => typeof id === 'number');
+        const rowIds = rows.map(extractRowTicketId);
+        const ids = rowIds.filter((id): id is number => typeof id === 'number');
         const tickets = await hydrateViewTickets(subdomain, token, ids);
         const nextBreach = nextBreachByTicket(rows);
         // Count reflects the tickets actually rendered, not the raw execute rows:
@@ -1968,10 +1981,13 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
           content: [
             {
               type: 'text',
-              text: formatList(
+              text: formatFittingList(
                 tickets,
-                (ticket) => formatTicket(ticket) + formatNextBreachBlock(nextBreach.get(ticket.id)),
+                (ticket) =>
+                  formatTicketSummary(ticket) + formatNextBreachBlock(nextBreach.get(ticket.id)),
                 { ...meta, count: tickets.length },
+                // page_size counts execute rows, dropped ones included.
+                cursorResume((shown) => rowIds.indexOf(tickets[shown - 1]?.id) + 1),
               ),
             },
           ],

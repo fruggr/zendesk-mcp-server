@@ -528,6 +528,8 @@ export interface PaginationMeta {
   has_more: boolean;
   after_cursor: string | null;
   count: number;
+  /** Offset pagination only: the `page` to pass next. Set when `has_more`. */
+  next_page?: number;
 }
 
 export interface ZendeskListResponse<T> {
