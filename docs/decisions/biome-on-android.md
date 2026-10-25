@@ -99,6 +99,10 @@ right one on Termux and none elsewhere, so `scripts/biome.mjs` is gone:
   on the validation device, where `/bin` links to `/system/bin`, but nothing
   guarantees that link on every Android build, and `node` costs nothing extra.
 - `scripts/bench-lint-tooling.mjs` resolves the platform package itself.
+- Measured on the Termux device, interleaved, per-edit hook command
+  ([PR #402](https://github.com/fruggr/zendesk-mcp-server/pull/402#issuecomment-6396741033)):
+  the android binary is as fast as the musl one (10.3 s vs 10.0 s median), and
+  2.6.2 is faster than 2.5.15 (10.0 s vs 13.5 s, same musl build).
 - The musl binaries the shim cached under
   `$XDG_CACHE_HOME/zendesk-mcp-server/biome` (default `~/.cache`) are no longer
   read and can be deleted.
