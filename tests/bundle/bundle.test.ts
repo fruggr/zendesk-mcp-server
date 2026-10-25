@@ -214,48 +214,53 @@ describe('dist bundle lifecycle', () => {
       env: { ...process.env, OAUTH_TOKEN_FILE: tokenFile, HOLD_EVENT_LOOP: '1' },
       stdio: ['pipe', 'pipe', 'ignore'],
     });
-    const replies = new Map<number, (message: { result?: unknown; error?: unknown }) => void>();
-    let pending = '';
-    proc.stdout?.on('data', (chunk: Buffer) => {
-      pending += chunk.toString();
-      for (let end = pending.indexOf('\n'); end >= 0; end = pending.indexOf('\n')) {
-        const message = JSON.parse(pending.slice(0, end)) as {
-          id?: number;
-          result?: unknown;
-          error?: unknown;
-        };
-        pending = pending.slice(end + 1);
-        if (message.id !== undefined) replies.get(message.id)?.(message);
-      }
-    });
-    let nextId = 0;
-    const request = (method: string, params: unknown) =>
-      new Promise<{ result?: unknown; error?: unknown }>((done) => {
-        nextId += 1;
-        replies.set(nextId, done);
-        proc.stdin?.write(`${JSON.stringify({ jsonrpc: '2.0', id: nextId, method, params })}\n`);
+    // The child holds its event loop open: a failed assertion must not leave it running.
+    try {
+      const replies = new Map<number, (message: { result?: unknown; error?: unknown }) => void>();
+      let pending = '';
+      proc.stdout?.on('data', (chunk: Buffer) => {
+        pending += chunk.toString();
+        for (let end = pending.indexOf('\n'); end >= 0; end = pending.indexOf('\n')) {
+          const message = JSON.parse(pending.slice(0, end)) as {
+            id?: number;
+            result?: unknown;
+            error?: unknown;
+          };
+          pending = pending.slice(end + 1);
+          if (message.id !== undefined) replies.get(message.id)?.(message);
+        }
       });
+      let nextId = 0;
+      const request = (method: string, params: unknown) =>
+        new Promise<{ result?: unknown; error?: unknown }>((done) => {
+          nextId += 1;
+          replies.set(nextId, done);
+          proc.stdin?.write(`${JSON.stringify({ jsonrpc: '2.0', id: nextId, method, params })}\n`);
+        });
 
-    await request('initialize', {
-      protocolVersion: '2025-06-18',
-      capabilities: {},
-      clientInfo: { name: 'dist-test', version: '0.0.0' },
-    });
-    proc.stdin?.write(
-      `${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`,
-    );
-    const sla = await request('tools/call', { name: 'list_sla_policies', arguments: {} });
-    const article = await request('tools/call', {
-      name: 'get_article',
-      arguments: { article_id: 5000 },
-    });
-    expect(textOf(sla.result as { content?: unknown })).toContain('SLA contractuels fruggr');
-    expect(textOf(article.result as { content?: unknown })).toContain('How to test');
+      await request('initialize', {
+        protocolVersion: '2025-06-18',
+        capabilities: {},
+        clientInfo: { name: 'dist-test', version: '0.0.0' },
+      });
+      proc.stdin?.write(
+        `${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`,
+      );
+      const sla = await request('tools/call', { name: 'list_sla_policies', arguments: {} });
+      const article = await request('tools/call', {
+        name: 'get_article',
+        arguments: { article_id: 5000 },
+      });
+      expect(textOf(sla.result as { content?: unknown })).toContain('SLA contractuels fruggr');
+      expect(textOf(article.result as { content?: unknown })).toContain('How to test');
 
-    const exited = exitOf(proc);
-    proc.stdin?.end();
+      const exited = exitOf(proc);
+      proc.stdin?.end();
 
-    await expect(exited).resolves.toEqual({ code: 0, signal: null });
+      await expect(exited).resolves.toEqual({ code: 0, signal: null });
+    } finally {
+      if (proc.exitCode === null && proc.signalCode === null) proc.kill('SIGKILL');
+    }
   });
 
   it('exits cleanly on SIGTERM over HTTP', async () => {

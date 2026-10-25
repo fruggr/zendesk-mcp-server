@@ -58,7 +58,7 @@ describe('module graph', () => {
   it('keeps the article pipeline out of what a start loads, on either transport', () => {
     for (const entry of ['src/index.ts', 'src/transports/http.ts', 'src/transports/stdio.ts']) {
       const loaded = staticClosure(entry);
-      expect(ARTICLE_PIPELINE.filter((m) => loaded.has(m))).toEqual([]);
+      expect(ARTICLE_PIPELINE.filter((m) => loaded.has(m))).toMatchInlineSnapshot(`[]`);
     }
   });
 

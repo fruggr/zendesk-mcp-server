@@ -49,22 +49,46 @@ const start = (preload, env) => {
     }
   });
   let id = 0;
+  // A server that dies before answering must fail the run, not hang it.
+  let failure;
+  const failAll = (error) => {
+    failure ??= error;
+    for (const [, settle] of replies) settle({ error: failure });
+    replies.clear();
+  };
+  proc.once('error', (error) => failAll(error));
+  proc.once('exit', (code, signal) =>
+    failAll(new Error(`server exited (code ${code}, signal ${signal}) before answering`)),
+  );
   const request = (method, params) =>
-    new Promise((done) => {
+    new Promise((done, fail) => {
+      if (failure) return fail(failure);
       id += 1;
-      replies.set(id, done);
+      replies.set(id, (message) => {
+        replies.delete(message.id ?? id);
+        if (message.error)
+          fail(
+            message.error instanceof Error
+              ? message.error
+              : new Error(JSON.stringify(message.error)),
+          );
+        else done(message);
+      });
       proc.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`);
     });
-  const connect = async () => {
+  // Resolves with the time `initialize` answered, then lists the tools as a client does.
+  const connect = async (started) => {
     await request('initialize', {
       protocolVersion: '2025-06-18',
       capabilities: {},
       clientInfo: { name: 'measure-footprint', version: '0' },
     });
+    const initializeMs = performance.now() - started;
     proc.stdin.write(
       `${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`,
     );
     await request('tools/list', {});
+    return { initializeMs, listedMs: performance.now() - started };
   };
   const stop = async () => {
     const exited = new Promise((done) => proc.once('exit', done));
@@ -77,15 +101,15 @@ const start = (preload, env) => {
 const measureIdle = async () => {
   const started = performance.now();
   const server = start([], {});
-  await server.connect();
-  const result = { initializeMs: performance.now() - started, idleMb: rssMb(server.proc.pid) };
+  const timings = await server.connect(started);
+  const result = { ...timings, idleMb: rssMb(server.proc.pid) };
   await server.stop();
   return result;
 };
 
 const measureArticle = async (tokenFile) => {
   const server = start(['--import', 'tsx', '--import', MOCK], { OAUTH_TOKEN_FILE: tokenFile });
-  await server.connect();
+  await server.connect(performance.now());
   const before = rssMb(server.proc.pid);
   const article =
     values.mode === 'all'
@@ -94,7 +118,9 @@ const measureArticle = async (tokenFile) => {
           name: values.mode === 'single' ? 'zendesk' : 'zendesk_help_center',
           arguments: { operation: 'get_article', params: { article_id: 5000 } },
         };
-  await server.request('tools/call', article);
+  const { result } = await server.request('tools/call', article);
+  if (result?.isError)
+    throw new Error(`the article call failed: ${JSON.stringify(result.content)}`);
   const addedMb = rssMb(server.proc.pid) - before;
   await server.stop();
   return addedMb;
@@ -117,6 +143,7 @@ try {
   console.log(
     `  initialize answered after   ${median(runs.map((r) => r.initializeMs)).toFixed(0)} ms`,
   );
+  console.log(`  tools/list answered after   ${median(runs.map((r) => r.listedMs)).toFixed(0)} ms`);
   console.log(`  RSS after tools/list (idle) ${median(runs.map((r) => r.idleMb)).toFixed(0)} MB`);
   console.log(
     `  RSS a first article adds    ${median(runs.map((r) => r.articleMb)).toFixed(0)} MB`,

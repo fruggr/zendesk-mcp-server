@@ -33,15 +33,17 @@ about 60 ms at a cold start). What can wait is the code only some handlers run.
 ## What the start loaded, measured
 
 `scripts/measure-footprint.mjs` on the build of `main` at the start of #406 and
-on its end, same machine, median of 3 runs. Idle is `initialize` then
-`tools/list` on `dist/index.js` alone; the article line adds a first
-`get_article`:
+on its end, same machine, three series of 5 runs each (medians). Idle is
+`initialize` then `tools/list` on `dist/index.js` alone; the article line adds
+the RSS a first `get_article` adds, measured in a process carrying the test
+mock (one series of the branch read +30 MB once, against +16–17 MB otherwise):
 
 | | Before | After |
 | --- | ---: | ---: |
-| `initialize` answered after | 415–445 ms | 305–370 ms |
-| RSS, idle | 110–114 MB | ~93 MB |
-| RSS after a first article | ~130–135 MB | ~109 MB |
+| `initialize` answered after | ~390–400 ms | ~300 ms |
+| `tools/list` answered after | ~400–410 ms | ~315 ms |
+| RSS, idle | ~110 MB | ~93 MB |
+| RSS after a first article | ~130 MB | ~110 MB |
 | `dist/index.js` | 4.0 MB | 1.4 MB |
 
 A bare Node process holds ~42 MB. Of the 4.0 MB chunk every start parsed and
