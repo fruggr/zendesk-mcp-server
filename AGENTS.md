@@ -197,10 +197,6 @@ test: if a running server behaves no differently for a client, it's tooling.
   and pre-commit still enforces them. Don't add formatting back to the per-edit
   hook. Why: `docs/decisions/lint-tooling.md`.
 - Lint and format through the pnpm scripts (`pnpm check`, `pnpm check:fix`).
-  Hooks run Biome's launcher with `node node_modules/@biomejs/biome/bin/biome`:
-  not `node_modules/.bin/biome`, a `#!/bin/sh` script, which Android resolves
-  only where `/bin` links to `/system/bin`; not pnpm, whose start-up the per-edit hook would pay
-  ([#279](https://github.com/fruggr/zendesk-mcp-server/issues/279)).
 - Enable a lint rule only once the tree is already clean for it, so `pnpm check`
   stays green in the same commit. Which rules are on, and a line on every rule
   that is off: `docs/decisions/biome-rules.md`. `nursery` and the `types` domain
