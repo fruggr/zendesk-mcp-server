@@ -98,9 +98,10 @@ Ask the human the same way for anything else only they can provide: a sign-in
 as a second Zendesk user, a read-only sign-in, a reconnection between two
 scenarios. Say exactly what you need and why, then wait.
 
-Mark an HTTP scenario `BLOCKED` only when the server fails to start (quote the
-error), or the human declines or cannot connect it; never because the server
-was not connected at launch. Stop the server when you are done.
+An HTTP scenario is `BLOCKED` when the server fails to start (quote the error),
+when the human declines or cannot connect it, or for the same credential and
+egress failures as on stdio; never because the server was not connected at
+launch. Stop the server when you are done.
 How it works, and the `pnpm mcp:live --url` alternative:
 [`docs/live-testing.md`](../../../docs/live-testing.md).
 
