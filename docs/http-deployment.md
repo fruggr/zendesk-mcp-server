@@ -55,7 +55,10 @@ deployment, supply both explicitly.
 Each release publishes `ghcr.io/fruggr/zendesk-mcp-server` with the same version
 as npm. It runs the same bundle, on a distroless
 [Docker Hardened Images](https://docs.docker.com/dhi/) Node base: no shell, no
-package manager, a non-root user (UID 1000).
+package manager, a non-root user (UID 1000). The Node and Alpine versions it
+runs on are in the `Dockerfile` tag and the README badge; a PR that moves them
+carries a before/after comment of what changed inside the base
+([`release-automation.md`](release-automation.md)).
 
 **What the image is for, and what it is not for.**
 
