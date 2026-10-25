@@ -1232,6 +1232,91 @@ describe('ticket tools', () => {
       expect(text).toContain('- **Next breach**: 2099-06-18T21:37:00Z');
     });
 
+    describe('with group:me (#389)', () => {
+      const captureSearches = (): string[] => {
+        const queries: string[] = [];
+        mswServer.use(
+          http.get('https://testsubdomain.zendesk.com/api/v2/search', ({ request }) => {
+            queries.push(new URL(request.url).searchParams.get('query') ?? '');
+            return HttpResponse.json({ results: [MOCK_TICKET], count: 1 });
+          }),
+        );
+        return queries;
+      };
+
+      it('searches the only group of the caller and says so', async () => {
+        const queries = captureSearches();
+        const memberOf: string[] = [];
+        mswServer.use(
+          http.get(
+            'https://testsubdomain.zendesk.com/api/v2/users/:id/group_memberships',
+            ({ params }) => {
+              memberOf.push(String(params['id']));
+              return HttpResponse.json({
+                group_memberships: [{ group_id: MOCK_TICKET.group_id }],
+                meta: { has_more: false },
+              });
+            },
+          ),
+        );
+        const text = firstText(
+          await findTool('search_tickets').handler({
+            query: 'status<solved group:me',
+            per_page: 25,
+            page: 1,
+          }),
+        );
+        // No SLA service in this context: the caller comes from /users/me.
+        expect(memberOf).toEqual([String(MOCK_USER.id)]);
+        expect(queries).toEqual([`type:ticket status<solved group:${MOCK_TICKET.group_id}`]);
+        expect(text?.split('\n').slice(0, 2)).toMatchInlineSnapshot(`
+          [
+            "Note: group:me was read as group:300, your only group.",
+            "Results: 1",
+          ]
+        `);
+        expect(text).toContain('Test ticket');
+      });
+
+      it('fails before searching when the caller is in several groups', async () => {
+        const queries = captureSearches();
+        mswServer.use(
+          http.get('https://testsubdomain.zendesk.com/api/v2/users/:id/group_memberships', () =>
+            HttpResponse.json({
+              group_memberships: [{ group_id: 10 }, { group_id: 20 }],
+              meta: { has_more: false },
+            }),
+          ),
+        );
+        await expect(
+          findTool('search_tickets').handler({ query: 'group:me', per_page: 25, page: 1 }),
+        ).rejects.toThrow('You belong to groups 10, 20');
+        expect(queries).toEqual([]);
+      });
+
+      it('reads the caller from the SLA service when one is wired', async () => {
+        const queries = captureSearches();
+        const memberOf: string[] = [];
+        mswServer.use(
+          http.get(
+            'https://testsubdomain.zendesk.com/api/v2/users/:id/group_memberships',
+            ({ params }) => {
+              memberOf.push(String(params['id']));
+              return HttpResponse.json({
+                group_memberships: [{ group_id: 7 }],
+                meta: { has_more: false },
+              });
+            },
+          ),
+        );
+        const withSla = { ...ctx, sla: testSlaService({ userId: () => Promise.resolve(77) }) };
+        const tool = ticketTools(withSla).find((t) => t.name === 'search_tickets');
+        await tool?.handler({ query: 'group:me', per_page: 25, page: 1 });
+        expect(memberOf).toEqual(['77']);
+        expect(queries).toEqual(['type:ticket group:7']);
+      });
+    });
+
     it('defaults to a page of 25, the size that fits the response limit (#388)', () => {
       const parsed = findTool('search_tickets').inputSchema.parse({ query: 'status:open' });
       expect(parsed).toMatchObject({ per_page: 25, page: 1 });

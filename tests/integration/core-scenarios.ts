@@ -369,6 +369,18 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         expect(textOf(result)).toContain('SLA contractuels fruggr - Bugs/Incidents');
       });
 
+      it('reads group:me as the only group of the caller through the tickets proxy (#389)', async () => {
+        connected = await harness.connect(makeConfig({ mode: 'namespace' }));
+        const result = await connected.client.callTool({
+          name: 'zendesk_tickets',
+          arguments: { operation: 'search_tickets', params: { query: 'status<solved group:me' } },
+        });
+        expect(result.isError).toBeFalsy();
+        expect(textOf(result).split('\n')[0]).toMatchInlineSnapshot(
+          `"Note: group:me was read as group:300, your only group."`,
+        );
+      });
+
       it('exposes list_brands and requires brand_id in multi-brand mode', async () => {
         // Unset: no list_brands, no brand_id on the schemas.
         connected = await harness.connect(makeConfig({ mode: 'all' }));

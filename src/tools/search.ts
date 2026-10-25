@@ -3,6 +3,7 @@ import { zendeskGet } from '../client/zendesk-api';
 import { DEFAULT_TICKET_LIST_PAGE_SIZE, MAX_PAGE_SIZE } from '../constants';
 import type { PaginationMeta, ZendeskListResponse } from '../types';
 import { descriptionExcerpt, formatFittingList } from '../utils/formatting';
+import { resolveCallerGroupMe } from '../utils/group-me';
 import {
   buildOffsetParams,
   extractSearchPaginationMeta,
@@ -39,7 +40,7 @@ export const createSearchTools = (env: ToolEnv): ToolDefinition[] => {
           .string()
           .min(1)
           .describe(
-            'Zendesk search query. Supports type/status/role filters (e.g. "type:ticket status:open", "type:user role:agent") and free text; omit a type filter to search tickets, users and organizations at once.',
+            'Zendesk search query. Supports type/status/role filters (e.g. "type:ticket status:open", "type:user role:agent") and free text; omit a type filter to search tickets, users and organizations at once. "me" is a value of the user keywords only (assignee:, requester:, submitter:); group:me is read as your group when you belong to exactly one, else the call fails naming your groups, so use group:<id>.',
           ),
         per_page: z
           .number()
@@ -63,19 +64,25 @@ export const createSearchTools = (env: ToolEnv): ToolDefinition[] => {
           page: number;
         };
         const token = await caller.getToken();
+        const resolved = await resolveCallerGroupMe(query, subdomain, token, caller.sla);
         const response = await zendeskGet<ZendeskListResponse<Record<string, unknown>>>(
           subdomain,
           token,
           '/search',
           {
-            query,
+            query: resolved.query,
             ...buildOffsetParams(per_page, page),
           },
         );
         const results = response.results ?? [];
         const meta = extractSearchPaginationMeta(response, per_page, page);
         const header = (m: PaginationMeta): string =>
-          `Total: ${m.count} | Page ${page} (${results.length} results)${m.has_more ? ` | Next page: ${m.next_page}` : ''}`;
+          [
+            resolved.note,
+            `Total: ${m.count} | Page ${page} (${results.length} results)${m.has_more ? ` | Next page: ${m.next_page}` : ''}`,
+          ]
+            .filter(Boolean)
+            .join('\n');
         return {
           content: [
             {
