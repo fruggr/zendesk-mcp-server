@@ -1,11 +1,12 @@
 import * as z from 'zod/v4';
 import { zendeskGet } from '../client/zendesk-api';
-import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '../constants';
-import type { ZendeskListResponse } from '../types';
-import { truncateIfNeeded } from '../utils/formatting';
+import { DEFAULT_TICKET_LIST_PAGE_SIZE, MAX_PAGE_SIZE } from '../constants';
+import type { PaginationMeta, ZendeskListResponse } from '../types';
+import { descriptionExcerpt, formatFittingList } from '../utils/formatting';
 import {
   buildOffsetParams,
   extractSearchPaginationMeta,
+  offsetResume,
   PAGE_DESC,
   PER_PAGE_DESC,
 } from '../utils/pagination';
@@ -18,10 +19,7 @@ const formatSearchResult = (result: Record<string, unknown>): string => {
   if (result['title']) lines.push(`**Title**: ${result['title']}`);
   if (result['email']) lines.push(`**Email**: ${result['email']}`);
   if (result['status']) lines.push(`**Status**: ${result['status']}`);
-  if (result['description']) {
-    const desc = String(result['description']);
-    lines.push(desc.length > 200 ? `${desc.slice(0, 200)}...` : desc);
-  }
+  if (result['description']) lines.push(descriptionExcerpt(String(result['description'])));
   return lines.join('\n');
 };
 
@@ -35,7 +33,7 @@ export const createSearchTools = (ctx: ToolContext): ToolDefinition[] => {
       readOnly: true,
       title: 'Zendesk Unified Search',
       description:
-        'Search across tickets, users, and organizations. Supports filters like "type:ticket status:open", "type:user role:agent". Returns total count and paginated results (100 per page). Organization results include name and ID only — use get_organization for full details (tags, domains, details).',
+        'Search across tickets, users, and organizations. Supports filters like "type:ticket status:open", "type:user role:agent". Returns total count and paginated results (25 per page by default, up to 100); a ticket description is cut to a 200-character excerpt, which get_ticket returns in full. Organization results include name and ID only — use get_organization for full details (tags, domains, details).',
       inputSchema: z.object({
         query: z
           .string()
@@ -48,7 +46,7 @@ export const createSearchTools = (ctx: ToolContext): ToolDefinition[] => {
           .int()
           .min(1)
           .max(MAX_PAGE_SIZE)
-          .default(DEFAULT_PAGE_SIZE)
+          .default(DEFAULT_TICKET_LIST_PAGE_SIZE)
           .describe(PER_PAGE_DESC),
         page: z.number().int().min(1).default(1).describe(PAGE_DESC),
       }),
@@ -76,11 +74,20 @@ export const createSearchTools = (ctx: ToolContext): ToolDefinition[] => {
         );
         const results = response.results ?? [];
         const meta = extractSearchPaginationMeta(response, per_page, page);
-        const header = `Total: ${meta.count} | Page ${page} (${results.length} results)${meta.has_more ? ` | Next page: ${meta.after_cursor}` : ''}`;
-        const body = results.map(formatSearchResult).join('\n\n');
+        const header = (m: PaginationMeta): string =>
+          `Total: ${m.count} | Page ${page} (${results.length} results)${m.has_more ? ` | Next page: ${m.next_page}` : ''}`;
         return {
           content: [
-            { type: 'text', text: truncateIfNeeded([header, body].filter(Boolean).join('\n\n')) },
+            {
+              type: 'text',
+              text: formatFittingList(
+                results,
+                formatSearchResult,
+                meta,
+                offsetResume(page, per_page),
+                header,
+              ),
+            },
           ],
         };
       },

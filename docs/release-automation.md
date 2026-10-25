@@ -156,7 +156,8 @@ instead, and the canary gates that merge like any other.
 
 Two things decide what happens to an update: **which dependency it touches**, and whether it is
 a security fix. The semver level only refines those two. Everything auto-merged that is not a
-security fix arrives in the weekly batch.
+security fix arrives in the weekly batch, except `pnpm` and the container base image, which get
+their own PR.
 
 | Update kind                                                         | Vulnerability (security) | Non-vulnerability                |
 | ------------------------------------------------------------------- | ------------------------ | -------------------------------- |
@@ -168,6 +169,7 @@ security fix arrives in the weekly batch.
 | **patch / minor** on a `pnpm-workspace.yaml` `overrides` entry       | never proposed\*\*\*     | never proposed\*\*\*            |
 | `lockFileMaintenance` (Tuesday and Friday before 8am, Europe/Paris) | auto-merge               | auto-merge                       |
 | GitHub Actions (`uses: org/action@…`)                               | manual review            | manual review                    |
+| Container base image (`Dockerfile` `FROM`), non-major               | not raised\*\*\*\*\*     | auto-merge, own PR, any day      |
 
 \* Vulnerability-minor updates carry the `fix(security):` prefix, so merging them publishes a release. We keep them under manual review to allow an impact assessment first.
 
@@ -177,12 +179,14 @@ security fix arrives in the weekly batch.
 
 \*\*\*\* The `@modelcontextprotocol/*` packages travel as one `mcp sdk` group, never split: they release in lockstep over one shared `@modelcontextprotocol/core`, and a split bump would leave two copies of it in the lockfile.
 
+\*\*\*\*\* Renovate's advisory sources (GitHub alerts and OSV) do not cover container images, so a base-image CVE fix arrives as an ordinary digest rebuild, with no `fix(security):` prefix and no release; `release.yml` republishes the image instead.
+
 **The weekly batch.** Everything auto-merged and non-security is grouped into one PR,
 `chore(deps): update dependencies`, opened Monday before 8am (Europe/Paris). One group, because
 `dist/` inlines every package and they are all devDependencies: no dependency type is left to
 split production from tooling. Monday and not the `lockFileMaintenance` window (Tuesday and Friday),
 because both rewrite `pnpm-lock.yaml` and overlapping windows cost a rebase cascade. A member
-that has not yet cleared the 5-day `minimumReleaseAge` is left out of the batch and joins the
+that has not yet cleared the 3-day `minimumReleaseAge` is left out of the batch and joins the
 next one. The cost of batching is that one member breaking CI holds the whole batch open — the
 way out is in [Pause or disable](#pause-or-disable).
 
@@ -220,7 +224,7 @@ purpose: a security update swept into a batch would inherit its `chore(deps)` ti
 publishing a release. It fails silently, hence the explicit pin on top of Renovate's own
 default of keeping alerted packages out of groups.
 
-**They do wait out the 5-day delay, and that takes one line.** Renovate's docs say security
+**They do wait out the 3-day delay, and that takes one line.** Renovate's docs say security
 updates bypass `minimumReleaseAge`; that bypass is a *default value* of the `vulnerabilityAlerts`
 block, not fixed behaviour, so setting `minimumReleaseAge` inside that block restores the gate.
 What you see during the wait: the PR is opened immediately (so a CVE is never hidden), carries a
@@ -230,11 +234,23 @@ and the patch case then auto-merges on its own. Why it is layered this way, and 
 check is not simply made required:
 [`docs/decisions/dependency-automerge.md`](decisions/dependency-automerge.md#3-what-protects-the-repo-and-what-does-not).
 
+**The container base image says what it is.** The Dockerfile pins one Docker Hardened Images
+tag by digest, and the tag names the full versions, `<node x.y.z>-alpine3.<y>[-dev]`: Renovate's
+versioning reads the Node version as major.minor.patch and the Alpine release as a fourth part,
+and treats `-dev` as a compatibility marker, so a digest update re-resolves the *same* tag, a tag
+update never leaves Node's major line without dashboard approval, and the build stage never
+swaps to the runtime image. The README badge carries the same tag and moves in the same PR.
+When a PR moves the runtime `FROM` line, `.github/workflows/base-image.yml` runs the official
+[`docker/scout-action`](https://github.com/docker/scout-action) `compare` between the new base
+and the base branch's, and Scout comments on the PR the packages that changed (Node included) and
+the CVEs fixed or introduced. The base has no age gate: dhi.io serves no release timestamp, and
+Renovate's default `timestamp-required` would hold every tag update forever.
+
 **Dashboard approval** means: no PR is opened automatically. The update appears in the Renovate-managed "Dependency Dashboard" issue with a checkbox. Ticking the checkbox triggers PR creation. This is intentional for majors, which usually require reading the upstream CHANGELOG and following a migration procedure.
 
 Concrete examples:
 
-- Patch vulnerability in `open` (bundled) → PR `fix(security): update open to X`, on its own, immediately → red and pending until the fix is 5 days old → auto-merge → patch release published.
+- Patch vulnerability in `open` (bundled) → PR `fix(security): update open to X`, on its own, immediately → red and pending until the fix is 3 days old → auto-merge → patch release published.
 - Minor vulnerability in `open` (bundled) → same PR and same wait → **manual review** → patch release published on merge.
 - Major vulnerability in `open` (bundled) → PR opened too, labelled `needs-review` (the dashboard gate does not apply to advisories) → **manual review**.
 - Non-vuln patch update of `open` (bundled) → joins `chore(deps): update dependencies` on Monday → auto-merge → no release on merge.
@@ -244,6 +260,7 @@ Concrete examples:
 - Minor update of `vitest` (tooling) → joins the same `chore(deps): update dependencies` batch → auto-merge → no release.
 - Major update of `vitest` (tooling) → entry in the dashboard, manual approval required.
 - Patch or minor bump of `pnpm` (via `packageManager` field) → PR `chore(deps): update pnpm to X`, on its own → auto-merge → no release. The corepack hash in `packageManager` is updated automatically by Renovate when the format is `pnpm@VERSION+sha512.HASH`. Since pnpm 12 records itself in `pnpm-lock.yaml` under `packageManagerDependencies`, such a PR also has to refresh the lockfile, or CI fails at `pnpm install --frozen-lockfile` with `ERR_PNPM_FROZEN_LOCKFILE_WITH_OUTDATED_LOCKFILE`. Whether Renovate does that for a bare `packageManager` bump is unverified, and it fails closed either way: the PR goes red at install and auto-merge cannot fire, the same shape as a security PR waiting out the age gate.
+- Container base image (DHI Node/Alpine): a Node minor or patch, an Alpine 3.x release or a digest rebuild of the same tag → one `chore(docker)` PR moving both `FROM` lines and the README badge, at any time, no age gate → the **Base image** workflow posts a Docker Scout comparison (packages, Node included, and CVEs before/after; advisory, not a required check, so auto-merge does not wait for it) → auto-merge → no release; `release.yml` republishes the latest release on the new base. A Node major goes to the dashboard like any major.
 - GitHub Action digest bump → PR `chore(deps): update actions/X` → manual review → no release.
 - Non-vuln patch of `qs` behind the `^6.15.3` override → **no PR**; the range still holds, so the resolved version moves with the next lockfile maintenance run.
 - Advisory against `qs` behind that same override → **no PR either**; a caret range is not a version, so the entry is skipped. Remediation is the next lockfile maintenance run, or raising the floor by hand.
