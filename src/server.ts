@@ -35,9 +35,16 @@ import {
   PARAMS_FIELD_DESCRIPTION,
 } from './routing/proxy-schema';
 import { filterTools, groupByNamespace, NAMESPACE_LABELS } from './routing/registry';
-import type { ToolAnnotations, ToolCallContext, ToolResult } from './tools/definitions';
+import type {
+  ToolAnnotations,
+  ToolCall,
+  ToolCallContext,
+  ToolCaller,
+  ToolEnv,
+  ToolResult,
+} from './tools/definitions';
 import { resolveBrand } from './tools/help-center';
-import { createAllTools, type ToolContext, type ToolDefinition } from './tools/index';
+import { createAllTools, type ToolDefinition } from './tools/index';
 import { type AlertsReader, createAlertsReader } from './tools/sla-alerts';
 import { isInputRequiredError, supportsFormElicitation } from './utils/elicitation';
 import type { ListenFeed } from './utils/listen-feed';
@@ -60,7 +67,11 @@ import {
   type SlaRuntime,
   type SlaService,
 } from './utils/sla-service';
-import { createStrictParamsParser, toStrictStandardSchema } from './utils/validation';
+import {
+  convertingToJsonSchemaOnce,
+  createStrictParamsParser,
+  toStrictStandardSchema,
+} from './utils/validation';
 
 const noteUnauthorized = (err: unknown, onUnauthorized: (() => void) | undefined): void => {
   if (onUnauthorized && err instanceof ZendeskApiError && err.status === 401) onUnauthorized();
@@ -82,7 +93,7 @@ const runHandler = async (
   def: ToolDefinition,
   params: Record<string, unknown>,
   onUnauthorized: (() => void) | undefined,
-  call: ToolCallContext | undefined,
+  call: ToolCall,
 ): Promise<ToolResult> => {
   try {
     return await def.handler(params, call);
@@ -123,7 +134,7 @@ export const aggregateAnnotations = (
   openWorldHint: tools.some((t) => t.annotations.openWorldHint),
 });
 
-type ProxyDispatch = (args: Record<string, unknown>, call?: ToolCallContext) => Promise<ToolResult>;
+type ProxyDispatch = (args: Record<string, unknown>, call: ToolCall) => Promise<ToolResult>;
 
 // Each proxy carries its OWN handler map, scoped to the operations it
 // advertises. In `namespace` mode this is essential: without it, a caller
@@ -171,35 +182,80 @@ interface Removable {
   remove(): void;
 }
 
-const registerProxyTool = (
-  server: McpServer,
+interface ProxySurface {
+  annotations: ToolAnnotations;
+  description: string;
+  inputSchema: z.ZodObject;
+}
+
+// Keyed on the definitions the proxy was cut from: every server of a transport
+// shares them, so a proxy's schema is compiled by zod and converted by the SDK once.
+const proxySurfaces = new WeakMap<readonly ToolDefinition[], Map<string, ProxySurface>>();
+
+const proxySurface = (
+  toolset: readonly ToolDefinition[],
   toolName: string,
   title: string,
   tools: ToolDefinition[],
   readOnlyMode: boolean,
-  onUnauthorized: (() => void) | undefined,
-): Removable => {
+): ProxySurface => {
+  const byKey = proxySurfaces.get(toolset) ?? new Map<string, ProxySurface>();
+  proxySurfaces.set(toolset, byKey);
+  const key = [toolName, title, readOnlyMode, ...tools.map((t) => t.name)].join(' ');
+  const known = byKey.get(key);
+  if (known) return known;
   const annotations = aggregateAnnotations(tools);
+  const surface: ProxySurface = {
+    annotations,
+    // `[RO]` only where the proxy really writes nothing: `--read-only` keeps
+    // the preferences proxy, which writes this server's own settings.
+    description: buildProxyDescription({
+      title,
+      tools,
+      readOnly: readOnlyMode && annotations.readOnlyHint,
+    }),
+    inputSchema: convertingToJsonSchemaOnce(
+      z.object({
+        operation: z.string().describe(buildOperationFieldDescription(tools)),
+        params: z.record(z.string(), z.unknown()).default({}).describe(PARAMS_FIELD_DESCRIPTION),
+      }),
+    ),
+  };
+  byKey.set(key, surface);
+  return surface;
+};
+
+/** What every proxy of one server registers with. */
+interface ProxyRegistration {
+  server: McpServer;
+  /** The definitions the proxies are cut from: their surface is shared by it. */
+  toolset: readonly ToolDefinition[];
+  /** The user this server's calls act for. */
+  caller: ToolCaller;
+  readOnlyMode: boolean;
+  onUnauthorized: (() => void) | undefined;
+}
+
+const registerProxyTool = (
+  { server, toolset, caller, readOnlyMode, onUnauthorized }: ProxyRegistration,
+  toolName: string,
+  title: string,
+  tools: ToolDefinition[],
+): Removable => {
+  const { annotations, description, inputSchema } = proxySurface(
+    toolset,
+    toolName,
+    title,
+    tools,
+    readOnlyMode,
+  );
   const dispatch = buildProxyDispatch(tools, onUnauthorized);
 
   return server.registerTool(
     toolName,
-    {
-      title,
-      // `[RO]` only where the proxy really writes nothing: `--read-only` keeps
-      // the preferences proxy, which writes this server's own settings.
-      description: buildProxyDescription({
-        title,
-        tools,
-        readOnly: readOnlyMode && annotations.readOnlyHint,
-      }),
-      inputSchema: z.object({
-        operation: z.string().describe(buildOperationFieldDescription(tools)),
-        params: z.record(z.string(), z.unknown()).default({}).describe(PARAMS_FIELD_DESCRIPTION),
-      }),
-      annotations,
-    },
-    async (args, ctx) => dispatch(args as Record<string, unknown>, toCallContext(server, ctx)),
+    { title, description, inputSchema, annotations },
+    async (args, ctx) =>
+      dispatch(args as Record<string, unknown>, { ...toCallContext(server, ctx), caller }),
   );
 };
 
@@ -209,29 +265,18 @@ const registerProxyTool = (
  * stays `[RO]` and readOnlyHint under --read-only.
  */
 const registerSingleProxies = (
-  server: McpServer,
+  registration: ProxyRegistration,
   tools: ToolDefinition[],
-  readOnlyMode: boolean,
-  onUnauthorized: (() => void) | undefined,
 ): Removable[] => {
   const preferences = tools.filter((tool) => tool.namespace === 'preferences');
   const zendesk = tools.filter((tool) => tool.namespace !== 'preferences');
   const label = NAMESPACE_LABELS.preferences;
   return [
     ...(zendesk.length > 0 || preferences.length === 0
-      ? [registerProxyTool(server, 'zendesk', 'Zendesk', zendesk, readOnlyMode, onUnauthorized)]
+      ? [registerProxyTool(registration, 'zendesk', 'Zendesk', zendesk)]
       : []),
     ...(preferences.length > 0
-      ? [
-          registerProxyTool(
-            server,
-            label.toolName,
-            label.title,
-            preferences,
-            readOnlyMode,
-            onUnauthorized,
-          ),
-        ]
+      ? [registerProxyTool(registration, label.toolName, label.title, preferences)]
       : []),
   ];
 };
@@ -428,20 +473,6 @@ export const slaSettings = (config: Config): Config => ({
   slaUserPreferences: slaPreferencesEnabled(config),
 });
 
-/** The context the tools and the alert readers share. */
-export const toolContext = (
-  config: Config,
-  getToken: () => string | Promise<string>,
-  resolveBrandSubdomain: BrandSubdomainResolver,
-  sla: SlaService,
-): ToolContext => ({
-  subdomain: config.subdomain,
-  brandIds: config.brandIds,
-  resolveBrandSubdomain,
-  getToken,
-  sla,
-});
-
 /** `reader`, with a Zendesk 401 reported like a tool's: the dead token is dropped, not replayed. */
 const reportingUnauthorized = (
   reader: AlertsReader,
@@ -463,7 +494,6 @@ export interface AlertPollingReaderParams {
   getToken: () => string | Promise<string>;
   /** The caller's Zendesk user id, read with that same token source. */
   resolveUserId: () => Promise<number>;
-  caches: ServerCaches;
   slaRuntime: SlaRuntime;
   onUnauthorized?: (() => void) | undefined;
 }
@@ -473,19 +503,15 @@ export const createAlertPollingReader = ({
   config,
   getToken,
   resolveUserId,
-  caches,
   slaRuntime,
   onUnauthorized,
 }: AlertPollingReaderParams): AlertsReader =>
   reportingUnauthorized(
-    createAlertsReader(
-      toolContext(
-        config,
-        getToken,
-        caches.resolveBrandSubdomain,
-        createSlaService(slaSettings(config), slaRuntime, resolveUserId),
-      ),
-    ),
+    createAlertsReader({
+      subdomain: config.subdomain,
+      getToken,
+      sla: createSlaService(slaSettings(config), slaRuntime, resolveUserId),
+    }),
     onUnauthorized,
   );
 
@@ -595,7 +621,6 @@ export const watchGrantAlerts = ({
     config,
     getToken,
     resolveUserId: caches.resolveUserId,
-    caches,
     slaRuntime,
     onUnauthorized,
   });
@@ -673,6 +698,19 @@ export const registerToolset = (
 ): { dispose(): void; count: number } => {
   const shared = caches ?? createServerCaches(config, getToken, onUnauthorized);
   const { topology, articles } = shared;
+  // The user every call registered here acts for; the definitions hold no user.
+  const caller: ToolCaller = {
+    getToken,
+    resolveBrandSubdomain: shared.resolveBrandSubdomain,
+    sla,
+  };
+  const proxies: ProxyRegistration = {
+    server,
+    toolset: tools,
+    caller,
+    readOnlyMode: config.readOnly,
+    onUnauthorized,
+  };
   const registered: Removable[] = [];
   const dispose = (): void => {
     for (const handle of registered) handle.remove();
@@ -709,12 +747,10 @@ export const registerToolset = (
                 annotations: tool.annotations,
               },
               async (params, ctx) =>
-                runHandler(
-                  tool,
-                  params as Record<string, unknown>,
-                  onUnauthorized,
-                  toCallContext(server, ctx),
-                ),
+                runHandler(tool, params as Record<string, unknown>, onUnauthorized, {
+                  ...toCallContext(server, ctx),
+                  caller,
+                }),
             ),
           );
         }
@@ -728,24 +764,13 @@ export const registerToolset = (
           // The guard is only here for noUncheckedIndexedAccess.
           const label = NAMESPACE_LABELS[namespace];
           if (label) {
-            registered.push(
-              registerProxyTool(
-                server,
-                label.toolName,
-                label.title,
-                nsTools,
-                config.readOnly,
-                onUnauthorized,
-              ),
-            );
+            registered.push(registerProxyTool(proxies, label.toolName, label.title, nsTools));
           }
         }
         break;
       }
       case 'single': {
-        registered.push(
-          ...registerSingleProxies(server, filteredTools, config.readOnly, onUnauthorized),
-        );
+        registered.push(...registerSingleProxies(proxies, filteredTools));
         break;
       }
       default: {
@@ -865,7 +890,7 @@ export const registerToolset = (
         ...registerAlertResources(
           server,
           reportingUnauthorized(
-            createAlertsReader(toolContext(config, getToken, shared.resolveBrandSubdomain, sla)),
+            createAlertsReader({ subdomain: config.subdomain, ...caller }),
             onUnauthorized,
           ),
           config.slaPush,
@@ -883,9 +908,21 @@ export const registerToolset = (
   return { count: filteredTools.length, dispose };
 };
 
+/** What this server's tool definitions are built from: its config, never a user. */
+export const toolEnv = (config: Config): ToolEnv => ({
+  subdomain: config.subdomain,
+  brandIds: config.brandIds,
+});
+
 export interface CreateMcpServerOptions {
   /** Caches kept by the caller across servers; built per server when omitted. */
   caches?: ServerCaches;
+  /**
+   * The tool definitions, built once by the transport and shared by all its
+   * servers: they hold no user, the caller comes with each call. Built for this
+   * server when omitted.
+   */
+  tools?: ToolDefinition[];
   /** Built by the transport, which knows the key and the principal; a random-key one otherwise. */
   requestStateCodec?: RequestStateCodec;
   /** The process-wide SLA state: every server of a process shares one. */
@@ -916,15 +953,12 @@ export const createMcpServer = (
     listens,
     getBackgroundToken,
     alertPolling = 'server',
+    tools = createAllTools(toolEnv(config)),
   }: CreateMcpServerOptions = {},
 ): McpServer => {
   const server = createServerShell(config, requestStateCodec);
   const sla = createSlaService(slaSettings(config), slaRuntime, caches.resolveUserId);
-  registerToolset(
-    server,
-    { config, getToken, caches, onUnauthorized, logger, sla },
-    createAllTools(toolContext(config, getToken, caches.resolveBrandSubdomain, sla)),
-  );
+  registerToolset(server, { config, getToken, caches, onUnauthorized, logger, sla }, tools);
   if (config.slaPush && slaAlertsEnabled(config)) {
     if (alertPolling === 'grant') {
       server.server.registerCapabilities({ resources: { subscribe: true } });
@@ -932,7 +966,6 @@ export const createMcpServer = (
       const reader = createAlertPollingReader({
         config,
         ...pollingIdentity(config, getToken, caches, getBackgroundToken),
-        caches,
         slaRuntime,
         onUnauthorized,
       });
@@ -953,6 +986,8 @@ export interface ServerBuildContext {
   logger: Logger;
   onUnauthorized?: () => void;
   caches?: ServerCaches;
+  /** The transport's tool definitions, shared by every server it builds. */
+  tools?: ToolDefinition[];
   requestStateCodec: RequestStateCodec;
   slaRuntime?: SlaRuntime;
   /**
@@ -981,6 +1016,7 @@ export const defaultServerFactory: ServerFactory = ({
   logger,
   onUnauthorized,
   caches,
+  tools,
   requestStateCodec,
   slaRuntime,
   listens,
@@ -989,6 +1025,7 @@ export const defaultServerFactory: ServerFactory = ({
 }) =>
   createMcpServer(config, getToken, logger, onUnauthorized, {
     ...(caches ? { caches } : {}),
+    ...(tools ? { tools } : {}),
     ...(slaRuntime ? { slaRuntime } : {}),
     ...(listens ? { listens } : {}),
     ...(getBackgroundToken ? { getBackgroundToken } : {}),

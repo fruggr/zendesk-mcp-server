@@ -45,34 +45,37 @@ probe script — each resolves the credential itself.
 
 ## A. `.mcp.json`: live tools inside a session
 
-A project-scoped `.mcp.json` is committed at the repo root:
+A project-scoped `.mcp.json` is committed at the repo root. It declares two
+servers:
 
-```json
-{
-  "mcpServers": {
-    "zendesk-local": {
-      "command": "pnpm",
-      "args": ["exec", "tsx", "src/index.ts", "--mode", "all"],
-      "env": {
-        "ZENDESK_SUBDOMAIN": "fruggr"
-      }
-    }
-  }
-}
-```
+- **`zendesk-local`** (stdio): the session starts it from **source** via `tsx`
+  (`--mode all`, every namespace), so it always reflects the checked-out branch
+  (no build step). Requires `pnpm install` to have run. Change the flags there
+  for another mode, or `--read-only` / `--namespace <ns>` to scope the surface.
+- **`zendesk-local-http`** (HTTP, `http://localhost:3000/mcp`): only a URL. The
+  session does not start it, so it shows as failed to connect at launch; that
+  is expected.
 
-- Runs the server straight from **source** via `tsx`, so it always reflects the
-  checked-out branch (no build step). Requires `pnpm install` to have run.
-- `--mode all` exposes every individual tool so you can call any operation
-  directly. Drop it for the default `namespace` mode, or pass
-  `--read-only` / `--namespace <ns>` to scope the surface.
-- `ZENDESK_SUBDOMAIN` is set in the file (`fruggr`) since it is not a secret;
-  the token comes from the sign-in on first call and is persisted outside the
-  repo (see auth note above), never in the file.
+To test over HTTP in a session:
 
-MCP servers are connected at **session startup**, not hot-reloaded. So: commit
-`.mcp.json` to the branch, then open a **new** Claude Code session on that
-branch. The tools appear as `mcp__zendesk-local__*` and can be called live.
+1. Start the server from the checkout, in the background:
+   `ZENDESK_SUBDOMAIN=fruggr pnpm dev:http` (same flags as the stdio entry, on
+   `127.0.0.1:3000`). `curl -s http://localhost:3000/healthz` answers 200 once
+   it is up. An agent may do this step.
+2. A human reconnects `zendesk-local-http` (`/mcp` in Claude Code) and completes
+   the sign-in in the browser: the client signs in through the server's own
+   OAuth flow, which sends them to Zendesk. An agent asks for this step and
+   waits; it never does it itself.
+3. The tools appear as `mcp__zendesk-local-http__*`. A second Zendesk user, or a
+   read-only sign-in, is another reconnection by the human.
+
+`ZENDESK_SUBDOMAIN` is set in the file (`fruggr`) since it is not a secret; the
+token comes from the sign-in and is persisted outside the repo (see auth note
+above), never in the file.
+
+The session reads `.mcp.json` at **startup**: a change to it takes a **new**
+Claude Code session on the branch. Reconnecting a server already declared
+(step 2 above) needs no restart.
 
 ## B. `scripts/mcp-live.ts`: one-shot client, no registration
 

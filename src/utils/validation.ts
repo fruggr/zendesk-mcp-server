@@ -104,29 +104,81 @@ const createStrictValidator = (
   };
 };
 
+type StrictParamsParser = (params: unknown) => Record<string, unknown>;
+
+// Keyed on the definition's schema: a proxy is rebuilt with every server, while
+// the definitions, and so their parsers, are the transport's (#393).
+const strictParamsParsers = new WeakMap<z.ZodObject, StrictParamsParser>();
+
 /** The proxy dispatch path (namespace/single modes): throws the validator's message. */
-export const createStrictParamsParser = (
-  schema: z.ZodObject,
-): ((params: unknown) => Record<string, unknown>) => {
+export const createStrictParamsParser = (schema: z.ZodObject): StrictParamsParser => {
+  const known = strictParamsParsers.get(schema);
+  if (known) return known;
   const validate = createStrictValidator(schema);
-  return (params) => {
+  const parse: StrictParamsParser = (params) => {
     const result = validate(params);
     if (!result.success) throw new Error(result.message);
     return result.data;
   };
+  strictParamsParsers.set(schema, parse);
+  return parse;
 };
+
+type StrictStandardSchema = StandardSchemaWithJSON<unknown, Record<string, unknown>>;
+// zod's and the SDK's Standard Schema option types are structurally alike but distinct.
+type JsonSchemaConversion<Options extends { target: string; libraryOptions?: unknown }> = (
+  options: Options,
+) => Record<string, unknown>;
+
+// zod converts again on every call, and the SDK asks on every `tools/list`.
+// Library options are the caller's own tuning: those calls are not cached.
+const convertOncePerTarget = <Options extends { target: string; libraryOptions?: unknown }>(
+  convert: JsonSchemaConversion<Options>,
+): JsonSchemaConversion<Options> => {
+  const byTarget = new Map<string, Record<string, unknown>>();
+  return (options) => {
+    if (options.libraryOptions) return convert(options);
+    const known = byTarget.get(options.target);
+    if (known) return known;
+    const converted = convert(options);
+    byTarget.set(options.target, converted);
+    return converted;
+  };
+};
+
+/**
+ * `schema`, its JSON Schema converted once per direction and target: for a
+ * schema the SDK validates as is (a proxy's), where a wrapper would hide `shape`.
+ * zod's `~standard` setter stores the override on the instance.
+ */
+export const convertingToJsonSchemaOnce = <T extends z.ZodObject>(schema: T): T => {
+  const standard = schema['~standard'];
+  schema['~standard'] = {
+    ...standard,
+    jsonSchema: {
+      input: convertOncePerTarget(standard.jsonSchema.input),
+      output: convertOncePerTarget(standard.jsonSchema.output),
+    },
+  };
+  return schema;
+};
+
+// Keyed on the definition's schema, so every server sharing the definitions
+// (#393) shares the wrapper and its conversions.
+const strictStandardSchemas = new WeakMap<z.ZodObject, StrictStandardSchema>();
 
 /**
  * The same validator as a Standard Schema, for `all` mode: the SDK calls this
  * `validate` and prints our pathless issue after its own prefix, so all three
- * modes word an error alike. The JSON Schema is zod's own, untouched.
+ * modes word an error alike. The JSON Schema is zod's own, converted once.
  */
-export const toStrictStandardSchema = (
-  schema: z.ZodObject,
-): StandardSchemaWithJSON<unknown, Record<string, unknown>> => {
+export const toStrictStandardSchema = (schema: z.ZodObject): StrictStandardSchema => {
+  const known = strictStandardSchemas.get(schema);
+  if (known) return known;
   const strict = schema.strict();
   const validate = createStrictValidator(schema, strict);
-  return {
+  const { jsonSchema } = strict['~standard'];
+  const standard: StrictStandardSchema = {
     '~standard': {
       version: 1,
       // Stryker disable next-line StringLiteral: informational; the SDK reads vendor only when jsonSchema is absent.
@@ -135,7 +187,12 @@ export const toStrictStandardSchema = (
         const result = validate(value);
         return result.success ? { value: result.data } : { issues: [{ message: result.message }] };
       },
-      jsonSchema: strict['~standard'].jsonSchema,
+      jsonSchema: {
+        input: convertOncePerTarget(jsonSchema.input),
+        output: convertOncePerTarget(jsonSchema.output),
+      },
     },
   };
+  strictStandardSchemas.set(schema, standard);
+  return standard;
 };

@@ -61,6 +61,10 @@ jobs:
 
       - run: pnpm build
 
+      # Each chunk against its reference (+10 %) and the fixed ceiling, with a
+      # size table in the job summary: docs/decisions/startup-footprint.md.
+      - run: node scripts/bundle-size.mjs
+
       - run: node scripts/smoke-test.mjs
 
       # The built bundle, in its own process: what the tests above import from

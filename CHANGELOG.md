@@ -1,3 +1,17 @@
+## [3.5.3](https://github.com/fruggr/zendesk-mcp-server/compare/v3.5.2...v3.5.3) (2026-10-25)
+
+### Performance Improvements
+
+* share tool definitions per process, load the article pipeline on demand, watch the bundle size ([#406](https://github.com/fruggr/zendesk-mcp-server/issues/406)) ([bef30a0](https://github.com/fruggr/zendesk-mcp-server/commit/bef30a02827335073b3c527aed4f45455095f20c)), closes [#393](https://github.com/fruggr/zendesk-mcp-server/issues/393), references [#331](https://github.com/fruggr/zendesk-mcp-server/issues/331)
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Chores
+
+* **renovate:** let the base image tag versioning see the whole tag ([#412](https://github.com/fruggr/zendesk-mcp-server/issues/412)) ([270814a](https://github.com/fruggr/zendesk-mcp-server/commit/270814a6a9bde3ada14f82d4b6201045bcc5cbcd)), closes [#411](https://github.com/fruggr/zendesk-mcp-server/issues/411) [#413](https://github.com/fruggr/zendesk-mcp-server/issues/413), references [#408](https://github.com/fruggr/zendesk-mcp-server/issues/408)
+</details>
+
 ## [3.5.2](https://github.com/fruggr/zendesk-mcp-server/compare/v3.5.1...v3.5.2) (2026-10-24)
 
 ### Bug Fixes

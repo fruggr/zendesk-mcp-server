@@ -18,6 +18,7 @@ import {
   withTranslationsSideload,
 } from '../../msw-handlers';
 import { mswServer } from '../../setup';
+import { withCaller } from '../../tool-context';
 import { firstText } from '../../tool-result';
 
 const ctx: ToolContext = {
@@ -28,8 +29,11 @@ const ctx: ToolContext = {
 };
 const HC_BASE = 'https://testsubdomain.zendesk.com/api/v2/help_center';
 
+const helpCenterTools = (context: ToolContext) =>
+  withCaller(createHelpCenterTools(context), context);
+
 const findTool = (name: string) => {
-  const tools = createHelpCenterTools(ctx);
+  const tools = helpCenterTools(ctx);
   const tool = tools.find((t) => t.name === name);
   if (!tool) throw new Error(`Tool ${name} not found`);
   return tool;
@@ -37,22 +41,22 @@ const findTool = (name: string) => {
 
 describe('help center tools', () => {
   it('creates 29 tools when no --brand-ids is set (list_brands stays hidden)', () => {
-    expect(createHelpCenterTools(ctx)).toHaveLength(29);
+    expect(helpCenterTools(ctx)).toHaveLength(29);
   });
 
   it('creates 30 tools in multi mode (list_brands exposed)', () => {
     const multiCtx: ToolContext = { ...ctx, brandIds: ['424242', '777777'] };
-    expect(createHelpCenterTools(multiCtx)).toHaveLength(30);
+    expect(helpCenterTools(multiCtx)).toHaveLength(30);
   });
 
   it('creates 30 tools in all mode (list_brands exposed)', () => {
     const allCtx: ToolContext = { ...ctx, brandIds: ['all'] };
-    expect(createHelpCenterTools(allCtx)).toHaveLength(30);
+    expect(helpCenterTools(allCtx)).toHaveLength(30);
   });
 
   it('creates 29 tools in single-lock mode (list_brands stays hidden)', () => {
     const singleCtx: ToolContext = { ...ctx, brandIds: ['424242'] };
-    expect(createHelpCenterTools(singleCtx)).toHaveLength(29);
+    expect(helpCenterTools(singleCtx)).toHaveLength(29);
   });
 
   describe('brand_id field gating per mode', () => {
@@ -66,7 +70,7 @@ describe('help center tools', () => {
     ]);
 
     it('no brand-scoped tool has a brand_id field when --brand-ids is unset', () => {
-      const lacking = createHelpCenterTools(ctx)
+      const lacking = helpCenterTools(ctx)
         .filter((t) => !accountWide.has(t.name))
         .filter((t) => 'brand_id' in t.inputSchema.shape)
         .map((t) => t.name);
@@ -75,7 +79,7 @@ describe('help center tools', () => {
 
     it('no brand-scoped tool has a brand_id field in single-lock mode', () => {
       const singleCtx: ToolContext = { ...ctx, brandIds: ['424242'] };
-      const lacking = createHelpCenterTools(singleCtx)
+      const lacking = helpCenterTools(singleCtx)
         .filter((t) => !accountWide.has(t.name))
         .filter((t) => 'brand_id' in t.inputSchema.shape)
         .map((t) => t.name);
@@ -88,7 +92,7 @@ describe('help center tools', () => {
     ])('no tool description mentions brands when --brand-ids is %s', (_mode, brandIds) => {
       // Unset and single-lock promise the tool surface of a single-brand
       // install: brand vocabulary there is noise an agent cannot act on.
-      const mentioning = createHelpCenterTools({ ...ctx, brandIds })
+      const mentioning = helpCenterTools({ ...ctx, brandIds })
         .filter((t) => /brand/i.test(t.description))
         .map((t) => t.name);
       expect(mentioning).toEqual([]);
@@ -96,7 +100,7 @@ describe('help center tools', () => {
 
     it('every brand-scoped tool has a REQUIRED brand_id field in multi mode', () => {
       const multiCtx: ToolContext = { ...ctx, brandIds: ['424242', '777777'] };
-      const tools = createHelpCenterTools(multiCtx).filter(
+      const tools = helpCenterTools(multiCtx).filter(
         (t) => !accountWide.has(t.name) && t.name !== 'list_brands',
       );
       expect(tools.length).toBeGreaterThan(0);
@@ -112,7 +116,7 @@ describe('help center tools', () => {
 
     it('every brand-scoped tool has a REQUIRED brand_id field in all mode', () => {
       const allCtx: ToolContext = { ...ctx, brandIds: ['all'] };
-      const tool = createHelpCenterTools(allCtx).find((t) => t.name === 'list_categories');
+      const tool = helpCenterTools(allCtx).find((t) => t.name === 'list_categories');
       if (!tool) throw new Error('list_categories not found');
       expect(tool.inputSchema.shape['brand_id']).toBeDefined();
       expect(tool.inputSchema.safeParse({}).success).toBe(false);
@@ -124,7 +128,7 @@ describe('help center tools', () => {
       // subdomains (e.g. 'docs'), but a bare z.number() rejected the string at
       // validation time before the resolver (which accepts both) could see it.
       const multiCtx: ToolContext = { ...ctx, brandIds: ['support', 'docs'] };
-      const tool = createHelpCenterTools(multiCtx).find((t) => t.name === 'list_categories');
+      const tool = helpCenterTools(multiCtx).find((t) => t.name === 'list_categories');
       if (!tool) throw new Error('list_categories not found');
       expect(tool.inputSchema.safeParse({ brand_id: 'docs' }).success).toBe(true);
       expect(tool.inputSchema.safeParse({ brand_id: 424242 }).success).toBe(true);
@@ -137,7 +141,7 @@ describe('help center tools', () => {
       // User segments are shared across brands — the endpoint has no brand
       // dimension — so requiring brand_id would force a meaningless parameter.
       const multiCtx: ToolContext = { ...ctx, brandIds: ['424242', '777777'] };
-      const tool = createHelpCenterTools(multiCtx).find((t) => t.name === 'list_user_segments');
+      const tool = helpCenterTools(multiCtx).find((t) => t.name === 'list_user_segments');
       if (!tool) throw new Error('list_user_segments not found');
       expect('brand_id' in tool.inputSchema.shape).toBe(false);
       // And it parses with no params at all.
@@ -155,7 +159,7 @@ describe('help center tools', () => {
         }),
       );
       const multiCtx: ToolContext = { ...ctx, brandIds: ['424242', '777777'] };
-      const tool = createHelpCenterTools(multiCtx).find((t) => t.name === 'list_user_segments');
+      const tool = helpCenterTools(multiCtx).find((t) => t.name === 'list_user_segments');
       if (!tool) throw new Error('list_user_segments not found');
       await tool.handler({});
       expect(seenUrl).toContain('testsubdomain.zendesk.com');
@@ -166,19 +170,17 @@ describe('help center tools', () => {
     const multiCtx: ToolContext = { ...ctx, brandIds: ['360001234567', '424242'] };
 
     it('is absent when --brand-ids is unset', () => {
-      expect(createHelpCenterTools(ctx).find((t) => t.name === 'list_brands')).toBeUndefined();
+      expect(helpCenterTools(ctx).find((t) => t.name === 'list_brands')).toBeUndefined();
     });
 
     it('is absent in single-lock mode', () => {
       const singleCtx: ToolContext = { ...ctx, brandIds: ['424242'] };
-      expect(
-        createHelpCenterTools(singleCtx).find((t) => t.name === 'list_brands'),
-      ).toBeUndefined();
+      expect(helpCenterTools(singleCtx).find((t) => t.name === 'list_brands')).toBeUndefined();
     });
 
     it('lists the account brands from the Support API (not Help Center)', async () => {
       const allCtx: ToolContext = { ...ctx, brandIds: ['all'] };
-      const tool = createHelpCenterTools(allCtx).find((t) => t.name === 'list_brands');
+      const tool = helpCenterTools(allCtx).find((t) => t.name === 'list_brands');
       if (!tool) throw new Error('list_brands not found');
       const result = await tool.handler({});
       const text = firstText(result) ?? '';
@@ -187,7 +189,7 @@ describe('help center tools', () => {
     });
 
     it('is read-only', () => {
-      const tool = createHelpCenterTools(multiCtx).find((t) => t.name === 'list_brands');
+      const tool = helpCenterTools(multiCtx).find((t) => t.name === 'list_brands');
       if (!tool) throw new Error('list_brands not found');
       expect(tool.readOnly).toBe(true);
     });
@@ -210,7 +212,7 @@ describe('help center tools', () => {
         }),
       );
       const allCtx: ToolContext = { ...ctx, brandIds: ['all'] };
-      const tool = createHelpCenterTools(allCtx).find((t) => t.name === 'list_brands');
+      const tool = helpCenterTools(allCtx).find((t) => t.name === 'list_brands');
       if (!tool) throw new Error('list_brands not found');
       const result = await tool.handler({});
       const text = firstText(result) ?? '';
@@ -228,7 +230,7 @@ describe('help center tools', () => {
         ),
       );
       const allCtx: ToolContext = { ...ctx, brandIds: ['all'] };
-      const tool = createHelpCenterTools(allCtx).find((t) => t.name === 'list_brands');
+      const tool = helpCenterTools(allCtx).find((t) => t.name === 'list_brands');
       if (!tool) throw new Error('list_brands not found');
       await expect(tool.handler({})).rejects.toThrow(/no usable after_cursor/);
     });
@@ -245,7 +247,7 @@ describe('help center tools', () => {
         }),
       );
       const allCtx: ToolContext = { ...ctx, brandIds: ['all'] };
-      const tool = createHelpCenterTools(allCtx).find((t) => t.name === 'list_brands');
+      const tool = helpCenterTools(allCtx).find((t) => t.name === 'list_brands');
       if (!tool) throw new Error('list_brands not found');
       await tool.handler({});
       await tool.handler({});
@@ -253,7 +255,7 @@ describe('help center tools', () => {
     });
 
     it('filters the listing to the allowed brands in multi mode', async () => {
-      const tool = createHelpCenterTools(multiCtx).find((t) => t.name === 'list_brands');
+      const tool = helpCenterTools(multiCtx).find((t) => t.name === 'list_brands');
       if (!tool) throw new Error('list_brands not found');
       const result = await tool.handler({});
       const text = firstText(result) ?? '';
@@ -265,7 +267,7 @@ describe('help center tools', () => {
 
     it('drops brands outside the allow-list in multi mode', async () => {
       const narrowCtx: ToolContext = { ...ctx, brandIds: ['424242', '999999'] };
-      const tool = createHelpCenterTools(narrowCtx).find((t) => t.name === 'list_brands');
+      const tool = helpCenterTools(narrowCtx).find((t) => t.name === 'list_brands');
       if (!tool) throw new Error('list_brands not found');
       const result = await tool.handler({});
       const text = firstText(result) ?? '';
@@ -286,7 +288,7 @@ describe('help center tools', () => {
           return HttpResponse.json({ categories: [MOCK_CATEGORY] });
         }),
       );
-      const tool = createHelpCenterTools(singleCtx).find((t) => t.name === 'list_categories');
+      const tool = helpCenterTools(singleCtx).find((t) => t.name === 'list_categories');
       if (!tool) throw new Error('list_categories not found');
       const result = await tool.handler({});
       expect(seenUrl).toContain('/help_center/categories');
@@ -304,7 +306,7 @@ describe('help center tools', () => {
           },
         ),
       );
-      const tool = createHelpCenterTools(singleCtx).find((t) => t.name === 'update_article');
+      const tool = helpCenterTools(singleCtx).find((t) => t.name === 'update_article');
       if (!tool) throw new Error('update_article not found');
       await tool.handler({ article_id: 9001, promoted: true });
       expect(seenUrl).toContain('/help_center/articles/9001');
@@ -318,7 +320,7 @@ describe('help center tools', () => {
           return HttpResponse.json({ categories: [MOCK_CATEGORY] });
         }),
       );
-      const tool = createHelpCenterTools(multiCtx).find((t) => t.name === 'list_categories');
+      const tool = helpCenterTools(multiCtx).find((t) => t.name === 'list_categories');
       if (!tool) throw new Error('list_categories not found');
       const result = await tool.handler({ brand_id: 777777 });
       expect(seenUrl).toContain('/help_center/categories');
@@ -326,19 +328,19 @@ describe('help center tools', () => {
     });
 
     it('rejects a missing brand_id in multi mode', async () => {
-      const tool = createHelpCenterTools(multiCtx).find((t) => t.name === 'list_categories');
+      const tool = helpCenterTools(multiCtx).find((t) => t.name === 'list_categories');
       if (!tool) throw new Error('list_categories not found');
       await expect(tool.handler({})).rejects.toThrow(/brand_id is required/);
     });
 
     it('rejects a per-call brand_id outside the allow-list in multi mode', async () => {
-      const tool = createHelpCenterTools(multiCtx).find((t) => t.name === 'list_categories');
+      const tool = helpCenterTools(multiCtx).find((t) => t.name === 'list_categories');
       if (!tool) throw new Error('list_categories not found');
       await expect(tool.handler({ brand_id: 999999 })).rejects.toThrow(/not allowed/);
     });
 
     it('rejects a per-call brand_id in single-lock mode (no field, strict parse)', async () => {
-      const tool = createHelpCenterTools(singleCtx).find((t) => t.name === 'list_categories');
+      const tool = helpCenterTools(singleCtx).find((t) => t.name === 'list_categories');
       if (!tool) throw new Error('list_categories not found');
       // brand_id is absent from the schema, so a hand-crafted call that passes
       // it anyway is rejected by the resolver, before any request.
@@ -347,7 +349,7 @@ describe('help center tools', () => {
     });
 
     it('rejects a per-call brand_id when --brand-ids is unset', async () => {
-      const tool = createHelpCenterTools(ctx).find((t) => t.name === 'list_categories');
+      const tool = helpCenterTools(ctx).find((t) => t.name === 'list_categories');
       if (!tool) throw new Error('list_categories not found');
       await expect(tool.handler({ brand_id: 424242 })).rejects.toThrow(/brand_id/);
     });

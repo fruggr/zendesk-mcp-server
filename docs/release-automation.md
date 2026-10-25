@@ -237,7 +237,9 @@ check is not simply made required:
 **The container base image says what it is.** The Dockerfile pins one Docker Hardened Images
 tag by digest, and the tag names the full versions, `<node x.y.z>-alpine3.<y>[-dev]`: Renovate's
 versioning reads the Node version as major.minor.patch and the Alpine release as a fourth part,
-and treats `-dev` as a compatibility marker, so a digest update re-resolves the *same* tag, a tag
+and its `versionCompatibility` treats only `-dev` as a compatibility marker (overriding
+`config:recommended`'s Node preset, which would cut the tag at its first dash and leave
+Renovate proposing digests only), so a digest update re-resolves the *same* tag, a tag
 update never leaves Node's major line without dashboard approval, and the build stage never
 swaps to the runtime image. The README badge carries the same tag and moves in the same PR.
 When a PR moves the runtime `FROM` line, `.github/workflows/base-image.yml` runs the official

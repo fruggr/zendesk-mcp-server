@@ -1,0 +1,41 @@
+name: Bundle ceiling guard
+
+# The bundle-size ceiling (bundle-ceiling.json) is not raised in passing: a PR
+# that changes it fails here until a maintainer adds the `bundle-ceiling-raise`
+# label. One of three locks, with the ADR sync test and the agent rule in
+# AGENTS.md: docs/decisions/startup-footprint.md. Reads the PR's file list
+# through the API; no PR code is checked out or run.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/github-script@v9
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              ...context.repo,
+              pull_number: pr.number,
+              per_page: 100,
+            });
+            const touched = files.some((file) => file.filename === 'bundle-ceiling.json');
+            const labelled = pr.labels.some((label) => label.name === 'bundle-ceiling-raise');
+            if (touched && !labelled) {
+              core.setFailed(
+                'This PR changes bundle-ceiling.json. The ceiling is not raised in a feature PR: ' +
+                  'shrink the bundle instead, or have a maintainer add the `bundle-ceiling-raise` ' +
+                  'label after the reasons are written in docs/decisions/startup-footprint.md.',
+              );
+            } else {
+              core.info(touched ? 'Ceiling change approved by label.' : 'Ceiling untouched.');
+            }
