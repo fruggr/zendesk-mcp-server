@@ -19,7 +19,7 @@ this server's own per-user settings, never Zendesk, so `--read-only` keeps it.
 | `list_ticket_comments` | Read a ticket's conversation (public replies and internal notes, full bodies) newest-first and cursor-paginated, with comment ids and authors resolved to names — the paged alternative to `get_ticket(include_comments=true)` on a long thread | read |
 | `get_ticket_history` | Read a ticket's change history (audit trail) as a chronological, oldest-first timeline of who changed what and when: field changes as before → after with actor names, comment presence (not bodies), system noise filtered; cursor-paginated | read |
 | `get_ticket_attachments` | Download ticket attachments. Images are delivered as native multimodal content for the client's own model to analyze; oversize/over-limit images and non-images come back as text references, and a listing that would exceed the response budget is truncated with a block naming how many attachments were omitted | read |
-| `search_tickets` | Search tickets using Zendesk query syntax, with per-result SLA state and, when the server pushes SLA urgency, an Urgency line (BREACHED / CRITICAL / WARNING); 25 per page by default, descriptions as excerpts (full text: `get_ticket`) | read |
+| `search_tickets` | Search tickets using Zendesk query syntax, with per-result SLA state and, when the server pushes SLA urgency, an Urgency line (BREACHED / CRITICAL / WARNING); 25 per page by default, descriptions as excerpts (full text: `get_ticket`); `group:me` is read as the caller's only group, and fails naming the groups when there are none or several | read |
 | `list_tickets` | List tickets with cursor-based pagination, 25 per page by default, descriptions as excerpts | read |
 | `get_linked_incidents` | Get incidents linked to a problem ticket, descriptions as excerpts | read |
 | `list_sla_policies` | List SLA policies with filter conditions and per-priority targets (requires an admin token, or a custom role with the SLA-management permission) | read |
@@ -127,7 +127,7 @@ deliberately cannot do.
 
 | Tool | Description | Mode |
 |------|-------------|------|
-| `search` | Unified search across tickets, users, and organizations; 25 per page by default, ticket descriptions as excerpts | read |
+| `search` | Unified search across tickets, users, and organizations; 25 per page by default, ticket descriptions as excerpts; `group:me` handled as in `search_tickets` | read |
 
 </details>
 

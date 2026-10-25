@@ -37,6 +37,23 @@ describe('search tools', () => {
       );
     });
 
+    it('searches the only group of the caller for group:me, and says so (#389)', async () => {
+      const queries: string[] = [];
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/search', ({ request }) => {
+          queries.push(new URL(request.url).searchParams.get('query') ?? '');
+          return HttpResponse.json({ results: [], count: 0 });
+        }),
+      );
+      const text = firstText(
+        await tool.handler({ query: 'type:ticket group:me', per_page: 25, page: 1 }),
+      );
+      expect(queries).toEqual([`type:ticket group:${MOCK_TICKET.group_id}`]);
+      expect(text?.split('\n')[0]).toBe(
+        `Note: group:me was read as group:${MOCK_TICKET.group_id}, your only group.`,
+      );
+    });
+
     it('defaults to a page of 25 (#388)', () => {
       expect(tool.inputSchema.parse({ query: 'test' })).toMatchObject({ per_page: 25, page: 1 });
     });

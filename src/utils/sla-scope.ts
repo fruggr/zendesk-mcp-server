@@ -14,7 +14,7 @@ const SCOPE_QUERIES: Record<Exclude<NamedScope, 'my_groups'>, string> = {
   all: 'status<solved',
 };
 
-// `group:me` matches nothing, silently (PR #387 spike 2), so a group scope is
+// `group:me` matches nothing, silently (PR #387 spike 2; see utils/group-me.ts), so a group scope is
 // one `group:<id>` search per group, merged.
 const groupQuery = (groupId: number): string => `group:${groupId} status<solved`;
 

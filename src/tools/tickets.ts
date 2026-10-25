@@ -61,6 +61,7 @@ import {
   nextBreachByTicket,
   truncateIfNeeded,
 } from '../utils/formatting';
+import { resolveCallerGroupMe } from '../utils/group-me';
 import {
   buildCursorParams,
   buildOffsetParams,
@@ -1185,7 +1186,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
           .string()
           .min(1)
           .describe(
-            'Zendesk ticket search query — field filters like "status:open", "assignee:me", "priority:urgent ticket_type:incident", combined with free text. A "type:ticket" scope is added automatically, so filter the ticket kind with ticket_type: (e.g. ticket_type:incident), never type: (which the API rejects here).',
+            'Zendesk ticket search query — field filters like "status:open", "assignee:me", "priority:urgent ticket_type:incident", combined with free text. A "type:ticket" scope is added automatically, so filter the ticket kind with ticket_type: (e.g. ticket_type:incident), never type: (which the API rejects here). "me" is a value of the user keywords only (assignee:, requester:, submitter:); group:me is read as your group when you belong to exactly one, else the call fails naming your groups, so use group:<id>.',
           ),
         per_page: z
           .number()
@@ -1209,9 +1210,10 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
           page: number;
         };
         const token = await caller.getToken();
+        const resolved = await resolveCallerGroupMe(query, subdomain, token, caller.sla);
         const [response, urgency] = await Promise.all([
           zendeskGet<ZendeskListResponse<ZendeskTicket>>(subdomain, token, '/search', {
-            query: `type:ticket ${query}`,
+            query: `type:ticket ${resolved.query}`,
             include: 'tickets(slas)',
             ...buildOffsetParams(per_page, page),
           }),
@@ -1230,6 +1232,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
                 formatTicketWithSla,
                 extractSearchPaginationMeta(response, per_page, page),
                 offsetResume(page, per_page),
+                (meta) => [resolved.note, formatPagination(meta)].filter(Boolean).join('\n'),
               ),
             },
           ],
