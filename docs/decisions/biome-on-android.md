@@ -7,7 +7,7 @@
 
 | | |
 | --- | --- |
-| **Status** | Decided and applied |
+| **Status** | Superseded: Biome 2.6 ships an android build, and the shim is deleted ([#401](https://github.com/fruggr/zendesk-mcp-server/issues/401)) |
 | **Date** | 2026-07-29 |
 | **Applied in** | [#191](https://github.com/fruggr/zendesk-mcp-server/pull/191) |
 | **Question** | Biome does not run in native Termux, where `process.platform` is `android`. Fix it in pnpm's install config, or in a wrapper? |
@@ -84,3 +84,25 @@ Two independent causes, both from `platform === 'android'`:
 When Biome publishes an android build. The shim then has nothing left to do and
 should be deleted outright, with the callers going back to `biome` directly —
 not kept as a pass-through.
+
+## Retired
+
+Biome 2.6 publishes `@biomejs/cli-android-arm64` and `@biomejs/cli-android-x64`,
+gated `os: [android]`, and its launcher maps `android` to them. pnpm installs the
+right one on Termux and none elsewhere, so `scripts/biome.mjs` is gone:
+
+- `check` and `check:fix` call `biome`; CI calls `pnpm exec biome`.
+- The `PostToolUse` hook and the pre-commit job call
+  `node node_modules/@biomejs/biome/bin/biome`, keeping the bare `node` the
+  [#279](https://github.com/fruggr/zendesk-mcp-server/issues/279) measurements
+  chose, rather than the `#!/bin/sh` `node_modules/.bin/biome`. That shim did run
+  on the validation device, where `/bin` links to `/system/bin`, but nothing
+  guarantees that link on every Android build, and `node` costs nothing extra.
+- `scripts/bench-lint-tooling.mjs` resolves the platform package itself.
+- Measured on the Termux device, interleaved, per-edit hook command
+  ([PR #402](https://github.com/fruggr/zendesk-mcp-server/pull/402#issuecomment-6396741033)):
+  the android binary is as fast as the musl one (10.3 s vs 10.0 s median), and
+  2.6.2 is faster than 2.5.15 (10.0 s vs 13.5 s, same musl build).
+- The musl binaries the shim cached under
+  `$XDG_CACHE_HOME/zendesk-mcp-server/biome` (default `~/.cache`) are no longer
+  read and can be deleted.

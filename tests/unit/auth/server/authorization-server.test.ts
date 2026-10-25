@@ -13,6 +13,7 @@ import {
 import { createMemoryStore, type RecordStore } from '../../../../src/auth/server/file-store';
 import { deriveKeyRing } from '../../../../src/auth/server/keys';
 import type { Config } from '../../../../src/config';
+import { compareCodeUnits } from '../../../../src/utils/compare';
 import type { Logger } from '../../../../src/utils/logger';
 import { makeConfig } from '../../../integration/harness';
 import {
@@ -101,7 +102,8 @@ const faultyStore = () => {
     /** The TTL (ms) each collection's records were last written with. */
     ttls: () => Object.fromEntries([...ttls].map(([key, ttl]) => [nameOf(key), ttl])),
     persistent,
-    collections: () => [...new Set([...map.keys()].map(nameOf))].sort(),
+    collections: () =>
+      [...new Set([...map.keys()].map((key) => nameOf(key) ?? key))].sort(compareCodeUnits),
   };
 };
 

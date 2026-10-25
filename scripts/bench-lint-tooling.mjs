@@ -16,6 +16,8 @@
 
 import { execSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { dirname } from 'node:path';
 import { hrtime } from 'node:process';
 
 /** An empty `samples` crashes the median/min/max formatting, so reject bad input up front. */
@@ -31,16 +33,20 @@ const readCount = (name, raw, minimum) => {
 const RUNS = readCount('RUNS', process.env['RUNS'] ?? 9, 1);
 const WARMUPS = readCount('WARMUPS', process.env['WARMUPS'] ?? 2, 0);
 
-// Asked of the wrapper rather than hardcoded: on Android/Termux — the platform
-// this script exists to be re-run on — `node_modules/.bin/biome` has no binary
-// to run, and the wrapper is what fetches the musl build (see
-// `docs/decisions/biome-on-android.md`). Timing the wrapper itself would add a
-// Node start-up to every sample, hence the path and not the command. An empty
-// string on failure leaves the Biome scenarios to the `existsSync` gate below,
-// which skips them the same way a missing oxlint is skipped.
+// The platform binary rather than `node_modules/.bin/biome`: the launcher would
+// add a Node start-up to every sample. It is a dependency of `@biomejs/biome`,
+// so it resolves from there. musl is not probed: neither the container these
+// numbers come from nor Termux uses it. An empty string on failure leaves the
+// Biome scenarios to the `existsSync` gate below, which skips them the same way
+// a missing oxlint is skipped.
 const BIOME = (() => {
+  const require = createRequire(import.meta.url);
+  const exe = process.platform === 'win32' ? 'biome.exe' : 'biome';
   try {
-    return execSync('node scripts/biome.mjs --print-binary', { encoding: 'utf8' }).trim();
+    const biomeDir = dirname(require.resolve('@biomejs/biome/package.json'));
+    return require.resolve(`@biomejs/cli-${process.platform}-${process.arch}/${exe}`, {
+      paths: [biomeDir],
+    });
   } catch {
     return '';
   }

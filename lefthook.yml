@@ -11,5 +11,6 @@ pre-commit:
   jobs:
     - name: biome
       # No `glob`: Biome filters, so `biome.json` is the only perimeter (why: docs/decisions/lint-tooling.md).
-      run: node scripts/biome.mjs check --write --error-on-warnings --no-errors-on-unmatched {staged_files}
+      # Through `node`, as in the PostToolUse hook: `node_modules/.bin/biome` is a `#!/bin/sh` script, and Android only has /bin/sh where /bin links to /system/bin.
+      run: node node_modules/@biomejs/biome/bin/biome check --write --error-on-warnings --no-errors-on-unmatched {staged_files}
       stage_fixed: true

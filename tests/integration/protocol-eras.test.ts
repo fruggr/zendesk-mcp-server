@@ -91,28 +91,28 @@ for (const byEra of harnesses) {
       await subscription.close();
     });
 
-    for (const era of ['2026', '2025'] as const) {
-      it(`completes an input_required round trip for a ${era} client`, async () => {
-        connected = await byEra[era].connect(makeConfig(), elicitingClient);
-        answerForms(connected.client);
+    const ERAS = ['2026', '2025'] as const;
 
-        const result = await connected.client.callTool({ name: 'ask', arguments: {} });
+    it.each(ERAS)('completes an input_required round trip for a %s client', async (era) => {
+      connected = await byEra[era].connect(makeConfig(), elicitingClient);
+      answerForms(connected.client);
 
-        expect(textOf(result)).toBe('color=blue state=undefined');
+      const result = await connected.client.callTool({ name: 'ask', arguments: {} });
+
+      expect(textOf(result)).toBe('color=blue state=undefined');
+    });
+
+    it.each(ERAS)('hands the verified requestState back for a %s client', async (era) => {
+      connected = await byEra[era].connect(makeConfig(), elicitingClient);
+      answerForms(connected.client);
+
+      const result = await connected.client.callTool({
+        name: 'ask',
+        arguments: { withState: true },
       });
 
-      it(`hands the verified requestState back for a ${era} client`, async () => {
-        connected = await byEra[era].connect(makeConfig(), elicitingClient);
-        answerForms(connected.client);
-
-        const result = await connected.client.callTool({
-          name: 'ask',
-          arguments: { withState: true },
-        });
-
-        expect(textOf(result)).toBe('color=blue state={"step":1}');
-      });
-    }
+      expect(textOf(result)).toBe('color=blue state={"step":1}');
+    });
   });
 }
 
