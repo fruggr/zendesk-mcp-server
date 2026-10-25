@@ -1,3 +1,17 @@
+## [3.6.0](https://github.com/fruggr/zendesk-mcp-server/compare/v3.5.3...v3.6.0) (2026-10-25)
+
+### Features
+
+* **tickets:** support group:me in ticket search ([#414](https://github.com/fruggr/zendesk-mcp-server/issues/414)) ([3156bcd](https://github.com/fruggr/zendesk-mcp-server/commit/3156bcddb0b97f51738df8ae0b8ac1a1e1e9b21d)), closes [#389](https://github.com/fruggr/zendesk-mcp-server/issues/389)
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Chores
+
+* **lint:** adopt Biome 2.6 and retire the Termux shim ([#402](https://github.com/fruggr/zendesk-mcp-server/issues/402)) ([0b9f9bd](https://github.com/fruggr/zendesk-mcp-server/commit/0b9f9bd46ab4bbdbdfbe55286a3f225e5e8d14c2)), closes [#401](https://github.com/fruggr/zendesk-mcp-server/issues/401), references [#407](https://github.com/fruggr/zendesk-mcp-server/issues/407) [#279](https://github.com/fruggr/zendesk-mcp-server/issues/279) [#279](https://github.com/fruggr/zendesk-mcp-server/issues/279)
+</details>
+
 ## [3.5.3](https://github.com/fruggr/zendesk-mcp-server/compare/v3.5.2...v3.5.3) (2026-10-25)
 
 ### Performance Improvements
