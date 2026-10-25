@@ -95,7 +95,9 @@ right one on Termux and none elsewhere, so `scripts/biome.mjs` is gone:
 - The `PostToolUse` hook and the pre-commit job call
   `node node_modules/@biomejs/biome/bin/biome`, keeping the bare `node` the
   [#279](https://github.com/fruggr/zendesk-mcp-server/issues/279) measurements
-  chose, rather than the `#!/bin/sh` `node_modules/.bin/biome`.
+  chose, rather than the `#!/bin/sh` `node_modules/.bin/biome`. That shim did run
+  on the validation device, where `/bin` links to `/system/bin`, but nothing
+  guarantees that link on every Android build, and `node` costs nothing extra.
 - `scripts/bench-lint-tooling.mjs` resolves the platform package itself.
 - The musl binaries the shim cached under
   `$XDG_CACHE_HOME/zendesk-mcp-server/biome` (default `~/.cache`) are no longer

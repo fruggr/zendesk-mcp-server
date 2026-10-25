@@ -23,7 +23,7 @@ case "$dir/" in
 esac
 
 # Biome's own launcher through `node`, not `node_modules/.bin/biome`: that shim is
-# a `#!/bin/sh` script, and Termux has no /bin/sh.
+# a `#!/bin/sh` script, and Android only has /bin/sh where /bin links to /system/bin.
 cd "$project" &&
   node node_modules/@biomejs/biome/bin/biome lint --write --skip=types --no-errors-on-unmatched -- "$dir/${file##*/}"
 exit 0
