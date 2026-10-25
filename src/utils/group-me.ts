@@ -22,17 +22,17 @@ export const resolveGroupMe = async (
 ): Promise<{ query: string; note?: string }> => {
   if (query.match(GROUP_ME) === null) return { query };
   const groupIds = await readGroupIds(get, await userId());
-  const [only] = groupIds;
-  if (groupIds.length === 1 && only !== undefined) {
-    return {
-      query: query.replace(GROUP_ME, (_, lead, negation) => `${lead}${negation}group:${only}`),
-      note: `Note: group:me was read as group:${only}, your only group.`,
-    };
-  }
+  const [only, ...others] = groupIds;
   if (only === undefined) {
     throw new Error(
       `${NOT_A_VALUE} You belong to no group, so there is no group queue to search: drop group:me, or name a group with group:<id>.`,
     );
+  }
+  if (others.length === 0) {
+    return {
+      query: query.replace(GROUP_ME, (_, lead, negation) => `${lead}${negation}group:${only}`),
+      note: `Note: group:me was read as group:${only}, your only group.`,
+    };
   }
   throw new Error(
     `${NOT_A_VALUE} You belong to groups ${groupIds.join(', ')}: search one with group:<id> (e.g. group:${only}), one call per group.`,

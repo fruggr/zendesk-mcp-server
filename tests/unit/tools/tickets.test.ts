@@ -1246,6 +1246,19 @@ describe('ticket tools', () => {
 
       it('searches the only group of the caller and says so', async () => {
         const queries = captureSearches();
+        const memberOf: string[] = [];
+        mswServer.use(
+          http.get(
+            'https://testsubdomain.zendesk.com/api/v2/users/:id/group_memberships',
+            ({ params }) => {
+              memberOf.push(String(params['id']));
+              return HttpResponse.json({
+                group_memberships: [{ group_id: MOCK_TICKET.group_id }],
+                meta: { has_more: false },
+              });
+            },
+          ),
+        );
         const text = firstText(
           await findTool('search_tickets').handler({
             query: 'status<solved group:me',
@@ -1253,6 +1266,8 @@ describe('ticket tools', () => {
             page: 1,
           }),
         );
+        // No SLA service in this context: the caller comes from /users/me.
+        expect(memberOf).toEqual([String(MOCK_USER.id)]);
         expect(queries).toEqual([`type:ticket status<solved group:${MOCK_TICKET.group_id}`]);
         expect(text?.split('\n')[0]).toBe(
           `Note: group:me was read as group:${MOCK_TICKET.group_id}, your only group.`,
