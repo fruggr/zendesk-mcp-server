@@ -84,8 +84,10 @@ When the plan has scenarios on HTTP, this is the one exception to "don't start
 anything":
 
 1. **Start it yourself**, in the background, from the checkout:
-   `ZENDESK_SUBDOMAIN=fruggr pnpm dev:http`. Wait until
-   `curl -s http://localhost:3000/healthz` answers 200.
+   `ZENDESK_SUBDOMAIN=fruggr pnpm dev:http`. Poll
+   `curl -s http://localhost:3000/healthz` for up to 60 s (it usually answers
+   200 within seconds). No 200 by then is a failed start: stop the server and
+   report it as one (below).
 2. **Ask the human to connect it**, then stop and wait for their answer: "The
    HTTP server is running on port 3000. Please reconnect `zendesk-local-http`
    (`/mcp` in Claude Code) and complete the Zendesk sign-in in your browser."
