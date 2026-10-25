@@ -77,8 +77,12 @@ export const createSearchTools = (env: ToolEnv): ToolDefinition[] => {
         const results = response.results ?? [];
         const meta = extractSearchPaginationMeta(response, per_page, page);
         const header = (m: PaginationMeta): string =>
-          (resolved.note ? `${resolved.note}\n` : '') +
-          `Total: ${m.count} | Page ${page} (${results.length} results)${m.has_more ? ` | Next page: ${m.next_page}` : ''}`;
+          [
+            resolved.note,
+            `Total: ${m.count} | Page ${page} (${results.length} results)${m.has_more ? ` | Next page: ${m.next_page}` : ''}`,
+          ]
+            .filter(Boolean)
+            .join('\n');
         return {
           content: [
             {

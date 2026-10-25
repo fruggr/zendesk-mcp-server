@@ -1269,9 +1269,12 @@ describe('ticket tools', () => {
         // No SLA service in this context: the caller comes from /users/me.
         expect(memberOf).toEqual([String(MOCK_USER.id)]);
         expect(queries).toEqual([`type:ticket status<solved group:${MOCK_TICKET.group_id}`]);
-        expect(text?.split('\n')[0]).toBe(
-          `Note: group:me was read as group:${MOCK_TICKET.group_id}, your only group.`,
-        );
+        expect(text?.split('\n').slice(0, 2)).toMatchInlineSnapshot(`
+          [
+            "Note: group:me was read as group:300, your only group.",
+            "Results: 1",
+          ]
+        `);
         expect(text).toContain('Test ticket');
       });
 

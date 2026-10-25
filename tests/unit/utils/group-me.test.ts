@@ -49,19 +49,35 @@ describe('resolveGroupMe', () => {
 
   it('names every group of a caller in several, so the agent retries per group', async () => {
     const { get } = memberships([10, 20]);
-    await expect(resolveGroupMe('status<solved group:me', get, caller)).rejects.toThrow(
-      new Error(
-        'group:me is not a Zendesk search value: "me" works only for user keywords (assignee:, requester:, submitter:), and Zendesk would silently match nothing. You belong to groups 10, 20: search one with group:<id> (e.g. group:10), one call per group.',
-      ),
+    await expect(
+      resolveGroupMe('status<solved group:me', get, caller),
+    ).rejects.toThrowErrorMatchingInlineSnapshot(
+      `[Error: group:me is not a Zendesk search value: "me" works only for user keywords (assignee:, requester:, submitter:), and Zendesk would silently match nothing. You belong to groups 10, 20: search one with group:<id> (e.g. group:10), one call per group.]`,
+    );
+  });
+
+  it('advises excluding one group when every group:me is negated', async () => {
+    const { get } = memberships([10, 20]);
+    await expect(
+      resolveGroupMe('-group:me', get, caller),
+    ).rejects.toThrowErrorMatchingInlineSnapshot(
+      `[Error: group:me is not a Zendesk search value: "me" works only for user keywords (assignee:, requester:, submitter:), and Zendesk would silently match nothing. You belong to groups 10, 20: exclude a group with -group:<id> (e.g. -group:10).]`,
+    );
+  });
+
+  it('keeps the per-group advice when group:me is both included and excluded', async () => {
+    const { get } = memberships([10, 20]);
+    await expect(resolveGroupMe('group:me -group:me', get, caller)).rejects.toThrow(
+      'search one with group:<id> (e.g. group:10), one call per group.',
     );
   });
 
   it('says a caller in no group has no group queue', async () => {
     const { get } = memberships([]);
-    await expect(resolveGroupMe('group:me', get, caller)).rejects.toThrow(
-      new Error(
-        'group:me is not a Zendesk search value: "me" works only for user keywords (assignee:, requester:, submitter:), and Zendesk would silently match nothing. You belong to no group, so there is no group queue to search: drop group:me, or name a group with group:<id>.',
-      ),
+    await expect(
+      resolveGroupMe('group:me', get, caller),
+    ).rejects.toThrowErrorMatchingInlineSnapshot(
+      `[Error: group:me is not a Zendesk search value: "me" works only for user keywords (assignee:, requester:, submitter:), and Zendesk would silently match nothing. You belong to no group, so there is no group queue to search: drop group:me, or name a group with group:<id>.]`,
     );
   });
 });

@@ -1210,13 +1210,22 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
           page: number;
         };
         const token = await caller.getToken();
-        const resolved = await resolveCallerGroupMe(query, subdomain, token, caller.sla);
-        const [response, urgency] = await Promise.all([
-          zendeskGet<ZendeskListResponse<ZendeskTicket>>(subdomain, token, '/search', {
-            query: `type:ticket ${resolved.query}`,
-            include: 'tickets(slas)',
-            ...buildOffsetParams(per_page, page),
-          }),
+        const search = async () => {
+          const resolved = await resolveCallerGroupMe(query, subdomain, token, caller.sla);
+          const response = await zendeskGet<ZendeskListResponse<ZendeskTicket>>(
+            subdomain,
+            token,
+            '/search',
+            {
+              query: `type:ticket ${resolved.query}`,
+              include: 'tickets(slas)',
+              ...buildOffsetParams(per_page, page),
+            },
+          );
+          return { resolved, response };
+        };
+        const [{ resolved, response }, urgency] = await Promise.all([
+          search(),
           urgencyRenderer(caller.sla),
         ]);
         // The `slas` sideload is nested on each result (no top-level array, no

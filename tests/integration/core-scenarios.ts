@@ -376,8 +376,8 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
           arguments: { operation: 'search_tickets', params: { query: 'status<solved group:me' } },
         });
         expect(result.isError).toBeFalsy();
-        expect(textOf(result).split('\n')[0]).toBe(
-          'Note: group:me was read as group:300, your only group.',
+        expect(textOf(result).split('\n')[0]).toMatchInlineSnapshot(
+          `"Note: group:me was read as group:300, your only group."`,
         );
       });
 

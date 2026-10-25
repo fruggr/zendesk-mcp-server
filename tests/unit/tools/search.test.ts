@@ -49,9 +49,12 @@ describe('search tools', () => {
         await tool.handler({ query: 'type:ticket group:me', per_page: 25, page: 1 }),
       );
       expect(queries).toEqual([`type:ticket group:${MOCK_TICKET.group_id}`]);
-      expect(text?.split('\n')[0]).toBe(
-        `Note: group:me was read as group:${MOCK_TICKET.group_id}, your only group.`,
-      );
+      expect(text?.split('\n').slice(0, 2)).toMatchInlineSnapshot(`
+        [
+          "Note: group:me was read as group:300, your only group.",
+          "Total: 0 | Page 1 (0 results)",
+        ]
+      `);
     });
 
     it('defaults to a page of 25 (#388)', () => {

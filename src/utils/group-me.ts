@@ -34,9 +34,12 @@ export const resolveGroupMe = async (
       note: `Note: group:me was read as group:${only}, your only group.`,
     };
   }
-  throw new Error(
-    `${NOT_A_VALUE} You belong to groups ${groupIds.join(', ')}: search one with group:<id> (e.g. group:${only}), one call per group.`,
-  );
+  // Searching one group per call would invert an exclusion.
+  const excluding = [...query.matchAll(GROUP_ME)].every(([, , negation]) => negation === '-');
+  const advice = excluding
+    ? `exclude a group with -group:<id> (e.g. -group:${only})`
+    : `search one with group:<id> (e.g. group:${only}), one call per group`;
+  throw new Error(`${NOT_A_VALUE} You belong to groups ${groupIds.join(', ')}: ${advice}.`);
 };
 
 /** `resolveGroupMe` for a tool call: the caller comes from the SLA service when wired, else `/users/me`. */
