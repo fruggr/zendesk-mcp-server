@@ -49,6 +49,13 @@ omitting the plan.
   The validator drives the feature by calling the real `mcp__<server>__*` tools
   directly — that *is* what exercises the running server. A credential/egress
   error is a `BLOCKED` finding to report, never a setup task to perform.
+  - **Exception — the HTTP transport.** Only the stdio server
+    (`zendesk-local`) runs at launch; `zendesk-local-http` is declared in
+    `.mcp.json` but not running. The validator knows how to start it and ask the
+    human to connect it (`run-validation-plan`), so the plan only says which
+    scenarios run on HTTP and lists in its Setup what needs the human: the HTTP
+    connection, a second user's sign-in, a read-only sign-in. Never describe
+    the procedure, and never let a plan imply HTTP is already connected.
   - **Exception — ground-truth capture.** When the change depends on the shape
     of an undocumented external response that the *formatted* tool output cannot
     reveal (e.g. a Zendesk sideload whose exact field names we guessed), the

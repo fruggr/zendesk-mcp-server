@@ -44,8 +44,8 @@ theirs, not yours.
 ### Your environment is already set up — do NOT re-create it
 
 This session was launched **on the PR branch, in a checkout of the code under
-test, with the MCP server already running and authenticated**. Everything you
-need is under your feet. Concretely:
+test, with the stdio MCP server already running and authenticated**. Everything
+you need is under your feet, except the HTTP server (next section). Concretely:
 
 - **You are already on the branch.** The working tree *is* the code to validate.
   Do **not** `git fetch` / `checkout` / `clone` / `pull` the PR branch, and do not
@@ -53,7 +53,7 @@ need is under your feet. Concretely:
   the code you validated, just read the current SHA (`git rev-parse HEAD`); if you
   want to confirm it's the PR head, compare against the PR — don't fetch to "get"
   it.
-- **The MCP server is live and authenticated in this session.** Its tools are
+- **The stdio MCP server is live and authenticated in this session.** Its tools are
   already loaded as `mcp__<server>__*` (e.g. `mcp__zendesk-local__*`) — but only
   the **server under test** is mounted; do **not** assume the GitHub MCP
   (`mcp__github__*`) is also present (see plan retrieval above — fall back to
@@ -65,10 +65,44 @@ need is under your feet. Concretely:
   tool returns a 401/credential error, that is a *finding* to report (`BLOCKED`),
   not a cue to start wiring auth.
 - **You drive the feature by calling the real `mcp__<server>__*` tools directly.**
-  No build, no install, no `pnpm` step, no `mcp:live` / `scripts/` CLI harness to
+  No build, no install, no `pnpm` step (HTTP aside, below), no `mcp:live` / `scripts/` CLI harness to
   "start" the server — calling the tools *is* exercising the running server. The
   only sanctioned script is a read-only ground-truth capture probe when the plan
   explicitly names one (it reuses the same already-present auth — see below).
+
+### Two transports, two states: you start HTTP, the human connects it
+
+`.mcp.json` declares two servers, and only one is running when you start:
+
+| Server | State at launch | What you do |
+| --- | --- | --- |
+| `zendesk-local` (stdio) | started by the session, signed in | call `mcp__zendesk-local__*` directly |
+| `zendesk-local-http` (HTTP, `http://localhost:3000/mcp`) | **declared, not running**: the session reports it as failed to connect | start it, then ask the human to connect it |
+
+A failed `zendesk-local-http` at launch is the expected state, not a blocker.
+When the plan has scenarios on HTTP, this is the one exception to "don't start
+anything":
+
+1. **Start it yourself**, in the background, from the checkout:
+   `ZENDESK_SUBDOMAIN=fruggr pnpm dev:http`. Wait until
+   `curl -s http://localhost:3000/healthz` answers 200.
+2. **Ask the human to connect it**, then stop and wait for their answer: "The
+   HTTP server is running on port 3000. Please reconnect `zendesk-local-http`
+   (`/mcp` in Claude Code) and complete the Zendesk sign-in in your browser."
+   Only the human can do this: you never reconnect a server, open the sign-in
+   link or handle a token yourself.
+3. Once they confirm, the tools appear as `mcp__zendesk-local-http__*`. Run the
+   HTTP scenarios through them.
+
+Ask the human the same way for anything else only they can provide: a sign-in
+as a second Zendesk user, a read-only sign-in, a reconnection between two
+scenarios. Say exactly what you need and why, then wait.
+
+Mark an HTTP scenario `BLOCKED` only when the server fails to start (quote the
+error), or the human declines or cannot connect it; never because the server
+was not connected at launch. Stop the server when you are done.
+How it works, and the `pnpm mcp:live --url` alternative:
+[`docs/live-testing.md`](../../../docs/live-testing.md).
 
 ## Protocol
 
@@ -85,6 +119,9 @@ need is under your feet. Concretely:
 5. **Don't fix, don't massage.** You never edit the code to make a scenario pass,
    and you never round a partial/ambiguous result up to OK. Report exactly what
    you saw.
+6. **Ask before you skip.** A scenario that needs something only the human can
+   provide (the HTTP connection, another user's sign-in) is asked for, not
+   skipped. `BLOCKED` is for what stays unavailable after you asked.
 
 ## Reporting
 
@@ -146,6 +183,8 @@ paste real data into it**.
   the pass "counts", or on what the author should now do — one `Run by:` line
   covers it and the owner decides the rest.
 - Real tools only (`mcp__<server>__*`), throwaway copies of any mutable state.
+- HTTP is yours to start and the human's to connect: start it, ask, wait. Never
+  reconnect it or sign in yourself, and never skip its scenarios without asking.
 - The tenant is **production**: never let a real value (PII, org, ticket
   content, subdomain) reach the report or any other output — redact to
   structure-only placeholders (see "Redact real data").
