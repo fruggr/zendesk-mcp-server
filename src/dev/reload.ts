@@ -98,7 +98,6 @@ export const createReloadableServer = (
     const reader = createAlertPollingReader({
       config,
       ...pollingIdentity(config, getToken, caches, getBackgroundToken),
-      caches,
       slaRuntime,
       onUnauthorized,
     });

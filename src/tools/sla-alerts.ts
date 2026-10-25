@@ -54,7 +54,7 @@ const parseWithin = (within: string | undefined): number | undefined => {
  */
 const settleForm = async (
   sla: SlaService,
-  call: ToolCallContext | undefined,
+  call: ToolCallContext,
   askScope: boolean,
 ): Promise<{
   picked: NamedScope | undefined;
@@ -68,14 +68,14 @@ const settleForm = async (
   let picked: NamedScope | undefined;
   let edited: SlaThresholds | undefined;
   const form = buildAlertsElicitation({ askScope, introduce, thresholds: await sla.thresholds() });
-  const answered = call?.inputResponses?.[ALERTS_ELICITATION_KEY] !== undefined;
-  if (form && call?.canElicit && !answered) {
+  const answered = call.inputResponses?.[ALERTS_ELICITATION_KEY] !== undefined;
+  if (form && call.canElicit && !answered) {
     throw inputRequiredError(
       inputRequired({ inputRequests: { [ALERTS_ELICITATION_KEY]: inputRequired.elicit(form) } }),
     );
   }
   const content = answered
-    ? acceptedContent(call?.inputResponses, ALERTS_ELICITATION_KEY)
+    ? acceptedContent(call.inputResponses, ALERTS_ELICITATION_KEY)
     : undefined;
   if (content) {
     const answer = readAlertsAnswer(content, await sla.thresholds());

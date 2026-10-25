@@ -1,8 +1,12 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   ceilingsOf,
   evaluateBudget,
   logicalChunkName,
+  measureDist,
   packageBreakdown,
   renderReport,
   // @ts-expect-error - plain JS script, no type declarations
@@ -182,7 +186,7 @@ describe('renderReport', () => {
 
       The reference is a tripwire, not a hard limit. Find what grew in the breakdown below. If the growth is justified (a feature, a dependency upgrade), raise the reference in bundle-budget.json in this PR and say why; otherwise remove the cause (lazy loading, a narrower import, another dependency).
 
-      The ceiling is not raised in a feature PR: shrink the bundle instead. Raising it takes the \`bundle-ceiling-raise\` label, a code-owner review and a new section in docs/decisions/startup-footprint.md.
+      The ceiling is not raised in a feature PR: shrink the bundle instead. Raising it takes the \`bundle-ceiling-raise\` label and a new section in docs/decisions/startup-footprint.md.
 
       <details><summary>Largest packages in \`index\`</summary>
 
@@ -202,5 +206,33 @@ describe('renderReport', () => {
       '`index` is -30.0 % under its reference: lower it in bundle-budget.json to keep the tripwire tight.',
     );
     expect(report).not.toContain('over budget');
+  });
+});
+
+describe('measureDist', () => {
+  const distWith = (files: Record<string, string>) => {
+    const dir = mkdtempSync(join(tmpdir(), 'bundle-size-'));
+    for (const [name, body] of Object.entries(files)) writeFileSync(join(dir, name), body);
+    return dir;
+  };
+
+  it('sizes every chunk under its name without the hash, and sums the total', () => {
+    const dir = distWith({ 'index.js': 'abcd', 'http-DLa2DU80.js': 'ab' });
+    try {
+      expect(measureDist(dir).sizes).toEqual({ http: 2, index: 4, total: 6 });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('fails when two chunks share a name, rather than counting one of them', () => {
+    const dir = distWith({ 'index.js': 'abcd', 'index-AbCd1234.js': 'ab' });
+    try {
+      expect(() => measureDist(dir)).toThrow(
+        'index-AbCd1234.js and index.js are both chunk `index`',
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

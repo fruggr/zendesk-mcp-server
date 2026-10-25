@@ -44,7 +44,7 @@ import type {
   ToolResult,
 } from './tools/definitions';
 import { resolveBrand } from './tools/help-center';
-import { createAllTools, type ToolContext, type ToolDefinition } from './tools/index';
+import { createAllTools, type ToolDefinition } from './tools/index';
 import { type AlertsReader, createAlertsReader } from './tools/sla-alerts';
 import { isInputRequiredError, supportsFormElicitation } from './utils/elicitation';
 import type { ListenFeed } from './utils/listen-feed';
@@ -201,7 +201,7 @@ const proxySurface = (
 ): ProxySurface => {
   const byKey = proxySurfaces.get(toolset) ?? new Map<string, ProxySurface>();
   proxySurfaces.set(toolset, byKey);
-  const key = [toolName, readOnlyMode, ...tools.map((t) => t.name)].join(' ');
+  const key = [toolName, title, readOnlyMode, ...tools.map((t) => t.name)].join(' ');
   const known = byKey.get(key);
   if (known) return known;
   const annotations = aggregateAnnotations(tools);
@@ -473,20 +473,6 @@ export const slaSettings = (config: Config): Config => ({
   slaUserPreferences: slaPreferencesEnabled(config),
 });
 
-/** The context the tools and the alert readers share. */
-export const toolContext = (
-  config: Config,
-  getToken: () => string | Promise<string>,
-  resolveBrandSubdomain: BrandSubdomainResolver,
-  sla: SlaService,
-): ToolContext => ({
-  subdomain: config.subdomain,
-  brandIds: config.brandIds,
-  resolveBrandSubdomain,
-  getToken,
-  sla,
-});
-
 /** `reader`, with a Zendesk 401 reported like a tool's: the dead token is dropped, not replayed. */
 const reportingUnauthorized = (
   reader: AlertsReader,
@@ -508,7 +494,6 @@ export interface AlertPollingReaderParams {
   getToken: () => string | Promise<string>;
   /** The caller's Zendesk user id, read with that same token source. */
   resolveUserId: () => Promise<number>;
-  caches: ServerCaches;
   slaRuntime: SlaRuntime;
   onUnauthorized?: (() => void) | undefined;
 }
@@ -518,19 +503,15 @@ export const createAlertPollingReader = ({
   config,
   getToken,
   resolveUserId,
-  caches,
   slaRuntime,
   onUnauthorized,
 }: AlertPollingReaderParams): AlertsReader =>
   reportingUnauthorized(
-    createAlertsReader(
-      toolContext(
-        config,
-        getToken,
-        caches.resolveBrandSubdomain,
-        createSlaService(slaSettings(config), slaRuntime, resolveUserId),
-      ),
-    ),
+    createAlertsReader({
+      subdomain: config.subdomain,
+      getToken,
+      sla: createSlaService(slaSettings(config), slaRuntime, resolveUserId),
+    }),
     onUnauthorized,
   );
 
@@ -640,7 +621,6 @@ export const watchGrantAlerts = ({
     config,
     getToken,
     resolveUserId: caches.resolveUserId,
-    caches,
     slaRuntime,
     onUnauthorized,
   });
@@ -910,7 +890,7 @@ export const registerToolset = (
         ...registerAlertResources(
           server,
           reportingUnauthorized(
-            createAlertsReader(toolContext(config, getToken, shared.resolveBrandSubdomain, sla)),
+            createAlertsReader({ subdomain: config.subdomain, ...caller }),
             onUnauthorized,
           ),
           config.slaPush,
@@ -986,7 +966,6 @@ export const createMcpServer = (
       const reader = createAlertPollingReader({
         config,
         ...pollingIdentity(config, getToken, caches, getBackgroundToken),
-        caches,
         slaRuntime,
         onUnauthorized,
       });

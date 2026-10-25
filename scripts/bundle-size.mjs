@@ -105,7 +105,7 @@ const describeViolation = (violation, budget, ceiling) => {
 const REFERENCE_HELP =
   'The reference is a tripwire, not a hard limit. Find what grew in the breakdown below. If the growth is justified (a feature, a dependency upgrade), raise the reference in bundle-budget.json in this PR and say why; otherwise remove the cause (lazy loading, a narrower import, another dependency).';
 const CEILING_HELP =
-  'The ceiling is not raised in a feature PR: shrink the bundle instead. Raising it takes the `bundle-ceiling-raise` label, a code-owner review and a new section in docs/decisions/startup-footprint.md.';
+  'The ceiling is not raised in a feature PR: shrink the bundle instead. Raising it takes the `bundle-ceiling-raise` label and a new section in docs/decisions/startup-footprint.md.';
 
 /** The report: a table of every chunk, then what failed and what grew, as Markdown. */
 export const renderReport = (sizes, budget, ceiling, result, breakdowns) => {
@@ -154,8 +154,12 @@ export const measureDist = (dist) => {
   const files = readdirSync(dist).filter((file) => file.endsWith('.js'));
   const sizes = {};
   const breakdowns = {};
+  const fileOf = {};
   for (const file of files.sort()) {
     const name = logicalChunkName(file);
+    // One would silently replace the other, and drop out of the total.
+    if (fileOf[name]) throw new Error(`${fileOf[name]} and ${file} are both chunk \`${name}\``);
+    fileOf[name] = file;
     sizes[name] = statSync(join(dist, file)).size;
     breakdowns[name] = packageBreakdown(readFileSync(join(dist, file), 'utf8'));
   }

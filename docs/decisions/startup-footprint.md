@@ -114,18 +114,20 @@ real size, whatever the references say, so raising a reference never gets past
 it. Hitting it means the bundle grew by half since this decision: the answer is
 to shrink it, not to move the ceiling.
 
-Raising it anyway is deliberately hard, with four locks:
+Raising it anyway is deliberately hard, with three locks:
 
 1. **The ADR.** The table below is the ceiling's other copy, and
    `tests/unit/bundle-ceiling.test.ts` fails unless both agree. A raise
    therefore edits this file, and adds a section saying why.
 2. **A label.** `.github/workflows/bundle-ceiling-guard.yml` fails a PR that
    changes `bundle-ceiling.json` until a maintainer adds `bundle-ceiling-raise`.
-3. **Code owners.** `.github/CODEOWNERS` gives the ceiling, the script and the
-   guard to the repository owner. It binds once "Require review from Code
-   Owners" is on in `main`'s branch protection.
-4. **Agents.** `AGENTS.md` tells an agent never to raise the ceiling: it stops
+3. **Agents.** `AGENTS.md` tells an agent never to raise the ceiling: it stops
    and asks the owner. It may raise a tier-1 reference, with a reason.
+
+A fourth lock, `CODEOWNERS` with "Require review from Code Owners", was
+dropped: it would make the repository owner the only person able to merge
+any change to the ceiling or its script, a bottleneck for one file that the
+label already makes a deliberate, visible act.
 
 The ceiling in force (bytes):
 
@@ -138,6 +140,9 @@ The ceiling in force (bytes):
 
 Factor 1.5, baseline measured at `40c49a8` on 2026-10-24.
 <!-- bundle-ceiling:end -->
+
+`40c49a8` is a commit of #406's branch, squash-merged into `main`: to
+remeasure the baseline, build the commit that merged #406.
 
 ### Why sizes and not timings
 

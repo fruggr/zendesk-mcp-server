@@ -279,32 +279,42 @@ describe('[http-2026] grant entries', () => {
 
   // The definitions are shared by every grant: only the caller a call carries
   // decides whose token it runs with. Interleaved calls must never cross.
-  it("runs each grant's calls with its own Zendesk token, interleaved", async () => {
-    const { grant } = await startServer(
-      { serverFactory: defaultServerFactory },
-      makeConfig({ mode: 'all' }),
-    );
-    const a = await grant();
-    const b = await grant();
-    mswServer.use(
-      http.get(`${ZENDESK_BASE}/users/me`, ({ request }) => {
-        const token = (request.headers.get('authorization') ?? '').replace(/^Bearer /i, '');
-        return HttpResponse.json({ user: { ...MOCK_USER, name: `Owner of ${token}` } });
-      }),
-    );
-    const whoAmI = async (client: Client) =>
-      textOf(await client.callTool({ name: 'get_current_user', arguments: {} }));
+  // `namespace` (the default) reaches the handler through a proxy, a separate
+  // dispatch path with its own per-toolset surface.
+  it.each([
+    { mode: 'all' as const, call: { name: 'get_current_user', arguments: {} } },
+    {
+      mode: 'namespace' as const,
+      call: { name: 'zendesk_users', arguments: { operation: 'get_current_user', params: {} } },
+    },
+  ])(
+    "runs each grant's calls with its own Zendesk token, interleaved ($mode)",
+    async ({ mode, call }) => {
+      const { grant } = await startServer(
+        { serverFactory: defaultServerFactory },
+        makeConfig({ mode }),
+      );
+      const a = await grant();
+      const b = await grant();
+      mswServer.use(
+        http.get(`${ZENDESK_BASE}/users/me`, ({ request }) => {
+          const token = (request.headers.get('authorization') ?? '').replace(/^Bearer /i, '');
+          return HttpResponse.json({ user: { ...MOCK_USER, name: `Owner of ${token}` } });
+        }),
+      );
+      const whoAmI = async (client: Client) => textOf(await client.callTool(call));
 
-    const [a1, b1, a2, b2] = await Promise.all([whoAmI(a), whoAmI(b), whoAmI(a), whoAmI(b)]);
+      const [a1, b1, a2, b2] = await Promise.all([whoAmI(a), whoAmI(b), whoAmI(a), whoAmI(b)]);
 
-    const ownerA = a1.match(/Owner of (\S+)/)?.[1];
-    const ownerB = b1.match(/Owner of (\S+)/)?.[1];
-    expect(ownerA).toMatch(/^zd-access-/);
-    expect(ownerB).toMatch(/^zd-access-/);
-    expect(ownerA).not.toBe(ownerB);
-    expect(a2).toContain(`Owner of ${ownerA}`);
-    expect(b2).toContain(`Owner of ${ownerB}`);
-  });
+      const ownerA = a1.match(/Owner of (\S+)/)?.[1];
+      const ownerB = b1.match(/Owner of (\S+)/)?.[1];
+      expect(ownerA).toMatch(/^zd-access-/);
+      expect(ownerB).toMatch(/^zd-access-/);
+      expect(ownerA).not.toBe(ownerB);
+      expect(a2).toContain(`Owner of ${ownerA}`);
+      expect(b2).toContain(`Owner of ${ownerB}`);
+    },
+  );
 
   it('fetches the Help Center topology once per grant within its cache lifetime', async () => {
     let localesCalls = 0;
