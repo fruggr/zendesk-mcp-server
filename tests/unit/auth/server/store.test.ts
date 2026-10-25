@@ -121,14 +121,22 @@ describe('createAdapterFactory', () => {
   });
 
   it('stores neither the raw id nor any plaintext', async () => {
-    await adapterFor('RefreshToken').upsert(
-      'raw-refresh-token-value',
-      { grantId: 'grant-xyz', accountId: 'zendesk:4242', exp: futureExp(60) },
-      60,
-    );
-    const dump = JSON.stringify([...persistentEntries]);
-    for (const secret of ['raw-refresh-token-value', 'grant-xyz', 'zendesk:4242', '4242']) {
-      expect(dump).not.toContain(secret);
+    // A clock whose expiry timestamps contain 4242: the account id must not be
+    // a run of digits a plaintext `exp` can hold by chance.
+    vi.useFakeTimers({ now: 1_792_888_834_242, toFake: ['Date'] });
+    try {
+      await adapterFor('RefreshToken').upsert(
+        'raw-refresh-token-value',
+        { grantId: 'grant-xyz', accountId: 'zendesk:acct-4242', exp: futureExp(60) },
+        60,
+      );
+      const dump = JSON.stringify([...persistentEntries]);
+      expect(dump).toContain('4242');
+      for (const secret of ['raw-refresh-token-value', 'grant-xyz', 'acct-4242']) {
+        expect(dump).not.toContain(secret);
+      }
+    } finally {
+      vi.useRealTimers();
     }
   });
 
