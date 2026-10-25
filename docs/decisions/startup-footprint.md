@@ -46,6 +46,14 @@ mock (one series of the branch read +30 MB once, against +16–17 MB otherwise):
 | RSS after a first article | ~130 MB | ~110 MB |
 | `dist/index.js` | 4.0 MB | 1.4 MB |
 
+The idle gain reproduced elsewhere; the article line did not. The independent
+validation of #406, on Android/Termux, measured idle RSS at ~80 MB against
+~93 MB, but idle plus a first article at ~105 MB against ~99 MB: the pipeline
+adds 24–29 MB when it loads on demand, 4–8 MB on `main` where it is already in.
+What is certain is that a server that never converts an article no longer pays
+for the pipeline. Once it does, the total depends on the machine, and can be a
+few MB higher than before.
+
 A bare Node process holds ~42 MB. Of the 4.0 MB chunk every start parsed and
 ran, about 2.6 MB was the HTML <-> Markdown pipeline (`src/utils/article-sections.ts`:
 cheerio, unified, remark, rehype, micromark, parse5) and what cheerio's full
