@@ -8,7 +8,7 @@ import type { SlaService } from '../../../src/utils/sla-service';
 import { MOCK_TICKET, MOCK_VIEW } from '../../msw-handlers';
 import { mswServer } from '../../setup';
 import { testSlaService } from '../../sla-service';
-import { testToolContext } from '../../tool-context';
+import { testToolContext, withCaller } from '../../tool-context';
 import { firstText } from '../../tool-result';
 
 const BASE = 'https://testsubdomain.zendesk.com/api/v2';
@@ -25,7 +25,7 @@ afterEach(() => {
 });
 
 const tool = (sla: SlaService | undefined = testSlaService()) => {
-  const [def] = createSlaAlertTools(testToolContext({ sla }));
+  const [def] = withCaller(createSlaAlertTools(testToolContext()), testToolContext({ sla }));
   if (!def) throw new Error('list_sla_alerts missing');
   return def;
 };
@@ -165,7 +165,7 @@ describe('list_sla_alerts', () => {
 
   it('fails plainly where no SLA service is wired', async () => {
     await expect(
-      createSlaAlertTools(testToolContext())[0]?.handler({ scope: 'mine' }),
+      withCaller(createSlaAlertTools(testToolContext()))[0]?.handler({ scope: 'mine' }),
     ).rejects.toThrow('SLA alerting is not available on this server.');
   });
 

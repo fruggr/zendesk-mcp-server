@@ -92,8 +92,10 @@ everywhere, so that class of leak cannot come back.
 
 ## Costs and limits
 
-- A 2026 HTTP request builds a server: about 4 ms (`--mode all`) to 7.5 ms
-  (`--mode namespace`) of CPU, measured. Fine at today's scale.
+- A 2026 HTTP request builds a server and registers the tools on it: ~0.15 ms
+  (`single`) to ~0.7 ms (`all`), measured. The tool definitions themselves are
+  built once per process and hold no user, so neither a request nor a grant
+  builds them ([`tool-definitions-lifetime.md`](tool-definitions-lifetime.md)).
 - The SDK consumes the listen filter, so the transports read
   `resourceSubscriptions` off the wire themselves (`utils/listen-feed.ts`): a
   listen request opens a stream, its cancellation or any response carrying its

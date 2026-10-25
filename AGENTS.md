@@ -46,14 +46,19 @@ web, which generates them: leave those alone, don't imitate the shape by hand.
 
 Transports: stdio and a `node:http` HTTP transport next to its own OAuth
 authorization server (`auth/server/`, on `oidc-provider`), both serving MCP 2025
-and 2026-07-28 (`docs/decisions/protocol-eras.md`). The user's Zendesk token is
-captured in the tools' closure — no shared state. A notification carries no
-sensitive data; `requestState` goes only through `utils/request-state.ts`;
-diagnostics go to stderr, never to an MCP logging channel.
+and 2026-07-28 (`docs/decisions/protocol-eras.md`). A user's Zendesk token never
+lives in process-wide state: it reaches a tool only through the context the
+transport builds for that user, so a call cannot run with another user's token.
+A notification carries no sensitive data; `requestState` goes only through
+`utils/request-state.ts`; diagnostics go to stderr, never to an MCP logging
+channel.
 `index.ts` imports each transport lazily, and `dist/` inlines every dependency
 (the package declares none): never statically import the HTTP stack, or a
 package only stdio needs (such as `open`), from a module both transports load —
-`tests/unit/module-graph.test.ts` pins it.
+`tests/unit/module-graph.test.ts` pins it. Same for the article HTML <-> Markdown
+pipeline (`utils/article-sections.ts`, cheerio, unified): only Help Center
+article handlers need it, so they load it through `utils/article-format.ts` on
+first use.
 
 **Tool modes** (chosen at startup by `--mode`): `all` (every tool individually),
 `namespace` (default — one proxy per namespace), `single` (one `zendesk` proxy, plus `connector_preferences` for this server's own settings).
@@ -276,6 +281,15 @@ the body.
 Before opening a PR, clear the **Submission quality bar** in
 [`CONTRIBUTING.md`](CONTRIBUTING.md#submission-quality-bar) (same bar for human
 and AI authors).
+
+## Bundle size
+
+CI checks every `dist/` chunk against `bundle-budget.json` (a reference per
+chunk, +10 %) and `bundle-ceiling.json` (fixed at 1.5 × a measured baseline),
+through `scripts/bundle-size.mjs`. A reference is a tripwire, not a limit: when
+the growth is justified, raise it in the same PR and say why; otherwise remove
+the cause. **Never raise the ceiling**: stop and ask the repository owner. Why,
+and the locks on the ceiling: `docs/decisions/startup-footprint.md`.
 
 ## Release workflow
 

@@ -6,7 +6,7 @@ import {
   type SlaPreferenceChange,
 } from '../utils/sla-preferences';
 import type { SlaService } from '../utils/sla-service';
-import type { ToolContext, ToolDefinition } from './definitions';
+import type { ToolDefinition } from './definitions';
 
 /** How every SLA duration parameter is spelled, for their descriptions. */
 export const DURATION_HINT = 'A readable duration: 30m, 4h, 2d, 1w, or a mix like 1d4h.';
@@ -17,7 +17,7 @@ export const requireSla = (sla: SlaService | undefined): SlaService => {
   return sla;
 };
 
-export const createPreferenceTools = (ctx: ToolContext): ToolDefinition[] => [
+export const createPreferenceTools = (): ToolDefinition[] => [
   {
     name: 'configure_sla_alerts',
     namespace: 'preferences',
@@ -65,8 +65,8 @@ export const createPreferenceTools = (ctx: ToolContext): ToolDefinition[] => [
       idempotentHint: true,
       openWorldHint: false,
     },
-    handler: async (params) => {
-      const sla = requireSla(ctx.sla);
+    handler: async (params, { caller }) => {
+      const sla = requireSla(caller.sla);
       const change = params as SlaPreferenceChange;
       const prefs = await sla.preferences();
       const describe = (current: typeof prefs) =>

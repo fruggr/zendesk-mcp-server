@@ -228,9 +228,10 @@ request by what it carries:
   notifications only (a URI, never content), and a client that keeps listening
   keeps making requests or listens again.
 
-Building a server costs a few milliseconds of CPU, paid on every 2026-07-28
-request. Why the two revisions are served this way:
-[the decision record](decisions/protocol-eras.md).
+The tool definitions are built once, when the process starts, and shared by
+every session and request: a 2026-07-28 request only builds the server around
+them, well under a millisecond of CPU, and a grant holds no copy of them. Why
+the two revisions are served this way: [the decision record](decisions/protocol-eras.md).
 
 ## Verify discovery endpoints
 
