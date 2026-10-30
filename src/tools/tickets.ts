@@ -840,7 +840,6 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
     return (max === undefined ? ids : ids.max(max)).optional().describe(description);
   };
 
-  // One custom field value, as create_ticket and update_ticket both take it.
   const customFieldEntry = z
     .object({
       id: z
@@ -1135,7 +1134,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'Get Zendesk Ticket Attachments',
       description:
-        "Download the files attached to a ticket's comments so you can look at them: images come back embedded inline, other files as text references (file name, id, content type, size, download URL). Use it when you need what an attachment contains; to learn which files a comment carries, list_ticket_comments already shows their ids. Pass those ids as attachment_ids to fetch only them, or omit it to retrieve every attachment on the ticket. An image over the per-image size limit or past the embedded-image cap comes back as a reference saying why, and once the response size budget is spent the remaining files are counted as omitted.",
+        "Download the files attached to a ticket's comments so you can look at them: images come back embedded inline, other files as text references (file name, id, content type, size, download URL). Use it to see an attached image, or a file's name, size and download URL (only images come back with their content); to learn which files a comment carries, list_ticket_comments already shows their ids. Pass those ids as attachment_ids to fetch only them, or omit it to retrieve every attachment on the ticket. An image over the per-image size limit or past the embedded-image cap comes back as a reference saying why, and once the response size budget is spent the remaining files are counted as omitted.",
       inputSchema: z.object({
         ticket_id: z
           .number()

@@ -1902,7 +1902,7 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: false,
       title: 'Update Help Center Article',
       description:
-        'Update article metadata only (draft, promoted, labels as label_names, content tags as content_tag_ids, visibility as permission_group_id / user_segment_id, section_id, sort position, author, etc.) and return the updated article; fields you omit keep their value. Does NOT update content (title, body) — use update_article_translation for that, or update_article_section to edit one section. To put an article first or last in its section, prefer reorder_article: a plain position write is ambiguous while articles share position 0. To take an article out of the Help Center for good, use archive_article; draft: true only unpublishes it.',
+        'Update article metadata only (draft, promoted, labels as label_names, content tags as content_tag_ids, visibility as permission_group_id / user_segment_id, section_id, sort position, author, etc.) and return the updated article; fields you omit keep their value. Does NOT update content (title, body) — use update_article_translation for that, or update_article_section to edit one section. To put an article first or last in its section, prefer reorder_article: a plain position write is ambiguous while articles share position 0. To remove an article from the Help Center, use archive_article (a Guide admin can restore it); draft: true only unpublishes it.',
       inputSchema: z.object({
         article_id: z
           .number()

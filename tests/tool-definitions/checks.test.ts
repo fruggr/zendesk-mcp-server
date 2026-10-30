@@ -42,6 +42,21 @@ describe('undescribedProperties', () => {
     ).toEqual(['top', 'blank', 'list[].id', 'union.a', 'union.b', 'union.c', 'obj.inner']);
   });
 
+  it('also walks records, tuples, $defs and boolean property schemas', () => {
+    expect(
+      undescribedProperties({
+        properties: {
+          map: { description: 'by key', additionalProperties: { properties: { id: {} } } },
+          closed: { description: 'no extras', additionalProperties: false },
+          pair: { description: 'two', prefixItems: [{ properties: { a: {} } }], items: false },
+          legacy: { description: 'tuple', items: [{ properties: { b: {} } }] },
+          anything: true,
+        },
+        $defs: { Node: { properties: { c: {}, d: { description: 'd' } } } },
+      }),
+    ).toEqual(['map{}.id', 'pair[].a', 'legacy[].b', 'anything', '$defs.Node.c']);
+  });
+
   it('has nothing to say about a schema-less tool', () => {
     expect(undescribedProperties(undefined)).toEqual([]);
   });
@@ -74,7 +89,7 @@ describe('unknownToolReferences', () => {
 
   it('flags tool-shaped words that are neither a tool nor a parameter', () => {
     const [, listUsers] = tools;
-    expect(listUsers && unknownToolReferences(listUsers, tools)).toEqual(['get_userz']);
+    expect(listUsers && unknownToolReferences(tools)(listUsers)).toEqual(['get_userz']);
   });
 });
 
