@@ -43,7 +43,7 @@ export const createUserTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'Search Zendesk Users',
       description:
-        'Search for users by name, email, or other criteria using Zendesk search query syntax. Returns total count.',
+        "Search for users by name, email, or other criteria using Zendesk search query syntax, returning each match's id, name, email, role, active flag and organization id, with the total count. Use it to turn a person into the numeric user id other tools take, such as the followers of update_ticket; a name can match several users, so confirm the right one. With an id already in hand, call get_user for the full record, and for your own account get_current_user. Prefer it over `search` when you want users only: `search` mixes in tickets and organizations unless the query says type:user.",
       inputSchema: z.object({
         query: z
           .string()

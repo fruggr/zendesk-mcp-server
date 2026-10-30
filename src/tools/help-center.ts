@@ -1764,7 +1764,7 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'List Permission Groups',
       description:
-        'List all Guide permission groups. Use this to find the permission_group_id required when creating articles.',
+        "List all Guide permission groups, which control who can edit and publish an article, with each group's id, name and whether it is built-in. Use this to find the permission_group_id required when creating articles with create_article, or to change it with update_article; to control who can view an article instead, use list_user_segments. Zendesk restricts this list to Guide admins and Help Center managers: without that role the call fails, and you can reuse the permission_group_id of an existing article read with get_article.",
       inputSchema: z.object({}),
       annotations: {
         readOnlyHint: true,
@@ -1902,7 +1902,7 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: false,
       title: 'Update Help Center Article',
       description:
-        'Update article metadata only (draft, promoted, labels as label_names, content tags as content_tag_ids, visibility as permission_group_id / user_segment_id, section_id, sort position, etc.) and return the updated article. Does NOT update content (title, body) — use update_article_translation for that.',
+        'Update article metadata only (draft, promoted, labels as label_names, content tags as content_tag_ids, visibility as permission_group_id / user_segment_id, section_id, sort position, author, etc.) and return the updated article; fields you omit keep their value. Does NOT update content (title, body) — use update_article_translation for that, or update_article_section to edit one section. To put an article first or last in its section, prefer reorder_article: a plain position write is ambiguous while articles share position 0. To take an article out of the Help Center for good, use archive_article; draft: true only unpublishes it.',
       inputSchema: z.object({
         article_id: z
           .number()
@@ -2308,7 +2308,7 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'List Article Labels',
       description:
-        'List all article labels. Labels improve Help Center search ranking and are not visible to end users. Attach them to an article through the label_names parameter of create_article or update_article.',
+        "List all article labels, with each label's id and name. Labels improve Help Center search ranking and are not visible to end users. Attach them to an article through the label_names parameter of create_article or update_article, reusing an existing label rather than coining a near-duplicate. Labels are not content tags: for the end-user-visible tags readers browse by, use list_content_tags.",
       inputSchema: z.object({
         ...brandIdPart,
       }),
@@ -2349,7 +2349,7 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'List User Segments',
       description:
-        'List all user segments. User segments control article visibility (who can view). Use the ID when creating or updating articles.',
+        "List all Help Center user segments, which control article visibility (who can view an article), with each segment's id, name, user type and whether it is built-in. Use the id as user_segment_id when creating or updating articles with create_article or update_article; to control who can edit an article instead, use list_permission_groups. Zendesk restricts this list to Guide admins and Help Center managers: without that role the call fails, and you can reuse the user_segment_id of an existing article from get_article, or omit it on create_article to make the article visible to everyone.",
       inputSchema: z.object({}),
       annotations: {
         readOnlyHint: true,

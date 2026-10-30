@@ -534,7 +534,7 @@ it('exposes the help_center tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "List all Guide permission groups. Use this to find the permission_group_id required when creating articles.",
+        "description": "List all Guide permission groups, which control who can edit and publish an article, with each group's id, name and whether it is built-in. Use this to find the permission_group_id required when creating articles with create_article, or to change it with update_article; to control who can view an article instead, use list_user_segments. Zendesk restricts this list to Guide admins and Help Center managers: without that role the call fails, and you can reuse the permission_group_id of an existing article read with get_article.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -637,7 +637,7 @@ it('exposes the help_center tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": false,
         },
-        "description": "Update article metadata only (draft, promoted, labels as label_names, content tags as content_tag_ids, visibility as permission_group_id / user_segment_id, section_id, sort position, etc.) and return the updated article. Does NOT update content (title, body) — use update_article_translation for that.",
+        "description": "Update article metadata only (draft, promoted, labels as label_names, content tags as content_tag_ids, visibility as permission_group_id / user_segment_id, section_id, sort position, author, etc.) and return the updated article; fields you omit keep their value. Does NOT update content (title, body) — use update_article_translation for that, or update_article_section to edit one section. To put an article first or last in its section, prefer reorder_article: a plain position write is ambiguous while articles share position 0. To take an article out of the Help Center for good, use archive_article; draft: true only unpublishes it.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -880,7 +880,7 @@ it('exposes the help_center tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "List all article labels. Labels improve Help Center search ranking and are not visible to end users. Attach them to an article through the label_names parameter of create_article or update_article.",
+        "description": "List all article labels, with each label's id and name. Labels improve Help Center search ranking and are not visible to end users. Attach them to an article through the label_names parameter of create_article or update_article, reusing an existing label rather than coining a near-duplicate. Labels are not content tags: for the end-user-visible tags readers browse by, use list_content_tags.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -897,7 +897,7 @@ it('exposes the help_center tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "List all user segments. User segments control article visibility (who can view). Use the ID when creating or updating articles.",
+        "description": "List all Help Center user segments, which control article visibility (who can view an article), with each segment's id, name, user type and whether it is built-in. Use the id as user_segment_id when creating or updating articles with create_article or update_article; to control who can edit an article instead, use list_permission_groups. Zendesk restricts this list to Guide admins and Help Center managers: without that role the call fails, and you can reuse the user_segment_id of an existing article from get_article, or omit it on create_article to make the article visible to everyone.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,

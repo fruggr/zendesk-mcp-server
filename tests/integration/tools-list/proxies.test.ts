@@ -24,7 +24,7 @@ it('exposes the tickets proxy unchanged', async () => {
     - get_ticket(ticket_id*, include_comments): Retrieve a Zendesk ticket by ID, including its live SLA state (per-metric stage and breach countdown) when an SLA policy applies, plus its comments if requested.
     - get_ticket_history(ticket_id*, page_size, cursor): Read a ticket's change history — its audit trail — as a chronological, oldest-first timeline of who changed what and when.
     - list_ticket_comments(ticket_id*, sort_order, page_size, cursor): Read a ticket's conversation — public replies and internal notes with their full bodies — one cursor-paginated page at a time, newest comment first.
-    - get_ticket_attachments(ticket_id*, attachment_ids): Retrieve ticket attachments.
+    - get_ticket_attachments(ticket_id*, attachment_ids): Download the files attached to a ticket's comments so you can look at them: images come back embedded inline, other files as text references (file name, id, content type, size, download URL).
     - search_tickets(query*, per_page, page): Search tickets using Zendesk query syntax, returning each result with its live SLA state (per-metric stage and breach countdown) when an SLA policy applies.
     - create_ticket(subject*, description*, priority, type, assignee_id, group_id, tags, custom_fields): Create a new Zendesk support ticket with subject, description, and optional priority/type/assignee/tags. (write)
     - update_ticket(ticket_id*, status, priority, type, assignee_id, group_id, subject, tags, custom_fields, followers, email_ccs): Update an existing ticket (status, priority, type, assignee, group, subject, tags, custom fields, followers, email CCs). (write)
@@ -98,15 +98,15 @@ it('exposes the help_center proxy unchanged', async () => {
     - find_translation_gaps(locale*, category_id): Audit the Help Center tree for a target locale and report every category and section that has no translation, or one that is still an unpublished draft.
     - set_section_translation(section_id*, locale*, name, description, draft): Create or update the translation of a Help Center section in one locale, and return the resulting translation (locale, localized name, draft state). (write)
     - set_category_translation(category_id*, locale*, name, description, draft): Create or update the translation of a Help Center category in one locale, and return the resulting translation (locale, localized name, draft state). (write)
-    - list_permission_groups(): List all Guide permission groups.
+    - list_permission_groups(): List all Guide permission groups, which control who can edit and publish an article, with each group's id, name and whether it is built-in.
     - create_article(section_id*, title*, body*, permission_group_id*, user_segment_id, author_id, content_tag_ids, locale, draft, promoted, label_names): Create a new article in a section and return the created article with its id. (write)
-    - update_article(article_id*, draft, promoted, label_names, content_tag_ids, user_segment_id, author_id, permission_group_id, section_id, position): Update article metadata only (draft, promoted, labels as label_names, content tags as content_tag_ids, visibility as permission_group_id / user_segment_id, section_id, sort position, etc.) and return the updated article. (write)
+    - update_article(article_id*, draft, promoted, label_names, content_tag_ids, user_segment_id, author_id, permission_group_id, section_id, position): Update article metadata only (draft, promoted, labels as label_names, content tags as content_tag_ids, visibility as permission_group_id / user_segment_id, section_id, sort position, author, etc.) and return the updated article; fields you omit keep their value. (write)
     - reorder_article(article_id*, target*, reference_article_id, normalize, confirm): Reorder an article within its current section by moving it relative to its siblings (top, bottom, or before/after another article), and return whether the new order was applied. (write)
     - archive_article(article_id*, confirm*): Archive (soft-delete) a Help Center article: it is removed from the Help Center but can be restored from the Guide admin UI. (write)
     - list_content_tags(name_prefix, sort_by, sort_order, page_size, cursor): List Guide content tags, which are end-user-visible labels that help readers find related articles.
     - create_content_tag(name*): Create a new content tag for Guide articles. (write)
-    - list_labels(): List all article labels.
-    - list_user_segments(): List all user segments.
+    - list_labels(): List all article labels, with each label's id and name.
+    - list_user_segments(): List all Help Center user segments, which control article visibility (who can view an article), with each segment's id, name, user type and whether it is built-in.
     - list_article_attachments(article_id*): List all attachments for an article.
     - get_article_outline(article_id*, locale): Return a compact outline of an article (list of sections delimited by h1/h2/h3, with word counts) for the given locale (defaults to source_locale).
     - get_article_section(article_id*, locale*, section_index*, format): Retrieve the content of a single section of an article in a given locale.
@@ -156,7 +156,7 @@ it('exposes the users proxy unchanged', async () => {
             "operation": {
               "description": "One of the operations below. Each line reads name(parameters): summary, where the parameters are the exact names "params" accepts and * marks a required one; (write) marks an operation that changes data.
     - get_current_user(): Get the currently authenticated Zendesk user.
-    - search_users(query*, per_page, page): Search for users by name, email, or other criteria using Zendesk search query syntax.
+    - search_users(query*, per_page, page): Search for users by name, email, or other criteria using Zendesk search query syntax, returning each match's id, name, email, role, active flag and organization id, with the total count.
     - get_user(user_id*): Retrieve a single user by their numeric id.
     - get_organization(organization_id*): Retrieve a single organization by its numeric id.
     - list_organizations(page_size, cursor): List all organizations with pagination.",

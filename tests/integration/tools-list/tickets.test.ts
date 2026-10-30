@@ -128,7 +128,7 @@ it('exposes the tickets tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "Retrieve ticket attachments. Images are embedded inline; other files are listed as text references.",
+        "description": "Download the files attached to a ticket's comments so you can look at them: images come back embedded inline, other files as text references (file name, id, content type, size, download URL). Use it when you need what an attachment contains; to learn which files a comment carries, list_ticket_comments already shows their ids. Pass those ids as attachment_ids to fetch only them, or omit it to retrieve every attachment on the ticket. An image over the per-image size limit or past the embedded-image cap comes back as a reference saying why, and once the response size budget is spent the remaining files are counted as omitted.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
