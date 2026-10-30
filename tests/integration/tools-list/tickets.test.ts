@@ -221,11 +221,14 @@ it('exposes the tickets tool surface unchanged', async () => {
                 "additionalProperties": false,
                 "properties": {
                   "id": {
+                    "description": "Numeric id of the ticket field to set, as listed by list_ticket_fields.",
                     "maximum": 9007199254740991,
                     "minimum": -9007199254740991,
                     "type": "integer",
                   },
-                  "value": {},
+                  "value": {
+                    "description": "Value typed after the field: the option tag (a string) for a dropdown, an array of option tags for a multiselect, true or false for a checkbox, text or a number otherwise. list_ticket_fields lists each dropdown's accepted tags.",
+                  },
                 },
                 "required": [
                   "id",
@@ -312,11 +315,14 @@ it('exposes the tickets tool surface unchanged', async () => {
                 "additionalProperties": false,
                 "properties": {
                   "id": {
+                    "description": "Numeric id of the ticket field to set, as listed by list_ticket_fields.",
                     "maximum": 9007199254740991,
                     "minimum": -9007199254740991,
                     "type": "integer",
                   },
-                  "value": {},
+                  "value": {
+                    "description": "Value typed after the field: the option tag (a string) for a dropdown, an array of option tags for a multiselect, true or false for a checkbox, text or a number otherwise. list_ticket_fields lists each dropdown's accepted tags.",
+                  },
                 },
                 "required": [
                   "id",

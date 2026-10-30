@@ -840,6 +840,21 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
     return (max === undefined ? ids : ids.max(max)).optional().describe(description);
   };
 
+  // One custom field value, as create_ticket and update_ticket both take it.
+  const customFieldEntry = z
+    .object({
+      id: z
+        .number()
+        .int()
+        .describe('Numeric id of the ticket field to set, as listed by list_ticket_fields.'),
+      value: z
+        .unknown()
+        .describe(
+          "Value typed after the field: the option tag (a string) for a dropdown, an array of option tags for a multiselect, true or false for a checkbox, text or a number otherwise. list_ticket_fields lists each dropdown's accepted tags.",
+        ),
+    })
+    .strict();
+
   return [
     {
       name: 'get_ticket',
@@ -1289,7 +1304,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
             'Tags to set on the new ticket. Each tag is a single lowercase token (join multi-word tags with an underscore). Use manage_tags later to add or remove individual tags.',
           ),
         custom_fields: z
-          .array(z.object({ id: z.number().int(), value: z.unknown() }).strict())
+          .array(customFieldEntry)
           .optional()
           .describe(
             'Custom field values as { id, value } pairs (field ids come from your Zendesk admin settings). Call list_ticket_fields first to discover the numeric field ids and, for dropdown/multiselect fields, the exact option values Zendesk accepts.',
@@ -1362,7 +1377,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
             'Replaces the full tag set on the ticket. Use manage_tags for incremental add/remove.',
           ),
         custom_fields: z
-          .array(z.object({ id: z.number().int(), value: z.unknown() }).strict())
+          .array(customFieldEntry)
           .optional()
           .describe(
             'Custom field values as { id, value } pairs (field ids come from your Zendesk admin settings). Call list_ticket_fields first to discover the numeric field ids and, for dropdown/multiselect fields, the exact option values Zendesk accepts.',
