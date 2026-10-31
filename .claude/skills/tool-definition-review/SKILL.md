@@ -1,6 +1,6 @@
 ---
 name: tool-definition-review
-description: Review MCP tool definitions (name, title, description, parameter descriptions, annotations) against Glama's TDQS rubric and propose rewrites. Use when a diff touches src/tools/**, including from /code-review, when asked to review or improve how a tool describes itself, or when a tool scores low on Glama.
+description: Use when a diff touches the MCP tool definitions in src/tools/** (names, titles, descriptions, parameter descriptions, annotations), including from /code-review; when asked to review or improve how a tool describes itself to agents; or when a tool scores low on Glama.
 ---
 
 # Tool definition review
