@@ -1,6 +1,6 @@
 {
   "name": "@fruggr/zendesk-mcp-server",
-  "version": "3.6.0",
+  "version": "3.7.0",
   "mcpName": "io.github.fruggr/zendesk-mcp-server",
   "description": "Deep Zendesk MCP server for your AI assistant: search, draft, update and translate Help Center articles and manage Support tickets end to end — comments, triage and image attachments.",
   "type": "module",
@@ -33,7 +33,8 @@
     "test:smoke": "pnpm build && node scripts/smoke-test.mjs",
     "test:bundle": "pnpm build && vitest run --config vitest.bundle.config.ts",
     "bundle:size": "pnpm build && node scripts/bundle-size.mjs",
-    "mcp:live": "tsx scripts/mcp-live.ts"
+    "mcp:live": "tsx scripts/mcp-live.ts",
+    "tool-definitions:report": "tsx scripts/tool-definitions-report.ts"
   },
   "keywords": [
     "mcp",
@@ -99,6 +100,7 @@
     "hast-util-to-mdast": "10.1.2",
     "jose": "6.2.13",
     "lefthook": "^2.2.2",
+    "mcp-tdqs": "0.2.0",
     "msw": "^3.0.0",
     "oidc-provider": "~9.13.0",
     "open": "11.0.4",

@@ -102,11 +102,14 @@ it('exposes the requests tool surface unchanged', async () => {
                 "additionalProperties": false,
                 "properties": {
                   "id": {
+                    "description": "Numeric id of a question on the chosen form, from get_request_form.",
                     "maximum": 9007199254740991,
                     "minimum": -9007199254740991,
                     "type": "integer",
                   },
-                  "value": {},
+                  "value": {
+                    "description": "The answer, typed after the question: the option tag (a string, never a number) for a dropdown, an array of option tags for a multiselect, true or false for a checkbox, text otherwise.",
+                  },
                 },
                 "required": [
                   "id",

@@ -1,3 +1,19 @@
+## [3.7.0](https://github.com/fruggr/zendesk-mcp-server/compare/v3.6.0...v3.7.0) (2026-10-31)
+
+### Features
+
+* **tools:** gate tool definitions with mcp-tdqs and fix the weakest ones ([#420](https://github.com/fruggr/zendesk-mcp-server/issues/420)) ([8012646](https://github.com/fruggr/zendesk-mcp-server/commit/80126461858ed3f37026a3f3fed9bd668cdbbc19)), closes [#303](https://github.com/fruggr/zendesk-mcp-server/issues/303)
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Chores
+
+* **deps:** update dependencies ([#415](https://github.com/fruggr/zendesk-mcp-server/issues/415)) ([8f6e67d](https://github.com/fruggr/zendesk-mcp-server/commit/8f6e67deb0839f90cad5f9fd2908f8aee22ad988))
+* **deps:** update pnpm to v12.16.0 ([#419](https://github.com/fruggr/zendesk-mcp-server/issues/419)) ([5101f9b](https://github.com/fruggr/zendesk-mcp-server/commit/5101f9b6587c94d5f8d54a4cab98fbf6cb749bd8))
+* **deps:** update pnpm to v12.16.1 ([#421](https://github.com/fruggr/zendesk-mcp-server/issues/421)) ([468cdf9](https://github.com/fruggr/zendesk-mcp-server/commit/468cdf9f2952cca721f9f637f356cdc9bf86024d))
+</details>
+
 ## [3.6.0](https://github.com/fruggr/zendesk-mcp-server/compare/v3.5.3...v3.6.0) (2026-10-25)
 
 ### Features
