@@ -173,7 +173,7 @@ const fetchAllTicketComments = async (
   return { comments: all, truncated };
 };
 
-const COMMENT_CAP_NOTICE = `Comment scan stopped at its page cap (${MAX_COMMENT_PAGES} pages, COMMENT_MAX_PAGES): attachments on later comments are not listed. Pass attachment_ids taken from list_ticket_comments to fetch them.`;
+const COMMENT_CAP_NOTICE = `Comment scan stopped at its page cap (${MAX_COMMENT_PAGES} pages, COMMENT_MAX_PAGES): attachments on any later comments are not listed. Pass attachment_ids taken from list_ticket_comments to fetch them.`;
 
 // Narrowed rather than passed whole: `users?: T[]` on
 // ZendeskListResponse<ZendeskComment> clashes with the side-load. `next_page` is

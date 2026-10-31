@@ -794,7 +794,7 @@ describe('ticket tools', () => {
         expect(calls()).toBe(10);
         expect(result.content[1]).toMatchInlineSnapshot(`
           {
-            "text": "Comment scan stopped at its page cap (10 pages, COMMENT_MAX_PAGES): attachments on later comments are not listed. Pass attachment_ids taken from list_ticket_comments to fetch them.",
+            "text": "Comment scan stopped at its page cap (10 pages, COMMENT_MAX_PAGES): attachments on any later comments are not listed. Pass attachment_ids taken from list_ticket_comments to fetch them.",
             "type": "text",
           }
         `);
@@ -805,7 +805,7 @@ describe('ticket tools', () => {
         endlessComments([]);
         const result = await findTool('get_ticket_attachments').handler({ ticket_id: 1 });
         expect(allTextOf(result)).toMatchInlineSnapshot(
-          `"No attachments found on the first 10 pages of comments of ticket #1. Comment scan stopped at its page cap (10 pages, COMMENT_MAX_PAGES): attachments on later comments are not listed. Pass attachment_ids taken from list_ticket_comments to fetch them."`,
+          `"No attachments found on the first 10 pages of comments of ticket #1. Comment scan stopped at its page cap (10 pages, COMMENT_MAX_PAGES): attachments on any later comments are not listed. Pass attachment_ids taken from list_ticket_comments to fetch them."`,
         );
       });
 

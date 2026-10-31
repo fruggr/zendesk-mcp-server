@@ -1,6 +1,6 @@
 ---
 name: tool-definition-review
-description: Use when a diff touches the MCP tool definitions in src/tools/** (names, titles, descriptions, parameter descriptions, annotations), including from /code-review; when asked to review or improve how a tool describes itself to agents; or when a tool scores low on Glama.
+description: Use when a diff touches src/tools/**, whether a tool definition (name, title, description, parameter descriptions, annotations) or the handler behind it, including from /code-review; when asked to review or improve how a tool describes itself to agents; or when a tool scores low on Glama.
 ---
 
 # Tool definition review
@@ -27,7 +27,8 @@ node -e "import('mcp-tdqs').then(m => console.log(JSON.stringify({tool: m.TOOL_D
 2. **Scope.** Review the tools whose definition changed: the entries that
    differ in `git diff <base> -- tests/integration/tools-list/` (those
    snapshots pin every tool's `tools/list` entry), or the tools named in the
-   request. A new or renamed tool also opens the coherence dimensions for its
+   request. Add the tools whose handler changed with an unchanged definition:
+   check that what the description promises still holds. A new or renamed tool also opens the coherence dimensions for its
    namespace.
 3. **Score each tool in scope** on the six dimensions, 1 to 5, against the
    anchors. Give no credit for text that repeats the name, the schema or the
