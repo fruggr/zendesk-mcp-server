@@ -754,6 +754,67 @@ describe('ticket tools', () => {
       expect(allText).toContain('skipped: max 10 embedded images reached');
     });
 
+    // The comment walk stops at MAX_COMMENT_PAGES; a silent stop would read as a
+    // ticket with fewer attachments than it has.
+    describe('when the comment walk reaches its page cap', () => {
+      const endlessComments = (attachments: object[]) => {
+        let calls = 0;
+        mswServer.use(
+          http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/comments', () => {
+            calls += 1;
+            return HttpResponse.json({
+              comments: [
+                {
+                  id: calls,
+                  body: '',
+                  author_id: 1,
+                  public: true,
+                  created_at: '2026-01-01T00:00:00Z',
+                  attachments: calls === 1 ? attachments : [],
+                },
+              ],
+              meta: { has_more: true, after_cursor: `CURSOR_${calls + 1}` },
+            });
+          }),
+        );
+        return () => calls;
+      };
+      const pdf = {
+        id: 61001,
+        file_name: 'early.pdf',
+        content_url: 'https://testsubdomain.zendesk.com/attachments/token/e/?name=early.pdf',
+        content_type: 'application/pdf',
+        size: 1024,
+        inline: false,
+      };
+
+      it('lists what it read and says later comments were not scanned', async () => {
+        const calls = endlessComments([pdf]);
+        const result = await findTool('get_ticket_attachments').handler({ ticket_id: 1 });
+        expect(calls()).toBe(10);
+        expect(result.content[1]).toMatchInlineSnapshot(`
+          {
+            "text": "Comment scan stopped at its page cap (10 pages, COMMENT_MAX_PAGES): attachments on any later comments are not listed. Pass attachment_ids taken from list_ticket_comments to fetch them.",
+            "type": "text",
+          }
+        `);
+        expect(allTextOf(result)).toContain('early.pdf');
+      });
+
+      it('does not report "no attachments" when the scan was cut short', async () => {
+        endlessComments([]);
+        const result = await findTool('get_ticket_attachments').handler({ ticket_id: 1 });
+        expect(allTextOf(result)).toMatchInlineSnapshot(
+          `"No attachments found on the first 10 pages of comments of ticket #1. Comment scan stopped at its page cap (10 pages, COMMENT_MAX_PAGES): attachments on any later comments are not listed. Pass attachment_ids taken from list_ticket_comments to fetch them."`,
+        );
+      });
+
+      it('adds no notice when the walk ends on its own', async () => {
+        const result = await findTool('get_ticket_attachments').handler({ ticket_id: 1 });
+        expect(allTextOf(result)).not.toContain('page cap');
+      });
+    });
+
     it('paginates through all pages of comments', async () => {
       const page1Attachment = {
         id: 60001,

@@ -66,7 +66,7 @@ How well the tools work together *as a set*. Four dimensions, weighted equally:
 ## How this is enforced (floor + ceiling)
 
 The rubric is ~60 % mechanically-checkable structure and ~40 % judgment, so we
-enforce it in two layers instead of relying on a human catching every thin tool:
+enforce it in layers instead of relying on a human catching every thin tool:
 
 - **The deterministic floor, `tests/unit/tools/tool-quality.test.ts`.** A CI test
   (sibling of `annotations.test.ts`) that iterates every tool and fails, with a
@@ -80,13 +80,24 @@ enforce it in two layers instead of relying on a human catching every thin tool:
   can crater the surface. The failure messages state the intent and point at an
   exemplar tool on purpose: fix by genuinely improving the definition, not by
   padding text to clear the check (padding is caught by the ceiling below).
-- **The judgment ceiling, CodeRabbit (`.coderabbit.yaml`).** The `src/tools/**`
-  review instructions ask CodeRabbit to score each definition against the six
-  dimensions and flag what a static check can't: padded-but-empty descriptions,
-  implicit side effects, unverified claims about Zendesk behavior, and
-  indistinguishable sibling tools. This runs on the PR, off our pipeline.
+- **The `tools/list` gate, `tests/tool-definitions/`.** The same floor read from
+  the client's side, in every mode: Glama's own `mcp-tdqs` lint, plus every
+  property described at any depth (nested ones included), coherent annotations,
+  and no description naming a tool that does not exist.
+  `pnpm tool-definitions:report` prints its findings and the non-blocking leads a
+  reviewer starts from: tools whose description names no other tool, shadow
+  candidates, each tool's size and `inputHash` (the hash Glama's score page
+  shows). What gates and what does not, and why:
+  [`decisions/tool-definition-quality.md`](decisions/tool-definition-quality.md).
+- **The judgment ceiling.** The `tool-definition-review` skill
+  (`.claude/skills/`) scores the tools a diff changes on Glama's anchors and
+  proposes rewrites; `/code-review` applies it to any change under `src/tools/**`
+  (`AGENTS.md`). CodeRabbit (`.coderabbit.yaml`) carries the same rubric on the
+  PR, off our pipeline. Both flag what a static check can't: padded-but-empty
+  descriptions, implicit side effects, unverified claims about Zendesk behavior,
+  and indistinguishable sibling tools.
 
-When you add or change a tool, run `pnpm test` locally; the floor test tells you
+When you add or change a tool, run `pnpm test` locally; the floor tests tell you
 exactly which dimension regressed.
 
 ## No regression on a tool change

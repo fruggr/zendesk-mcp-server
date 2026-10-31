@@ -145,14 +145,17 @@ const buildEmbeddedImageBlocks = async (
 // Zendesk has no endpoint to list a ticket's attachments directly.
 // Attachments are always attached to comments, so the only way to collect
 // them all is to walk through every comment page and extract their attachments.
+// `truncated` when the walk stopped at MAX_COMMENT_PAGES with comments left: the
+// caller must say so, or a cut-short list reads as the whole ticket.
 const fetchAllTicketComments = async (
   subdomain: string,
   token: string,
   ticketId: number,
-): Promise<ZendeskComment[]> => {
+): Promise<{ comments: ZendeskComment[]; truncated: boolean }> => {
   const all: ZendeskComment[] = [];
   let cursor: string | undefined;
   let pages = 0;
+  let truncated = false;
   while (pages < MAX_COMMENT_PAGES) {
     const response = await zendeskGet<{
       comments: ZendeskComment[];
@@ -165,9 +168,12 @@ const fetchAllTicketComments = async (
     pages += 1;
     if (!response.meta?.has_more || !response.meta?.after_cursor) break;
     cursor = response.meta.after_cursor;
+    truncated = pages === MAX_COMMENT_PAGES;
   }
-  return all;
+  return { comments: all, truncated };
 };
+
+const COMMENT_CAP_NOTICE = `Comment scan stopped at its page cap (${MAX_COMMENT_PAGES} pages, COMMENT_MAX_PAGES): attachments on any later comments are not listed. Pass attachment_ids taken from list_ticket_comments to fetch them.`;
 
 // Narrowed rather than passed whole: `users?: T[]` on
 // ZendeskListResponse<ZendeskComment> clashes with the side-load. `next_page` is
@@ -840,6 +846,20 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
     return (max === undefined ? ids : ids.max(max)).optional().describe(description);
   };
 
+  const customFieldEntry = z
+    .object({
+      id: z
+        .number()
+        .int()
+        .describe('Numeric id of the ticket field to set, as listed by list_ticket_fields.'),
+      value: z
+        .unknown()
+        .describe(
+          "Value typed after the field: the option tag (a string) for a dropdown, an array of option tags for a multiselect, true or false for a checkbox, text or a number for a text or numeric field. For any other type (a date, a lookup), follow the type list_ticket_fields reports; it also lists each dropdown's accepted tags.",
+        ),
+    })
+    .strict();
+
   return [
     {
       name: 'get_ticket',
@@ -1120,7 +1140,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'Get Zendesk Ticket Attachments',
       description:
-        'Retrieve ticket attachments. Images are embedded inline; other files are listed as text references.',
+        "Download the files attached to a ticket's comments so you can look at them: images come back embedded inline, other files as text references (file name, id, content type, size, download URL). Use it to see an attached image, or a file's name, size and download URL (only images come back with their content); to learn which files a comment carries, list_ticket_comments already shows their ids. Pass those ids as attachment_ids to fetch only them, or omit it to collect the attachments of the ticket's comments, read up to a page cap (10 pages of 100 comments by default); past it the response says later comments were not scanned, and attachment_ids fetches their files. An image over the per-image size limit or past the embedded-image cap comes back as a reference saying why, and once the response size budget is spent the remaining files are counted as omitted.",
       inputSchema: z.object({
         ticket_id: z
           .number()
@@ -1132,7 +1152,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
           .array(z.number().int())
           .optional()
           .describe(
-            'Attachment IDs to fetch directly (e.g. extracted from a previous list_ticket_comments or get_ticket(include_comments=true) call). When provided, skips the comments fetch entirely. When omitted, all attachments of the ticket are returned.',
+            "Attachment IDs to fetch directly (e.g. extracted from a previous list_ticket_comments or get_ticket(include_comments=true) call). When provided, skips the comments fetch entirely. When omitted, the attachments of the ticket's comments are returned, read up to a page cap: on a very long thread the scan stops there, and the response says so.",
           ),
       }),
       annotations: {
@@ -1148,31 +1168,40 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
         };
         const token = await caller.getToken();
 
-        const attachments =
+        const { attachments, truncated } =
           attachment_ids && attachment_ids.length > 0
-            ? await fetchAttachmentsByIds(subdomain, token, attachment_ids)
-            : (await fetchAllTicketComments(subdomain, token, ticket_id)).flatMap(
-                (c) => c.attachments ?? [],
-              );
+            ? {
+                attachments: await fetchAttachmentsByIds(subdomain, token, attachment_ids),
+                truncated: false,
+              }
+            : await fetchAllTicketComments(subdomain, token, ticket_id).then((walk) => ({
+                attachments: walk.comments.flatMap((c) => c.attachments ?? []),
+                truncated: walk.truncated,
+              }));
 
         if (attachments.length === 0) {
-          return {
-            content: [{ type: 'text', text: `No attachments found on ticket #${ticket_id}.` }],
-          };
+          const text = truncated
+            ? `No attachments found on the first ${MAX_COMMENT_PAGES} pages of comments of ticket #${ticket_id}. ${COMMENT_CAP_NOTICE}`
+            : `No attachments found on ticket #${ticket_id}.`;
+          return { content: [{ type: 'text', text }] };
         }
         const header: ToolTextContent = {
           type: 'text',
           text: `# Attachments for ticket #${ticket_id} (${attachments.length} total)`,
         };
+        // Right after the header, so the response budget can never drop it.
+        const notice: ToolTextContent[] = truncated
+          ? [{ type: 'text', text: COMMENT_CAP_NOTICE }]
+          : [];
         // `+ 1` is the array's opening bracket; blockCost accounts for a trailing
         // separator per element but nothing for the wrapper itself.
         const blocks = await collectAttachmentBlocks(
           subdomain,
           token,
           attachments,
-          blockCost(header) + 1,
+          [header, ...notice].reduce((total, block) => total + blockCost(block), 1),
         );
-        return { content: [header, ...blocks] };
+        return { content: [header, ...notice, ...blocks] };
       },
     },
     {
@@ -1289,7 +1318,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
             'Tags to set on the new ticket. Each tag is a single lowercase token (join multi-word tags with an underscore). Use manage_tags later to add or remove individual tags.',
           ),
         custom_fields: z
-          .array(z.object({ id: z.number().int(), value: z.unknown() }).strict())
+          .array(customFieldEntry)
           .optional()
           .describe(
             'Custom field values as { id, value } pairs (field ids come from your Zendesk admin settings). Call list_ticket_fields first to discover the numeric field ids and, for dropdown/multiselect fields, the exact option values Zendesk accepts.',
@@ -1362,7 +1391,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
             'Replaces the full tag set on the ticket. Use manage_tags for incremental add/remove.',
           ),
         custom_fields: z
-          .array(z.object({ id: z.number().int(), value: z.unknown() }).strict())
+          .array(customFieldEntry)
           .optional()
           .describe(
             'Custom field values as { id, value } pairs (field ids come from your Zendesk admin settings). Call list_ticket_fields first to discover the numeric field ids and, for dropdown/multiselect fields, the exact option values Zendesk accepts.',

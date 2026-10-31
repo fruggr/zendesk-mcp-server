@@ -541,7 +541,7 @@ Total size budget for the content of one tool response. The two caps above bound
 ### `COMMENT_MAX_PAGES`
 **Required:** no · **Default:** `10`
 
-Hard cap on the number of comment pages fetched when collecting a ticket's attachments (raise it for tickets with very long comment threads).
+Hard cap on the number of comment pages fetched when collecting a ticket's attachments (raise it for tickets with very long comment threads). Reaching it does not fail the call: `get_ticket_attachments` lists what it read and says that later comments were not scanned.
 
 ### `TICKET_FIELD_SCAN_MAX_PAGES`
 **Required:** no · **Default:** `10`
