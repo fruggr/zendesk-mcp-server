@@ -17,6 +17,9 @@ CI / build-and-test (vitest + tsc + biome)
 Auto-merge (if the PR is eligible) or manual review
         │
         ▼
+Merge queue: required checks rerun on the PR merged into the latest main
+        │
+        ▼ green
 Squash & merge → commit on main using the PR title
         │
         ▼
@@ -279,13 +282,25 @@ These cannot be versioned; a repository (or org) admin must apply them **once**:
    - Allow squash merging ✓
    - Default to PR title for squash merges ✓ (**critical**: without this, the `fix(security):` prefix is not carried into the squash commit on `main`, and no release is published)
 3. **Settings → Rules → Rulesets**: one ruleset on `main` carrying every rule.
-   Five of them, and re-creating the ruleset means re-creating all five:
+   Six of them, and re-creating the ruleset means re-creating all six:
    - Require a pull request before merging, squash the only allowed method,
-     zero required approvals, conversation resolution required.
-   - Required status checks `build-and-test`, `Changed lines` and `CodeQL`, with
-     "require branches to be up to date" on. (Without the status-check rule,
-     `platformAutomerge` would merge the PR before CI finishes; without the
-     up-to-date policy, a PR behind `main` can auto-merge on stale green checks.)
+     zero required approvals, conversation resolution required (an unresolved
+     CodeRabbit thread then blocks the merge).
+   - Required status checks `build-and-test`, `Changed lines`, `CodeQL` and
+     `CodeRabbit` (expected source: the CodeRabbit app), with "require branches
+     to be up to date" **off**. Without the status-check rule,
+     `platformAutomerge` would merge the PR before CI finishes, or before
+     CodeRabbit has posted its review.
+   - Require merge queue, merge method squash. The queue replaces the
+     up-to-date policy: it builds each PR merged into the current `main` (plus
+     the PRs queued ahead) and reruns the required checks on that commit, so a
+     PR behind `main` never merges on stale checks and nobody has to click
+     "Update branch". Every required check must therefore answer the
+     `merge_group` event, or the queue waits on it until it times out:
+     `ci.yml`, `codeql.yml` and `mutation.yml` do; CodeRabbit posts a passing
+     check on the queue commit without reviewing it again. Gitar is not
+     required until it is shown to report on a queue commit: if it does not,
+     requiring it stalls every merge, Renovate's included.
    - Restrict deletions, and block force pushes.
    - Bypass list: the `fruggr-release-bot` App (point 4), bypass mode "always".
      Not "pull request" — that mode would still force the release commit
@@ -296,9 +311,9 @@ These cannot be versioned; a repository (or org) admin must apply them **once**:
      a classic branch protection rule, which has no bypass list at all: the
      `chore(release)` commit `semantic-release` pushes to `main` gets refused
      with `GH006`, both by the pull-request rule and by the status checks, since
-     `build-and-test` and `Changed lines` only run on `pull_request` and no
-     check can report on a commit the remote just refused. Neither rulesets nor
-     classic protection honour `[skip ci]`; only a bypass actor gets through.
+     `build-and-test` and `Changed lines` only run on `pull_request` and
+     `merge_group`, and no check can report on a commit the remote just
+     refused. Neither rulesets nor classic protection honour `[skip ci]`; only a bypass actor gets through.
 4. **A dedicated GitHub App, `fruggr-release-bot`**, on that bypass list:
    - Repository permissions: Contents write for the push, the tag and the
      release; Issues and Pull requests write for the comments

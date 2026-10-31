@@ -2,6 +2,9 @@ name: CI
 
 on:
   pull_request:
+  # The merge queue tests the PR merged into the latest `main`; a required
+  # check that does not answer this event stalls the queue.
+  merge_group:
 
 permissions:
   contents: read
