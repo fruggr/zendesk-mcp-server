@@ -48,11 +48,14 @@ interface JsonSchemaNode {
   readonly description?: unknown;
   readonly properties?: Readonly<Record<string, unknown>>;
   readonly additionalProperties?: unknown;
+  readonly patternProperties?: Readonly<Record<string, unknown>>;
   readonly items?: unknown;
   readonly prefixItems?: unknown;
   readonly anyOf?: unknown;
   readonly oneOf?: unknown;
   readonly allOf?: unknown;
+  readonly then?: unknown;
+  readonly else?: unknown;
   readonly $defs?: Readonly<Record<string, unknown>>;
 }
 
@@ -71,7 +74,7 @@ interface PropertyAt {
   readonly schema: unknown;
 }
 
-/** Every property at any depth, with its path: `list[].id`, `map{}.id`, `$defs.Name.id`. */
+/** Every property at any depth, with its path: `list[].id`, `map{}.id`, `map{^x-}.id`, `$defs.Name.id`. */
 const propertiesOf = (node: unknown, path = ''): PropertyAt[] => {
   if (!isSchema(node)) return [];
   const own = Object.entries(node.properties ?? {}).flatMap(([key, schema]) => {
@@ -83,9 +86,16 @@ const propertiesOf = (node: unknown, path = ''): PropertyAt[] => {
       (child) => [child, `${path}[]`] as const,
     ),
     ...schemasIn(node.additionalProperties).map((child) => [child, `${path}{}`] as const),
-    ...[...schemasIn(node.anyOf), ...schemasIn(node.oneOf), ...schemasIn(node.allOf)].map(
-      (child) => [child, path] as const,
+    ...Object.entries(node.patternProperties ?? {}).map(
+      ([pattern, child]) => [child, `${path}{${pattern}}`] as const,
     ),
+    ...[
+      ...schemasIn(node.anyOf),
+      ...schemasIn(node.oneOf),
+      ...schemasIn(node.allOf),
+      ...schemasIn(node.then),
+      ...schemasIn(node.else),
+    ].map((child) => [child, path] as const),
     ...Object.entries(node.$defs ?? {}).map(([name, child]) => [child, `$defs.${name}`] as const),
   ].filter((entry): entry is readonly [JsonSchemaNode, string] => isSchema(entry[0]));
   return [...own, ...nested.flatMap(([child, at]) => propertiesOf(child, at))];

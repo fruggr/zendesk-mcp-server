@@ -65,8 +65,11 @@ const fields = await attempt('GET /ticket_fields', () =>
   ),
 );
 
-if (forms?.next_page || fields?.next_page) {
-  console.log('NOTE: a listing has a further page this probe does not read; Q1 may be partial.');
+// "none" is a finding only when both listings were read whole.
+const complete =
+  forms !== undefined && fields !== undefined && !forms.next_page && !fields.next_page;
+if (!complete) {
+  console.log('NOTE: a listing failed or has a further page this probe does not read.');
 }
 
 const numeric = new Map(
@@ -94,5 +97,8 @@ const rows = endUserForms.flatMap((form) =>
       : [];
   }),
 );
-console.log(rows.length ? rows.join('\n') : 'none: no end-user form asks a numeric question');
+const verdict = complete
+  ? 'none: no end-user form asks a numeric question'
+  : 'inconclusive: the scan is incomplete, see the NOTE above';
+console.log(rows.length ? rows.join('\n') : verdict);
 source.dispose();

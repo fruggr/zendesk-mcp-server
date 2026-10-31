@@ -128,13 +128,13 @@ it('exposes the tickets tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "Download the files attached to a ticket's comments so you can look at them: images come back embedded inline, other files as text references (file name, id, content type, size, download URL). Use it to see an attached image, or a file's name, size and download URL (only images come back with their content); to learn which files a comment carries, list_ticket_comments already shows their ids. Pass those ids as attachment_ids to fetch only them, or omit it to retrieve every attachment on the ticket. An image over the per-image size limit or past the embedded-image cap comes back as a reference saying why, and once the response size budget is spent the remaining files are counted as omitted.",
+        "description": "Download the files attached to a ticket's comments so you can look at them: images come back embedded inline, other files as text references (file name, id, content type, size, download URL). Use it to see an attached image, or a file's name, size and download URL (only images come back with their content); to learn which files a comment carries, list_ticket_comments already shows their ids. Pass those ids as attachment_ids to fetch only them, or omit it to collect the attachments of the ticket's comments, read up to a page cap (10 pages of 100 comments by default), so on a longer thread pass attachment_ids instead. An image over the per-image size limit or past the embedded-image cap comes back as a reference saying why, and once the response size budget is spent the remaining files are counted as omitted.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "attachment_ids": {
-              "description": "Attachment IDs to fetch directly (e.g. extracted from a previous list_ticket_comments or get_ticket(include_comments=true) call). When provided, skips the comments fetch entirely. When omitted, all attachments of the ticket are returned.",
+              "description": "Attachment IDs to fetch directly (e.g. extracted from a previous list_ticket_comments or get_ticket(include_comments=true) call). When provided, skips the comments fetch entirely. When omitted, the attachments of the ticket's comments are returned, read up to a page cap, so a very long thread can be cut short without notice.",
               "items": {
                 "maximum": 9007199254740991,
                 "minimum": -9007199254740991,
@@ -227,7 +227,7 @@ it('exposes the tickets tool surface unchanged', async () => {
                     "type": "integer",
                   },
                   "value": {
-                    "description": "Value typed after the field: the option tag (a string) for a dropdown, an array of option tags for a multiselect, true or false for a checkbox, text or a number otherwise. list_ticket_fields lists each dropdown's accepted tags.",
+                    "description": "Value typed after the field: the option tag (a string) for a dropdown, an array of option tags for a multiselect, true or false for a checkbox, text or a number for a text or numeric field. For any other type (a date, a lookup), follow the type list_ticket_fields reports; it also lists each dropdown's accepted tags.",
                   },
                 },
                 "required": [
@@ -321,7 +321,7 @@ it('exposes the tickets tool surface unchanged', async () => {
                     "type": "integer",
                   },
                   "value": {
-                    "description": "Value typed after the field: the option tag (a string) for a dropdown, an array of option tags for a multiselect, true or false for a checkbox, text or a number otherwise. list_ticket_fields lists each dropdown's accepted tags.",
+                    "description": "Value typed after the field: the option tag (a string) for a dropdown, an array of option tags for a multiselect, true or false for a checkbox, text or a number for a text or numeric field. For any other type (a date, a lookup), follow the type list_ticket_fields reports; it also lists each dropdown's accepted tags.",
                   },
                 },
                 "required": [

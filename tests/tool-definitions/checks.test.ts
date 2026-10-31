@@ -57,6 +57,26 @@ describe('undescribedProperties', () => {
     ).toEqual(['map{}.id', 'pair[].a', 'legacy[].b', 'anything', '$defs.Node.c']);
   });
 
+  it('also walks patternProperties and conditional then/else branches', () => {
+    expect(
+      undescribedProperties({
+        properties: {
+          byPattern: {
+            description: 'keys matching a pattern',
+            patternProperties: { '^x-': { properties: { e: {} } } },
+          },
+          conditional: {
+            description: 'depends on kind',
+            if: { properties: { kind: { const: 'a' } } },
+            // biome-ignore lint/suspicious/noThenProperty: JSON Schema keyword under test.
+            then: { properties: { f: {} } },
+            else: { properties: { g: { description: 'g' } } },
+          },
+        },
+      }),
+    ).toEqual(['byPattern{^x-}.e', 'conditional.f']);
+  });
+
   it('has nothing to say about a schema-less tool', () => {
     expect(undescribedProperties(undefined)).toEqual([]);
   });
