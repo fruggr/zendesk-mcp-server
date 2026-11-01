@@ -310,10 +310,11 @@ These cannot be versioned; a repository (or org) admin must apply them **once**:
      rulesets means maintaining two bypass entries. And the rules cannot live in
      a classic branch protection rule, which has no bypass list at all: the
      `chore(release)` commit `semantic-release` pushes to `main` gets refused
-     with `GH006`, both by the pull-request rule and by the status checks, since
-     `build-and-test` and `Changed lines` only run on `pull_request` and
-     `merge_group`, and no check can report on a commit the remote just
-     refused. Neither rulesets nor classic protection honour `[skip ci]`; only a bypass actor gets through.
+     with `GH006`, by the pull-request rule, the merge-queue rule and the status
+     checks, since `build-and-test` and `Changed lines` only run on
+     `pull_request` and `merge_group`, and no check can report on a commit the
+     remote just refused. Neither rulesets nor classic protection honour
+     `[skip ci]`; only a bypass actor gets through.
 4. **A dedicated GitHub App, `fruggr-release-bot`**, on that bypass list:
    - Repository permissions: Contents write for the push, the tag and the
      release; Issues and Pull requests write for the comments

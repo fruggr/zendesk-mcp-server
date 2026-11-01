@@ -52,8 +52,8 @@ jobs:
       # gate's exit 1 and every failure would report green (measured). `HEAD`, not
       # `head.sha`: checkout gives us the merge commit, and the line numbers must
       # match the tree Stryker mutates. Both explained in full in the ADR, §4.
-      # In the merge queue, HEAD is the queue commit and the base is the `main`
-      # it was built on, so the diff also holds PRs queued ahead of this one.
+      # In the merge queue, HEAD is the queue commit and `base_sha` its parent:
+      # `main`, or the queue commit of the PR ahead, so only this PR's lines count.
       - name: Gate the changed lines
         shell: bash
         run: |
