@@ -72,12 +72,13 @@ you need is under your feet, except the HTTP server (next section). Concretely:
 
 ### Two transports, two states: you start HTTP, the human connects it
 
-`.mcp.json` declares two servers, and only one is running when you start:
+`.mcp.json` declares three servers, and only one is running when you start:
 
 | Server | State at launch | What you do |
 | --- | --- | --- |
 | `zendesk-local` (stdio) | started by the session, signed in | call `mcp__zendesk-local__*` directly |
 | `zendesk-local-http` (HTTP, `http://localhost:3000/mcp`) | **declared, not running**: the session reports it as failed to connect | start it, then ask the human to connect it |
+| `zendesk-local-http-admin` (HTTP, `http://localhost:3000/mcp/admin`) | the same server's admin back-office, same state | once it runs, ask the human to connect it too when the plan uses `/mcp/admin` |
 
 A failed `zendesk-local-http` at launch is the expected state, not a blocker.
 When the plan has scenarios on HTTP, this is the one exception to "don't start

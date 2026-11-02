@@ -4,7 +4,7 @@
     "pr": ""
   },
   "includeCoAuthoredBy": false,
-  "enabledMcpjsonServers": ["zendesk-local"],
+  "enabledMcpjsonServers": ["zendesk-local", "zendesk-local-http", "zendesk-local-http-admin"],
   "hooks": {
     "SessionStart": [
       {
