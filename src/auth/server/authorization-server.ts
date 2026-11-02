@@ -148,13 +148,9 @@ export const createAuthorizationServer = (
       } catch (err) {
         // Zendesk revoked the token: invalid_grant sends the client back to
         // sign in, where any other failure would answer a 500.
-        if (
-          err instanceof Error &&
-          err.cause instanceof ZendeskApiError &&
-          err.cause.status === 401
-        ) {
-          throw grantUnavailableError();
-        }
+        // fetchZendeskIdentity wraps every failure in an Error carrying its cause.
+        const { cause } = err as Error;
+        if (cause instanceof ZendeskApiError && cause.status === 401) throw grantUnavailableError();
         throw err;
       }
     },
