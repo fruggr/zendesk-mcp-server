@@ -1,3 +1,17 @@
+## [3.8.0](https://github.com/fruggr/zendesk-mcp-server/compare/v3.7.0...v3.8.0) (2026-11-02)
+
+### Features
+
+* let Zendesk admins customize every assistant from /mcp/admin ([#427](https://github.com/fruggr/zendesk-mcp-server/issues/427)) ([18eea46](https://github.com/fruggr/zendesk-mcp-server/commit/18eea46d33e31a85f556676a460e40d9d444e322)), closes [#44](https://github.com/fruggr/zendesk-mcp-server/issues/44) [#125](https://github.com/fruggr/zendesk-mcp-server/issues/125) [#390](https://github.com/fruggr/zendesk-mcp-server/issues/390)
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Chores
+
+* **deps:** update dependencies ([#426](https://github.com/fruggr/zendesk-mcp-server/issues/426)) ([178d033](https://github.com/fruggr/zendesk-mcp-server/commit/178d0335bd85b81e7c236a81e139951c1b9b5a05))
+</details>
+
 ## [3.7.0](https://github.com/fruggr/zendesk-mcp-server/compare/v3.6.0...v3.7.0) (2026-10-31)
 
 ### Features
