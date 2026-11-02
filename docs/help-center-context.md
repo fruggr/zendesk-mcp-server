@@ -30,8 +30,8 @@ instructions at all.
 
 On HTTP, the instructions Zendesk admins wrote from `/mcp/admin` follow: the
 global ones, then those of each namespace the session exposes. They reach new
-sessions only, and the same back-office serves the admins' prompts and skills
-(`prompts/list`, `skills/list`). The `prompts` capability is always declared,
+sessions only. The same store feeds the prompts and skills `/mcp` sessions
+receive (`prompts/list`, `skills/list`). The `prompts` capability is always declared,
 so a later edit can reach an open session; the resources capability only once a
 skill exists. See [Customizations](customizations.md).
 
