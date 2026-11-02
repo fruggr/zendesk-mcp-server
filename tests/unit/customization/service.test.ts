@@ -141,9 +141,14 @@ describe('createCustomizationService', () => {
       },
     };
     const service = await createCustomizationService(backend);
+    const listener = vi.fn();
+    service.onChange(listener);
     await expect(
-      service.edit({ kind: 'instructions', scope: 'global', text: 'x' }, ADA),
+      service.edit({ kind: 'skill', name: 'lexicon', text: SKILL }, ADA),
     ).rejects.toThrow('disk full');
-    expect(service.current().instructions.get('global')?.text).toBe('x');
+    // The store, the skill catalog and the open sessions all follow what was written.
+    expect(service.current().skills.has('lexicon')).toBe(true);
+    expect(service.skills.entries.map((entry) => entry.uri)).toEqual(['skill://lexicon/SKILL.md']);
+    expect(listener).toHaveBeenCalledTimes(1);
   });
 });
