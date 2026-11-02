@@ -7,6 +7,7 @@ import { requestedScope } from '../oauth-scopes';
 import { generateCodeChallenge, generateCodeVerifier } from '../pkce';
 import { renderConsentPage, renderErrorPage } from './consent';
 import { createExpiringMap } from './expiring-map';
+import { ADMIN_ONLY_MESSAGE } from './provider';
 import type { SealedCollection } from './store';
 import { canSkipConsent } from './trusted-clients';
 import {
@@ -19,6 +20,8 @@ import {
 } from './upstream';
 import type { ZendeskGrants } from './zendesk-grant';
 
+const ADMIN_ROLE = 'admin';
+
 // Pending state lives for one sign-in at most: the interaction's own lifetime.
 const PENDING_TTL_MS = 10 * 60 * 1000;
 // A remembered consent is asked for again after this long, or as soon as the
@@ -29,6 +32,8 @@ export interface InteractionDeps {
   readonly provider: Provider;
   readonly upstream: ZendeskUpstream;
   readonly issuer: string;
+  /** The `/mcp/admin` back-office: only a Zendesk admin may sign in for it. */
+  readonly adminResource: string;
   readonly readOnly: boolean;
   readonly zendeskGrants: ZendeskGrants;
   readonly consentMemory: SealedCollection<true>;
@@ -83,6 +88,10 @@ export const createInteractionRoutes = (deps: InteractionDeps) => {
   const upstreamTokens = createExpiringMap<ZendeskTokenSet>();
 
   type Details = Awaited<ReturnType<Provider['interactionDetails']>>;
+
+  // `resource` may repeat (RFC 8707): asking for the back-office among others is asking for it.
+  const requestsAdmin = (resource: unknown): boolean =>
+    (Array.isArray(resource) ? resource : [resource]).includes(deps.adminResource);
 
   const finish = (req: IncomingMessage, res: ServerResponse, result: Record<string, unknown>) =>
     provider.interactionFinished(req, res, result, { mergeWithLastSubmission: true });
@@ -198,6 +207,10 @@ export const createInteractionRoutes = (deps: InteractionDeps) => {
         logger,
       );
       const identity = await fetchZendeskIdentity(upstream, tokens.accessToken);
+      if (requestsAdmin(details.params['resource']) && identity.role !== ADMIN_ROLE) {
+        logger.info('oauth_admin_sign_in_refused', { role: identity.role ?? 'unknown' });
+        return deny(req, res, ADMIN_ONLY_MESSAGE);
+      }
       const accountId = `zendesk:${identity.id}`;
       upstreamTokens.set(
         `${accountId}|${String(details.params['client_id'])}`,

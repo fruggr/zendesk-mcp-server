@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import {
   type NodeIncomingMessageLike,
   type NodeMcpRequestHandler,
@@ -23,7 +25,12 @@ import {
   type VerifiedAccessToken,
 } from '../auth/server/authorization-server';
 import type { Fetch } from '../auth/server/trusted-clients';
+import { configDir } from '../auth/token-persistence';
 import type { Config } from '../config';
+import { createAdminServer, createAdminTools, loadSetupSkill } from '../customization/admin';
+import { openCustomizationBackend } from '../customization/backend';
+import { buildCustomInstructions, serveCustomizations } from '../customization/serve';
+import { createCustomizationService } from '../customization/service';
 import {
   createServerCaches,
   defaultServerFactory,
@@ -194,6 +201,7 @@ const SPACES = / +/;
 export const authenticate = async (
   request: IncomingMessage,
   as: Pick<AuthorizationServer, 'resource' | 'verifyAccessToken'>,
+  resource: string = as.resource,
 ): Promise<VerifiedAccessToken | undefined> => {
   const header = request.headers['authorization'];
   const verifier = {
@@ -215,7 +223,7 @@ export const authenticate = async (
     const normalized = typeof header === 'string' ? header.replace(SPACES, ' ') : undefined;
     const info = await verifyBearerToken(normalized, {
       verifier,
-      expectedResource: new URL(as.resource),
+      expectedResource: new URL(resource),
     });
     return info.extra?.['verified'] as VerifiedAccessToken;
   } catch {
@@ -230,6 +238,14 @@ const PROTECTED_RESOURCE_PATHS = [
   '/.well-known/oauth-protected-resource/mcp',
   '/.well-known/oauth-protected-resource',
 ];
+const ADMIN_PROTECTED_RESOURCE_PATH = '/.well-known/oauth-protected-resource/mcp/admin';
+
+/**
+ * `main` is `/mcp`, the Zendesk tools; `admin` is `/mcp/admin`, the
+ * back-office where Zendesk admins customize `main`. Each is its own OAuth
+ * resource, so a token for one never opens the other.
+ */
+type Surface = 'main' | 'admin';
 
 const sendJson = (res: ServerResponse, status: number, body: unknown): void => {
   res.writeHead(status, { 'Content-Type': 'application/json' });
@@ -261,10 +277,12 @@ const failRequest = (res: ServerResponse, err: unknown): void => {
   if (!res.writableEnded) res.end();
 };
 
-const sendUnauthorized = (res: ServerResponse, issuer: string): void => {
+const sendUnauthorized = (res: ServerResponse, issuer: string, surface: Surface): void => {
   // RFC 6750 + MCP 2025-06-18: the WWW-Authenticate header points the client
   // at the resource metadata that bootstraps the OAuth discovery flow.
-  const wwwAuthenticate = `Bearer resource_metadata="${issuer}${PROTECTED_RESOURCE_PATHS[0]}", error="invalid_token", error_description="${MISSING_BEARER_MESSAGE}"`;
+  const metadataPath =
+    surface === 'admin' ? ADMIN_PROTECTED_RESOURCE_PATH : PROTECTED_RESOURCE_PATHS[0];
+  const wwwAuthenticate = `Bearer resource_metadata="${issuer}${metadataPath}", error="invalid_token", error_description="${MISSING_BEARER_MESSAGE}"`;
   sendJsonRpcError(res, 401, -32000, MISSING_BEARER_MESSAGE, {
     'WWW-Authenticate': wwwAuthenticate,
   });
@@ -280,6 +298,8 @@ interface Session {
   auth: { zendeskToken: string; grantId: string };
   /** The signed-in user the session was opened for: another user's token cannot drive it. */
   subject: string;
+  /** The endpoint the session was opened on: the other one cannot drive it. */
+  surface: Surface;
   /** Whether the session serves write tools: a token without `write` cannot drive it. */
   canWrite: boolean;
   /** Epoch ms of the last request routed to this session (idle eviction). */
@@ -421,6 +441,15 @@ export const startHttpTransport = async (
   // Secret and store first: a bad secret or store stops startup before the
   // port is bound.
   const buildAuthorizationServer = await prepareAuthorizationServer(config, logger);
+  // The admins' customizations, read once: every server is built from memory.
+  const customizations = await createCustomizationService(
+    openCustomizationBackend(
+      config.customizationStore ?? pathToFileURL(join(configDir(), 'customizations')).href,
+    ),
+    logger,
+  );
+  const setupSkill = await loadSetupSkill();
+  const adminTools = createAdminTools({ config, service: customizations });
   let authorizationServer: AuthorizationServer | undefined;
   const sessions = new Map<string, Session>();
   // One SLA state for every session: keys carry the Zendesk user id, so users
@@ -456,9 +485,10 @@ export const startHttpTransport = async (
     sessionId: string,
     token: VerifiedAccessToken,
     body: unknown,
+    surface: Surface,
   ): Promise<boolean> => {
     const session = sessions.get(sessionId);
-    if (!session || session.subject !== token.subject) return false;
+    if (!session || session.subject !== token.subject || session.surface !== surface) return false;
     if (session.canWrite && !token.canWrite) return false;
 
     session.auth.zendeskToken = token.zendeskAccessToken;
@@ -468,12 +498,36 @@ export const startHttpTransport = async (
     return true;
   };
 
+  // One server for `surface`: the Zendesk toolset with the admins'
+  // customizations on `/mcp`, the back-office on `/mcp/admin`. `live` for a
+  // server that outlives an edit (a 2025 session).
+  const buildServer = (
+    surface: Surface,
+    params: Parameters<ServerFactory>[0],
+    live: boolean,
+  ): McpServer =>
+    surface === 'admin'
+      ? createAdminServer({
+          env: { config, service: customizations },
+          tools: adminTools,
+          setupSkill,
+          caller: { getToken: params.getToken },
+          requestStateCodec: params.requestStateCodec,
+          onUnauthorized: params.onUnauthorized,
+        })
+      : serverFactory({
+          ...params,
+          extraInstructions: buildCustomInstructions(customizations.current(), params.config),
+          decorate: (server) => serveCustomizations(server, customizations, { live }),
+        });
+
   const openSession = async (
     req: IncomingMessage,
     res: ServerResponse,
     body: unknown,
     token: VerifiedAccessToken,
     as: AuthorizationServer,
+    surface: Surface,
   ): Promise<void> => {
     // New session: the Zendesk token is held in a per-session mutable cell read
     // by the per-session McpServer's token source — no async-local storage
@@ -481,21 +535,25 @@ export const startHttpTransport = async (
     // ends the grant, so the client's next request re-runs authorization.
     const auth = { zendeskToken: token.zendeskAccessToken, grantId: token.grantId };
     const sessionConfig = effectiveConfig(token);
-    const server: McpServer = serverFactory({
-      config: sessionConfig,
-      getToken: () => auth.zendeskToken,
-      logger,
-      onUnauthorized: () => void as.revokeGrant(auth.grantId),
-      tools,
-      slaRuntime: sla.runtime,
-      requestStateCodec: createRequestStateCodec({
-        key: as.requestStateKey,
-        principal: () => auth.grantId,
-      }),
-      notifyResourceUpdated: (uri) => {
-        void server.server.sendResourceUpdated({ uri }).catch(() => undefined);
+    const server: McpServer = buildServer(
+      surface,
+      {
+        config: sessionConfig,
+        getToken: () => auth.zendeskToken,
+        logger,
+        onUnauthorized: () => void as.revokeGrant(auth.grantId),
+        tools,
+        slaRuntime: sla.runtime,
+        requestStateCodec: createRequestStateCodec({
+          key: as.requestStateKey,
+          principal: () => auth.grantId,
+        }),
+        notifyResourceUpdated: (uri) => {
+          void server.server.sendResourceUpdated({ uri }).catch(() => undefined);
+        },
       },
-    });
+      true,
+    );
     const transport = new NodeStreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
       onsessioninitialized: (newId) => {
@@ -503,6 +561,7 @@ export const startHttpTransport = async (
           transport,
           auth,
           subject: token.subject,
+          surface,
           canWrite: !sessionConfig.readOnly,
           lastActivityAt: Date.now(),
           close: async () => {
@@ -522,7 +581,11 @@ export const startHttpTransport = async (
   // A grant's first 2026-07-28 request: the handler (and its listen bus) and
   // the caches every later request of the grant reuses. Each
   // request still gets a fresh server from the factory.
-  const createGrantEntry = (token: VerifiedAccessToken, as: AuthorizationServer): GrantEntry => {
+  const createGrantEntry = (
+    token: VerifiedAccessToken,
+    as: AuthorizationServer,
+    surface: Surface,
+  ): GrantEntry => {
     const { grantId } = token;
     const auth = { zendeskToken: token.zendeskAccessToken };
     const getToken = (): string => auth.zendeskToken;
@@ -543,18 +606,22 @@ export const startHttpTransport = async (
         const verified = authInfo?.extra?.['verified'] as VerifiedAccessToken | undefined;
         // Unreachable: the transport hands authInfo to every request it routes here.
         if (!verified) throw new Error('2026-07-28 request without a verified token');
-        return serverFactory({
-          config: effectiveConfig(verified),
-          getToken,
-          logger,
-          onUnauthorized,
-          caches,
-          tools,
-          requestStateCodec,
-          slaRuntime: sla.runtime,
-          alertPolling: 'grant',
-          notifyResourceUpdated: (uri) => handler.notify.resourceUpdated(uri),
-        });
+        return buildServer(
+          surface,
+          {
+            config: effectiveConfig(verified),
+            getToken,
+            logger,
+            onUnauthorized,
+            caches,
+            tools,
+            requestStateCodec,
+            slaRuntime: sla.runtime,
+            alertPolling: 'grant',
+            notifyResourceUpdated: (uri) => handler.notify.resourceUpdated(uri),
+          },
+          false,
+        );
       },
       {
         legacy: 'reject',
@@ -562,6 +629,11 @@ export const startHttpTransport = async (
       },
     );
     const listens = createListenFeed();
+    // Its servers last one request: the grant's listen streams hear the edits.
+    const stopCustomizations = customizations.onChange(() => {
+      handler.notify.promptsChanged();
+      handler.notify.resourcesChanged();
+    });
     const stopAlerts = watchGrantAlerts({
       config,
       getToken,
@@ -579,6 +651,7 @@ export const startHttpTransport = async (
       listens,
       handle: toNodeHandler(handler),
       close: () => {
+        stopCustomizations();
         stopAlerts();
         listens.closeAll();
         return handler.close();
@@ -593,11 +666,14 @@ export const startHttpTransport = async (
     body: unknown,
     token: VerifiedAccessToken,
     as: AuthorizationServer,
+    surface: Surface,
   ): Promise<void> => {
-    const entry = grants.acquire(token.grantId, token.subject, () => createGrantEntry(token, as));
+    // Keyed by surface too: one grant may hold both resources.
+    const key = `${surface}:${token.grantId}`;
+    const entry = grants.acquire(key, token.subject, () => createGrantEntry(token, as, surface));
     // A grant belongs to one subject; another one presenting it is refused.
     if (!entry) {
-      sendUnauthorized(res, as.issuer);
+      sendUnauthorized(res, as.issuer, surface);
       return;
     }
     entry.auth.zendeskToken = token.zendeskAccessToken;
@@ -624,7 +700,7 @@ export const startHttpTransport = async (
       await entry.handle(request, res, body);
     } finally {
       if (counted) entry.inFlight -= 1;
-      if (entry.revoked && entry.inFlight === 0) await grants.close(token.grantId, entry);
+      if (entry.revoked && entry.inFlight === 0) await grants.close(key, entry);
     }
   };
 
@@ -635,11 +711,12 @@ export const startHttpTransport = async (
     body: unknown,
     token: VerifiedAccessToken,
     as: AuthorizationServer,
+    surface: Surface,
   ): Promise<void> => {
     const sessionId =
       typeof req.headers['mcp-session-id'] === 'string' ? req.headers['mcp-session-id'] : undefined;
 
-    if (sessionId && (await dispatchToSession(req, res, sessionId, token, body))) return;
+    if (sessionId && (await dispatchToSession(req, res, sessionId, token, body, surface))) return;
 
     if (req.method !== 'POST') {
       // Non-POST without a session ID can't initialize a new session.
@@ -647,22 +724,23 @@ export const startHttpTransport = async (
       return;
     }
 
-    await openSession(req, res, body, token, as);
+    await openSession(req, res, body, token, as, surface);
   };
 
   const handleMcpRequest = async (
     req: IncomingMessage,
     res: ServerResponse,
     as: AuthorizationServer,
+    surface: Surface,
   ): Promise<void> => {
     // MCP 2025-06-18: the Authorization header is validated on EVERY request,
     // not only at session initialization — a session id alone is not a
     // credential. Only a token we issued for this resource is accepted (no
     // passthrough); anything else gets a 401 + WWW-Authenticate that
     // bootstraps the OAuth flow on the client side.
-    const token = await authenticate(req, as);
+    const token = await authenticate(req, as, surface === 'admin' ? as.adminResource : as.resource);
     if (!token) {
-      sendUnauthorized(res, as.issuer);
+      sendUnauthorized(res, as.issuer, surface);
       return;
     }
 
@@ -683,11 +761,11 @@ export const startHttpTransport = async (
       body !== undefined &&
       !(await isLegacyRequest(await toWebRequest(asNodeRequest(req), body), body));
     if (modern) {
-      await serveModern(req, res, body, token, as);
+      await serveModern(req, res, body, token, as, surface);
       return;
     }
 
-    await serveLegacy(req, res, body, token, as);
+    await serveLegacy(req, res, body, token, as, surface);
   };
 
   const route = async (
@@ -700,12 +778,20 @@ export const startHttpTransport = async (
       sendJson(res, 200, as.protectedResourceMetadata);
       return;
     }
+    if (req.method === 'GET' && url.pathname === ADMIN_PROTECTED_RESOURCE_PATH) {
+      sendJson(res, 200, as.adminProtectedResourceMetadata);
+      return;
+    }
     if (req.method === 'GET' && url.pathname === '/healthz') {
       sendJson(res, 200, { status: 'ok', subdomain: config.subdomain });
       return;
     }
     if (url.pathname === '/mcp') {
-      await handleMcpRequest(req, res, as);
+      await handleMcpRequest(req, res, as, 'main');
+      return;
+    }
+    if (url.pathname === '/mcp/admin') {
+      await handleMcpRequest(req, res, as, 'admin');
       return;
     }
     // Everything else is the authorization server: discovery, /auth, /token,

@@ -161,6 +161,7 @@ const build = (overrides: Partial<InteractionDeps> = {}) => {
     provider,
     upstream: { subdomain: 'testsubdomain', clientId: 'testsubdomain_zendesk' },
     issuer: ISSUER,
+    adminResource: `${ISSUER}/mcp/admin`,
     readOnly: false,
     zendeskGrants: {
       save: async (grantId, tokens) => {
@@ -179,9 +180,9 @@ const build = (overrides: Partial<InteractionDeps> = {}) => {
 
 const at = (path: string) => new URL(path, ISSUER);
 
-const loginPrompt = (clientId: string): Details => ({
+const loginPrompt = (clientId: string, resource?: unknown): Details => ({
   prompt: { name: 'login', details: {} },
-  params: { client_id: clientId },
+  params: { client_id: clientId, ...(resource === undefined ? {} : { resource }) },
 });
 
 const consentPrompt = (clientId: string, redirectUri: string, details = {}): Details => ({
@@ -210,8 +211,9 @@ const signIn = async (
   routes: ReturnType<typeof build>['routes'],
   uid: string,
   clientId: string,
+  resource?: unknown,
 ) => {
-  fake.details = loginPrompt(clientId);
+  fake.details = loginPrompt(clientId, resource);
   const start = await get(routes, `/interaction/${uid}`);
   const zendesk = await fetch(start.headers['Location'] ?? '', { redirect: 'manual' });
   const hop = fakeRes();
@@ -312,6 +314,47 @@ describe('createInteractionRoutes', () => {
       expect(zendesk.state.tokenRequests[0]?.get('redirect_uri')).toBe(
         'https://mcp.example.com/oauth/callback',
       );
+    });
+
+    describe('for the /mcp/admin back-office', () => {
+      const ADMIN = `${ISSUER}/mcp/admin`;
+      const refusal = {
+        error: 'access_denied',
+        error_description:
+          'This connector is reserved for Zendesk administrators, and your Zendesk role is not admin.',
+      };
+
+      it('refuses a user whose Zendesk role is not admin, and logs the role', async () => {
+        mswServer.use(...createZendeskOAuthMock({ role: 'agent' }).handlers);
+        const { routes, events } = build();
+        await signIn(routes, 'uid-1', DCR, ADMIN);
+        expect(fake.finished.map(([result]) => result)).toEqual([refusal]);
+        expect(events).toContainEqual(['info', 'oauth_admin_sign_in_refused', { role: 'agent' }]);
+      });
+
+      it('refuses them when the back-office is one of several resources asked for', async () => {
+        mswServer.use(...createZendeskOAuthMock({ role: 'end-user' }).handlers);
+        const { routes } = build();
+        await signIn(routes, 'uid-1', DCR, [RESOURCE, ADMIN]);
+        expect(fake.finished.map(([result]) => result)).toEqual([refusal]);
+      });
+
+      it('signs an admin in', async () => {
+        const { routes } = build();
+        await signIn(routes, 'uid-1', DCR, ADMIN);
+        expect(fake.finished.map(([result]) => result)).toEqual([
+          { login: { accountId: ACCOUNT } },
+        ]);
+      });
+
+      it('leaves /mcp open to every role', async () => {
+        mswServer.use(...createZendeskOAuthMock({ role: 'agent' }).handlers);
+        const { routes } = build();
+        await signIn(routes, 'uid-1', DCR, RESOURCE);
+        expect(fake.finished.map(([result]) => result)).toEqual([
+          { login: { accountId: ACCOUNT } },
+        ]);
+      });
     });
 
     it('refuses a callback without a code, or one no login step started', async () => {

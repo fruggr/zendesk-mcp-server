@@ -41,7 +41,8 @@ COPY --from=build /src/dist ./dist
 COPY --from=build --chown=1000:1000 /data /data
 ENV NODE_ENV=production \
     TRANSPORT=http \
-    OAUTH_STORE=file:///data/oauth-store.json
+    OAUTH_STORE=file:///data/oauth-store.json \
+    CUSTOMIZATION_STORE=file:///data/customizations
 USER 1000:1000
 EXPOSE 3000
 VOLUME ["/data"]

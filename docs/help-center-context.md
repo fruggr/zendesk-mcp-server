@@ -28,6 +28,12 @@ too, otherwise the thresholds apply to everyone. That line stays under
 there); with neither Help Center context nor SLA alerts, there are no
 instructions at all.
 
+On HTTP, the instructions Zendesk admins wrote from `/mcp/admin` follow: the
+global ones, then those of each namespace the session exposes. They reach new
+sessions only, and the same back-office serves the admins' prompts and skills
+(`prompts/list`, `skills/list`); a server with none of them keeps its surface
+unchanged. See [Customizations](customizations.md).
+
 ## `zendesk-sla://alerts/...` (SLA alert resources)
 
 Active wherever `list_sla_alerts` is exposed; read with the caller's token and

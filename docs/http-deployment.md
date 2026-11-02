@@ -78,8 +78,9 @@ docker run --read-only --cap-drop ALL --security-opt no-new-privileges \
 ```
 
 - **`/data` is the only writable path.** The grant store defaults to
-  `file:///data/oauth-store.json` (`OAUTH_STORE`), so mount a persistent volume
-  there. The root filesystem can stay read-only.
+  `file:///data/oauth-store.json` (`OAUTH_STORE`) and the admins'
+  customizations to `file:///data/customizations` (`CUSTOMIZATION_STORE`), so
+  mount a persistent volume there. The root filesystem can stay read-only.
 - **The secret comes from the environment.** It never lives on `/data`, next to
   the store (see [Master secret and grant store](#master-secret-and-grant-store)).
   Without one, the container stops at startup with an error saying so, rather
@@ -99,6 +100,15 @@ cosign verify ghcr.io/fruggr/zendesk-mcp-server:3 \
   --certificate-identity-regexp '^https://github.com/fruggr/zendesk-mcp-server/' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
+
+## The admin back-office: `/mcp/admin`
+
+The same server answers a second endpoint, `/mcp/admin`, where Zendesk admins
+write the instructions, prompts and skills every `/mcp` session receives. Users
+add it as a second connector; it is its own OAuth resource, so its tokens never
+open `/mcp` and the other way round. Only a user whose Zendesk role is `admin`
+can sign in to it, and the role is checked again at each token refresh and on
+each call. What it serves and how to use it: [Customizations](customizations.md).
 
 ## Master secret and grant store
 

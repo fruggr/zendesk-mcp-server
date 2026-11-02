@@ -15,7 +15,7 @@ import { ACCESS_TOKEN_TTL_S, buildProvider } from './provider';
 import { resolveMasterSecret } from './secret';
 import { createAdapterFactory, createSealedCollection, openStore } from './store';
 import { type Fetch, trustedClientSet } from './trusted-clients';
-import type { ZendeskTokenSet } from './upstream';
+import { fetchZendeskIdentity, type ZendeskTokenSet } from './upstream';
 import { createZendeskGrants, ZENDESK_REFRESH_MARGIN_MS } from './zendesk-grant';
 
 export interface VerifiedAccessToken {
@@ -42,6 +42,9 @@ export interface AuthorizationServer {
   readonly issuer: string;
   readonly resource: string;
   readonly protectedResourceMetadata: ProtectedResourceMetadata;
+  /** The `/mcp/admin` back-office: its own resource, so its tokens never open `/mcp`. */
+  readonly adminResource: string;
+  readonly adminProtectedResourceMetadata: ProtectedResourceMetadata;
   /** Every route that is neither `/mcp`, the protected-resource metadata nor `/healthz`. */
   handle(req: IncomingMessage, res: ServerResponse): Promise<void>;
   /** Our JWE, decrypted and checked (issuer, revocation), or `undefined`; audience and expiry are the caller's to check. */
@@ -101,6 +104,7 @@ export const createAuthorizationServer = (
   const { config, issuer, ring, persistent } = options;
   const logger = options.logger ?? silentLogger;
   const resource = `${issuer}/mcp`;
+  const adminResource = `${issuer}/mcp/admin`;
   const upstream = { subdomain: config.subdomain, clientId: config.oauthClientId };
 
   const zendeskGrants = createZendeskGrants({
@@ -130,6 +134,9 @@ export const createAuthorizationServer = (
   const provider = buildProvider({
     issuer,
     resource,
+    adminResource,
+    isZendeskAdmin: async (zendeskAccessToken) =>
+      (await fetchZendeskIdentity(upstream, zendeskAccessToken)).role === 'admin',
     ring,
     adapter: createAdapterFactory({ persistent }, ring),
     zendeskGrants,
@@ -164,6 +171,7 @@ export const createAuthorizationServer = (
     provider,
     upstream,
     issuer,
+    adminResource,
     readOnly: config.readOnly,
     zendeskGrants,
     consentMemory: createSealedCollection<true>(persistent, 'Consent', ring),
@@ -183,16 +191,20 @@ export const createAuthorizationServer = (
     return asVerified(JSON.parse(decoder.decode(plaintext)) as AccessTokenClaims, issuer);
   };
 
+  const metadataOf = (of: string): ProtectedResourceMetadata => ({
+    resource: of,
+    authorization_servers: [issuer],
+    bearer_methods_supported: ['header'],
+    scopes_supported: supportedScopes(config.readOnly),
+  });
+
   return {
     issuer,
     resource,
+    adminResource,
     requestStateKey: ring[0].requestState,
-    protectedResourceMetadata: {
-      resource,
-      authorization_servers: [issuer],
-      bearer_methods_supported: ['header'],
-      scopes_supported: supportedScopes(config.readOnly),
-    },
+    protectedResourceMetadata: metadataOf(resource),
+    adminProtectedResourceMetadata: metadataOf(adminResource),
     handle: async (req, res) => {
       // Stryker disable next-line StringLiteral: a request reaching a node:http server always has req.url.
       const url = new URL(req.url ?? '/', issuer);

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { createAdminTools } from '../../../src/customization/admin';
+import { createMemoryBackend } from '../../../src/customization/backend';
+import { createCustomizationService } from '../../../src/customization/service';
 import { createAllTools, type ToolContext } from '../../../src/tools';
+import { makeConfig } from '../../integration/harness';
 import { testToolContext } from '../../tool-context';
 
 // Deterministic floor of the Glama Tool Definition Quality rubric
@@ -12,7 +16,14 @@ const ctx: ToolContext = testToolContext({
   subdomain: 'testsubdomain',
   getToken: () => 'test-token',
 });
-const tools = createAllTools(ctx);
+// The /mcp/admin back-office tools are held to the same floor.
+const tools = [
+  ...createAllTools(ctx),
+  ...createAdminTools({
+    config: makeConfig(),
+    service: await createCustomizationService(createMemoryBackend()),
+  }),
+];
 
 // Exemplars already in the tree that clear the bar — point fixers at these.
 const DOC = 'docs/mcp-metadata.md';

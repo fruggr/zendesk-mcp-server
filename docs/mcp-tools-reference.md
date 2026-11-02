@@ -145,6 +145,19 @@ Zendesk writes", and this namespace writes none.
 
 </details>
 
+<details>
+<summary><strong>Admin back-office</strong> (<code>/mcp/admin</code> only, HTTP, Zendesk admins)</summary>
+
+Served only on the [`/mcp/admin`](customizations.md) endpoint, never on `/mcp`
+and never over stdio, whatever `--mode`, `--namespace` or `--tool` say. It
+writes this server's own store, never Zendesk, so `--read-only` keeps it.
+
+| Tool | Description | Mode |
+|------|-------------|------|
+| `manage_customizations` | List, read, set or delete the instructions, prompts and skills every `/mcp` session receives, and read the built-in context (instructions, Help Center topology) not to repeat; the caller's Zendesk role is checked on every call | local write |
+
+</details>
+
 ---
 
 ← Back to the [README](../README.md).
