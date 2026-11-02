@@ -49,6 +49,9 @@ https://mcp.example.com/mcp/admin
   `/mcp`, and a `/mcp` token never opens it.
 - **Nothing else there.** It serves the `manage_customizations` tool and the
   `setup` prompt and skill, none of the Zendesk tools.
+- **Writing needs write.** A server started with `--read-only`, or a sign-in
+  granted only the `read` scope, gets no `manage_customizations`: what it would
+  change reaches every user.
 
 Start with the **`setup`** prompt (or skill). It reads what already exists,
 helps choose between instructions, prompts and skills, and checks that nothing

@@ -171,10 +171,9 @@ export const buildProvider = (options: ProviderOptions): Provider => {
         const zd = await options.zendeskGrants.accessToken(token.grantId);
         // Re-asked at every mint, refresh included: a demoted admin loses the
         // back-office within one access-token lifetime.
-        if (
-          token.resourceServer?.audience === options.adminResource &&
-          !(await options.isZendeskAdmin(zd))
-        ) {
+        // Stryker disable next-line OptionalChaining: with resource indicators on, every access token minted here has a resource server.
+        const audience = token.resourceServer?.audience;
+        if (audience === options.adminResource && !(await options.isZendeskAdmin(zd))) {
           throw new errors.AccessDenied(ADMIN_ONLY_MESSAGE);
         }
         return { zd, gid: token.grantId };

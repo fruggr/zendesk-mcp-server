@@ -43,7 +43,7 @@ describe('manage_customizations', () => {
     expect(createAdminTools({ config, service }).map((t) => t.name)).toEqual([
       'manage_customizations',
     ]);
-    expect(tool.readOnly).toBe(true);
+    expect(tool.readOnly).toBe(false);
     expect(tool.annotations).toEqual({
       readOnlyHint: false,
       destructiveHint: true,
@@ -236,10 +236,16 @@ describe('manage_customizations', () => {
       expect(
         await call({ action: 'set', kind: 'skill', name: 'lexicon', path: 'a.md', content: 'a' }),
       ).toMatch(/^Saved skill "lexicon" \(a\.md\)\./);
-      expect(await call({ action: 'delete', kind: 'skill', name: 'lexicon' })).toMatch(
-        /^Deleted skill "lexicon"\./,
+      expect(await call({ action: 'delete', kind: 'skill', name: 'lexicon', path: 'a.md' })).toBe(
+        'Deleted skill "lexicon" (a.md). Clients supporting MCP skills get it as skill://lexicon/SKILL.md; the others get the prompt "lexicon", carrying SKILL.md only.',
+      );
+      expect(await call({ action: 'delete', kind: 'skill', name: 'lexicon' })).toBe(
+        'Deleted skill "lexicon". It leaves the prompt menu of clients that refresh their prompt list.',
       );
       expect(service.current().skills.size).toBe(0);
+      expect(await call({ action: 'delete', kind: 'prompt', name: 'draft-reply' })).toBe(
+        'Deleted prompt "draft-reply". It leaves the prompt menu of clients that refresh their prompt list.',
+      );
     });
 
     it('needs the content, and a description for a prompt', async () => {
@@ -276,6 +282,7 @@ describe('createAdminServer', () => {
     const onUnauthorized = vi.fn();
     const server = createAdminServer({
       env: { config, service },
+      readOnly: false,
       tools: createAdminTools({ config, service }),
       setupSkill: await loadSetupSkill(),
       caller,
@@ -305,6 +312,25 @@ describe('createAdminServer', () => {
     mswServer.use(http.get(ME, () => new HttpResponse('boom', { status: 500 })));
     await client.callTool({ name: 'manage_customizations', arguments: { action: 'list' } });
     expect(onUnauthorized).toHaveBeenCalledTimes(1);
+    await client.close();
+    await server.close();
+  });
+
+  it('leaves the write tool out of a read-only server, keeping the setup guide', async () => {
+    const server = createAdminServer({
+      env: { config, service },
+      readOnly: true,
+      tools: createAdminTools({ config, service }),
+      setupSkill: await loadSetupSkill(),
+      caller,
+      requestStateCodec: createRequestStateCodec({}),
+    });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    const client = new Client({ name: 't', version: '0' });
+    await client.connect(clientTransport);
+    expect(client.getServerCapabilities()?.tools).toBeUndefined();
+    expect((await client.listPrompts()).prompts.map((p) => p.name)).toEqual(['setup']);
     await client.close();
     await server.close();
   });

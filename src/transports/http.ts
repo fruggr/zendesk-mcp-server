@@ -509,6 +509,7 @@ export const startHttpTransport = async (
     surface === 'admin'
       ? createAdminServer({
           env: { config, service: customizations },
+          readOnly: params.config.readOnly,
           tools: adminTools,
           setupSkill,
           caller: { getToken: params.getToken },
@@ -576,6 +577,9 @@ export const startHttpTransport = async (
     };
     await server.connect(transport);
     await transport.handleRequest(req, res, body);
+    // Not an initialize (a stale session id, typically): no session holds this
+    // server, so close it, or the customizations' edit listener keeps it alive.
+    if (transport.sessionId === undefined) await server.close();
   };
 
   // A grant's first 2026-07-28 request: the handler (and its listen bus) and
@@ -629,21 +633,27 @@ export const startHttpTransport = async (
       },
     );
     const listens = createListenFeed();
+    // The back-office serves neither the customizations nor SLA alerts.
+    const main = surface === 'main';
     // Its servers last one request: the grant's listen streams hear the edits.
-    const stopCustomizations = customizations.onChange(() => {
-      handler.notify.promptsChanged();
-      handler.notify.resourcesChanged();
-    });
-    const stopAlerts = watchGrantAlerts({
-      config,
-      getToken,
-      caches,
-      slaRuntime: sla.runtime,
-      logger,
-      listens,
-      notify: (uri) => handler.notify.resourceUpdated(uri),
-      onUnauthorized,
-    });
+    const stopCustomizations = main
+      ? customizations.onChange(() => {
+          handler.notify.promptsChanged();
+          handler.notify.resourcesChanged();
+        })
+      : () => undefined;
+    const stopAlerts = main
+      ? watchGrantAlerts({
+          config,
+          getToken,
+          caches,
+          slaRuntime: sla.runtime,
+          logger,
+          listens,
+          notify: (uri) => handler.notify.resourceUpdated(uri),
+          onUnauthorized,
+        })
+      : () => undefined;
     const entry: GrantEntry = {
       auth,
       revoked: false,

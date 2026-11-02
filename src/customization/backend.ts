@@ -35,6 +35,8 @@ export interface CustomizationBackend {
 }
 
 const AUTHORS_FILE = '.authors.json';
+// What `writeAtomic` names its temp files: a skill's own `notes.tmp` stays an entry.
+const TEMP_FILE = /\.[0-9a-f-]{36}\.tmp$/;
 
 /** Nothing on disk: tests, and `memory://` deployments that accept losing it on restart. */
 export const createMemoryBackend = (seed: Record<string, string> = {}): CustomizationBackend => {
@@ -68,7 +70,7 @@ const listFiles = async (root: string, dir = ''): Promise<string[]> => {
       const path = dir === '' ? entry.name : `${dir}/${entry.name}`;
       if (entry.isDirectory()) return listFiles(root, path);
       // Temp files of an interrupted write, and the authors record, are not entries.
-      return entry.isFile() && !entry.name.endsWith('.tmp') && path !== AUTHORS_FILE ? [path] : [];
+      return entry.isFile() && !TEMP_FILE.test(entry.name) && path !== AUTHORS_FILE ? [path] : [];
     }),
   );
   return nested.flat();

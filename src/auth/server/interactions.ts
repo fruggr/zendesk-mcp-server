@@ -15,12 +15,11 @@ import {
   exchangeZendeskCode,
   fetchZendeskIdentity,
   isUpstreamAuthError,
+  ZENDESK_ADMIN_ROLE,
   type ZendeskTokenSet,
   type ZendeskUpstream,
 } from './upstream';
 import type { ZendeskGrants } from './zendesk-grant';
-
-const ADMIN_ROLE = 'admin';
 
 // Pending state lives for one sign-in at most: the interaction's own lifetime.
 const PENDING_TTL_MS = 10 * 60 * 1000;
@@ -207,7 +206,7 @@ export const createInteractionRoutes = (deps: InteractionDeps) => {
         logger,
       );
       const identity = await fetchZendeskIdentity(upstream, tokens.accessToken);
-      if (requestsAdmin(details.params['resource']) && identity.role !== ADMIN_ROLE) {
+      if (requestsAdmin(details.params['resource']) && identity.role !== ZENDESK_ADMIN_ROLE) {
         logger.info('oauth_admin_sign_in_refused', { role: identity.role ?? 'unknown' });
         return deny(req, res, ADMIN_ONLY_MESSAGE);
       }

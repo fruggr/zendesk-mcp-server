@@ -1,5 +1,6 @@
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { SkillsClient } from '@modelcontextprotocol/client/ext/skills';
+import { HttpResponse, http } from 'msw';
 import { afterEach, describe, expect, it } from 'vitest';
 import { startHttpTransport } from '../../src/transports/http';
 import { createZendeskOAuthMock, localServerPassthrough } from '../msw-handlers';
@@ -38,10 +39,15 @@ const start = async (role = 'admin') => {
 };
 
 /** A sign-in for `resource`: the access token, or the authorization error. */
-const signIn = async (baseUrl: string, resource: string) => {
+const signIn = async (baseUrl: string, resource: string, scope?: string) => {
   const registration = await registerDcrClient(baseUrl);
   const clientId = registration.body.client_id ?? '';
-  const result = await authorize(baseUrl, { clientId, redirectUri: DCR_REDIRECT, resource });
+  const result = await authorize(baseUrl, {
+    clientId,
+    redirectUri: DCR_REDIRECT,
+    resource,
+    ...(scope ? { scope } : {}),
+  });
   if (!result.code) return { error: result.error, description: result.errorDescription };
   const tokens = await tokenRequest(baseUrl, {
     grant_type: 'authorization_code',
@@ -151,6 +157,29 @@ describe('[http] /mcp/admin back-office', () => {
     expect((await main.refresh?.())?.body.access_token).toBeDefined();
   });
 
+  it('answers invalid_grant, not a server error, once Zendesk revoked the token behind the grant', async () => {
+    const baseUrl = await start();
+    const admin = await signIn(baseUrl, `${baseUrl}/mcp/admin`);
+    zendesk.expireAllAccess();
+    const refused = await admin.refresh?.();
+    expect(refused?.status).toBe(400);
+    expect(refused?.body.error).toBe('invalid_grant');
+  });
+
+  it('keeps the grant when Zendesk fails the role check for another reason', async () => {
+    const baseUrl = await start();
+    const admin = await signIn(baseUrl, `${baseUrl}/mcp/admin`);
+    mswServer.use(
+      http.get(
+        'https://testsubdomain.zendesk.com/api/v2/users/me',
+        () => new HttpResponse('forbidden', { status: 403 }),
+      ),
+    );
+    const failed = await admin.refresh?.();
+    expect(failed?.status).toBe(500);
+    expect(failed?.body.error).toBe('server_error');
+  });
+
   it.each(['2025', '2026'] as const)(
     'serves only the back-office surface (%s era)',
     async (era) => {
@@ -220,6 +249,14 @@ describe('[http] /mcp/admin back-office', () => {
       );
     },
   );
+
+  it('gives a read-only sign-in nothing to write with', async () => {
+    const baseUrl = await start();
+    const { accessToken = '' } = await signIn(baseUrl, `${baseUrl}/mcp/admin`, 'read');
+    const admin = await connect(baseUrl, '/mcp/admin', accessToken);
+    expect(admin.getServerCapabilities()?.tools).toBeUndefined();
+    expect((await admin.listPrompts()).prompts.map((prompt) => prompt.name)).toEqual(['setup']);
+  });
 
   it('explains a refused edit and changes nothing', async () => {
     const baseUrl = await start();

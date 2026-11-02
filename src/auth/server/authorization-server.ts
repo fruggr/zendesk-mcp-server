@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { compactDecrypt, decodeProtectedHeader } from 'jose';
+import { ZendeskApiError } from '../../client/zendesk-api';
 import type { Config } from '../../config';
 import { type Logger, silentLogger } from '../../utils/logger';
 import { supportedScopes } from '../oauth-scopes';
@@ -15,8 +16,12 @@ import { ACCESS_TOKEN_TTL_S, buildProvider } from './provider';
 import { resolveMasterSecret } from './secret';
 import { createAdapterFactory, createSealedCollection, openStore } from './store';
 import { type Fetch, trustedClientSet } from './trusted-clients';
-import { fetchZendeskIdentity, type ZendeskTokenSet } from './upstream';
-import { createZendeskGrants, ZENDESK_REFRESH_MARGIN_MS } from './zendesk-grant';
+import { fetchZendeskIdentity, ZENDESK_ADMIN_ROLE, type ZendeskTokenSet } from './upstream';
+import {
+  createZendeskGrants,
+  grantUnavailableError,
+  ZENDESK_REFRESH_MARGIN_MS,
+} from './zendesk-grant';
 
 export interface VerifiedAccessToken {
   readonly zendeskAccessToken: string;
@@ -135,8 +140,24 @@ export const createAuthorizationServer = (
     issuer,
     resource,
     adminResource,
-    isZendeskAdmin: async (zendeskAccessToken) =>
-      (await fetchZendeskIdentity(upstream, zendeskAccessToken)).role === 'admin',
+    isZendeskAdmin: async (zendeskAccessToken) => {
+      try {
+        return (
+          (await fetchZendeskIdentity(upstream, zendeskAccessToken)).role === ZENDESK_ADMIN_ROLE
+        );
+      } catch (err) {
+        // Zendesk revoked the token: invalid_grant sends the client back to
+        // sign in, where any other failure would answer a 500.
+        if (
+          err instanceof Error &&
+          err.cause instanceof ZendeskApiError &&
+          err.cause.status === 401
+        ) {
+          throw grantUnavailableError();
+        }
+        throw err;
+      }
+    },
     ring,
     adapter: createAdapterFactory({ persistent }, ring),
     zendeskGrants,

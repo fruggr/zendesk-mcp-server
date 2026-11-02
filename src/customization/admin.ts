@@ -1,6 +1,7 @@
 import { McpServer, type RequestStateCodec } from '@modelcontextprotocol/server';
 import { memorySkillFiles, SkillCatalog } from '@modelcontextprotocol/server/ext/skills';
 import * as z from 'zod/v4';
+import { ZENDESK_ADMIN_ROLE } from '../auth/server/upstream';
 import { ZendeskApiError, zendeskGet } from '../client/zendesk-api';
 import type { Config } from '../config';
 import { buildInstructions } from '../guidance/instructions';
@@ -49,8 +50,6 @@ export interface AdminToolDefinition {
   handler: (params: Record<string, unknown>, caller: AdminCaller) => Promise<ToolResult>;
 }
 
-const ADMIN_ROLE = 'admin';
-
 const ADMIN_ONLY =
   'This back-office is reserved for Zendesk administrators: your Zendesk role is not admin.';
 
@@ -67,7 +66,7 @@ export const requireAdmin = async (
   getToken: () => string | Promise<string>,
 ): Promise<{ id: number; name: string }> => {
   const { user } = await zendeskGet<ZendeskMe>(subdomain, await getToken(), '/users/me');
-  if (user.role !== ADMIN_ROLE) throw new Error(ADMIN_ONLY);
+  if (user.role !== ZENDESK_ADMIN_ROLE) throw new Error(ADMIN_ONLY);
   return { id: user.id, name: user.name ?? `user ${user.id}` };
 };
 
@@ -265,8 +264,12 @@ const confirm = (
   if (params.kind === 'instructions') {
     return `${done} ${what}. A new session on /mcp now receives these instructions (the built-in part first); check them for repetitions and contradictions:\n\n${effectiveInstructions(env.config, state)}`;
   }
-  if (params.kind === 'skill') {
-    return `${done} ${what}. Clients supporting MCP skills get it as ${skillUri(params.name ?? '')}; the others get the prompt "${params.name}", carrying ${SKILL_ENTRY_FILE} only.`;
+  const name = params.name ?? '';
+  if (params.kind === 'skill' && state.skills.has(name)) {
+    return `${done} ${what}. Clients supporting MCP skills get it as ${skillUri(name)}; the others get the prompt "${name}", carrying ${SKILL_ENTRY_FILE} only.`;
+  }
+  if (deleting) {
+    return `${done} ${what}. It leaves the prompt menu of clients that refresh their prompt list.`;
   }
   return `${done} ${what}. It appears in the prompt menu of clients that refresh their prompt list.`;
 };
@@ -278,8 +281,9 @@ export const createAdminTools = (env: AdminEnv): AdminToolDefinition[] => {
   return [
     {
       name: 'manage_customizations',
-      // `--read-only` means "no Zendesk writes": this writes only this server's own store.
-      readOnly: true,
+      // Unlike a user's own preferences, this changes what every user gets: a
+      // read-only server or a `read`-only sign-in must not reach it.
+      readOnly: false,
       title: 'Manage Team Customizations',
       description:
         "Read and change what this MCP server teaches every user's assistant on /mcp: instructions (always-on text), prompts (workflows users start from their prompt menu) and skills (SKILL.md files the assistant loads when a task matches). list shows them all with who changed each, plus the built-in context the server already sends; get reads one entry, or the built-in instructions and Help Center topology; set creates or replaces an entry; delete removes one. Writes go to this server's store, never to Zendesk. Reserved for Zendesk admins, checked on every call. Before setting anything, read the built-in context and do not repeat it; the setup prompt walks through the whole configuration.",
@@ -328,6 +332,8 @@ export const loadSetupSkill = (): Promise<SkillCatalog> => {
 
 export interface AdminServerParams {
   env: AdminEnv;
+  /** `--read-only`, or a sign-in without `write`: the write tools are left out. */
+  readOnly: boolean;
   tools: readonly AdminToolDefinition[];
   setupSkill: SkillCatalog;
   caller: AdminCaller;
@@ -337,6 +343,7 @@ export interface AdminServerParams {
 
 /** One `/mcp/admin` server: the admin tools, the `setup` prompt and skill, nothing of Zendesk's. */
 export const createAdminServer = ({
+  readOnly,
   tools,
   setupSkill,
   caller,
@@ -351,7 +358,7 @@ export const createAdminServer = ({
       requestState: { verify: (state, ctx) => requestStateCodec.verify(state, ctx) },
     },
   );
-  for (const tool of tools) {
+  for (const tool of tools.filter((t) => t.readOnly || !readOnly)) {
     server.registerTool(
       tool.name,
       {

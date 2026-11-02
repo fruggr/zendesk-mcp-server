@@ -339,6 +339,18 @@ describe('createInteractionRoutes', () => {
         expect(fake.finished.map(([result]) => result)).toEqual([refusal]);
       });
 
+      it('logs an unknown role when Zendesk gives none', async () => {
+        mswServer.use(
+          http.get('https://testsubdomain.zendesk.com/api/v2/users/me', () =>
+            HttpResponse.json({ user: { id: 9999 } }),
+          ),
+        );
+        const { routes, events } = build();
+        await signIn(routes, 'uid-1', DCR, ADMIN);
+        expect(fake.finished.map(([result]) => result)).toEqual([refusal]);
+        expect(events).toContainEqual(['info', 'oauth_admin_sign_in_refused', { role: 'unknown' }]);
+      });
+
       it('signs an admin in', async () => {
         const { routes } = build();
         await signIn(routes, 'uid-1', DCR, ADMIN);

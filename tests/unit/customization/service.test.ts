@@ -130,4 +130,20 @@ describe('createCustomizationService', () => {
     ).rejects.toThrow('disk full');
     expect(service.current().instructions.size).toBe(0);
   });
+
+  it('serves what the store holds after a change set it applied only in part', async () => {
+    const memory = createMemoryBackend();
+    const backend: CustomizationBackend = {
+      ...memory,
+      apply: async (changes, author) => {
+        await memory.apply(changes.slice(0, 1), author);
+        throw new Error('disk full');
+      },
+    };
+    const service = await createCustomizationService(backend);
+    await expect(
+      service.edit({ kind: 'instructions', scope: 'global', text: 'x' }, ADA),
+    ).rejects.toThrow('disk full');
+    expect(service.current().instructions.get('global')?.text).toBe('x');
+  });
 });

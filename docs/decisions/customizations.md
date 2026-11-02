@@ -31,6 +31,10 @@ Center. Storing configuration in articles is a workaround, not a store.
   role `/users/me` returns), at every access-token mint for that resource,
   refresh included, so a demotion bites within one token lifetime, and on every
   tool call.
+- **A write tool, not a preference.** `configure_sla_alerts` survives
+  `--read-only` because it only changes its caller's own settings;
+  `manage_customizations` changes what every user receives, so `--read-only`
+  and a `read`-only sign-in leave it out.
 - **HTTP only.** A stdio server serves one person on their own machine, where a
   skill or rules file next to the client does the job. A stdio variant would
   add a branch (no role gate, a second store) for a rare use.

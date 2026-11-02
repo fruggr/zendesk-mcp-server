@@ -82,12 +82,20 @@ describe('file backend', () => {
     const root = join(dir, 'store');
     const backend = createFileBackend(root);
     await backend.apply([{ path: 'prompts/x.md', content: 'x' }], ADA);
-    writeFileSync(join(root, 'prompts', 'x.md.123.tmp'), 'half');
+    // The name `writeAtomic` gives its temp file.
+    writeFileSync(join(root, 'prompts', 'x.md.0f8e2c4a-1b3d-4e5f-8a9b-0c1d2e3f4a5b.tmp'), 'half');
     writeFileSync(join(root, '.authors.json'), 'not json');
     expect(await backend.load()).toEqual({
       files: new Map([['prompts/x.md', 'x']]),
       authors: new Map(),
     });
+  });
+
+  it('keeps a file of its own whose name merely ends in .tmp', async () => {
+    const root = join(dir, 'store');
+    const backend = createFileBackend(root);
+    await backend.apply([{ path: 'skills/s/notes.tmp', content: 'n' }], ADA);
+    expect((await backend.load()).files).toEqual(new Map([['skills/s/notes.tmp', 'n']]));
   });
 
   it('refuses a path escaping its root', async () => {

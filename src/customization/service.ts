@@ -112,9 +112,13 @@ export const createCustomizationService = async (
   const apply = async (edit: CustomizationEdit, author: ChangeAuthor) => {
     const changes = planEdit(state, edit);
     if (edit.kind === 'skill' && edit.text !== null) await checkSkill(state, edit.name, changes);
-    await backend.apply(changes, author);
-    // Re-read rather than patch: what is served is exactly what the store holds.
-    state = await load();
+    try {
+      await backend.apply(changes, author);
+    } finally {
+      // Re-read rather than patch, a failed change set too (a file backend may
+      // have applied part of it): what is served is exactly what the store holds.
+      state = await load();
+    }
     await skills.reload();
     for (const listener of listeners) listener();
     return state;
