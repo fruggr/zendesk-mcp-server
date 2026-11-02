@@ -74,6 +74,11 @@ To test over HTTP in a session:
    `mcp__zendesk-local-http-admin__*` once that one is connected too). A second
    Zendesk user, or a read-only sign-in, is another reconnection by the human.
 
+A reconnection in Claude Code reuses the grant it already holds: no consent
+screen, same scopes. For a read-only sign-in, use
+`pnpm mcp:live list --url <endpoint> --read-only-scope` (below), or clear the
+client's stored authorization for that server first.
+
 `ZENDESK_SUBDOMAIN` is set in the file (`fruggr`) since it is not a secret; the
 token comes from the sign-in and is persisted outside the repo (see auth note
 above), never in the file.

@@ -99,7 +99,10 @@ anything":
 
 Ask the human the same way for anything else only they can provide: a sign-in
 as a second Zendesk user, a read-only sign-in, a reconnection between two
-scenarios. Say exactly what you need and why, then wait.
+scenarios. Say exactly what you need and why, then wait. A reconnection in
+Claude Code reuses the grant it holds, scopes included: for a read-only sign-in,
+run `pnpm mcp:live list --url <endpoint> --read-only-scope` and ask the human to
+complete that sign-in instead.
 
 An HTTP scenario is `BLOCKED` when the server fails to start (quote the error),
 when the human declines or cannot connect it, or for the same credential and
