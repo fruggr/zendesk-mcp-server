@@ -72,12 +72,13 @@ you need is under your feet, except the HTTP server (next section). Concretely:
 
 ### Two transports, two states: you start HTTP, the human connects it
 
-`.mcp.json` declares two servers, and only one is running when you start:
+`.mcp.json` declares three servers, and only one is running when you start:
 
 | Server | State at launch | What you do |
 | --- | --- | --- |
 | `zendesk-local` (stdio) | started by the session, signed in | call `mcp__zendesk-local__*` directly |
 | `zendesk-local-http` (HTTP, `http://localhost:3000/mcp`) | **declared, not running**: the session reports it as failed to connect | start it, then ask the human to connect it |
+| `zendesk-local-http-admin` (HTTP, `http://localhost:3000/mcp/admin`) | the same server's admin back-office, same state | once it runs, ask the human to connect it too when the plan uses `/mcp/admin` |
 
 A failed `zendesk-local-http` at launch is the expected state, not a blocker.
 When the plan has scenarios on HTTP, this is the one exception to "don't start
@@ -98,7 +99,10 @@ anything":
 
 Ask the human the same way for anything else only they can provide: a sign-in
 as a second Zendesk user, a read-only sign-in, a reconnection between two
-scenarios. Say exactly what you need and why, then wait.
+scenarios. Say exactly what you need and why, then wait. A reconnection in
+Claude Code reuses the grant it holds, scopes included: for a read-only sign-in,
+run `pnpm mcp:live list --url <endpoint> --read-only-scope` and ask the human to
+complete that sign-in instead.
 
 An HTTP scenario is `BLOCKED` when the server fails to start (quote the error),
 when the human declines or cannot connect it, or for the same credential and

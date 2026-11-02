@@ -72,6 +72,18 @@ describe('module graph', () => {
     expect(STDIO_ONLY.filter((m) => loaded.has(m))).toEqual([]);
   });
 
+  it('keeps the HTTP-only customizations out of what every start loads', () => {
+    const customizations = [
+      resolve('src/customization/service.ts'),
+      resolve('src/customization/admin.ts'),
+      '@modelcontextprotocol/server/ext/skills',
+    ];
+    const atStart = staticClosure('src/index.ts');
+    expect(customizations.filter((m) => atStart.has(m))).toEqual([]);
+    const http = staticClosure('src/transports/http.ts');
+    expect(customizations.filter((m) => !http.has(m))).toEqual([]);
+  });
+
   it('keeps the stdio sign-in path out of the HTTP transport', () => {
     const loaded = staticClosure('src/transports/http.ts');
     expect(loaded.has('oidc-provider')).toBe(true);

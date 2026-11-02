@@ -31,6 +31,9 @@ export interface ZendeskTokenSet {
   readonly scope?: string | undefined;
 }
 
+/** The Zendesk role that opens the `/mcp/admin` back-office. */
+export const ZENDESK_ADMIN_ROLE = 'admin';
+
 export interface ZendeskIdentity {
   readonly id: number;
   readonly name?: string | undefined;

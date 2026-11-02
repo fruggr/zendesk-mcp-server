@@ -25,6 +25,10 @@
     "zendesk-local-http": {
       "type": "http",
       "url": "http://localhost:3000/mcp"
+    },
+    "zendesk-local-http-admin": {
+      "type": "http",
+      "url": "http://localhost:3000/mcp/admin"
     }
   }
 }
