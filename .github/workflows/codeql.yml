@@ -12,6 +12,8 @@ on:
   # the repository's secrets. Unfiltered, as a required check must be.
   pull_request:
     branches: [main]
+  # Required check, so it must also report on the merge queue's commit.
+  merge_group:
   schedule:
     - cron: '23 4 * * 1'
 
