@@ -14,6 +14,7 @@ const LOAD_CONFIG_ENV = [
   'ZENDESK_SUBDOMAIN',
   'ZENDESK_OAUTH_CLIENT_ID',
   'ZENDESK_BRAND_IDS',
+  'NAMESPACES',
   'LOG_LEVEL',
   'TRANSPORT',
   'LISTEN_HOST',
@@ -295,6 +296,95 @@ describe('loadConfig', () => {
   it('still lets an explicit --namespace win over that widening', () => {
     const config = loadConfig(['mycompany', '--tool', 'list_requests', '--namespace', 'tickets']);
     expect(config.namespaces).toEqual(['tickets']);
+  });
+
+  // Exact enum order, opt-in `requests` included: `all` is the way to reach the
+  // whole surface without a hand-kept list that goes stale on the next namespace.
+  it('expands --namespace all to every namespace, opt-in ones included', () => {
+    expect(loadConfig(['mycompany', '--namespace', 'all']).namespaces).toEqual([
+      'tickets',
+      'help_center',
+      'users',
+      'requests',
+      'preferences',
+    ]);
+  });
+
+  it('rejects --namespace all combined with a named namespace, naming both knobs', () => {
+    const load = () => loadConfig(['mycompany', '--namespace', 'all', '--namespace', 'tickets']);
+    expect(load).toThrow(
+      'Invalid --namespace / NAMESPACES value: "all" cannot be combined with named namespaces.',
+    );
+    expect(load).toThrow(STARTUP_DOCS.cliReference);
+  });
+
+  // `all` is a keyword next to lowercase enum values, not a case-folded alias.
+  it('rejects ALL in capitals, like any other unknown namespace', () => {
+    expect(() => loadConfig(['mycompany', '--namespace', 'ALL'])).toThrow(/namespaces\.0/);
+  });
+
+  describe('NAMESPACES', () => {
+    it('reads a comma-separated list, entries trimmed', () => {
+      process.env['NAMESPACES'] = ' tickets , requests ';
+      expect(loadConfig(['mycompany']).namespaces).toEqual(['tickets', 'requests']);
+    });
+
+    it('expands all to every namespace', () => {
+      process.env['NAMESPACES'] = 'all';
+      expect(loadConfig(['mycompany']).namespaces).toEqual([
+        'tickets',
+        'help_center',
+        'users',
+        'requests',
+        'preferences',
+      ]);
+    });
+
+    it('rejects all combined with a named namespace', () => {
+      process.env['NAMESPACES'] = 'all,tickets';
+      const load = () => loadConfig(['mycompany']);
+      expect(load).toThrow(
+        'Invalid --namespace / NAMESPACES value: "all" cannot be combined with named namespaces.',
+      );
+      expect(load).toThrow(STARTUP_DOCS.environment);
+    });
+
+    it.each(['tickets,,users', ',tickets', 'tickets,', ' '])(
+      'rejects the empty entry in %j',
+      (raw) => {
+        process.env['NAMESPACES'] = raw;
+        const load = () => loadConfig(['mycompany']);
+        expect(load).toThrow(
+          'Invalid NAMESPACES value: empty entry. Expected a comma-separated list of namespaces, or "all".',
+        );
+        expect(load).toThrow(STARTUP_DOCS.environment);
+      },
+    );
+
+    it('rejects an empty value', () => {
+      process.env['NAMESPACES'] = '';
+      expect(() => loadConfig(['mycompany'])).toThrow(/Empty NAMESPACES\./);
+    });
+
+    it('rejects an unknown namespace through the schema', () => {
+      process.env['NAMESPACES'] = 'tickets,bogus';
+      expect(() => loadConfig(['mycompany'])).toThrow(/namespaces\.1/);
+    });
+
+    it('is overridden by --namespace', () => {
+      process.env['NAMESPACES'] = 'all';
+      expect(loadConfig(['mycompany', '--namespace', 'users']).namespaces).toEqual(['users']);
+    });
+
+    it('is not consulted when --namespace is passed, even if malformed', () => {
+      process.env['NAMESPACES'] = 'tickets,,users';
+      expect(loadConfig(['mycompany', '--namespace', 'users']).namespaces).toEqual(['users']);
+    });
+
+    it('wins over the --tool widening, as an explicit --namespace does', () => {
+      process.env['NAMESPACES'] = 'tickets';
+      expect(loadConfig(['mycompany', '--tool', 'list_requests']).namespaces).toEqual(['tickets']);
+    });
   });
 
   it('does not print the tool surface unless asked', () => {

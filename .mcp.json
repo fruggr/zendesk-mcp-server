@@ -2,22 +2,7 @@
   "mcpServers": {
     "zendesk-local": {
       "command": "pnpm",
-      "args": [
-        "exec",
-        "tsx",
-        "src/index.ts",
-        "--mode",
-        "all",
-        "--dev",
-        "--namespace",
-        "tickets",
-        "--namespace",
-        "help_center",
-        "--namespace",
-        "users",
-        "--namespace",
-        "requests"
-      ],
+      "args": ["exec", "tsx", "src/index.ts", "--mode", "all", "--dev", "--namespace", "all"],
       "env": {
         "ZENDESK_SUBDOMAIN": "fruggr"
       }

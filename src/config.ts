@@ -354,6 +354,41 @@ const parseBrandIds = (raw: string | undefined): string[] | undefined => {
   return [...new Set(normalized)];
 };
 
+const ALL_NAMESPACES = 'all';
+
+// `all` is a keyword, matched exactly like the lowercase enum values beside it;
+// mixed with named namespaces it is ambiguous, so it fails rather than wins.
+const expandAllNamespaces = (entries: string[], docs: string): string[] => {
+  if (!entries.includes(ALL_NAMESPACES)) return entries;
+  if (entries.length > 1) {
+    throw createStartupError(
+      'Invalid --namespace / NAMESPACES value: "all" cannot be combined with named namespaces.',
+      docs,
+    );
+  }
+  return [...Namespace.options];
+};
+
+/**
+ * The namespaces the operator asked for, or undefined when neither
+ * `--namespace` nor `NAMESPACES` is set. The flag wins and leaves the variable
+ * unread. Entries stay strings: the `Namespace` enum in ConfigSchema rejects an
+ * unknown one.
+ */
+const resolveNamespaces = (cliValues: string[] | undefined): string[] | undefined => {
+  if (cliValues !== undefined) return expandAllNamespaces(cliValues, STARTUP_DOCS.cliReference);
+  const raw = requireNonEmptyEnv('NAMESPACES');
+  if (raw === undefined) return undefined;
+  const entries = raw.split(',').map((entry) => entry.trim());
+  if (entries.some((entry) => entry.length === 0)) {
+    throw createStartupError(
+      'Invalid NAMESPACES value: empty entry. Expected a comma-separated list of namespaces, or "all".',
+      STARTUP_DOCS.environment,
+    );
+  }
+  return expandAllNamespaces(entries, STARTUP_DOCS.environment);
+};
+
 // The whole CLI surface as one declarative table: `parseArgs` derives the
 // unknown-flag, missing-value and stray-value rejections from it, so those
 // guarantees cannot drift per flag. Adding a flag is one entry here.
@@ -693,8 +728,10 @@ export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
   // `filterTools` ANDs the namespace and tool filters, so keeping the default
   // set here would make `--tool list_requests` resolve to nothing: the tool
   // exists, its namespace is not in the default. An explicit `--tool` without
-  // `--namespace` therefore opens the namespace filter and narrows by tool.
-  const namespaces = cli.namespaces ?? (cli.tools?.length ? [...Namespace.options] : undefined);
+  // `--namespace` / `NAMESPACES` therefore opens the namespace filter and
+  // narrows by tool.
+  const namespaces =
+    resolveNamespaces(cli.namespaces) ?? (cli.tools?.length ? [...Namespace.options] : undefined);
 
   const callbackPort = cli.callbackPort ?? portEnv('OAUTH_CALLBACK_PORT');
   const brandIds = cli.brandIds ?? requireNonEmptyEnv('ZENDESK_BRAND_IDS');
