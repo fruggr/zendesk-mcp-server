@@ -14,11 +14,14 @@ puts Zendesk inside your AI assistant, for **both sides of the conversation**.
 translates articles while keeping the languages in sync; and handles Support
 tickets end to end, comments, triage and image attachments included.
 
-**For your customers**: it opens the same door the Help Center's "Submit a
-request" form does. They pick the kind of request, get walked through the
-questions that form actually asks, attach a screenshot, then follow the
-ticket — read the replies, answer back, close it when it's resolved. See
-[End-user mode](#end-user-mode).
+**For your customers**: the Help Center's "Submit a request" form, in plain
+language: pick the request, answer its questions, follow the replies, close it.
+See [End-user mode](#end-user-mode).
+
+**For your Zendesk admins**: teach the assistant how *your* team works, with
+house tone, lexicon, procedures and ready-made workflows, from a dedicated
+back-office, with no redeploy. See
+[Context and customizations](#context-and-customizations).
 
 It all happens in plain language, without switching apps.
 
@@ -49,6 +52,8 @@ then calls the right tools on your behalf.
 - Draft and maintain knowledge-base articles. You can write a new one, or revise
   a large one a single section at a time, so the whole HTML body never has to
   round-trip through the model.
+- Follow your team's playbook. Instructions, prompts and skills written by your
+  admins reach every user's assistant, whatever MCP client they use.
 - Submit and follow a request as a customer, not an agent. Choose between the
   kinds of request the vendor offers, answer only the questions that form asks,
   and then track it: what was replied, what you replied, and whether it's done.
@@ -81,11 +86,16 @@ differently.
   into namespace proxies, or collapse everything into a single unified tool. You
   can also filter by namespace or down to read-only operations, so each context
   loads only the surface it needs (see [Tool surface](#tool-surface)).
-- Two deployment shapes, same auth story. Run it on your laptop as a stdio MCP
-  server, or deploy it as a private remote MCP server reached over HTTP, with one
-  Zendesk session per request and each client carrying its own user's token.
-- A lean stack: the official MCP TypeScript SDK (`@modelcontextprotocol/server`) plus `zod`, speaking to
-  the Zendesk Support and Help Center (Guide) APIs.
+- Your practices ship with the server. Most teams hand-distribute a skill or a
+  rules file per AI client. Here admins author instructions, prompts and skills
+  once, inside the server, behind a back-office reserved to Zendesk admins, and
+  every MCP client receives them. Skills fall back to prompts on clients that
+  don't support them yet.
+- Two deployment shapes, same auth story, on a lean stack. Run it on your laptop
+  as a stdio MCP server, or deploy it as a private remote MCP server reached over
+  HTTP, each client carrying its own user's token; underneath, the official MCP
+  TypeScript SDK plus `zod`, speaking to the Zendesk Support and Help Center
+  (Guide) APIs.
 
 Look elsewhere when:
 
@@ -316,19 +326,19 @@ A customer can do less than an agent. That's the point, not a gap:
   won't let the requester solve it, so the tool says so rather than pretending.
 - **No search across the ticket base**, no user lookups, no views, no macros.
 
-## Help Center context
+## Context and customizations
 
-Beyond tools, the server hands the LLM the structure of *your* Help Center: the
-active locales, the category → section tree with IDs, the visibility segments
-and the permission groups. With those in hand it uses real IDs instead of
-guessing or fuzzy-matching names. It all arrives through MCP-native channels,
-namely the `instructions` blob sent on `initialize` plus pull-only resources for
-the topology and for reading (or pinning) individual articles. The resources are
-fetched with the caller's own token, and clients that don't support resources
-ignore them silently.
+The assistant gets two kinds of context besides tools:
 
-What's exposed, what the promoted-article pre-listing costs in requests, and how
-to turn each piece off: **[docs/help-center-context.md](docs/help-center-context.md)**.
+- **Built in**: the structure of your Help Center (locales, the category →
+  section tree with IDs, segments, permission groups), so it uses real IDs
+  instead of guessing, fetched with the caller's own token. Details:
+  [docs/help-center-context.md](docs/help-center-context.md).
+- **Yours**: instructions, prompts and skills your Zendesk admins write from
+  `/mcp/admin`, a second connector on the same server. A guided `setup` prompt
+  walks them through it and reminds them what is already built in. Nothing is
+  stored in Zendesk, and no workflow is imposed: each team writes its own.
+  Details: [docs/customizations.md](docs/customizations.md).
 
 ## Configuration
 

@@ -60,6 +60,12 @@ pipeline (`utils/article-sections.ts`, cheerio, unified): only Help Center
 article handlers need it, so they load it through `utils/article-format.ts` on
 first use.
 
+**Customizations** (`src/customization/`) are HTTP-only and reach `/mcp` through
+the `extraInstructions` / `decorate` hooks of `createMcpServer`: `server.ts` must
+not import them. Their back-office is `/mcp/admin`, its own OAuth resource
+gated on the Zendesk `admin` role; its tools are not in `createAllTools` and
+never join a namespace. Why: `docs/decisions/customizations.md`.
+
 **Tool modes** (chosen at startup by `--mode`): `all` (every tool individually),
 `namespace` (default — one proxy per namespace), `single` (one `zendesk` proxy, plus `connector_preferences` for this server's own settings).
 Proxies take `{ operation, params }` and validate `params` through the original

@@ -45,8 +45,8 @@ probe script — each resolves the credential itself.
 
 ## A. `.mcp.json`: live tools inside a session
 
-A project-scoped `.mcp.json` is committed at the repo root. It declares two
-servers:
+A project-scoped `.mcp.json` is committed at the repo root. It declares three
+servers, all enabled by `.claude/settings.json`:
 
 - **`zendesk-local`** (stdio): the session starts it from **source** via `tsx`
   (`--mode all`, every namespace), so it always reflects the checked-out branch
@@ -55,6 +55,10 @@ servers:
 - **`zendesk-local-http`** (HTTP, `http://localhost:3000/mcp`): only a URL. The
   session does not start it, so it shows as failed to connect at launch; that
   is expected.
+- **`zendesk-local-http-admin`** (HTTP, `http://localhost:3000/mcp/admin`): the
+  same server's back-office, reserved to Zendesk admins
+  ([customizations](customizations.md)). Same state at launch, and its own
+  sign-in.
 
 To test over HTTP in a session:
 
@@ -66,8 +70,14 @@ To test over HTTP in a session:
    the sign-in in the browser: the client signs in through the server's own
    OAuth flow, which sends them to Zendesk. An agent asks for this step and
    waits; it never does it itself.
-3. The tools appear as `mcp__zendesk-local-http__*`. A second Zendesk user, or a
-   read-only sign-in, is another reconnection by the human.
+3. The tools appear as `mcp__zendesk-local-http__*` (and
+   `mcp__zendesk-local-http-admin__*` once that one is connected too). A second
+   Zendesk user, or a read-only sign-in, is another reconnection by the human.
+
+A reconnection in Claude Code reuses the grant it already holds: no consent
+screen, same scopes. For a read-only sign-in, use
+`pnpm mcp:live list --url <endpoint> --read-only-scope` (below), or clear the
+client's stored authorization for that server first.
 
 `ZENDESK_SUBDOMAIN` is set in the file (`fruggr`) since it is not a secret; the
 token comes from the sign-in and is persisted outside the repo (see auth note

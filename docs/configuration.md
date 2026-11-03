@@ -60,6 +60,10 @@ Options:
                           persisted in the config dir)
   --oauth-store <uri>     HTTP: grant store, file:// (default: a file in the
                           config dir) or memory://
+  --customization-store <uri>
+                          HTTP: the admins' instructions, prompts and skills,
+                          file://<dir> (default: a folder in the config dir) or
+                          memory://
   --oauth-trusted-client <url>
                           HTTP: CIMD client id that skips the consent screen
                           (repeatable; adds to claude.ai and ChatGPT)
@@ -438,6 +442,15 @@ never shows in a process listing; `--oauth-master-secret-file` (or
 
 Where grants, refresh tokens and registered clients are kept, encrypted (also
 `--oauth-store`): `file://<path>`, or `memory://` for tests. **HTTP only.**
+
+### `CUSTOMIZATION_STORE`
+**Required:** no · **Default:** `file://<config dir>/customizations`
+
+Where the instructions, prompts and skills Zendesk admins write from
+`/mcp/admin` are kept (also `--customization-store`): `file://<directory>`, one
+Markdown file per entry, or `memory://` for tests. The container sets it to
+`file:///data/customizations`. See [Customizations](customizations.md).
+**HTTP only.**
 
 ### `OAUTH_TRUSTED_CLIENTS`
 **Required:** no · **Default:** none (claude.ai and ChatGPT are built in)

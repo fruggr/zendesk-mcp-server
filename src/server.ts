@@ -291,13 +291,18 @@ export const createServerShell = (
   config: Config,
   // Every server verifies echoed `requestState`; see utils/request-state.ts.
   requestStateCodec: RequestStateCodec = createRequestStateCodec({}),
+  /** Appended after the built-in instructions: the admins' own (HTTP). */
+  extraInstructions?: string,
 ): McpServer => {
   // Read name/version from package.json at runtime rather than hardcoding them
   // (the old literals were stale and even carried the wrong package name).
   const pkg = readPackageInfo();
   // Static, I/O-free Help Center context auto-loaded by clients on initialize.
   // Built before connect; undefined (and omitted) when the context is disabled.
-  const instructions = buildInstructions(config);
+  const instructions =
+    [buildInstructions(config), extraInstructions]
+      .filter((block): block is string => block !== undefined)
+      .join('\n\n') || undefined;
   // No `logging` capability: diagnostics go to stderr only (see utils/logger.ts).
   // The `resources` capability is merged in by registerResource below. Spread
   // `instructions` only when present so the field is omitted entirely
@@ -937,6 +942,10 @@ export interface CreateMcpServerOptions {
    * so it only advertises `resources.subscribe` for the listen filter).
    */
   alertPolling?: AlertPolling;
+  /** Appended to the `instructions`: the admins' own, on HTTP. */
+  extraInstructions?: string | undefined;
+  /** Registers what the transport adds (the admins' prompts and skills), before connect. */
+  decorate?: ((server: McpServer) => void) | undefined;
 }
 
 export type AlertPolling = 'server' | 'grant';
@@ -954,9 +963,11 @@ export const createMcpServer = (
     getBackgroundToken,
     alertPolling = 'server',
     tools = createAllTools(toolEnv(config)),
+    extraInstructions,
+    decorate,
   }: CreateMcpServerOptions = {},
 ): McpServer => {
-  const server = createServerShell(config, requestStateCodec);
+  const server = createServerShell(config, requestStateCodec, extraInstructions);
   const sla = createSlaService(slaSettings(config), slaRuntime, caches.resolveUserId);
   registerToolset(server, { config, getToken, caches, onUnauthorized, logger, sla }, tools);
   if (config.slaPush && slaAlertsEnabled(config)) {
@@ -972,6 +983,7 @@ export const createMcpServer = (
       installAlertSubscriptions(server, config, reader, logger, listens);
     }
   }
+  decorate?.(server);
   return server;
 };
 
@@ -999,6 +1011,9 @@ export interface ServerBuildContext {
   getBackgroundToken?: () => string | Promise<string>;
   /** Who polls subscribed alert resources; see `CreateMcpServerOptions`. */
   alertPolling?: AlertPolling;
+  /** See `CreateMcpServerOptions`. */
+  extraInstructions?: string | undefined;
+  decorate?: ((server: McpServer) => void) | undefined;
   /**
    * Announces that a resource changed, to whoever listens to it on this
    * connection, session or grant. The URI is the whole payload, and a listen
@@ -1022,8 +1037,12 @@ export const defaultServerFactory: ServerFactory = ({
   listens,
   getBackgroundToken,
   alertPolling,
+  extraInstructions,
+  decorate,
 }) =>
   createMcpServer(config, getToken, logger, onUnauthorized, {
+    extraInstructions,
+    decorate,
     ...(caches ? { caches } : {}),
     ...(tools ? { tools } : {}),
     ...(slaRuntime ? { slaRuntime } : {}),

@@ -184,6 +184,11 @@ export const ConfigSchema = z.object({
   oauthMasterSecretFile: z.string().min(1).optional(),
   /** HTTP only: the grant store URI; defaults to a file in the config dir. */
   oauthStore: z.string().url().optional(),
+  /**
+   * HTTP only: where the admins' instructions, prompts and skills live
+   * (`file://<dir>` or `memory://`); defaults to a folder in the config dir.
+   */
+  customizationStore: z.string().url().optional(),
   /** HTTP only: CIMD client ids added to the consent-skip allowlist. */
   oauthTrustedClients: z.array(z.string().url()).default([]),
   /** HTTP only: whether the built-in allowlist (claude.ai, ChatGPT) applies. */
@@ -260,6 +265,7 @@ interface CliResult {
   callbackPort?: number;
   oauthMasterSecretFile?: string;
   oauthStore?: string;
+  customizationStore?: string;
   oauthTrustedClients?: string[];
   defaultTrustedClients?: boolean;
   slaPush?: boolean;
@@ -366,6 +372,7 @@ const CLI_OPTIONS = {
   'callback-port': { type: 'string' },
   'oauth-master-secret-file': { type: 'string' },
   'oauth-store': { type: 'string' },
+  'customization-store': { type: 'string' },
   'oauth-trusted-client': { type: 'string', multiple: true },
   'no-default-trusted-clients': { type: 'boolean' },
   'read-only': { type: 'boolean' },
@@ -406,6 +413,7 @@ const FIELD_BY_FLAG = new Map<string, keyof CliResult>([
   ['cors-origin', 'corsOrigins'],
   ['oauth-master-secret-file', 'oauthMasterSecretFile'],
   ['oauth-store', 'oauthStore'],
+  ['customization-store', 'customizationStore'],
   ['oauth-trusted-client', 'oauthTrustedClients'],
   ['sla-reply-thresholds', 'slaReplyThresholds'],
   ['sla-wait-thresholds', 'slaWaitThresholds'],
@@ -551,6 +559,7 @@ const resolveOAuthServerSettings = (cli: CliResult) => ({
   oauthMasterSecretFile:
     cli.oauthMasterSecretFile ?? requireNonEmptyEnv('OAUTH_MASTER_SECRET_FILE'),
   oauthStore: cli.oauthStore ?? requireNonEmptyEnv('OAUTH_STORE'),
+  customizationStore: cli.customizationStore ?? requireNonEmptyEnv('CUSTOMIZATION_STORE'),
   oauthTrustedClients: [
     ...(cli.oauthTrustedClients ?? []),
     ...splitList(readEnv('OAUTH_TRUSTED_CLIENTS').value),

@@ -25,6 +25,7 @@ const LOAD_CONFIG_ENV = [
   'OAUTH_MASTER_SECRET',
   'OAUTH_MASTER_SECRET_FILE',
   'OAUTH_STORE',
+  'CUSTOMIZATION_STORE',
   'OAUTH_TRUSTED_CLIENTS',
   'HOST',
   'ZENDESK_OAUTH_CALLBACK_PORT',
@@ -475,6 +476,15 @@ describe('loadConfig', () => {
       expect(config.oauthStore).toBe('file:///env/store.json');
     });
 
+    it('reads the customization store from the flag, then CUSTOMIZATION_STORE', () => {
+      expect(loadConfig(['mycompany']).customizationStore).toBeUndefined();
+      process.env['CUSTOMIZATION_STORE'] = 'file:///env/customizations';
+      expect(loadConfig(['mycompany']).customizationStore).toBe('file:///env/customizations');
+      expect(
+        loadConfig(['mycompany', '--customization-store', 'memory://']).customizationStore,
+      ).toBe('memory://');
+    });
+
     it('refuses the removed --oauth-store-adapter flag instead of ignoring it', () => {
       expect(() => loadConfig(['mycompany', '--oauth-store-adapter', 'some-store'])).toThrow();
     });
@@ -647,7 +657,7 @@ describe('loadConfig', () => {
 
     it('covers every value-taking flag declared in CLI_OPTIONS', () => {
       // Guards the parametrised cases below against silently shrinking to zero.
-      expect(valueFlags).toHaveLength(20);
+      expect(valueFlags).toHaveLength(21);
     });
 
     it.each(valueFlags)('rejects %s as the last argument (value forgotten)', (flag) => {

@@ -7,6 +7,7 @@ import { requestedScope } from '../oauth-scopes';
 import { generateCodeChallenge, generateCodeVerifier } from '../pkce';
 import { renderConsentPage, renderErrorPage } from './consent';
 import { createExpiringMap } from './expiring-map';
+import { ADMIN_ONLY_MESSAGE } from './provider';
 import type { SealedCollection } from './store';
 import { canSkipConsent } from './trusted-clients';
 import {
@@ -14,6 +15,7 @@ import {
   exchangeZendeskCode,
   fetchZendeskIdentity,
   isUpstreamAuthError,
+  ZENDESK_ADMIN_ROLE,
   type ZendeskTokenSet,
   type ZendeskUpstream,
 } from './upstream';
@@ -29,6 +31,8 @@ export interface InteractionDeps {
   readonly provider: Provider;
   readonly upstream: ZendeskUpstream;
   readonly issuer: string;
+  /** The `/mcp/admin` back-office: only a Zendesk admin may sign in for it. */
+  readonly adminResource: string;
   readonly readOnly: boolean;
   readonly zendeskGrants: ZendeskGrants;
   readonly consentMemory: SealedCollection<true>;
@@ -83,6 +87,10 @@ export const createInteractionRoutes = (deps: InteractionDeps) => {
   const upstreamTokens = createExpiringMap<ZendeskTokenSet>();
 
   type Details = Awaited<ReturnType<Provider['interactionDetails']>>;
+
+  // `resource` may repeat (RFC 8707): asking for the back-office among others is asking for it.
+  const requestsAdmin = (resource: unknown): boolean =>
+    (Array.isArray(resource) ? resource : [resource]).includes(deps.adminResource);
 
   const finish = (req: IncomingMessage, res: ServerResponse, result: Record<string, unknown>) =>
     provider.interactionFinished(req, res, result, { mergeWithLastSubmission: true });
@@ -198,6 +206,10 @@ export const createInteractionRoutes = (deps: InteractionDeps) => {
         logger,
       );
       const identity = await fetchZendeskIdentity(upstream, tokens.accessToken);
+      if (requestsAdmin(details.params['resource']) && identity.role !== ZENDESK_ADMIN_ROLE) {
+        logger.info('oauth_admin_sign_in_refused', { role: identity.role ?? 'unknown' });
+        return deny(req, res, ADMIN_ONLY_MESSAGE);
+      }
       const accountId = `zendesk:${identity.id}`;
       upstreamTokens.set(
         `${accountId}|${String(details.params['client_id'])}`,

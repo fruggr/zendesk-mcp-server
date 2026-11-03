@@ -19,13 +19,21 @@ export const GRANT_TTL_S = 90 * 86400;
 const SESSION_TTL_S = 12 * 3600;
 const INTERACTION_TTL_S = 10 * 60;
 
+/** ASCII only: it reaches the client in a token endpoint error. */
+export const ADMIN_ONLY_MESSAGE =
+  'This connector is reserved for Zendesk administrators, and your Zendesk role is not admin.';
+
 /** Scopes the server advertises and grants; `offline_access` is for clients (ChatGPT) that ask for it. */
 export const RESOURCE_SCOPES = ['read', 'write'] as const;
 
 export interface ProviderOptions {
   readonly issuer: string;
-  /** The canonical `/mcp` resource: the only audience our tokens carry. */
+  /** The canonical `/mcp` resource: the default audience of our tokens. */
   readonly resource: string;
+  /** The `/mcp/admin` back-office: a token for it is minted for a Zendesk admin only. */
+  readonly adminResource: string;
+  /** Whether the Zendesk user behind this Zendesk token is an admin, asked at every mint for the back-office. */
+  readonly isZendeskAdmin: (zendeskAccessToken: string) => Promise<boolean>;
   readonly ring: KeyRing;
   readonly adapter: NonNullable<Configuration['adapter']>;
   readonly zendeskGrants: ZendeskGrants;
@@ -133,10 +141,12 @@ export const buildProvider = (options: ProviderOptions): Provider => {
         // Stryker disable next-line BooleanLiteral: with one resource, the default names the one the grant holds.
         useGrantedResource: () => true,
         getResourceServerInfo: (_ctx, indicator) => {
-          if (indicator !== resource) throw new errors.InvalidTarget();
+          if (indicator !== resource && indicator !== options.adminResource) {
+            throw new errors.InvalidTarget();
+          }
           return {
             scope: scopes,
-            audience: resource,
+            audience: indicator,
             accessTokenTTL: ACCESS_TOKEN_TTL_S,
             accessTokenFormat: 'jwt',
             // Encrypt-only: authenticated encryption with a symmetric key needs
@@ -158,7 +168,15 @@ export const buildProvider = (options: ProviderOptions): Provider => {
       // here, each with its grant; the always-skip sibling is killed.
       if (token.kind !== 'AccessToken' || !token.grantId) return undefined;
       try {
-        return { zd: await options.zendeskGrants.accessToken(token.grantId), gid: token.grantId };
+        const zd = await options.zendeskGrants.accessToken(token.grantId);
+        // Re-asked at every mint, refresh included: a demoted admin loses the
+        // back-office within one access-token lifetime.
+        // Stryker disable next-line OptionalChaining: with resource indicators on, every access token minted here has a resource server.
+        const audience = token.resourceServer?.audience;
+        if (audience === options.adminResource && !(await options.isZendeskAdmin(zd))) {
+          throw new errors.AccessDenied(ADMIN_ONLY_MESSAGE);
+        }
+        return { zd, gid: token.grantId };
       } catch (err) {
         if (isGrantUnavailableError(err)) {
           // Stryker disable next-line ObjectLiteral: detail and cause only reach oidc-provider's debug log.

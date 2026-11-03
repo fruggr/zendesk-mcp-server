@@ -836,8 +836,11 @@ export const localServerPassthrough = http.all(/^http:\/\/127\.0\.0\.1:\d+\//, (
  * `/users/me` answers only for a live access token. Opt-in via
  * `mswServer.use(...mock.handlers)`.
  */
-export const createZendeskOAuthMock = (options: { accessTtlSeconds?: number } = {}) => {
+export const createZendeskOAuthMock = (
+  options: { accessTtlSeconds?: number; role?: string } = {},
+) => {
   const accessTtl = options.accessTtlSeconds ?? 172800;
+  let user = { ...MOCK_USER, role: options.role ?? MOCK_USER.role };
   let serial = 0;
   const codes = new Map<string, { redirectUri: string; challenge: string }>();
   const access = new Map<string, number>();
@@ -911,7 +914,7 @@ export const createZendeskOAuthMock = (options: { accessTtlSeconds?: number } = 
       if (expiresAt === undefined || expiresAt < Date.now()) {
         return new HttpResponse('unauthorized', { status: 401 });
       }
-      return HttpResponse.json({ user: MOCK_USER });
+      return HttpResponse.json({ user });
     }),
   ];
   /** Invalidate an access token at Zendesk, as a revocation or expiry would. */
@@ -919,7 +922,11 @@ export const createZendeskOAuthMock = (options: { accessTtlSeconds?: number } = 
   const expireAllAccess = () => {
     for (const token of access.keys()) access.set(token, 0);
   };
-  return { handlers, state, revokeAccess, expireAllAccess };
+  /** Change the signed-in user's Zendesk role, as an admin demoting them would. */
+  const setRole = (role: string) => {
+    user = { ...user, role };
+  };
+  return { handlers, state, revokeAccess, expireAllAccess, setRole };
 };
 
 // Opt-in error handlers for tests that exercise failure paths. Kept here so all

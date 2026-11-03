@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { compactDecrypt, decodeProtectedHeader } from 'jose';
+import { ZendeskApiError } from '../../client/zendesk-api';
 import type { Config } from '../../config';
 import { type Logger, silentLogger } from '../../utils/logger';
 import { supportedScopes } from '../oauth-scopes';
@@ -15,8 +16,12 @@ import { ACCESS_TOKEN_TTL_S, buildProvider } from './provider';
 import { resolveMasterSecret } from './secret';
 import { createAdapterFactory, createSealedCollection, openStore } from './store';
 import { type Fetch, trustedClientSet } from './trusted-clients';
-import type { ZendeskTokenSet } from './upstream';
-import { createZendeskGrants, ZENDESK_REFRESH_MARGIN_MS } from './zendesk-grant';
+import { fetchZendeskIdentity, ZENDESK_ADMIN_ROLE, type ZendeskTokenSet } from './upstream';
+import {
+  createZendeskGrants,
+  grantUnavailableError,
+  ZENDESK_REFRESH_MARGIN_MS,
+} from './zendesk-grant';
 
 export interface VerifiedAccessToken {
   readonly zendeskAccessToken: string;
@@ -42,6 +47,9 @@ export interface AuthorizationServer {
   readonly issuer: string;
   readonly resource: string;
   readonly protectedResourceMetadata: ProtectedResourceMetadata;
+  /** The `/mcp/admin` back-office: its own resource, so its tokens never open `/mcp`. */
+  readonly adminResource: string;
+  readonly adminProtectedResourceMetadata: ProtectedResourceMetadata;
   /** Every route that is neither `/mcp`, the protected-resource metadata nor `/healthz`. */
   handle(req: IncomingMessage, res: ServerResponse): Promise<void>;
   /** Our JWE, decrypted and checked (issuer, revocation), or `undefined`; audience and expiry are the caller's to check. */
@@ -101,6 +109,7 @@ export const createAuthorizationServer = (
   const { config, issuer, ring, persistent } = options;
   const logger = options.logger ?? silentLogger;
   const resource = `${issuer}/mcp`;
+  const adminResource = `${issuer}/mcp/admin`;
   const upstream = { subdomain: config.subdomain, clientId: config.oauthClientId };
 
   const zendeskGrants = createZendeskGrants({
@@ -130,6 +139,21 @@ export const createAuthorizationServer = (
   const provider = buildProvider({
     issuer,
     resource,
+    adminResource,
+    isZendeskAdmin: async (zendeskAccessToken) => {
+      try {
+        return (
+          (await fetchZendeskIdentity(upstream, zendeskAccessToken)).role === ZENDESK_ADMIN_ROLE
+        );
+      } catch (err) {
+        // Zendesk revoked the token: invalid_grant sends the client back to
+        // sign in, where any other failure would answer a 500.
+        // fetchZendeskIdentity wraps every failure in an Error carrying its cause.
+        const { cause } = err as Error;
+        if (cause instanceof ZendeskApiError && cause.status === 401) throw grantUnavailableError();
+        throw err;
+      }
+    },
     ring,
     adapter: createAdapterFactory({ persistent }, ring),
     zendeskGrants,
@@ -164,6 +188,7 @@ export const createAuthorizationServer = (
     provider,
     upstream,
     issuer,
+    adminResource,
     readOnly: config.readOnly,
     zendeskGrants,
     consentMemory: createSealedCollection<true>(persistent, 'Consent', ring),
@@ -183,16 +208,20 @@ export const createAuthorizationServer = (
     return asVerified(JSON.parse(decoder.decode(plaintext)) as AccessTokenClaims, issuer);
   };
 
+  const metadataOf = (of: string): ProtectedResourceMetadata => ({
+    resource: of,
+    authorization_servers: [issuer],
+    bearer_methods_supported: ['header'],
+    scopes_supported: supportedScopes(config.readOnly),
+  });
+
   return {
     issuer,
     resource,
+    adminResource,
     requestStateKey: ring[0].requestState,
-    protectedResourceMetadata: {
-      resource,
-      authorization_servers: [issuer],
-      bearer_methods_supported: ['header'],
-      scopes_supported: supportedScopes(config.readOnly),
-    },
+    protectedResourceMetadata: metadataOf(resource),
+    adminProtectedResourceMetadata: metadataOf(adminResource),
     handle: async (req, res) => {
       // Stryker disable next-line StringLiteral: a request reaching a node:http server always has req.url.
       const url = new URL(req.url ?? '/', issuer);
