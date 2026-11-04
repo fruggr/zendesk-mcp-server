@@ -51,6 +51,11 @@ const forbidden = (tool: string, endpoint: string, error: ZendeskApiError, hint?
     { cause: error },
   );
 
+// Zendesk strips HTML from comment.body and renders its Markdown only for an
+// agent author (Ticket Comments API, "Bodies"), never for an end user.
+const END_USER_COMMENT_FORMAT =
+  'Sent as plain text: Markdown is not rendered for an end user and HTML tags are stripped, so write it without formatting markup.';
+
 // A path scoped to one request id has a cause the generic message does not: the
 // id may belong to someone else, which Zendesk also answers 403. Named only
 // here -- on `/ticket_forms` it would be the wrong diagnosis in turn.
@@ -641,7 +646,7 @@ export const createRequestTools = (env: ToolEnv): ToolDefinition[] => {
           .string()
           .min(1)
           .describe(
-            'The request itself: what happened, what was expected, and any steps to reproduce. Becomes the first public comment on the ticket.',
+            `The request itself: what happened, what was expected, and any steps to reproduce. Becomes the first public comment on the ticket. ${END_USER_COMMENT_FORMAT}`,
           ),
         form_id: z
           .number()
@@ -885,7 +890,7 @@ export const createRequestTools = (env: ToolEnv): ToolDefinition[] => {
           .string()
           .min(1)
           .describe(
-            'The message to send. Visible to the support agents on the ticket and included in their email notification.',
+            `The message to send. Visible to the support agents on the ticket and included in their email notification. ${END_USER_COMMENT_FORMAT}`,
           ),
         attachments: attachmentsParam(
           'Files to attach to this reply, such as a screenshot or a log, with their content base64-encoded.',

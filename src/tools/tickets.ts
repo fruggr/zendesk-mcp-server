@@ -83,6 +83,11 @@ import {
 } from './attachments';
 import type { ToolDefinition, ToolEnv, ToolImageContent, ToolTextContent } from './definitions';
 
+// Zendesk strips HTML from comment.body and renders Markdown only for an agent
+// author (Ticket Comments API, "Bodies"); these tools post as the calling agent.
+const AGENT_COMMENT_FORMAT =
+  'Markdown is rendered (**bold**, lists, links): wrap code, identifiers containing _ or * and <placeholders> in backticks so they show literally. HTML tags are stripped, so do not send HTML.';
+
 // The per-image cap in MB, for the skip message. Derived once: both operands
 // are module constants.
 const MAX_ATTACHMENT_MB = Number.parseFloat((MAX_ATTACHMENT_BYTES / (1024 * 1024)).toFixed(2));
@@ -1295,7 +1300,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
           .string()
           .min(1)
           .describe(
-            "Ticket description — the body of the request. It becomes the ticket's first public comment (visible to the requester).",
+            `Ticket description — the body of the request. It becomes the ticket's first public comment (visible to the requester). ${AGENT_COMMENT_FORMAT}`,
           ),
         priority: z
           .enum(['urgent', 'high', 'normal', 'low'])
@@ -1479,7 +1484,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
           .string()
           .min(1)
           .describe(
-            'Note text (internal, agent-only). Plain text or HTML; not shown to the requester.',
+            `Note text (internal, agent-only); not shown to the requester. ${AGENT_COMMENT_FORMAT}`,
           ),
         attachments: attachmentsParam('Files to attach to this note (base64-encoded content).'),
       }),
@@ -1526,7 +1531,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
           .string()
           .min(1)
           .describe(
-            'Comment text sent to the requester. Plain text or HTML; visible in the ticket.',
+            `Comment text sent to the requester; visible in the ticket. ${AGENT_COMMENT_FORMAT}`,
           ),
         attachments: attachmentsParam('Files to attach to this comment (base64-encoded content).'),
       }),
