@@ -11,6 +11,16 @@
 | **Question** | How do pull requests from forks satisfy the required `CodeQL` check? |
 | **Answer** | Run code scanning from our own workflow (`.github/workflows/codeql.yml`) instead of GitHub's default setup, on `pull_request`. |
 
+> **Since the merge queue**, the ruleset no longer lists `CodeQL` as a required
+> status check: code scanning never posts it on a merge-queue commit, so the
+> queue dropped every PR after its 60-minute timeout
+> ([GitHub codeql-action#1537](https://github.com/github/codeql-action/issues/1537)).
+> The "Require code scanning results" rule (tool CodeQL) takes its place. It
+> also blocks while an analysis is missing or in progress, so a fork PR still
+> needs its analysis to merge. It gates the PR, not the merge-queue commit.
+> Setup: `docs/release-automation.md`. The sections below describe the decision
+> as taken, when the required check was the `CodeQL` status check.
+
 ## Why
 
 The `main` ruleset requires `CodeQL`, the check the code-scanning app posts once
@@ -44,6 +54,6 @@ pull requests to `main`, weekly). Each analysis keeps default setup's category,
 
 - **Reopen every external PR from an internal branch** (what #282 did): manual
   each time, and splits the history and conversation across two PRs.
-- **Remove `CodeQL` from the required checks:** fork code could then merge
-  without any analysis.
+- **Remove `CodeQL` from the required checks** (today: drop the code scanning
+  rule): fork code could then merge without any analysis.
 - **Admin bypass per PR:** same weakness, plus a manual step.

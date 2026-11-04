@@ -282,25 +282,40 @@ These cannot be versioned; a repository (or org) admin must apply them **once**:
    - Allow squash merging ✓
    - Default to PR title for squash merges ✓ (**critical**: without this, the `fix(security):` prefix is not carried into the squash commit on `main`, and no release is published)
 3. **Settings → Rules → Rulesets**: one ruleset on `main` carrying every rule.
-   Six of them, and re-creating the ruleset means re-creating all six:
+   Re-creating the ruleset means re-creating every rule below:
    - Require a pull request before merging, squash the only allowed method,
      zero required approvals, conversation resolution required (an unresolved
      CodeRabbit thread then blocks the merge).
-   - Required status checks `build-and-test`, `Changed lines`, `CodeQL` and
-     `CodeRabbit` (expected source: the CodeRabbit app), with "require branches
-     to be up to date" **off**. Without the status-check rule,
-     `platformAutomerge` would merge the PR before CI finishes, or before
-     CodeRabbit has posted its review.
+   - Required status checks `build-and-test`, `smoke-node-floor`,
+     `Changed lines`, `Bundle ceiling` and `CodeRabbit` (expected source: the
+     CodeRabbit app), with "require branches to be up to date" **off**.
+     Without the status-check rule, `platformAutomerge` would merge the PR
+     before CI finishes, or before CodeRabbit has posted its review. A
+     path-filtered job (`image`, `compare`) is never required: it does not run
+     on most PRs, so the merge would wait on it forever.
    - Require merge queue, merge method squash. The queue replaces the
      up-to-date policy: it builds each PR merged into the current `main` (plus
      the PRs queued ahead) and reruns the required checks on that commit, so a
      PR behind `main` never merges on stale checks and nobody has to click
      "Update branch". Every required check must therefore answer the
-     `merge_group` event, or the queue waits on it until it times out:
-     `ci.yml`, `codeql.yml` and `mutation.yml` do; CodeRabbit posts a passing
-     check on the queue commit without reviewing it again. Gitar is not
-     required until it is shown to report on a queue commit: if it does not,
-     requiring it stalls every merge, Renovate's included.
+     `merge_group` event, or the queue waits on it until the 60-minute check
+     timeout and drops the PR: `ci.yml`, `mutation.yml` and
+     `bundle-ceiling-guard.yml` do, and CodeRabbit posts a passing check on the
+     queue commit without reviewing it again. Gitar is not required: nothing
+     shows it reports on a queue commit.
+   - Require code scanning results: tool CodeQL, alerts "Errors", security
+     alerts "High or higher". This replaces a required `CodeQL` status check,
+     which stalls the queue: code scanning never posts that check on a
+     merge-queue commit, even though `codeql.yml` runs there
+     ([GitHub codeql-action#1537](https://github.com/github/codeql-action/issues/1537)).
+     The rule gates the PR only: GitHub does not apply code scanning merge
+     protection to merge-queue groups
+     ([docs](https://docs.github.com/en/code-security/concepts/code-scanning/merge-protection)).
+     The queue commit is still analysed, but an alert found only there, from
+     the combination with a PR queued ahead, does not block the merge; it
+     shows up on `main` afterwards.
+   - Require secret scanning alert resolution. It blocks every merge while
+     secret scanning is off on the repository (point 6).
    - Restrict deletions, and block force pushes.
    - Bypass list: the `fruggr-release-bot` App (point 4), bypass mode "always".
      Not "pull request" — that mode would still force the release commit
@@ -338,6 +353,10 @@ These cannot be versioned; a repository (or org) admin must apply them **once**:
      `semantic-release` pushes through the git CLI and signs nothing, so that
      rule has to sit in the bypassed ruleset too.
 5. **Settings → Code security → Dependabot security updates**: OFF. Renovate takes over via `vulnerabilityAlerts` (GHSA) + `osvVulnerabilityAlerts` (Google OSV), and we avoid duplicate PRs.
+6. **Settings → Advanced Security → Secret Protection**: on, with push
+   protection on. Generic patterns and AI-detected secrets stay off: the
+   secret scanning rule above counts generic alerts too, and test fixtures
+   with fake tokens would then block merges.
 
 ## Pause or disable
 
