@@ -1709,6 +1709,59 @@ describe('ticket tools', () => {
       const tool = findTool('create_ticket');
       expect(tool.readOnly).toBe(false);
     });
+
+    const capturePost = (returned: Record<string, unknown> = {}) => {
+      const seen: Record<string, unknown>[] = [];
+      mswServer.use(
+        http.post('https://testsubdomain.zendesk.com/api/v2/tickets', async ({ request }) => {
+          const body = (await request.json()) as { ticket: Record<string, unknown> };
+          seen.push(body.ticket);
+          return HttpResponse.json({ ticket: { ...MOCK_TICKET, id: 42, ...returned } });
+        }),
+      );
+      return seen;
+    };
+
+    it('sends the requester and the organization to Zendesk', async () => {
+      const seen = capturePost();
+      await findTool('create_ticket').handler({
+        subject: 'S',
+        description: 'D',
+        requester_id: 200,
+        organization_id: 400,
+      });
+      expect(seen[0]).toEqual({
+        subject: 'S',
+        comment: { body: 'D' },
+        requester_id: 200,
+        organization_id: 400,
+      });
+    });
+
+    it('says nothing extra when Zendesk kept the requested requester and organization', async () => {
+      capturePost();
+      const result = await findTool('create_ticket').handler({
+        subject: 'S',
+        description: 'D',
+        requester_id: 200,
+        organization_id: 400,
+      });
+      expect(firstText(result)).not.toContain('Not applied');
+    });
+
+    it('reports a requested organization Zendesk did not keep', async () => {
+      capturePost({ organization_id: null });
+      const result = await findTool('create_ticket').handler({
+        subject: 'S',
+        description: 'D',
+        requester_id: 200,
+        organization_id: 999,
+      });
+      expect(firstText(result)).toContain(
+        'Not applied: organization_id 999 requested, Zendesk kept none.',
+      );
+      expect(firstText(result)).not.toContain('requester_id 200 requested');
+    });
   });
 
   describe('update_ticket', () => {
@@ -1851,6 +1904,61 @@ describe('ticket tools', () => {
       const text = firstText(result) ?? '';
       expect(text).toContain('followers add 501');
       expect(text).toContain('email_ccs remove 601');
+    });
+
+    it('sends requester_id and organization_id verbatim', async () => {
+      const seen = capturePut();
+      await findTool('update_ticket').handler({
+        ticket_id: 1,
+        requester_id: 201,
+        organization_id: 401,
+      });
+      expect(seen[0]).toEqual({ requester_id: 201, organization_id: 401 });
+    });
+
+    it('reports a requester change Zendesk did not apply, with the likely causes', async () => {
+      capturePut();
+      const result = await findTool('update_ticket').handler({ ticket_id: 1, requester_id: 201 });
+      expect(firstText(result)).toMatchInlineSnapshot(`
+        "Ticket #1 updated.
+
+        ## Ticket #1: Test ticket
+        - **Status**: open | **Priority**: normal | **Type**: incident
+        - **Requester** (requester_id): 200 | **Organization** (organization_id): 400 | **Assignee** (assignee_id): 100
+        - **Tags**: test, mock
+        - **Created**: 2026-01-01T00:00:00Z | **Updated**: 2026-01-02T00:00:00Z
+
+        A test ticket
+
+        Not applied: requester_id 201 requested, Zendesk kept 200. Zendesk can leave the requester or the organization unchanged without an error: check that your role may edit them, and that the requester is a member of the organization."
+      `);
+    });
+
+    it('accepts requester_id and organization_id under strict parsing', () => {
+      for (const name of ['create_ticket', 'update_ticket']) {
+        const shape = findTool(name).inputSchema.shape as Record<string, unknown>;
+        expect(Object.keys(shape)).toEqual(
+          expect.arrayContaining(['requester_id', 'organization_id']),
+        );
+      }
+    });
+
+    it('lists both fields on one line when neither was applied', async () => {
+      capturePut();
+      const result = await findTool('update_ticket').handler({
+        ticket_id: 1,
+        requester_id: 201,
+        organization_id: 401,
+      });
+      expect(firstText(result)).toContain(
+        'Not applied: requester_id 201 requested, Zendesk kept 200; organization_id 401 requested, Zendesk kept 400.',
+      );
+    });
+
+    it('does not flag a field the caller did not ask to change', async () => {
+      capturePut();
+      const result = await findTool('update_ticket').handler({ ticket_id: 1, status: 'open' });
+      expect(firstText(result)).not.toContain('Not applied');
     });
 
     it('says nothing extra when every requested change is reflected', async () => {

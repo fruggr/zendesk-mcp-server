@@ -204,7 +204,7 @@ it('exposes the tickets tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": false,
         },
-        "description": "Create a new Zendesk support ticket with subject, description, and optional priority/type/assignee/tags. The description becomes the first public comment of the ticket, and the new ticket id is returned. After creation, use update_ticket to change status or assignee, add_public_comment or add_private_note to reply, and manage_tags to adjust tags. Look up valid assignee_id / group_id and custom field ids via search_users or your Zendesk admin settings. Discover custom field ids and their accepted option values with list_ticket_fields.",
+        "description": "Create a new Zendesk support ticket with subject, description, and optional requester, organization, priority, type, assignee and tags. The description becomes the first public comment of the ticket, and the new ticket id is returned. After creation, use update_ticket to change status or assignee, add_public_comment or add_private_note to reply, and manage_tags to adjust tags. Without requester_id the ticket is filed on your behalf; the organization must be one the requester is a member of, and a value Zendesk did not keep is reported as not applied. Look up valid requester_id / assignee_id via search_users, group_id via your Zendesk admin settings. Discover custom field ids and their accepted option values with list_ticket_fields.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -249,6 +249,12 @@ it('exposes the tickets tool surface unchanged', async () => {
               "minimum": -9007199254740991,
               "type": "integer",
             },
+            "organization_id": {
+              "description": "Id of the organization the ticket belongs to. It must be one the requester is a member of, or Zendesk rejects or ignores it; omit to let Zendesk use the requester's default organization.",
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer",
+            },
             "priority": {
               "description": "Ticket priority. One of urgent, high, normal, low.",
               "enum": [
@@ -258,6 +264,12 @@ it('exposes the tickets tool surface unchanged', async () => {
                 "low",
               ],
               "type": "string",
+            },
+            "requester_id": {
+              "description": "User id of the person the ticket is on behalf of (end user or agent); defaults to you. Resolve it with search_users.",
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer",
             },
             "subject": {
               "description": "Ticket subject — the short summary line shown in ticket lists and search results.",
@@ -298,7 +310,7 @@ it('exposes the tickets tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": false,
         },
-        "description": "Update an existing ticket (status, priority, type, assignee, group, subject, tags, custom fields, followers, email CCs). Only the fields you pass are changed, and the updated ticket is returned. Followers and email CCs are incremental instead of replacing: pass { add, remove } lists of user ids, and the response reports who is subscribed afterwards. Zendesk applies those two silently, so a requested change it did not apply comes back listed as unconfirmed rather than raised as an error. Setting tags here replaces the whole tag set — use manage_tags to add or remove individual tags without overwriting the rest. This tool does not post replies: use add_public_comment or add_private_note for that. Find the ticket id via search_tickets or list_tickets.",
+        "description": "Update an existing ticket (status, priority, type, requester, organization, assignee, group, subject, tags, custom fields, followers, email CCs). Only the fields you pass are changed, and the updated ticket is returned. The organization must be one the requester is a member of; a requester or organization Zendesk did not change is reported as not applied. Followers and email CCs are incremental instead of replacing: pass { add, remove } lists of user ids, and the response reports who is subscribed afterwards. Zendesk applies those two silently, so a requested change it did not apply comes back listed as unconfirmed rather than raised as an error. Setting tags here replaces the whole tag set — use manage_tags to add or remove individual tags without overwriting the rest. This tool does not post replies: use add_public_comment or add_private_note for that. Find the ticket id via search_tickets or list_tickets.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -389,6 +401,12 @@ it('exposes the tickets tool surface unchanged', async () => {
               "minimum": -9007199254740991,
               "type": "integer",
             },
+            "organization_id": {
+              "description": "Id of the organization to move the ticket to. It must be one the requester is a member of, or Zendesk rejects or ignores it.",
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer",
+            },
             "priority": {
               "description": "Ticket priority. One of urgent, high, normal, low.",
               "enum": [
@@ -398,6 +416,12 @@ it('exposes the tickets tool surface unchanged', async () => {
                 "low",
               ],
               "type": "string",
+            },
+            "requester_id": {
+              "description": "User id of the new requester (end user or agent), to fix who the ticket is on behalf of. Resolve it with search_users.",
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer",
             },
             "status": {
               "description": "New ticket status. One of new, open, pending, hold, solved, closed.",
