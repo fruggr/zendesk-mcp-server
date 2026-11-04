@@ -1935,12 +1935,28 @@ describe('ticket tools', () => {
     });
 
     it('accepts requester_id and organization_id under strict parsing', () => {
-      for (const name of ['create_ticket', 'update_ticket']) {
-        const shape = findTool(name).inputSchema.shape as Record<string, unknown>;
-        expect(Object.keys(shape)).toEqual(
-          expect.arrayContaining(['requester_id', 'organization_id']),
-        );
-      }
+      const parties = { requester_id: 201, organization_id: 401 };
+      expect(
+        findTool('create_ticket')
+          .inputSchema.strict()
+          .safeParse({ subject: 'S', description: 'D', ...parties }).success,
+      ).toBe(true);
+      expect(
+        findTool('update_ticket')
+          .inputSchema.strict()
+          .safeParse({ ticket_id: 1, ...parties }).success,
+      ).toBe(true);
+    });
+
+    it('reports an unapplied requester after the subscribers block, not inside the ticket card', async () => {
+      const result = await findTool('update_ticket').handler({
+        ticket_id: 1,
+        requester_id: 201,
+        followers: { add: [501] },
+      });
+      const text = firstText(result) ?? '';
+      expect(text).toContain('### Subscribers');
+      expect(text.indexOf('Not applied')).toBeGreaterThan(text.indexOf('### Subscribers'));
     });
 
     it('lists both fields on one line when neither was applied', async () => {

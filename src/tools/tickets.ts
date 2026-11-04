@@ -1389,7 +1389,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: false,
       title: 'Update Zendesk Ticket',
       description:
-        'Update an existing ticket (status, priority, type, requester, organization, assignee, group, subject, tags, custom fields, followers, email CCs). Only the fields you pass are changed, and the updated ticket is returned. The organization must be one the requester is a member of; a requester or organization Zendesk did not change is reported as not applied. Followers and email CCs are incremental instead of replacing: pass { add, remove } lists of user ids, and the response reports who is subscribed afterwards. Zendesk applies those two silently, so a requested change it did not apply comes back listed as unconfirmed rather than raised as an error. Setting tags here replaces the whole tag set — use manage_tags to add or remove individual tags without overwriting the rest. This tool does not post replies: use add_public_comment or add_private_note for that. Find the ticket id via search_tickets or list_tickets.',
+        'Update an existing ticket (status, priority, type, requester, organization, assignee, group, subject, tags, custom fields, followers, email CCs). Only the fields you pass are changed, and the updated ticket is returned. The organization must be one the requester is a member of; a requested requester or organization that Zendesk did not set is reported as not applied. Followers and email CCs are incremental instead of replacing: pass { add, remove } lists of user ids, and the response reports who is subscribed afterwards. Zendesk applies those two silently, so a requested change it did not apply comes back listed as unconfirmed rather than raised as an error. Setting tags here replaces the whole tag set — use manage_tags to add or remove individual tags without overwriting the rest. This tool does not post replies: use add_public_comment or add_private_note for that. Find the ticket id via search_tickets or list_tickets.',
       inputSchema: z.object({
         ticket_id: z
           .number()
@@ -1496,7 +1496,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
           `/tickets/${ticket_id}`,
           { ticket: { ...updates, ...sent } },
         );
-        let text = `Ticket #${ticket.id} updated.\n\n${formatTicket(ticket)}${formatPartyOutcome(updates, ticket)}`;
+        let text = `Ticket #${ticket.id} updated.\n\n${formatTicket(ticket)}`;
         // Only a call that touched subscribers pays the look-up and reports the
         // block; a plain status change keeps the output it always had.
         if (followerActions || ccActions) {
@@ -1507,6 +1507,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
           );
           text += formatSubscribersBlock(ticket, names) + formatSubscriberOutcome(sent, ticket);
         }
+        text += formatPartyOutcome(updates, ticket);
         return { content: [{ type: 'text', text }] };
       },
     },
