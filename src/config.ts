@@ -318,23 +318,28 @@ const portEnv = (name: string): number | undefined => {
 };
 
 /**
- * Split a raw `--brand-ids` / `ZENDESK_BRAND_IDS` value into its entries.
- * Comma-separated, entries trimmed; an empty entry (from `a,,b`, a leading/
- * trailing comma, or a whitespace-only value) is a misconfiguration, not an
- * ignored blank: it fails at startup naming the knob. Format validation only —
- * whether an id/subdomain exists is decided lazily, on first use (no token is
- * available at startup on either transport).
+ * Split a raw comma-separated value (`ZENDESK_BRAND_IDS`, `MCP_NAMESPACES`) into
+ * its entries, trimmed. An empty entry (from `a,,b`, a leading/trailing comma,
+ * or a whitespace-only value) is a misconfiguration, not an ignored blank: it
+ * fails at startup naming the knob, unlike the lenient `splitList`.
  */
-const parseBrandIds = (raw: string | undefined): string[] | undefined => {
-  if (raw === undefined) return undefined;
+const splitStrictList = (raw: string, emptyEntryMessage: string): string[] => {
   const entries = raw.split(',').map((entry) => entry.trim());
   if (entries.some((entry) => entry.length === 0)) {
-    throw createStartupError(
-      'Invalid --brand-ids / ZENDESK_BRAND_IDS value: empty entry. ' +
-        'Expected a comma-separated list of brand ids or subdomains, or "all".',
-      STARTUP_DOCS.environment,
-    );
+    throw createStartupError(emptyEntryMessage, STARTUP_DOCS.environment);
   }
+  return entries;
+};
+
+// Format validation only: whether an id/subdomain exists is decided lazily, on
+// first use (no token is available at startup on either transport).
+const parseBrandIds = (raw: string | undefined): string[] | undefined => {
+  if (raw === undefined) return undefined;
+  const entries = splitStrictList(
+    raw,
+    'Invalid --brand-ids / ZENDESK_BRAND_IDS value: empty entry. ' +
+      'Expected a comma-separated list of brand ids or subdomains, or "all".',
+  );
   // 'all' is matched case-insensitively: 'ALL' is the flag written in caps, not
   // a brand literally named ALL. Every other entry is lowercased too: Zendesk
   // subdomains are lowercase by construction, and normalising here keeps the
@@ -352,6 +357,41 @@ const parseBrandIds = (raw: string | undefined): string[] | undefined => {
   // and without collapsing it the two entries would resolve to multi mode —
   // exposing list_brands and requiring a per-call brand_id — for a single brand.
   return [...new Set(normalized)];
+};
+
+const ALL_NAMESPACES = 'all';
+
+// `all` is a keyword, matched exactly like the lowercase enum values beside it;
+// mixed with named namespaces it is ambiguous, so it fails rather than wins.
+// Entries are de-duplicated first: a namespace named twice would otherwise
+// repeat its admin instructions block (`buildCustomInstructions`).
+const expandAllNamespaces = (named: string[], docs: string): string[] => {
+  const entries = [...new Set(named)];
+  if (!entries.includes(ALL_NAMESPACES)) return entries;
+  if (entries.length > 1) {
+    throw createStartupError(
+      'Invalid --namespace / MCP_NAMESPACES value: "all" cannot be combined with named namespaces.',
+      docs,
+    );
+  }
+  return [...Namespace.options];
+};
+
+/**
+ * The namespaces the operator asked for, or undefined when neither
+ * `--namespace` nor `MCP_NAMESPACES` is set. The flag wins and leaves the variable
+ * unread. Entries stay strings: the `Namespace` enum in ConfigSchema rejects an
+ * unknown one.
+ */
+const resolveNamespaces = (cliValues: string[] | undefined): string[] | undefined => {
+  if (cliValues !== undefined) return expandAllNamespaces(cliValues, STARTUP_DOCS.cliReference);
+  const raw = requireNonEmptyEnv('MCP_NAMESPACES');
+  if (raw === undefined) return undefined;
+  const entries = splitStrictList(
+    raw,
+    'Invalid MCP_NAMESPACES value: empty entry. Expected a comma-separated list of namespaces, or "all".',
+  );
+  return expandAllNamespaces(entries, STARTUP_DOCS.environment);
 };
 
 // The whole CLI surface as one declarative table: `parseArgs` derives the
@@ -693,8 +733,10 @@ export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
   // `filterTools` ANDs the namespace and tool filters, so keeping the default
   // set here would make `--tool list_requests` resolve to nothing: the tool
   // exists, its namespace is not in the default. An explicit `--tool` without
-  // `--namespace` therefore opens the namespace filter and narrows by tool.
-  const namespaces = cli.namespaces ?? (cli.tools?.length ? [...Namespace.options] : undefined);
+  // `--namespace` / `MCP_NAMESPACES` therefore opens the namespace filter and
+  // narrows by tool.
+  const namespaces =
+    resolveNamespaces(cli.namespaces) ?? (cli.tools?.length ? [...Namespace.options] : undefined);
 
   const callbackPort = cli.callbackPort ?? portEnv('OAUTH_CALLBACK_PORT');
   const brandIds = cli.brandIds ?? requireNonEmptyEnv('ZENDESK_BRAND_IDS');

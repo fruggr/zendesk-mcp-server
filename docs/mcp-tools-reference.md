@@ -106,7 +106,7 @@ are shared across brands) and never takes `brand_id`.
 
 The customer-facing half of the server: submitting and following one's *own*
 tickets, through the API path Zendesk reserves for requesters. Exposed only
-when asked for by name (`--namespace requests`) — see
+when asked for, by name (`--namespace requests`) or with `--namespace all` — see
 [End-user mode](../README.md#end-user-mode) for why, and for what a customer
 deliberately cannot do.
 

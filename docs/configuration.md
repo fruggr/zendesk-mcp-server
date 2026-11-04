@@ -30,7 +30,9 @@ Options:
                           users, requests, preferences. Defaults to tickets +
                           help_center + users + preferences; `requests` (the
                           end-user surface) is opt-in and only ever exposed when
-                          asked for by name
+                          asked for by name, or by `all` (every namespace, opt-in
+                          ones included; not combinable with named ones). Also
+                          MCP_NAMESPACES.
   --tool <name>           Filter by tool name (repeatable, forces --mode all)
   --read-only             Only expose read operations, and request the
                           `read` OAuth scope alone
@@ -102,6 +104,8 @@ Options:
 Passing `--namespace` **replaces** the default set rather than adding to it, so
 `--namespace requests` exposes the end-user surface *only*. To serve customers
 the knowledge base as well, name both: `--namespace requests --namespace help_center`.
+For the whole surface, `--namespace all` names every namespace, opt-in ones
+included, and keeps up when one is added.
 
 `--read-only` composes with either, if customers should follow their tickets
 without opening new ones.
@@ -390,6 +394,15 @@ minutes per session. With `all` or more than ~3 brands, and especially on a
 shared HTTP deployment where every session scans on its own, start the server
 with `--no-promoted-articles` or lower that cap. Articles stay readable on
 demand by URI, and `list_promoted_articles` still works per brand.
+
+### `MCP_NAMESPACES`
+**Required:** no · **Default:** none (`tickets`, `help_center`, `users`, `preferences`)
+
+The namespaces to expose, comma-separated (`tickets,requests`), or `all` for
+every namespace, opt-in ones included. Same values as `--namespace`, which wins
+when both are set. Like the flag, it replaces the default set rather than adding
+to it, and `all` cannot be combined with named namespaces. An empty entry
+(`tickets,,users`) fails at startup.
 
 ### `OAUTH_CALLBACK_PORT`
 **Required:** no · **Default:** `27439`

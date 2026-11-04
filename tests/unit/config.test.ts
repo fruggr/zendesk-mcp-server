@@ -14,6 +14,7 @@ const LOAD_CONFIG_ENV = [
   'ZENDESK_SUBDOMAIN',
   'ZENDESK_OAUTH_CLIENT_ID',
   'ZENDESK_BRAND_IDS',
+  'MCP_NAMESPACES',
   'LOG_LEVEL',
   'TRANSPORT',
   'LISTEN_HOST',
@@ -295,6 +296,112 @@ describe('loadConfig', () => {
   it('still lets an explicit --namespace win over that widening', () => {
     const config = loadConfig(['mycompany', '--tool', 'list_requests', '--namespace', 'tickets']);
     expect(config.namespaces).toEqual(['tickets']);
+  });
+
+  // Exact enum order, opt-in `requests` included: `all` is the way to reach the
+  // whole surface without a hand-kept list that goes stale on the next namespace.
+  it('expands --namespace all to every namespace, opt-in ones included', () => {
+    expect(loadConfig(['mycompany', '--namespace', 'all']).namespaces).toEqual([
+      'tickets',
+      'help_center',
+      'users',
+      'requests',
+      'preferences',
+    ]);
+  });
+
+  it('rejects --namespace all combined with a named namespace, naming both knobs', () => {
+    const load = () => loadConfig(['mycompany', '--namespace', 'all', '--namespace', 'tickets']);
+    expect(load).toThrow(
+      'Invalid --namespace / MCP_NAMESPACES value: "all" cannot be combined with named namespaces.',
+    );
+    expect(load).toThrow(STARTUP_DOCS.cliReference);
+  });
+
+  it('collapses --namespace repeated with the same value', () => {
+    expect(
+      loadConfig(['mycompany', '--namespace', 'tickets', '--namespace', 'tickets']).namespaces,
+    ).toEqual(['tickets']);
+  });
+
+  // `all` is a keyword next to lowercase enum values, not a case-folded alias.
+  it('rejects ALL in capitals, like any other unknown namespace', () => {
+    expect(() => loadConfig(['mycompany', '--namespace', 'ALL'])).toThrow(/namespaces\.0/);
+  });
+
+  describe('MCP_NAMESPACES', () => {
+    it('reads a comma-separated list, entries trimmed', () => {
+      process.env['MCP_NAMESPACES'] = ' tickets , requests ';
+      expect(loadConfig(['mycompany']).namespaces).toEqual(['tickets', 'requests']);
+    });
+
+    it('expands all to every namespace', () => {
+      process.env['MCP_NAMESPACES'] = 'all';
+      expect(loadConfig(['mycompany']).namespaces).toEqual([
+        'tickets',
+        'help_center',
+        'users',
+        'requests',
+        'preferences',
+      ]);
+    });
+
+    it('rejects all combined with a named namespace', () => {
+      process.env['MCP_NAMESPACES'] = 'all,tickets';
+      const load = () => loadConfig(['mycompany']);
+      expect(load).toThrow(
+        'Invalid --namespace / MCP_NAMESPACES value: "all" cannot be combined with named namespaces.',
+      );
+      expect(load).toThrow(STARTUP_DOCS.environment);
+    });
+
+    it.each(['tickets,,users', ',tickets', 'tickets,', ' '])(
+      'rejects the empty entry in %j',
+      (raw) => {
+        process.env['MCP_NAMESPACES'] = raw;
+        const load = () => loadConfig(['mycompany']);
+        expect(load).toThrow(
+          'Invalid MCP_NAMESPACES value: empty entry. Expected a comma-separated list of namespaces, or "all".',
+        );
+        expect(load).toThrow(STARTUP_DOCS.environment);
+      },
+    );
+
+    it('rejects an empty value', () => {
+      process.env['MCP_NAMESPACES'] = '';
+      expect(() => loadConfig(['mycompany'])).toThrow(/Empty MCP_NAMESPACES\./);
+    });
+
+    it('rejects an unknown namespace through the schema', () => {
+      process.env['MCP_NAMESPACES'] = 'tickets,bogus';
+      expect(() => loadConfig(['mycompany'])).toThrow(/namespaces\.1/);
+    });
+
+    // A namespace named twice would repeat its admin instructions block.
+    it('collapses a namespace named twice, keeping first-seen order', () => {
+      process.env['MCP_NAMESPACES'] = 'users,tickets,users';
+      expect(loadConfig(['mycompany']).namespaces).toEqual(['users', 'tickets']);
+    });
+
+    it('accepts all named twice as all', () => {
+      process.env['MCP_NAMESPACES'] = 'all,all';
+      expect(loadConfig(['mycompany']).namespaces).toHaveLength(5);
+    });
+
+    it('is overridden by --namespace', () => {
+      process.env['MCP_NAMESPACES'] = 'all';
+      expect(loadConfig(['mycompany', '--namespace', 'users']).namespaces).toEqual(['users']);
+    });
+
+    it('is not consulted when --namespace is passed, even if malformed', () => {
+      process.env['MCP_NAMESPACES'] = 'tickets,,users';
+      expect(loadConfig(['mycompany', '--namespace', 'users']).namespaces).toEqual(['users']);
+    });
+
+    it('wins over the --tool widening, as an explicit --namespace does', () => {
+      process.env['MCP_NAMESPACES'] = 'tickets';
+      expect(loadConfig(['mycompany', '--tool', 'list_requests']).namespaces).toEqual(['tickets']);
+    });
   });
 
   it('does not print the tool surface unless asked', () => {
