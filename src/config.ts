@@ -318,7 +318,7 @@ const portEnv = (name: string): number | undefined => {
 };
 
 /**
- * Split a raw comma-separated value (`ZENDESK_BRAND_IDS`, `NAMESPACES`) into
+ * Split a raw comma-separated value (`ZENDESK_BRAND_IDS`, `MCP_NAMESPACES`) into
  * its entries, trimmed. An empty entry (from `a,,b`, a leading/trailing comma,
  * or a whitespace-only value) is a misconfiguration, not an ignored blank: it
  * fails at startup naming the knob, unlike the lenient `splitList`.
@@ -370,7 +370,7 @@ const expandAllNamespaces = (named: string[], docs: string): string[] => {
   if (!entries.includes(ALL_NAMESPACES)) return entries;
   if (entries.length > 1) {
     throw createStartupError(
-      'Invalid --namespace / NAMESPACES value: "all" cannot be combined with named namespaces.',
+      'Invalid --namespace / MCP_NAMESPACES value: "all" cannot be combined with named namespaces.',
       docs,
     );
   }
@@ -379,17 +379,17 @@ const expandAllNamespaces = (named: string[], docs: string): string[] => {
 
 /**
  * The namespaces the operator asked for, or undefined when neither
- * `--namespace` nor `NAMESPACES` is set. The flag wins and leaves the variable
+ * `--namespace` nor `MCP_NAMESPACES` is set. The flag wins and leaves the variable
  * unread. Entries stay strings: the `Namespace` enum in ConfigSchema rejects an
  * unknown one.
  */
 const resolveNamespaces = (cliValues: string[] | undefined): string[] | undefined => {
   if (cliValues !== undefined) return expandAllNamespaces(cliValues, STARTUP_DOCS.cliReference);
-  const raw = requireNonEmptyEnv('NAMESPACES');
+  const raw = requireNonEmptyEnv('MCP_NAMESPACES');
   if (raw === undefined) return undefined;
   const entries = splitStrictList(
     raw,
-    'Invalid NAMESPACES value: empty entry. Expected a comma-separated list of namespaces, or "all".',
+    'Invalid MCP_NAMESPACES value: empty entry. Expected a comma-separated list of namespaces, or "all".',
   );
   return expandAllNamespaces(entries, STARTUP_DOCS.environment);
 };
@@ -733,7 +733,7 @@ export const loadConfig = (argv: string[] = process.argv.slice(2)): Config => {
   // `filterTools` ANDs the namespace and tool filters, so keeping the default
   // set here would make `--tool list_requests` resolve to nothing: the tool
   // exists, its namespace is not in the default. An explicit `--tool` without
-  // `--namespace` / `NAMESPACES` therefore opens the namespace filter and
+  // `--namespace` / `MCP_NAMESPACES` therefore opens the namespace filter and
   // narrows by tool.
   const namespaces =
     resolveNamespaces(cli.namespaces) ?? (cli.tools?.length ? [...Namespace.options] : undefined);

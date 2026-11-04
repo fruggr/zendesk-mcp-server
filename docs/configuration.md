@@ -32,7 +32,7 @@ Options:
                           end-user surface) is opt-in and only ever exposed when
                           asked for by name, or by `all` (every namespace, opt-in
                           ones included; not combinable with named ones). Also
-                          NAMESPACES.
+                          MCP_NAMESPACES.
   --tool <name>           Filter by tool name (repeatable, forces --mode all)
   --read-only             Only expose read operations, and request the
                           `read` OAuth scope alone
@@ -395,7 +395,7 @@ shared HTTP deployment where every session scans on its own, start the server
 with `--no-promoted-articles` or lower that cap. Articles stay readable on
 demand by URI, and `list_promoted_articles` still works per brand.
 
-### `NAMESPACES`
+### `MCP_NAMESPACES`
 **Required:** no · **Default:** none (`tickets`, `help_center`, `users`, `preferences`)
 
 The namespaces to expose, comma-separated (`tickets,requests`), or `all` for
