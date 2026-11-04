@@ -318,23 +318,28 @@ const portEnv = (name: string): number | undefined => {
 };
 
 /**
- * Split a raw `--brand-ids` / `ZENDESK_BRAND_IDS` value into its entries.
- * Comma-separated, entries trimmed; an empty entry (from `a,,b`, a leading/
- * trailing comma, or a whitespace-only value) is a misconfiguration, not an
- * ignored blank: it fails at startup naming the knob. Format validation only —
- * whether an id/subdomain exists is decided lazily, on first use (no token is
- * available at startup on either transport).
+ * Split a raw comma-separated value (`ZENDESK_BRAND_IDS`, `NAMESPACES`) into
+ * its entries, trimmed. An empty entry (from `a,,b`, a leading/trailing comma,
+ * or a whitespace-only value) is a misconfiguration, not an ignored blank: it
+ * fails at startup naming the knob, unlike the lenient `splitList`.
  */
-const parseBrandIds = (raw: string | undefined): string[] | undefined => {
-  if (raw === undefined) return undefined;
+const splitStrictList = (raw: string, emptyEntryMessage: string): string[] => {
   const entries = raw.split(',').map((entry) => entry.trim());
   if (entries.some((entry) => entry.length === 0)) {
-    throw createStartupError(
-      'Invalid --brand-ids / ZENDESK_BRAND_IDS value: empty entry. ' +
-        'Expected a comma-separated list of brand ids or subdomains, or "all".',
-      STARTUP_DOCS.environment,
-    );
+    throw createStartupError(emptyEntryMessage, STARTUP_DOCS.environment);
   }
+  return entries;
+};
+
+// Format validation only: whether an id/subdomain exists is decided lazily, on
+// first use (no token is available at startup on either transport).
+const parseBrandIds = (raw: string | undefined): string[] | undefined => {
+  if (raw === undefined) return undefined;
+  const entries = splitStrictList(
+    raw,
+    'Invalid --brand-ids / ZENDESK_BRAND_IDS value: empty entry. ' +
+      'Expected a comma-separated list of brand ids or subdomains, or "all".',
+  );
   // 'all' is matched case-insensitively: 'ALL' is the flag written in caps, not
   // a brand literally named ALL. Every other entry is lowercased too: Zendesk
   // subdomains are lowercase by construction, and normalising here keeps the
@@ -358,7 +363,10 @@ const ALL_NAMESPACES = 'all';
 
 // `all` is a keyword, matched exactly like the lowercase enum values beside it;
 // mixed with named namespaces it is ambiguous, so it fails rather than wins.
-const expandAllNamespaces = (entries: string[], docs: string): string[] => {
+// Entries are de-duplicated first: a namespace named twice would otherwise
+// repeat its admin instructions block (`buildCustomInstructions`).
+const expandAllNamespaces = (named: string[], docs: string): string[] => {
+  const entries = [...new Set(named)];
   if (!entries.includes(ALL_NAMESPACES)) return entries;
   if (entries.length > 1) {
     throw createStartupError(
@@ -379,13 +387,10 @@ const resolveNamespaces = (cliValues: string[] | undefined): string[] | undefine
   if (cliValues !== undefined) return expandAllNamespaces(cliValues, STARTUP_DOCS.cliReference);
   const raw = requireNonEmptyEnv('NAMESPACES');
   if (raw === undefined) return undefined;
-  const entries = raw.split(',').map((entry) => entry.trim());
-  if (entries.some((entry) => entry.length === 0)) {
-    throw createStartupError(
-      'Invalid NAMESPACES value: empty entry. Expected a comma-separated list of namespaces, or "all".',
-      STARTUP_DOCS.environment,
-    );
-  }
+  const entries = splitStrictList(
+    raw,
+    'Invalid NAMESPACES value: empty entry. Expected a comma-separated list of namespaces, or "all".',
+  );
   return expandAllNamespaces(entries, STARTUP_DOCS.environment);
 };
 

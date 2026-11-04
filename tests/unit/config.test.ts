@@ -318,6 +318,12 @@ describe('loadConfig', () => {
     expect(load).toThrow(STARTUP_DOCS.cliReference);
   });
 
+  it('collapses --namespace repeated with the same value', () => {
+    expect(
+      loadConfig(['mycompany', '--namespace', 'tickets', '--namespace', 'tickets']).namespaces,
+    ).toEqual(['tickets']);
+  });
+
   // `all` is a keyword next to lowercase enum values, not a case-folded alias.
   it('rejects ALL in capitals, like any other unknown namespace', () => {
     expect(() => loadConfig(['mycompany', '--namespace', 'ALL'])).toThrow(/namespaces\.0/);
@@ -369,6 +375,17 @@ describe('loadConfig', () => {
     it('rejects an unknown namespace through the schema', () => {
       process.env['NAMESPACES'] = 'tickets,bogus';
       expect(() => loadConfig(['mycompany'])).toThrow(/namespaces\.1/);
+    });
+
+    // A namespace named twice would repeat its admin instructions block.
+    it('collapses a namespace named twice, keeping first-seen order', () => {
+      process.env['NAMESPACES'] = 'users,tickets,users';
+      expect(loadConfig(['mycompany']).namespaces).toEqual(['users', 'tickets']);
+    });
+
+    it('accepts all named twice as all', () => {
+      process.env['NAMESPACES'] = 'all,all';
+      expect(loadConfig(['mycompany']).namespaces).toHaveLength(5);
     });
 
     it('is overridden by --namespace', () => {
