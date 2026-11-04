@@ -307,7 +307,13 @@ These cannot be versioned; a repository (or org) admin must apply them **once**:
      alerts "High or higher". This replaces a required `CodeQL` status check,
      which stalls the queue: code scanning never posts that check on a
      merge-queue commit, even though `codeql.yml` runs there
-     ([github/codeql-action#1537](https://github.com/github/codeql-action/issues/1537)).
+     ([GitHub codeql-action#1537](https://github.com/github/codeql-action/issues/1537)).
+     The rule gates the PR only: GitHub does not apply code scanning merge
+     protection to merge-queue groups
+     ([docs](https://docs.github.com/en/code-security/concepts/code-scanning/merge-protection)).
+     The queue commit is still analysed, but an alert found only there, from
+     the combination with a PR queued ahead, does not block the merge; it
+     shows up on `main` afterwards.
    - Require secret scanning alert resolution. It blocks every merge while
      secret scanning is off on the repository (point 6).
    - Restrict deletions, and block force pushes.
