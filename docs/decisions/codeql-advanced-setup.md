@@ -11,6 +11,14 @@
 | **Question** | How do pull requests from forks satisfy the required `CodeQL` check? |
 | **Answer** | Run code scanning from our own workflow (`.github/workflows/codeql.yml`) instead of GitHub's default setup, on `pull_request`. |
 
+> **Since the merge queue**, the ruleset no longer lists `CodeQL` as a required
+> status check: code scanning never posts it on a merge-queue commit, so the
+> queue dropped every PR after its 60-minute timeout
+> ([github/codeql-action#1537](https://github.com/github/codeql-action/issues/1537)).
+> The "Require code scanning results" rule (tool CodeQL) takes its place. It
+> also blocks while an analysis is missing or in progress, so a fork PR still
+> needs its analysis to merge. Setup: `docs/release-automation.md`.
+
 ## Why
 
 The `main` ruleset requires `CodeQL`, the check the code-scanning app posts once

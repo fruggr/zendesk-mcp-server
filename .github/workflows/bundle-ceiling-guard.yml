@@ -9,6 +9,9 @@ name: Bundle ceiling guard
 on:
   pull_request:
     types: [opened, synchronize, reopened, labeled, unlabeled]
+  # Required check, so the merge queue waits for it on its own commit too. The
+  # PR run already judged the label; the queue run only reports it.
+  merge_group:
 
 permissions:
   contents: read
@@ -16,12 +19,19 @@ permissions:
 
 jobs:
   guard:
+    # Unique name: the ruleset requires checks by name, and the Duplicate issue
+    # guard's job is also called `guard`.
+    name: Bundle ceiling
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/github-script@v9
         with:
           script: |
+            if (context.eventName === 'merge_group') {
+              core.info('Merge queue commit: the PR run already enforced the label.');
+              return;
+            }
             const pr = context.payload.pull_request;
             const files = await github.paginate(github.rest.pulls.listFiles, {
               ...context.repo,

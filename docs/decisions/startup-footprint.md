@@ -121,6 +121,8 @@ Raising it anyway is deliberately hard, with three locks:
    therefore edits this file, and adds a section saying why.
 2. **A label.** `.github/workflows/bundle-ceiling-guard.yml` fails a PR that
    changes `bundle-ceiling.json` until a maintainer adds `bundle-ceiling-raise`.
+   Its job, `Bundle ceiling`, is a required check, so a red run blocks the
+   merge instead of only warning.
 3. **Agents.** `AGENTS.md` tells an agent never to raise the ceiling: it stops
    and asks the owner. It may raise a tier-1 reference, with a reason.
 
