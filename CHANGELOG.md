@@ -1,3 +1,17 @@
+## [3.9.1](https://github.com/fruggr/zendesk-mcp-server/compare/v3.9.0...v3.9.1) (2026-11-04)
+
+### Bug Fixes
+
+* **tools:** describe comment bodies as Markdown, not HTML ([#431](https://github.com/fruggr/zendesk-mcp-server/issues/431)) ([82e1c7d](https://github.com/fruggr/zendesk-mcp-server/commit/82e1c7d7bfe7e313ee1496a97f0d62f95be780c3)), closes [#418](https://github.com/fruggr/zendesk-mcp-server/issues/418)
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Continuous Integration
+
+* make the bundle ceiling guard a queue-ready required check ([#430](https://github.com/fruggr/zendesk-mcp-server/issues/430)) ([5890568](https://github.com/fruggr/zendesk-mcp-server/commit/5890568d520d6b96bd175a85d3420e7c6aa0df7f)), references [#429](https://github.com/fruggr/zendesk-mcp-server/issues/429) [#428](https://github.com/fruggr/zendesk-mcp-server/issues/428) [#429](https://github.com/fruggr/zendesk-mcp-server/issues/429)
+</details>
+
 ## [3.9.0](https://github.com/fruggr/zendesk-mcp-server/compare/v3.8.0...v3.9.0) (2026-11-04)
 
 ### Features
