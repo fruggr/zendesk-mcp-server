@@ -83,10 +83,11 @@ import {
 } from './attachments';
 import type { ToolDefinition, ToolEnv, ToolImageContent, ToolTextContent } from './definitions';
 
-// Zendesk strips HTML from comment.body and renders Markdown only for an agent
-// author (Ticket Comments API, "Bodies"); these tools post as the calling agent.
+// Zendesk renders Markdown in comment.body only for an agent author (Ticket
+// Comments API, "Bodies"); these tools post as the calling agent. HTML there is
+// shown as literal text (#418 validation), despite the docs saying "stripped".
 const AGENT_COMMENT_FORMAT =
-  'Markdown is rendered (**bold**, lists, links): wrap code, identifiers containing _ or * and <placeholders> in backticks so they show literally. HTML tags are stripped, so do not send HTML.';
+  'Markdown is rendered (**bold**, lists, links): wrap code, identifiers containing _ or * and <placeholders> in backticks so they show literally. HTML is not rendered (tags show as literal text), so do not send HTML.';
 
 // The per-image cap in MB, for the skip message. Derived once: both operands
 // are module constants.

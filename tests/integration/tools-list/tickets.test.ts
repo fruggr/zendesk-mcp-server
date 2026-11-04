@@ -239,7 +239,7 @@ it('exposes the tickets tool surface unchanged', async () => {
               "type": "array",
             },
             "description": {
-              "description": "Ticket description — the body of the request. It becomes the ticket's first public comment (visible to the requester). Markdown is rendered (**bold**, lists, links): wrap code, identifiers containing _ or * and <placeholders> in backticks so they show literally. HTML tags are stripped, so do not send HTML.",
+              "description": "Ticket description — the body of the request. It becomes the ticket's first public comment (visible to the requester). Markdown is rendered (**bold**, lists, links): wrap code, identifiers containing _ or * and <placeholders> in backticks so they show literally. HTML is not rendered (tags show as literal text), so do not send HTML.",
               "minLength": 1,
               "type": "string",
             },
@@ -494,7 +494,7 @@ it('exposes the tickets tool surface unchanged', async () => {
               "type": "array",
             },
             "body": {
-              "description": "Note text (internal, agent-only); not shown to the requester. Markdown is rendered (**bold**, lists, links): wrap code, identifiers containing _ or * and <placeholders> in backticks so they show literally. HTML tags are stripped, so do not send HTML.",
+              "description": "Note text (internal, agent-only); not shown to the requester. Markdown is rendered (**bold**, lists, links): wrap code, identifiers containing _ or * and <placeholders> in backticks so they show literally. HTML is not rendered (tags show as literal text), so do not send HTML.",
               "minLength": 1,
               "type": "string",
             },
@@ -561,7 +561,7 @@ it('exposes the tickets tool surface unchanged', async () => {
               "type": "array",
             },
             "body": {
-              "description": "Comment text sent to the requester; visible in the ticket. Markdown is rendered (**bold**, lists, links): wrap code, identifiers containing _ or * and <placeholders> in backticks so they show literally. HTML tags are stripped, so do not send HTML.",
+              "description": "Comment text sent to the requester; visible in the ticket. Markdown is rendered (**bold**, lists, links): wrap code, identifiers containing _ or * and <placeholders> in backticks so they show literally. HTML is not rendered (tags show as literal text), so do not send HTML.",
               "minLength": 1,
               "type": "string",
             },

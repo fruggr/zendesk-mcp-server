@@ -92,7 +92,7 @@ it('exposes the requests tool surface unchanged', async () => {
               "type": "array",
             },
             "body": {
-              "description": "The request itself: what happened, what was expected, and any steps to reproduce. Becomes the first public comment on the ticket. Sent as plain text: Markdown is not rendered for an end user and HTML tags are stripped, so write it without formatting markup.",
+              "description": "The request itself: what happened, what was expected, and any steps to reproduce. Becomes the first public comment on the ticket. Sent as plain text: neither Markdown nor HTML is rendered for an end user (both show as literal text), so write it without formatting markup.",
               "minLength": 1,
               "type": "string",
             },
@@ -290,7 +290,7 @@ it('exposes the requests tool surface unchanged', async () => {
               "type": "array",
             },
             "body": {
-              "description": "The message to send. Visible to the support agents on the ticket and included in their email notification. Sent as plain text: Markdown is not rendered for an end user and HTML tags are stripped, so write it without formatting markup.",
+              "description": "The message to send. Visible to the support agents on the ticket and included in their email notification. Sent as plain text: neither Markdown nor HTML is rendered for an end user (both show as literal text), so write it without formatting markup.",
               "minLength": 1,
               "type": "string",
             },

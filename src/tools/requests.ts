@@ -51,10 +51,10 @@ const forbidden = (tool: string, endpoint: string, error: ZendeskApiError, hint?
     { cause: error },
   );
 
-// Zendesk strips HTML from comment.body and renders its Markdown only for an
-// agent author (Ticket Comments API, "Bodies"), never for an end user.
+// Zendesk renders Markdown in comment.body only for an agent author (Ticket
+// Comments API, "Bodies"), never for an end user; HTML there shows as literal text.
 const END_USER_COMMENT_FORMAT =
-  'Sent as plain text: Markdown is not rendered for an end user and HTML tags are stripped, so write it without formatting markup.';
+  'Sent as plain text: neither Markdown nor HTML is rendered for an end user (both show as literal text), so write it without formatting markup.';
 
 // A path scoped to one request id has a cause the generic message does not: the
 // id may belong to someone else, which Zendesk also answers 403. Named only
