@@ -1,3 +1,21 @@
+## [3.9.0](https://github.com/fruggr/zendesk-mcp-server/compare/v3.8.0...v3.9.0) (2026-11-04)
+
+### Features
+
+* **config:** accept `all` in --namespace and a new MCP_NAMESPACES variable ([#428](https://github.com/fruggr/zendesk-mcp-server/issues/428)) ([19e5f33](https://github.com/fruggr/zendesk-mcp-server/commit/19e5f33ebcc05aa332697c6c46d52aa414296cc6)), closes [#425](https://github.com/fruggr/zendesk-mcp-server/issues/425)
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Chores
+
+* **docker:** update node.js to v24.22.2-alpine3.24 ([#429](https://github.com/fruggr/zendesk-mcp-server/issues/429)) ([ce8fb56](https://github.com/fruggr/zendesk-mcp-server/commit/ce8fb5621e980f32f6b87d19b640f945b72d81be))
+
+### Continuous Integration
+
+* run required checks on the merge queue ([#424](https://github.com/fruggr/zendesk-mcp-server/issues/424)) ([80dc9a4](https://github.com/fruggr/zendesk-mcp-server/commit/80dc9a4446fc538750d2de97f78b96d7cc4e76a7))
+</details>
+
 ## [3.8.0](https://github.com/fruggr/zendesk-mcp-server/compare/v3.7.0...v3.8.0) (2026-11-02)
 
 ### Features
