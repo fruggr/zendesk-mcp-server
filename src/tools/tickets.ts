@@ -633,10 +633,34 @@ const formatPartyOutcome = (
 // A requester change can carry the organization along with it (#417): Zendesk
 // files a ticket under one of its requester's organizations. The agent did not
 // ask for that move, so it is named, from the value read before the write.
-const formatOrganizationMove = (before: number | null | undefined, after: number | null): string =>
-  before === undefined || before === after
-    ? ''
-    : `\n\nOrganization changed with the requester: organization_id ${before ?? 'none'} -> ${after ?? 'none'}. Pass organization_id to keep the ticket under another organization the new requester belongs to.`;
+const formatOrganizationMove = (
+  before: number | null | undefined | 'unread',
+  after: number | null,
+): string => {
+  if (before === undefined || before === after) return '';
+  if (before === 'unread') {
+    return '\n\nCould not read the organization before the requester change: check that the organization shown above is the one you expect.';
+  }
+  return `\n\nOrganization changed with the requester: organization_id ${before ?? 'none'} -> ${after ?? 'none'}. Pass organization_id to keep the ticket under another organization the new requester belongs to.`;
+};
+
+// Only feeds formatOrganizationMove, so a failed read must not block the write.
+const readOrganization = async (
+  subdomain: string,
+  token: string,
+  ticketId: number,
+): Promise<number | null | 'unread'> => {
+  try {
+    const { ticket } = await zendeskGet<{ ticket: ZendeskTicket }>(
+      subdomain,
+      token,
+      `/tickets/${ticketId}`,
+    );
+    return ticket.organization_id;
+  } catch {
+    return 'unread';
+  }
+};
 
 // Resolve one entity kind to an id->name map via batched show_many look-ups
 // (chunked to the 100-id endpoint cap). Best-effort: a failed batch leaves those
@@ -1403,7 +1427,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: false,
       title: 'Update Zendesk Ticket',
       description:
-        'Update an existing ticket (status, priority, type, requester, organization, assignee, group, subject, tags, custom fields, followers, email CCs). Only the fields you pass are changed, and the updated ticket is returned. The organization must be one the requester is a member of; a requested requester or organization that Zendesk did not set is reported as not applied, and so is an organization Zendesk moved along with a new requester when organization_id was not passed. Followers and email CCs are incremental instead of replacing: pass { add, remove } lists of user ids, and the response reports who is subscribed afterwards. Zendesk applies those two silently, so a requested change it did not apply comes back listed as unconfirmed rather than raised as an error. Setting tags here replaces the whole tag set — use manage_tags to add or remove individual tags without overwriting the rest. This tool does not post replies: use add_public_comment or add_private_note for that. Find the ticket id via search_tickets or list_tickets.',
+        'Update an existing ticket (status, priority, type, requester, organization, assignee, group, subject, tags, custom fields, followers, email CCs). Only the fields you pass are changed, except that Zendesk may move the ticket to an organization of a new requester; the updated ticket is returned. The organization must be one the requester is a member of. A requested requester or organization that Zendesk did not set is reported as not applied; an organization Zendesk moved along with a new requester, when organization_id was not passed, is reported as changed with the requester. Followers and email CCs are incremental instead of replacing: pass { add, remove } lists of user ids, and the response reports who is subscribed afterwards. Zendesk applies those two silently, so a requested change it did not apply comes back listed as unconfirmed rather than raised as an error. Setting tags here replaces the whole tag set — use manage_tags to add or remove individual tags without overwriting the rest. This tool does not post replies: use add_public_comment or add_private_note for that. Find the ticket id via search_tickets or list_tickets.',
       inputSchema: z.object({
         ticket_id: z
           .number()
@@ -1507,13 +1531,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
         // An explicit organization_id is checked by formatPartyOutcome instead.
         const organizationBefore =
           updates['requester_id'] !== undefined && updates['organization_id'] === undefined
-            ? (
-                await zendeskGet<{ ticket: ZendeskTicket }>(
-                  subdomain,
-                  token,
-                  `/tickets/${ticket_id}`,
-                )
-              ).ticket.organization_id
+            ? await readOrganization(subdomain, token, ticket_id)
             : undefined;
         const { ticket } = await zendeskPut<{ ticket: ZendeskTicket }>(
           subdomain,

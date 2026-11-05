@@ -30,7 +30,7 @@ this server's own per-user settings, never Zendesk, so `--read-only` keeps it.
 | `get_view_tickets` | Read the tickets inside a view (by title or id) in the view's own configured sort order, cursor-paginated, each ticket with its next SLA breach read from the view at no extra cost (every metric: get_ticket / search_tickets); 25 per page by default, descriptions as excerpts | read |
 | `list_macros` | List the active macros available to the authenticated user, with each macro's id, title, scope, and ordered actions | read |
 | `create_ticket` | Create a new ticket with subject, description, requester, organization, priority, tags...; a requester or organization Zendesk did not keep is reported | write |
-| `update_ticket` | Update ticket status, priority, requester, organization, assignee, tags, custom fields, and add or remove followers and email CCs by user id; a requester or organization Zendesk did not set, or an organization moved along with the requester, is reported | write |
+| `update_ticket` | Update ticket status, priority, requester, organization, assignee, tags, custom fields, and add or remove followers and email CCs by user id; a requester or organization Zendesk did not set is reported as not applied, an organization moved along with a new requester as changed | write |
 | `add_private_note` | Add an internal note (not visible to requester), optionally with file attachments | write |
 | `add_public_comment` | Add a public comment (visible to requester), optionally with file attachments | write |
 | `manage_tags` | Add or remove tags on a ticket | write |

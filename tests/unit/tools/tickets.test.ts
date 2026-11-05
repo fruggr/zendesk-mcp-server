@@ -2006,6 +2006,18 @@ describe('ticket tools', () => {
         expect(firstText(result)).toContain('organization_id 400 -> none.');
       });
 
+      it('still updates the requester when the ticket cannot be read first, and says so', async () => {
+        mswServer.use(
+          http.get(PUT_URL, () => HttpResponse.json({ error: 'boom' }, { status: 500 })),
+        );
+        const seen = capturePut();
+        const result = await findTool('update_ticket').handler({ ticket_id: 1, requester_id: 201 });
+        expect(seen[0]).toEqual({ requester_id: 201 });
+        expect(firstText(result)).toContain(
+          'Could not read the organization before the requester change: check that the organization shown above is the one you expect.',
+        );
+      });
+
       it('says nothing when the organization stayed the same', async () => {
         const reads = countTicketReads(400);
         putReturning({ requester_id: 201, organization_id: 400 });
