@@ -1988,6 +1988,17 @@ describe('ticket tools', () => {
         );
       });
 
+      // Measured on a live tenant (#432 spike): a ticket with no organization
+      // takes the new requester's default one in the same audit.
+      it('names the organization a ticket without one gained with the new requester', async () => {
+        countTicketReads(null);
+        putReturning({ requester_id: 201, organization_id: 401 });
+        const result = await findTool('update_ticket').handler({ ticket_id: 1, requester_id: 201 });
+        expect(firstText(result)).toContain(
+          'Organization changed with the requester: organization_id none -> 401.',
+        );
+      });
+
       it('names a ticket that lost its organization with the requester change', async () => {
         countTicketReads(400);
         putReturning({ requester_id: 201, organization_id: null });
