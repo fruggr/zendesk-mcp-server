@@ -624,6 +624,14 @@ const formatPartyOutcome = (
   return `\n\nNot applied: ${unapplied.join('; ')}. Zendesk can leave the requester or the organization unchanged without an error: check that your role may edit them, and that the requester is a member of the organization.`;
 };
 
+// A requester change can carry the organization along with it (#417): Zendesk
+// files a ticket under one of its requester's organizations. The agent did not
+// ask for that move, so it is named, from the value read before the write.
+const formatOrganizationMove = (before: number | null | undefined, after: number | null): string =>
+  before === undefined || before === after
+    ? ''
+    : `\n\nOrganization changed with the requester: organization_id ${before ?? 'none'} -> ${after ?? 'none'}. Pass organization_id to keep the ticket under another organization the new requester belongs to.`;
+
 // Resolve one entity kind to an id->name map via batched show_many look-ups
 // (chunked to the 100-id endpoint cap). Best-effort: a failed batch leaves those
 // ids unresolved (rendered as bare ids) rather than failing the whole response —
@@ -1389,7 +1397,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: false,
       title: 'Update Zendesk Ticket',
       description:
-        'Update an existing ticket (status, priority, type, requester, organization, assignee, group, subject, tags, custom fields, followers, email CCs). Only the fields you pass are changed, and the updated ticket is returned. The organization must be one the requester is a member of; a requested requester or organization that Zendesk did not set is reported as not applied. Followers and email CCs are incremental instead of replacing: pass { add, remove } lists of user ids, and the response reports who is subscribed afterwards. Zendesk applies those two silently, so a requested change it did not apply comes back listed as unconfirmed rather than raised as an error. Setting tags here replaces the whole tag set — use manage_tags to add or remove individual tags without overwriting the rest. This tool does not post replies: use add_public_comment or add_private_note for that. Find the ticket id via search_tickets or list_tickets.',
+        'Update an existing ticket (status, priority, type, requester, organization, assignee, group, subject, tags, custom fields, followers, email CCs). Only the fields you pass are changed, and the updated ticket is returned. The organization must be one the requester is a member of; a requested requester or organization that Zendesk did not set is reported as not applied, and so is an organization Zendesk moved along with a new requester when organization_id was not passed. Followers and email CCs are incremental instead of replacing: pass { add, remove } lists of user ids, and the response reports who is subscribed afterwards. Zendesk applies those two silently, so a requested change it did not apply comes back listed as unconfirmed rather than raised as an error. Setting tags here replaces the whole tag set — use manage_tags to add or remove individual tags without overwriting the rest. This tool does not post replies: use add_public_comment or add_private_note for that. Find the ticket id via search_tickets or list_tickets.',
       inputSchema: z.object({
         ticket_id: z
           .number()
@@ -1420,7 +1428,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
           .int()
           .optional()
           .describe(
-            'User id of the new requester (end user or agent), to fix who the ticket is on behalf of. Resolve it with search_users.',
+            'User id of the new requester (end user or agent), to fix who the ticket is on behalf of. Resolve it with search_users. Zendesk may move the ticket to an organization of the new requester; pass organization_id to choose which.',
           ),
         organization_id: z
           .number()
@@ -1490,6 +1498,17 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
         const ccActions = toSubscriberActions(email_ccs);
         if (followerActions) sent.followers = followerActions;
         if (ccActions) sent.email_ccs = ccActions;
+        // An explicit organization_id is checked by formatPartyOutcome instead.
+        const organizationBefore =
+          updates['requester_id'] !== undefined && updates['organization_id'] === undefined
+            ? (
+                await zendeskGet<{ ticket: ZendeskTicket }>(
+                  subdomain,
+                  token,
+                  `/tickets/${ticket_id}`,
+                )
+              ).ticket.organization_id
+            : undefined;
         const { ticket } = await zendeskPut<{ ticket: ZendeskTicket }>(
           subdomain,
           token,
@@ -1507,7 +1526,9 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
           );
           text += formatSubscribersBlock(ticket, names) + formatSubscriberOutcome(sent, ticket);
         }
-        text += formatPartyOutcome(updates, ticket);
+        text +=
+          formatPartyOutcome(updates, ticket) +
+          formatOrganizationMove(organizationBefore, ticket.organization_id);
         return { content: [{ type: 'text', text }] };
       },
     },

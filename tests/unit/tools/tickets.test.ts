@@ -1959,6 +1959,63 @@ describe('ticket tools', () => {
       expect(text.indexOf('Not applied')).toBeGreaterThan(text.indexOf('### Subscribers'));
     });
 
+    describe('organization moved along with the requester', () => {
+      const countTicketReads = (organization_id: number | null = 400) => {
+        const reads: number[] = [];
+        mswServer.use(
+          http.get(PUT_URL, ({ params }) => {
+            reads.push(Number(params['id']));
+            return HttpResponse.json({
+              ticket: { ...MOCK_TICKET, id: Number(params['id']), organization_id },
+            });
+          }),
+        );
+        return reads;
+      };
+      const putReturning = (fields: Record<string, unknown>) =>
+        mswServer.use(
+          http.put(PUT_URL, ({ params }) =>
+            HttpResponse.json({ ticket: { ...MOCK_TICKET, id: Number(params['id']), ...fields } }),
+          ),
+        );
+
+      it('tells the agent when a requester change also moved the organization', async () => {
+        countTicketReads(400);
+        putReturning({ requester_id: 201, organization_id: 401 });
+        const result = await findTool('update_ticket').handler({ ticket_id: 1, requester_id: 201 });
+        expect(firstText(result)).toContain(
+          'Organization changed with the requester: organization_id 400 -> 401. Pass organization_id to keep the ticket under another organization the new requester belongs to.',
+        );
+      });
+
+      it('names a ticket that lost its organization with the requester change', async () => {
+        countTicketReads(400);
+        putReturning({ requester_id: 201, organization_id: null });
+        const result = await findTool('update_ticket').handler({ ticket_id: 1, requester_id: 201 });
+        expect(firstText(result)).toContain('organization_id 400 -> none.');
+      });
+
+      it('says nothing when the organization stayed the same', async () => {
+        const reads = countTicketReads(400);
+        putReturning({ requester_id: 201, organization_id: 400 });
+        const result = await findTool('update_ticket').handler({ ticket_id: 1, requester_id: 201 });
+        expect(reads).toEqual([1]);
+        expect(firstText(result)).not.toContain('Organization changed');
+      });
+
+      it('reads the ticket first only for a requester change without an explicit organization', async () => {
+        const reads = countTicketReads();
+        capturePut();
+        await findTool('update_ticket').handler({ ticket_id: 1, status: 'open' });
+        await findTool('update_ticket').handler({
+          ticket_id: 1,
+          requester_id: 201,
+          organization_id: 401,
+        });
+        expect(reads).toEqual([]);
+      });
+    });
+
     it('lists both fields on one line when neither was applied', async () => {
       capturePut();
       const result = await findTool('update_ticket').handler({
