@@ -18,7 +18,8 @@
  *   pnpm tsx scripts/probe-requester-org.ts [--pages <n>] [--ticket <id>]...
  */
 import { zendeskGet } from '../src/client/zendesk-api';
-import type { ZendeskAudit } from '../src/types';
+import type { ZendeskAudit, ZendeskListResponse } from '../src/types';
+import { buildCursorParams, extractPaginationMeta } from '../src/utils/pagination';
 import { missingTokenHelp, resolveLiveSubdomain, resolveLiveToken } from './live-auth';
 
 const fail = (message: string): never => {
@@ -60,11 +61,25 @@ interface AuditPage {
 const audits: ZendeskAudit[] = [];
 
 if (tickets.length > 0) {
+  // A ticket's audits come oldest first, 100 a page: walk every page, or a
+  // recent requester change on a long ticket would be missed.
   for (const id of tickets) {
-    const page = await attempt(`GET /tickets/${id}/audits`, () =>
-      zendeskGet<AuditPage>(subdomain, token, `/tickets/${id}/audits`),
-    );
-    audits.push(...(page?.audits ?? []));
+    let cursor: string | undefined;
+    do {
+      const params = buildCursorParams(100, cursor);
+      const page = await attempt(`GET /tickets/${id}/audits`, () =>
+        zendeskGet<ZendeskListResponse<ZendeskAudit>>(
+          subdomain,
+          token,
+          `/tickets/${id}/audits`,
+          params,
+        ),
+      );
+      const batch = page?.audits ?? [];
+      audits.push(...batch);
+      const meta = page ? extractPaginationMeta(page, batch.length) : undefined;
+      cursor = meta?.has_more ? (meta.after_cursor ?? undefined) : undefined;
+    } while (cursor);
   }
 } else {
   // The order and cursor keys of this endpoint are themselves unverified: the
