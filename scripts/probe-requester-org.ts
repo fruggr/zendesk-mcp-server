@@ -137,7 +137,11 @@ for (const audit of requesterChanges) {
     ),
   );
   const list = memberships?.organization_memberships ?? [];
-  const defaultOrg = list.find((m) => m.default)?.organization_id ?? 'none';
+  // Memberships are read today, not at audit time: a default changed since then
+  // skews the comparison, so it is labelled "current" and is unknown on failure.
+  const defaultOrg = memberships
+    ? (list.find((m) => m.default)?.organization_id ?? 'none')
+    : 'unknown';
   const otherFields = audit.events
     .filter((e) => e.type === 'Change' && e.field_name !== 'requester_id')
     .map((e) => e.field_name)
@@ -147,9 +151,9 @@ for (const audit of requesterChanges) {
       `ticket ${audit.ticket_id} audit ${audit.id} ${audit.created_at} via=${audit.via?.channel ?? '?'}`,
       `  requester ${String(req?.previous_value)} -> ${String(req?.value)}`,
       org
-        ? `  organization_id CHANGED ${String(org.previous_value)} -> ${String(org.value)} (new = new requester's default: ${String(org.value) === String(defaultOrg)})`
+        ? `  organization_id CHANGED ${String(org.previous_value)} -> ${String(org.value)} (new = new requester's current default: ${defaultOrg === 'unknown' ? 'unknown' : String(org.value) === String(defaultOrg)})`
         : '  organization_id NOT changed in this audit',
-      `  new requester memberships: ${list.length}, default org: ${defaultOrg}`,
+      `  new requester memberships today: ${memberships ? list.length : 'unknown'}, current default org: ${defaultOrg}`,
       `  other changed fields in this audit: ${otherFields || 'none'}`,
     ].join('\n'),
   );
