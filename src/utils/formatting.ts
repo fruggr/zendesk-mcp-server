@@ -51,9 +51,12 @@ export const INPUT_NAME_OF = {
   'Permission group': 'permission_group_id',
   'User segment': 'user_segment_id',
   Assignee: 'assignee_id',
+  Requester: 'requester_id',
+  Organization: 'organization_id',
   Form: 'form_id',
   // Ticket history labels, read before undoing a change with update_ticket.
   assignee: 'assignee_id',
+  requester: 'requester_id',
   group: 'group_id',
 } as const;
 
@@ -81,7 +84,7 @@ const ticketLines = (ticket: ZendeskTicket, body: string): string =>
   [
     `## Ticket #${ticket.id}: ${ticket.subject}`,
     `- **Status**: ${ticket.status} | **Priority**: ${ticket.priority ?? 'none'} | **Type**: ${ticket.type ?? 'none'}`,
-    `- **Requester**: ${ticket.requester_id} | ${writable('Assignee')}: ${ticket.assignee_id ?? 'unassigned'}`,
+    `- ${writable('Requester')}: ${ticket.requester_id} | ${writable('Organization')}: ${ticket.organization_id ?? 'none'} | ${writable('Assignee')}: ${ticket.assignee_id ?? 'unassigned'}`,
     `- **Tags**: ${ticket.tags.length > 0 ? ticket.tags.join(', ') : 'none'}`,
     `- **Created**: ${ticket.created_at} | **Updated**: ${ticket.updated_at}`,
     body ? `\n${body}` : '',

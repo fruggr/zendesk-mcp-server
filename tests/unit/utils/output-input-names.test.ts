@@ -80,6 +80,8 @@ const CASES = [
             ['type', 'problem', 'incident'],
             ['assignee_id', 101, 100],
             ['group_id', 301, 300],
+            ['requester_id', 201, 200],
+            ['organization_id', 401, 400],
             ['subject', 'New', 'Old'],
             ['tags', ['b'], ['a']],
           ].map(([field_name, value, previous_value], id) => ({
