@@ -6,7 +6,7 @@
 # when only these lines change. The tag names the full Node and Alpine versions;
 # a PR that moves them gets a Docker Scout comparison (base-image.yml).
 
-FROM dhi.io/node:24.22.2-alpine3.24-dev@sha256:30a6476ee78e2c4285e8d5af63369bca8406aef3de942c3c4fa87d95171c0c31 AS build
+FROM dhi.io/node:24.22.2-alpine3.24-dev@sha256:0057d010be89409475a50d93a024e412a3bdf9139bb0134c368546c9928f7842 AS build
 WORKDIR /src
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY patches ./patches
