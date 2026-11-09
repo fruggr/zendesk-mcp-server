@@ -76,7 +76,7 @@
   },
   "packageManager": "pnpm@12.17.0+sha512.b8d223ebec04b580a89ed206daa71d1bccb6a1ee1d52efa95cc3b0db75271561df8f0d8e2c43add39c5ec08018af7a8a95108e7090f95a29f88727b7a40fd53d",
   "devDependencies": {
-    "@biomejs/biome": "2.6.4",
+    "@biomejs/biome": "2.6.5",
     "@modelcontextprotocol/client": "2.4.0",
     "@modelcontextprotocol/node": "2.1.2",
     "@modelcontextprotocol/server": "2.4.0",
@@ -98,7 +98,7 @@
     "conventional-changelog-conventionalcommits": "^10.2.1",
     "hast-util-to-html": "9.0.6",
     "hast-util-to-mdast": "10.1.2",
-    "jose": "6.2.14",
+    "jose": "6.2.15",
     "lefthook": "^2.2.2",
     "mcp-tdqs": "0.2.0",
     "msw": "^3.0.0",
