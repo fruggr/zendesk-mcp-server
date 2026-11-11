@@ -80,15 +80,15 @@ jobs:
     # queue commit is not `main` yet.
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    # Only a changed cache prefix costs a full cold run: 6-10 min measured on
-    # `main`, against 45 s to 2 min warm. The budget is loose because it detects
-    # a hang, not because it anticipates growth — it is sized for *this* scope,
-    # and the ADR projects ~65 min if `src/tools/**` ever enters `mutate`, so
-    # re-measure and raise this before widening it. ADR section 4.
-    timeout-minutes: 45
+    # A cold run no longer fits one job, so the budget lives on the Stryker
+    # step (below) and this is only the hang backstop above it. Queue, never
+    # cancel: a cancelled baseline saves nothing, and a busy `main` cancelled
+    # every one. ADR section 4.
+    # 75 + 2 for the step, ~15 for a cold install, the canary, the save and the upload.
+    timeout-minutes: 95
     concurrency:
       group: mutation-baseline
-      cancel-in-progress: true
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v7
         with:
@@ -105,18 +105,39 @@ jobs:
 
       # Reports, never `break`s. No `--`: pnpm forwards the separator itself.
       # Step-scoped secret, so only the baseline can publish — same rule as the cache.
+      # `timeout -s INT`, not the job timeout: on SIGINT Stryker writes a partial
+      # incremental report the next run resumes from, and the step *fails*
+      # (exit 124) where a job timeout only cancels, which notifies nobody.
+      # pnpm waits for Stryker on SIGINT: measured, the file is complete and no
+      # Stryker process is left when `timeout` returns.
       - name: Run the full scope
+        id: stryker
         env:
           STRYKER_DASHBOARD_API_KEY: ${{ secrets.STRYKER_DASHBOARD_API_KEY }}
-        run: pnpm test:mutation --incremental
+        run: timeout --signal=INT --kill-after=2m 75m pnpm test:mutation --incremental
 
       - name: Score summary
         if: always()
         run: pnpm test:mutation:summary >> "$GITHUB_STEP_SUMMARY"
 
+      # A partial report is safe to publish: it holds every result reused from
+      # the restored baseline plus this run's, and Stryker re-runs whatever is
+      # missing. Only an unreadable file must not be saved, nor the restored one
+      # again when Stryker never ran (setup or canary failed).
+      - name: Check the baseline file
+        id: baseline-file
+        if: always() && (steps.stryker.outcome == 'success' || steps.stryker.outcome == 'failure')
+        run: |
+          node -e '
+            const r = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"));
+            if (Object.keys(r.files ?? {}).length === 0) process.exit(1);
+          ' reports/mutation/stryker-incremental.json \
+            && echo "usable=true" >> "$GITHUB_OUTPUT" \
+            || echo "usable=false" >> "$GITHUB_OUTPUT"
+
       - name: Save the refreshed baseline
-        # The only writer; skipped on failure so no partial baseline is published.
-        if: success()
+        # The only writer, complete or partial (see above).
+        if: always() && steps.baseline-file.outputs.usable == 'true'
         uses: actions/cache/save@v6
         with:
           path: reports/mutation/stryker-incremental.json
@@ -132,3 +153,81 @@ jobs:
             !reports/mutation/stryker-incremental.json
           retention-days: 30
           if-no-files-found: warn
+
+  # A red baseline on `main` notifies nobody by itself: the push actor is often
+  # Renovate, and nothing else watches the job. One labelled issue does: opened
+  # (or commented) on every failed run, closed by the next success.
+  # `failure` only: GitHub cancels a *waiting* baseline when a newer push queues,
+  # which is not a failure; a real timeout fails the step (see above). `main`
+  # only: a dispatch on a branch says nothing about `main`.
+  baseline-alert:
+    name: Baseline alert
+    needs: baseline
+    if: >-
+      always() && github.ref == 'refs/heads/main' &&
+      (needs.baseline.result == 'success' || needs.baseline.result == 'failure')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Two alerts at once would both find no open issue and both open one.
+    concurrency:
+      group: mutation-baseline-alert
+      cancel-in-progress: false
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/github-script@v9
+        env:
+          RESULT: ${{ needs.baseline.result }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const label = 'mutation-baseline';
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+            const sha = context.sha.slice(0, 7);
+            const failed = process.env.RESULT === 'failure';
+
+            // This endpoint also lists pull requests; a labelled PR must never be closed here.
+            const { data: open } = await github.rest.issues.listForRepo({
+              owner, repo, labels: label, state: 'open', per_page: 100,
+            });
+            const issue = open.find((item) => !item.pull_request);
+
+            if (!failed) {
+              if (issue) {
+                await github.rest.issues.createComment({
+                  owner, repo, issue_number: issue.number,
+                  body: `Recovered: the baseline completed on \`${sha}\` (${runUrl}).`,
+                });
+                await github.rest.issues.update({
+                  owner, repo, issue_number: issue.number,
+                  state: 'closed', state_reason: 'completed',
+                });
+              }
+              return;
+            }
+
+            const line = `The \`Full scope\` job ended \`${process.env.RESULT}\` on \`${sha}\`: ${runUrl}`;
+            if (issue) {
+              await github.rest.issues.createComment({ owner, repo, issue_number: issue.number, body: line });
+              return;
+            }
+            try {
+              await github.rest.issues.createLabel({
+                owner, repo, name: label, color: 'b60205',
+                description: 'The mutation baseline on main is failing',
+              });
+            } catch (err) {
+              if (err.status !== 422) throw err; // 422: the label already exists
+            }
+            await github.rest.issues.create({
+              owner, repo, labels: [label],
+              title: 'Mutation baseline is failing on main',
+              body: [
+                line,
+                '',
+                'Each failed run saves its partial baseline, so the next one resumes rather than restarting;',
+                'a run that keeps failing at the step timeout means the scope outgrew it.',
+                'This issue closes itself on the next successful run.',
+                'Background: docs/decisions/mutation-testing.md, section 4.',
+              ].join('\n'),
+            });
