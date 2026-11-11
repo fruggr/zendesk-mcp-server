@@ -214,11 +214,43 @@ knows its baseline is good. Correctness by default, speed on request.
 
 **The cache key carries the invalidation.** The composite action
 `.github/actions/mutation-baseline` hashes exactly the inputs from that "anything
-else" list into the cache-key prefix (`pnpm-lock.yaml`, `stryker.config.mjs`,
-`vitest.config.ts`, `tests/setup.ts`, `tests/msw-handlers.ts`, the
-`tests/integration/` scaffolding, `.nvmrc`). Change one and no entry matches; no
-baseline on disk means Stryker runs cold. The rule is structural rather than a
-conditional `--force` somebody has to keep in sync with this document.
+else" list into the cache-key prefix (the installed packages the suite can load,
+`package.json` minus its version fields, `stryker.config.mjs`, `vitest.config.ts`,
+`tests/setup.ts`, `tests/msw-handlers.ts`, the `tests/integration/` scaffolding,
+`.nvmrc`). Change one and no entry matches; no baseline on disk means Stryker
+runs cold. The rule is structural rather than a conditional `--force` somebody
+has to keep in sync with this document.
+
+**Packages, not the lockfile.** The prefix used to hash all of `pnpm-lock.yaml`
+and `package.json`. Renovate rewrites the lockfile several times a week
+(lock-file maintenance on Tuesday and Friday, the Monday batch, pnpm bumps), and
+every release rewrites `package.json`'s `version`, so the baseline was thrown
+away for a cold run of the whole scope most weeks — for Biome or semantic-release
+as readily as for vitest (#443). `scripts/mutation-cache-inputs.mjs` hashes
+instead the closure of what the suite loads:
+
+- roots: every package imported by `src/`, by the suite (same exemptions as
+  below) and by both runner configs, plus the runner Stryker loads by name
+  (`@stryker-mutator/core`, `@stryker-mutator/vitest-runner`, `vitest`) — derived
+  from the imports, so a new dependency joins by being imported, not by someone
+  editing a list;
+- their transitive closure from `pnpm list --json --depth Infinity`, each package
+  identified by its pnpm store directory, which pins version, resolved peers and
+  patch hash together (so editing `patches/` still re-keys);
+- `package.json` without `version`, `packageManager` and the dependency ranges
+  (the closure is their resolved result).
+
+On 2026-11-11 that is 536 of the 884 installed packages; what drops out is
+tooling the suite never loads (Biome, lefthook, semantic-release, tsdown and
+their trees). A lock-file refresh that moves a package inside the closure still
+re-keys, as it should.
+
+What import analysis cannot see is a tool that acts on the run without being
+imported. The backstop is a **weekly cold baseline** (`schedule` in
+`mutation.yml`, Sunday night UTC): the same job with nothing restored, so every
+mutant runs against the current inputs and the result replaces the cache entry.
+A drift therefore lives a week at most, and the cost is CI minutes on a public
+repository, which are free.
 
 That hash is **the only such list in the setup**, and both jobs get it from the
 one composite action — they have to agree on cache identity, and only one of them
@@ -890,9 +922,9 @@ just a faster rollback:
   (`@stryker-mutator/vitest-runner@10.0.0`), so a runner bump leaves the patch
   unapplied instead of applying it to code it was not written for — and the
   canary is red on that PR before anyone reads it.
-- **It cannot go stale invisibly in the baseline either.** `pnpm-lock.yaml`
-  records the patch's content hash, and the hash is already part of the
-  mutation baseline cache key ([section 4](#how-ci-enforces-that-without-anyone-having-to-remember)),
+- **It cannot go stale invisibly in the baseline either.** The patch's content
+  hash is part of the patched package's pnpm store directory, which identifies
+  it in the mutation baseline cache key ([section 4](#how-ci-enforces-that-without-anyone-having-to-remember)),
   so editing the patch discards the baseline the same way a dependency bump
   does. That is by construction, not by anyone remembering.
 - **It is verified rather than assumed.** On vitest 5 with the patch:

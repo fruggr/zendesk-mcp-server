@@ -15,6 +15,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  # Weekly cold baseline, nothing restored: the cache key follows only what the
+  # suite imports, and this is what catches a tool acting on the run without
+  # being imported. Sunday night UTC, off the minute GitHub queues on. ADR §4.
+  schedule:
+    - cron: '17 1 * * 0'
 
 permissions:
   contents: read
@@ -78,7 +83,9 @@ jobs:
     name: Full scope
     # Never on `merge_group`: the baseline is the cache's only writer, and a
     # queue commit is not `main` yet.
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    if: >-
+      github.event_name == 'push' || github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'schedule'
     runs-on: ubuntu-latest
     # A cold run no longer fits one job, so the budget lives on the Stryker
     # step (below) and this is only the hang backstop above it. Queue, never
@@ -95,6 +102,8 @@ jobs:
 
       - uses: ./.github/actions/mutation-baseline
         id: cache
+        with:
+          restore: ${{ github.event_name != 'schedule' }}
 
       # Same canary as the PR job. On `main` it is what keeps a merged bump from
       # leaving a whole baseline of replayed, meaningless verdicts behind.
