@@ -23,8 +23,10 @@ permissions:
 # cancelled, since a cancelled baseline saves nothing. GitHub keeps one waiting
 # run and cancels an older waiting one, which the alert ignores. Pull request and
 # merge-queue runs each get a group of their own, so this never holds them.
+# Not `mutation-baseline`: that name is the old single-job baseline's group, and
+# sharing it made a run of this pipeline wait behind one of those.
 concurrency:
-  group: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && 'mutation-baseline' || format('mutation-{0}', github.run_id) }}
+  group: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && 'mutation-baseline-sharded' || format('mutation-{0}', github.run_id) }}
   cancel-in-progress: false
 
 jobs:
