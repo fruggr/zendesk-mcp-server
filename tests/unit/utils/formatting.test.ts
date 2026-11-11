@@ -113,7 +113,7 @@ describe('formatTicket', () => {
     expect(formatTicket(MOCK_TICKET)).toMatchInlineSnapshot(`
       "## Ticket #1: Test ticket
       - **Status**: open | **Priority**: normal | **Type**: incident
-      - **Requester**: 200 | **Assignee** (assignee_id): 100
+      - **Requester** (requester_id): 200 | **Organization** (organization_id): 400 | **Assignee** (assignee_id): 100
       - **Tags**: test, mock
       - **Created**: 2026-01-01T00:00:00Z | **Updated**: 2026-01-02T00:00:00Z
 
@@ -128,13 +128,14 @@ describe('formatTicket', () => {
         priority: null,
         type: null,
         assignee_id: null,
+        organization_id: null,
         tags: [],
         description: '',
       }),
     ).toMatchInlineSnapshot(`
       "## Ticket #1: Test ticket
       - **Status**: open | **Priority**: none | **Type**: none
-      - **Requester**: 200 | **Assignee** (assignee_id): unassigned
+      - **Requester** (requester_id): 200 | **Organization** (organization_id): none | **Assignee** (assignee_id): unassigned
       - **Tags**: none
       - **Created**: 2026-01-01T00:00:00Z | **Updated**: 2026-01-02T00:00:00Z"
     `);
@@ -184,7 +185,7 @@ describe('formatTicketSummary', () => {
     expect(formatTicketSummary({ ...MOCK_TICKET, description })).toMatchInlineSnapshot(`
       "## Ticket #1: Test ticket
       - **Status**: open | **Priority**: normal | **Type**: incident
-      - **Requester**: 200 | **Assignee** (assignee_id): 100
+      - **Requester** (requester_id): 200 | **Organization** (organization_id): 400 | **Assignee** (assignee_id): 100
       - **Tags**: test, mock
       - **Created**: 2026-01-01T00:00:00Z | **Updated**: 2026-01-02T00:00:00Z
 
@@ -916,7 +917,7 @@ describe('formatAudit — Change events', () => {
       ),
     ).toMatchInlineSnapshot(`
       "### 2026-02-02T00:00:00Z — Agent Smith (100) via api
-      - **requester**: Requester Jane (200) → Requester Bob (201)
+      - **requester** (requester_id): Requester Jane (200) → Requester Bob (201)
       - **submitter**: Requester Jane (200) → Agent Smith (100)"
     `);
   });
