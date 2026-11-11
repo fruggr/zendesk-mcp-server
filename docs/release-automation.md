@@ -251,7 +251,8 @@ and the base branch's, once per stage that moved (runtime, and the `-dev` build 
 never shipped), and Scout comments on the PR the packages that changed (Node included) and
 the CVEs fixed or introduced. A digest rebuild of the same tag is titled with the tag, both
 digests and the stage, e.g. `chore(docker): rebuild node.js 24.22.2-alpine3.24-dev (30a6476 to
-0057d01, build stage only)`, so the title alone says whether the published image moves. The base has no age gate: dhi.io serves no release timestamp, and
+0057d01, build stage only)`. When both stages move in one PR, the title shrinks to
+`rebuild node.js` and the PR table's Type column (`stage`, `final`) says which moved. The base has no age gate: dhi.io serves no release timestamp, and
 Renovate's default `timestamp-required` would hold every tag update forever.
 
 **Dashboard approval** means: no PR is opened automatically. The update appears in the Renovate-managed "Dependency Dashboard" issue with a checkbox. Ticking the checkbox triggers PR creation. This is intentional for majors, which usually require reading the upstream CHANGELOG and following a migration procedure.

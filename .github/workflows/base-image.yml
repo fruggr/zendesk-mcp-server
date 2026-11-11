@@ -35,14 +35,19 @@ jobs:
       - id: base
         run: |
           set -euo pipefail
-          runtime() { grep -E '^FROM ' | tail -n 1 | awk '{print $2}'; }
-          build() { grep -E '^FROM .* AS build$' | awk '{print $2}'; }
+          # A miss fails the job: an empty image would compare against nothing.
+          runtime() { grep -E '^FROM ' | tail -n 1 | awk '{print $2}' | grep .; }
+          build() { grep -iE '^FROM .+ AS build[[:space:]]*$' | awk '{print $2}' | grep .; }
           old=$(git show "${{ github.event.pull_request.base.sha }}:Dockerfile")
+          runtime_before=$(runtime <<< "$old")
+          runtime_after=$(runtime < Dockerfile)
+          build_before=$(build <<< "$old")
+          build_after=$(build < Dockerfile)
           {
-            echo "runtime-before=$(runtime <<< "$old")"
-            echo "runtime-after=$(runtime < Dockerfile)"
-            echo "build-before=$(build <<< "$old")"
-            echo "build-after=$(build < Dockerfile)"
+            echo "runtime-before=$runtime_before"
+            echo "runtime-after=$runtime_after"
+            echo "build-before=$build_before"
+            echo "build-after=$build_after"
           } >> "$GITHUB_OUTPUT"
 
   # Two jobs rather than a matrix: scout-action keeps one comment per job, and

@@ -127,7 +127,7 @@
       ]
     },
     {
-      "description": "A digest update of the base image keeps the same tag, so Renovate's default title names only the new digest ('update node.js to 0057d01'), which says neither which version is rebuilt nor whether the published image moves. This title names the tag, both digests and the stage: depType is 'final' for the last FROM (the runtime image we publish) and 'stage' for the build stage. A single-upgrade group takes this per-upgrade title; when both stages move, the group title applies and the PR table lists each stage.",
+      "description": "A digest update of the base image keeps the same tag, so Renovate's default title names only the new digest ('update node.js to 0057d01'), which says neither which version is rebuilt nor whether the published image moves. This title names the tag, both digests and the stage: depType is 'final' for the last FROM (the runtime image we publish) and 'stage' for the build stage. When both stages move in one PR, Renovate drops a digest commitMessageExtra that differs between upgrades (workers/repository/updates/generate), so the title shrinks to 'rebuild node.js' and the PR table's Type column (stage, final) says which moved.",
       "matchDepNames": ["dhi.io/node"],
       "matchUpdateTypes": ["digest"],
       "commitMessageAction": "rebuild",
