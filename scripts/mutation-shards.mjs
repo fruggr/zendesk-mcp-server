@@ -13,6 +13,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  renameSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
@@ -25,9 +26,17 @@ const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 /**
  * What `run-shard` leaves for the merge: the chunks it finished, and a copy of
  * Stryker's report taken after each one, so a kill in the middle of the next
- * chunk (even mid-write) cannot spoil what was finished.
+ * chunk cannot spoil what was finished. Both are replaced by an atomic rename,
+ * report first: a kill between the two leaves `done.json` behind the report,
+ * never ahead of it.
  */
 export const SHARD_DIR = 'reports/shard';
+
+const replaceAtomically = (dest, write) => {
+  const tmp = `${dest}.tmp`;
+  write(tmp);
+  renameSync(tmp, dest);
+};
 
 // --- pure core ----------------------------------------------------------------
 
@@ -179,11 +188,12 @@ const runShard = async () => {
       continue;
     }
     done.push(...chunk);
-    copyFileSync(
-      join(repoRoot, incrementalFile),
-      join(repoRoot, SHARD_DIR, 'stryker-incremental.json'),
+    replaceAtomically(join(repoRoot, SHARD_DIR, 'stryker-incremental.json'), (tmp) =>
+      copyFileSync(join(repoRoot, incrementalFile), tmp),
     );
-    writeFileSync(join(repoRoot, SHARD_DIR, 'done.json'), JSON.stringify(done));
+    replaceAtomically(join(repoRoot, SHARD_DIR, 'done.json'), (tmp) =>
+      writeFileSync(tmp, JSON.stringify(done)),
+    );
   }
   console.log(`\n${done.length} files finished; ${failed} chunk(s) failed.`);
   if (failed > 0) process.exit(1);
