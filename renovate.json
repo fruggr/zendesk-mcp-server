@@ -123,8 +123,15 @@
       "minimumReleaseAge": null,
       "automerge": true,
       "prBodyNotes": [
-        "The Base image workflow comments on this PR a Docker Scout comparison of the old and new base: packages updated, added or removed (Node included) and CVEs fixed or introduced."
+        "The Base image workflow comments on this PR a Docker Scout comparison of the old and new base, one per stage that moved (the -dev image is the build stage, never shipped): packages updated, added or removed (Node included) and CVEs fixed or introduced."
       ]
+    },
+    {
+      "description": "A digest update of the base image keeps the same tag, so Renovate's default title names only the new digest ('update node.js to 0057d01'), which says neither which version is rebuilt nor whether the published image moves. This title names the tag, both digests and the stage: depType is 'final' for the last FROM (the runtime image we publish) and 'stage' for the build stage. A single-upgrade group takes this per-upgrade title; when both stages move, the group title applies and the PR table lists each stage.",
+      "matchDepNames": ["dhi.io/node"],
+      "matchUpdateTypes": ["digest"],
+      "commitMessageAction": "rebuild",
+      "commitMessageExtra": "{{{currentValue}}} ({{{currentDigestShort}}} to {{{newDigestShort}}}, {{#if (equals depType 'final')}}runtime image{{else}}build stage only{{/if}})"
     },
     {
       "matchManagers": ["github-actions"],
