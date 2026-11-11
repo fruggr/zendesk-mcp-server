@@ -1,3 +1,23 @@
+## [3.10.0](https://github.com/fruggr/zendesk-mcp-server/compare/v3.9.1...v3.10.0) (2026-11-11)
+
+### Features
+
+* **tickets:** set the requester and organization on create_ticket and update_ticket ([#432](https://github.com/fruggr/zendesk-mcp-server/issues/432)) ([4139a1a](https://github.com/fruggr/zendesk-mcp-server/commit/4139a1a721403db4c314231e1d6bdb539c47390d)), closes [#417](https://github.com/fruggr/zendesk-mcp-server/issues/417), references [#339](https://github.com/fruggr/zendesk-mcp-server/issues/339)
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Chores
+
+* **deps:** update dependencies ([#440](https://github.com/fruggr/zendesk-mcp-server/issues/440)) ([fe18563](https://github.com/fruggr/zendesk-mcp-server/commit/fe18563722caabe93d1e1b62d53c97ebc1244435))
+* **deps:** update pnpm to v12.17.0 ([#435](https://github.com/fruggr/zendesk-mcp-server/issues/435)) ([1558009](https://github.com/fruggr/zendesk-mcp-server/commit/15580096729babf4267b549e45d0873f47653d20))
+* **docker:** update node.js to 0057d01 ([#436](https://github.com/fruggr/zendesk-mcp-server/issues/436)) ([52be042](https://github.com/fruggr/zendesk-mcp-server/commit/52be0429086a3a6e8258fe0b6a3d8f02d28c1598))
+* **docker:** update node.js to 08323d6 ([#433](https://github.com/fruggr/zendesk-mcp-server/issues/433)) ([f9792a0](https://github.com/fruggr/zendesk-mcp-server/commit/f9792a0e55d3b31e0c0b3a7f4eee493e6b8e7cb0))
+* **docker:** update node.js to 30a6476 ([#434](https://github.com/fruggr/zendesk-mcp-server/issues/434)) ([66a0047](https://github.com/fruggr/zendesk-mcp-server/commit/66a0047a198a4a7469e04a543a5d59183695a4ee))
+* **docker:** update node.js to a731fd4 ([#441](https://github.com/fruggr/zendesk-mcp-server/issues/441)) ([3527ebd](https://github.com/fruggr/zendesk-mcp-server/commit/3527ebd74f2d7b5b114c522903ed897dc9dc8e7f))
+* **docker:** update node.js to e640b13 ([#437](https://github.com/fruggr/zendesk-mcp-server/issues/437)) ([ef43317](https://github.com/fruggr/zendesk-mcp-server/commit/ef433176e8f42438819510fd565845280f0e321e))
+</details>
+
 ## [3.9.1](https://github.com/fruggr/zendesk-mcp-server/compare/v3.9.0...v3.9.1) (2026-11-04)
 
 ### Bug Fixes
