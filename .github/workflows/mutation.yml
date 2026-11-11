@@ -91,7 +91,8 @@ jobs:
     # step (below) and this is only the hang backstop above it. Queue, never
     # cancel: a cancelled baseline saves nothing, and a busy `main` cancelled
     # every one. ADR section 4.
-    timeout-minutes: 90
+    # 75 + 2 for the step, ~15 for a cold install, the canary, the save and the upload.
+    timeout-minutes: 95
     concurrency:
       group: mutation-baseline
       cancel-in-progress: false
@@ -116,10 +117,13 @@ jobs:
       # `timeout -s INT`, not the job timeout: on SIGINT Stryker writes a partial
       # incremental report the next run resumes from, and the step *fails*
       # (exit 124) where a job timeout only cancels, which notifies nobody.
+      # pnpm waits for Stryker on SIGINT: measured, the file is complete and no
+      # Stryker process is left when `timeout` returns.
       - name: Run the full scope
+        id: stryker
         env:
           STRYKER_DASHBOARD_API_KEY: ${{ secrets.STRYKER_DASHBOARD_API_KEY }}
-        run: timeout --signal=INT --kill-after=2m 80m pnpm test:mutation --incremental
+        run: timeout --signal=INT --kill-after=2m 75m pnpm test:mutation --incremental
 
       - name: Score summary
         if: always()
@@ -127,10 +131,11 @@ jobs:
 
       # A partial report is safe to publish: it holds every result reused from
       # the restored baseline plus this run's, and Stryker re-runs whatever is
-      # missing. Only an unreadable file must not be saved.
+      # missing. Only an unreadable file must not be saved, nor the restored one
+      # again when Stryker never ran (setup or canary failed).
       - name: Check the baseline file
         id: baseline-file
-        if: always()
+        if: always() && (steps.stryker.outcome == 'success' || steps.stryker.outcome == 'failure')
         run: |
           node -e '
             const r = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"));
@@ -161,12 +166,21 @@ jobs:
   # A red baseline on `main` notifies nobody by itself: the push actor is often
   # Renovate, and nothing else watches the job. One labelled issue does: opened
   # (or commented) on every failed run, closed by the next success.
+  # `failure` only: GitHub cancels a *waiting* baseline when a newer push queues,
+  # which is not a failure; a real timeout fails the step (see above). `main`
+  # only: a dispatch on a branch says nothing about `main`.
   baseline-alert:
     name: Baseline alert
     needs: baseline
-    if: always() && needs.baseline.result != 'skipped'
+    if: >-
+      always() && github.ref == 'refs/heads/main' &&
+      (needs.baseline.result == 'success' || needs.baseline.result == 'failure')
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # Two alerts at once would both find no open issue and both open one.
+    concurrency:
+      group: mutation-baseline-alert
+      cancel-in-progress: false
     permissions:
       issues: write
     steps:
@@ -179,12 +193,13 @@ jobs:
             const label = 'mutation-baseline';
             const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
             const sha = context.sha.slice(0, 7);
-            const failed = process.env.RESULT !== 'success';
+            const failed = process.env.RESULT === 'failure';
 
+            // This endpoint also lists pull requests; a labelled PR must never be closed here.
             const { data: open } = await github.rest.issues.listForRepo({
-              owner, repo, labels: label, state: 'open', per_page: 1,
+              owner, repo, labels: label, state: 'open', per_page: 100,
             });
-            const issue = open[0];
+            const issue = open.find((item) => !item.pull_request);
 
             if (!failed) {
               if (issue) {
