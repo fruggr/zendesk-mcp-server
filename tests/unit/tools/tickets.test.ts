@@ -1775,7 +1775,13 @@ describe('ticket tools', () => {
         http.put(PUT_URL, async ({ request, params }) => {
           const body = (await request.json()) as { ticket: Record<string, unknown> };
           seen.push(body.ticket);
-          return HttpResponse.json({ ticket: { ...MOCK_TICKET, id: Number(params['id']) } });
+          const id = Number(params['id']);
+          // Zendesk answers an update with its audit (#444 spike); this mock
+          // changes nothing, so the audit lists no change.
+          return HttpResponse.json({
+            ticket: { ...MOCK_TICKET, id },
+            audit: { id: 1, ticket_id: id, events: [] },
+          });
         }),
       );
       return seen;
@@ -1959,29 +1965,46 @@ describe('ticket tools', () => {
       expect(text.indexOf('Not applied')).toBeGreaterThan(text.indexOf('### Subscribers'));
     });
 
+    // The move is read from the audit Zendesk returns with the update: the #445
+    // spike measured that this audit is the stored one, with each changed field
+    // as a `Change` event, and the #432 spike that a requester change and the
+    // organization move it causes land in one audit.
     describe('organization moved along with the requester', () => {
-      const countTicketReads = (organization_id: number | null = 400) => {
+      const countTicketReads = () => {
         const reads: number[] = [];
         mswServer.use(
           http.get(PUT_URL, ({ params }) => {
             reads.push(Number(params['id']));
-            return HttpResponse.json({
-              ticket: { ...MOCK_TICKET, id: Number(params['id']), organization_id },
-            });
+            return HttpResponse.json({ ticket: { ...MOCK_TICKET, id: Number(params['id']) } });
           }),
         );
         return reads;
       };
-      const putReturning = (fields: Record<string, unknown>) =>
+      const change = (field_name: string, previous_value: unknown, value: unknown) => ({
+        id: 9,
+        type: 'Change',
+        field_name,
+        previous_value,
+        value,
+      });
+      const putReturning = (fields: Record<string, unknown>, audit?: Record<string, unknown>) => {
+        const seen: Record<string, unknown>[] = [];
         mswServer.use(
-          http.put(PUT_URL, ({ params }) =>
-            HttpResponse.json({ ticket: { ...MOCK_TICKET, id: Number(params['id']), ...fields } }),
-          ),
+          http.put(PUT_URL, async ({ request, params }) => {
+            seen.push(((await request.json()) as { ticket: Record<string, unknown> }).ticket);
+            const ticket = { ...MOCK_TICKET, id: Number(params['id']), ...fields };
+            return HttpResponse.json(audit ? { ticket, audit } : { ticket });
+          }),
         );
+        return seen;
+      };
+      const auditWith = (...events: unknown[]) => ({ id: 7, ticket_id: 1, events });
 
       it('tells the agent when a requester change also moved the organization', async () => {
-        countTicketReads(400);
-        putReturning({ requester_id: 201, organization_id: 401 });
+        putReturning(
+          { requester_id: 201, organization_id: 401 },
+          auditWith(change('requester_id', 200, 201), change('organization_id', 400, 401)),
+        );
         const result = await findTool('update_ticket').handler({ ticket_id: 1, requester_id: 201 });
         expect(firstText(result)).toContain(
           'Organization changed with the requester: organization_id 400 -> 401. Pass organization_id to keep the ticket under another organization the new requester belongs to.',
@@ -1991,8 +2014,10 @@ describe('ticket tools', () => {
       // Measured on a live tenant (#432 spike): a ticket with no organization
       // takes the new requester's default one in the same audit.
       it('names the organization a ticket without one gained with the new requester', async () => {
-        countTicketReads(null);
-        putReturning({ requester_id: 201, organization_id: 401 });
+        putReturning(
+          { requester_id: 201, organization_id: 401 },
+          auditWith(change('requester_id', 200, 201), change('organization_id', null, 401)),
+        );
         const result = await findTool('update_ticket').handler({ ticket_id: 1, requester_id: 201 });
         expect(firstText(result)).toContain(
           'Organization changed with the requester: organization_id none -> 401.',
@@ -2000,42 +2025,63 @@ describe('ticket tools', () => {
       });
 
       it('names a ticket that lost its organization with the requester change', async () => {
-        countTicketReads(400);
-        putReturning({ requester_id: 201, organization_id: null });
+        putReturning(
+          { requester_id: 201, organization_id: null },
+          auditWith(change('organization_id', 400, null)),
+        );
         const result = await findTool('update_ticket').handler({ ticket_id: 1, requester_id: 201 });
         expect(firstText(result)).toContain('organization_id 400 -> none.');
       });
 
-      it('still updates the requester when the ticket cannot be read first, and says so', async () => {
-        mswServer.use(
-          http.get(PUT_URL, () => HttpResponse.json({ error: 'boom' }, { status: 500 })),
+      it('renders ids the audit carries as strings the same way', async () => {
+        putReturning(
+          { requester_id: 201, organization_id: 401 },
+          auditWith(change('organization_id', '400', '401')),
         );
-        const seen = capturePut();
         const result = await findTool('update_ticket').handler({ ticket_id: 1, requester_id: 201 });
-        expect(seen[0]).toEqual({ requester_id: 201 });
-        expect(firstText(result)).toContain(
-          'Could not read the organization before the requester change: check that the organization shown above is the one you expect.',
-        );
+        expect(firstText(result)).toContain('organization_id 400 -> 401.');
       });
 
-      it('says nothing when the organization stayed the same', async () => {
-        const reads = countTicketReads(400);
-        putReturning({ requester_id: 201, organization_id: 400 });
-        const result = await findTool('update_ticket').handler({ ticket_id: 1, requester_id: 201 });
-        expect(reads).toEqual([1]);
-        expect(firstText(result)).not.toContain('Organization changed');
-      });
-
-      it('reads the ticket first only for a requester change without an explicit organization', async () => {
+      it('says nothing, and reads nothing first, when the audit has no organization change', async () => {
         const reads = countTicketReads();
-        capturePut();
-        await findTool('update_ticket').handler({ ticket_id: 1, status: 'open' });
-        await findTool('update_ticket').handler({
+        const seen = putReturning(
+          { requester_id: 201 },
+          auditWith(change('requester_id', 200, 201)),
+        );
+        const result = await findTool('update_ticket').handler({ ticket_id: 1, requester_id: 201 });
+        expect(reads).toEqual([]);
+        expect(seen).toEqual([{ requester_id: 201 }]);
+        expect(firstText(result)).not.toContain('Organization changed');
+        expect(firstText(result)).not.toContain('Could not confirm');
+      });
+
+      it('says it could not check when the update returns no audit', async () => {
+        const reads = countTicketReads();
+        putReturning({ requester_id: 201 });
+        const result = await findTool('update_ticket').handler({ ticket_id: 1, requester_id: 201 });
+        expect(reads).toEqual([]);
+        expect(firstText(result)).toContain(
+          'Could not confirm whether the organization moved with the requester: check that the organization shown above is the one you expect.',
+        );
+      });
+
+      it('leaves an explicit organization_id to the not-applied check', async () => {
+        putReturning(
+          { requester_id: 201, organization_id: 401 },
+          auditWith(change('organization_id', 400, 401)),
+        );
+        const result = await findTool('update_ticket').handler({
           ticket_id: 1,
           requester_id: 201,
           organization_id: 401,
         });
-        expect(reads).toEqual([]);
+        expect(firstText(result)).not.toContain('Organization changed');
+      });
+
+      it('ignores the audit when the requester is not changed', async () => {
+        putReturning({ status: 'open' });
+        const result = await findTool('update_ticket').handler({ ticket_id: 1, status: 'open' });
+        expect(firstText(result)).not.toContain('Could not confirm');
       });
     });
 
