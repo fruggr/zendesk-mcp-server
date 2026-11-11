@@ -303,6 +303,43 @@ fit in one:
 The PR gate is unaffected: it judges only the changed lines, so a partial
 baseline costs it time on the mutants it must re-run, never a verdict.
 
+### Shards that finish, rather than one run that is interrupted
+
+The first baseline run with the above (2026-11-11, #451) measured the real cold
+cost: **about 4 h in CI**. After the 75 min step budget, Stryker had tested 3 893
+of 5 259 mutants, but its time-weighted progress read 29 %: the static mutants
+are the slow tail. It also showed that the partial report cannot be relied on.
+Stryker exited 137 (SIGKILL) half a second after the SIGINT and wrote nothing,
+while the same command under `CI=true` with no TTY writes its partial locally;
+the cause in CI is unknown. Only 11 mutants timed out (about 4 min), and Stryker
+already uses all 4 cores, so neither `timeoutMS` nor `concurrency` is a lever.
+
+So the baseline no longer depends on an interrupt. It runs as three jobs,
+driven by `scripts/mutation-shards.mjs`:
+
+- **Plan.** The in-scope files are split into 10 shards of 3 chunks, balanced
+  longest-first on what each file cost last time: the sum of `testsCompleted`
+  over its mutants, which is what makes a static mutant expensive (it runs the
+  whole suite). A file the baseline lacks is costed by its size, scaled by the
+  baseline's cost per byte; with no baseline at all, size alone.
+- **Shards, in a matrix.** Each shard runs its chunks one after another, each
+  `stryker run --incremental --mutate <chunk>`. Under `--incremental`, a narrowed
+  `--mutate` still writes the whole project's report, reusing the verdicts of
+  the other files (measured: a run on `pagination.ts`, then one on
+  `durations.ts`, leaves both in the report). So a chunk that **finishes** is
+  progress kept. After each one the shard copies the report and records the
+  files it finished; a shard killed in its third chunk still hands over its first
+  two.
+- **Full scope.** The shard reports are merged: each file from the shard that
+  finished it, otherwise the restored copy, test files unioned. The merged
+  baseline is **saved before anything else runs**, then one warm full-scope pass
+  reuses every verdict (measured: 116 of 116 reused on a two-file merge), re-runs
+  only what a failed shard left, writes the reports and publishes the score.
+
+The interrupt-and-save mechanism above stays as the second line of defence on
+each step. The whole pipeline is one concurrency group, queued and never
+cancelled, and the alert also fires when the plan fails (the canary runs there).
+
 **The gate is on changed lines, not changed files.** `scripts/mutation-scope.mjs`
 turns the PR diff into Stryker line ranges (`file:start-end`, which `--mutate`
 supports natively) and fails the job if a mutant inside them survived. File

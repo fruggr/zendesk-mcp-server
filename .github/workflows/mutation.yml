@@ -19,6 +19,14 @@ on:
 permissions:
   contents: read
 
+# One baseline at a time, end to end (plan, shards, merge): queued, never
+# cancelled, since a cancelled baseline saves nothing. GitHub keeps one waiting
+# run and cancels an older waiting one, which the alert ignores. Pull request and
+# merge-queue runs each get a group of their own, so this never holds them.
+concurrency:
+  group: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && 'mutation-baseline' || format('mutation-{0}', github.run_id) }}
+  cancel-in-progress: false
+
 jobs:
   diff-gate:
     name: Changed lines
@@ -74,21 +82,83 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
 
-  baseline:
-    name: Full scope
-    # Never on `merge_group`: the baseline is the cache's only writer, and a
-    # queue commit is not `main` yet.
+  # The full baseline, in three steps. A cold run costs ~4 h, and an interrupted
+  # Stryker did not reliably save its partial report in CI (#451), so the work is
+  # split into shards of chunks that each *finish*: under `--incremental` with a
+  # narrowed `--mutate`, Stryker still writes the whole project's report, so a
+  # finished chunk is progress kept. scripts/mutation-shards.mjs, ADR section 4.
+  # Never on `merge_group`: the baseline is the cache's only writer, and a queue
+  # commit is not `main` yet.
+  baseline-plan:
+    name: Baseline plan
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    # A cold run no longer fits one job, so the budget lives on the Stryker
-    # step (below) and this is only the hang backstop above it. Queue, never
-    # cancel: a cancelled baseline saves nothing, and a busy `main` cancelled
-    # every one. ADR section 4.
-    # 75 + 2 for the step, ~15 for a cold install, the canary, the save and the upload.
+    timeout-minutes: 15
+    outputs:
+      shards: ${{ steps.plan.outputs.shards }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/mutation-baseline
+
+      # Same canary as the PR job, once per baseline. On `main` it is what keeps
+      # a merged bump from leaving a baseline of replayed, meaningless verdicts.
+      - name: Canary — is the mutation gate still measuring anything?
+        shell: bash
+        run: pnpm test:mutation:canary | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # Balanced on what each file cost last time (tests its mutants ran), or on
+      # its size when there is no baseline yet.
+      - name: Plan the shards
+        id: plan
+        run: |
+          shards=$(node scripts/mutation-shards.mjs plan --shards 10 --chunks 3 \
+            --baseline reports/mutation/stryker-incremental.json)
+          echo "shards=${shards}" >> "$GITHUB_OUTPUT"
+
+  baseline-shard:
+    name: Shard ${{ matrix.shard.index }}
+    needs: baseline-plan
+    runs-on: ubuntu-latest
+    # 75 + 2 for the step, the rest for a cold install and the upload.
     timeout-minutes: 95
-    concurrency:
-      group: mutation-baseline
-      cancel-in-progress: false
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.baseline-plan.outputs.shards) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/mutation-baseline
+
+      # The step budget is a backstop: a shard that overruns keeps every chunk it
+      # finished (the merge reads what it records), and the step fails, visibly.
+      - name: Run the shard
+        env:
+          SHARD_CHUNKS: ${{ toJSON(matrix.shard.chunks) }}
+        run: timeout --signal=INT --kill-after=2m 75m node scripts/mutation-shards.mjs run-shard
+
+      - name: Upload what the shard finished
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mutation-shard-${{ matrix.shard.index }}
+          path: reports/shard/
+          retention-days: 1
+          if-no-files-found: ignore
+
+  baseline:
+    name: Full scope
+    needs: [baseline-plan, baseline-shard]
+    # Whatever the shards did: each one that finished anything is worth merging.
+    if: always() && needs.baseline-plan.result == 'success'
+    runs-on: ubuntu-latest
+    # 75 + 2 for the step, ~15 for a cold install, the merge, the saves and the upload.
+    timeout-minutes: 95
     steps:
       - uses: actions/checkout@v7
         with:
@@ -97,19 +167,38 @@ jobs:
       - uses: ./.github/actions/mutation-baseline
         id: cache
 
-      # Same canary as the PR job. On `main` it is what keeps a merged bump from
-      # leaving a whole baseline of replayed, meaningless verdicts behind.
-      - name: Canary — is the mutation gate still measuring anything?
-        shell: bash
-        run: pnpm test:mutation:canary | tee -a "$GITHUB_STEP_SUMMARY"
+      # A run whose shards all failed has nothing to download; the merge then
+      # keeps the restored baseline.
+      - name: Download the shards
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          pattern: mutation-shard-*
+          path: shards
 
-      # Reports, never `break`s. No `--`: pnpm forwards the separator itself.
-      # Step-scoped secret, so only the baseline can publish — same rule as the cache.
-      # `timeout -s INT`, not the job timeout: on SIGINT Stryker writes a partial
-      # incremental report the next run resumes from, and the step *fails*
-      # (exit 124) where a job timeout only cancels, which notifies nobody.
-      # pnpm waits for Stryker on SIGINT: measured, the file is complete and no
-      # Stryker process is left when `timeout` returns.
+      - name: Merge the shards into the baseline
+        id: merge
+        shell: bash
+        run: |
+          shopt -s nullglob
+          node scripts/mutation-shards.mjs merge \
+            --out reports/mutation/stryker-incremental.json \
+            --fallback reports/mutation/stryker-incremental.json \
+            shards/*
+
+      # Saved before the full pass below, so the shards' work is kept even if
+      # that pass is cut off.
+      - name: Save the merged baseline
+        if: steps.merge.outcome == 'success'
+        uses: actions/cache/save@v6
+        with:
+          path: reports/mutation/stryker-incremental.json
+          key: ${{ steps.cache.outputs.exact }}-shards
+
+      # Warm: reuses every verdict the shards produced, and re-runs only what a
+      # failed shard left. It writes the HTML/JSON reports and publishes the
+      # score. Reports, never `break`s. Step-scoped secret, so only the baseline
+      # can publish — same rule as the cache.
       - name: Run the full scope
         id: stryker
         env:
@@ -120,10 +209,8 @@ jobs:
         if: always()
         run: pnpm test:mutation:summary >> "$GITHUB_STEP_SUMMARY"
 
-      # A partial report is safe to publish: it holds every result reused from
-      # the restored baseline plus this run's, and Stryker re-runs whatever is
-      # missing. Only an unreadable file must not be saved, nor the restored one
-      # again when Stryker never ran (setup or canary failed).
+      # Only an unreadable file must not be saved, nor the merged one again when
+      # the full pass never ran.
       - name: Check the baseline file
         id: baseline-file
         if: always() && (steps.stryker.outcome == 'success' || steps.stryker.outcome == 'failure')
@@ -136,7 +223,6 @@ jobs:
             || echo "usable=false" >> "$GITHUB_OUTPUT"
 
       - name: Save the refreshed baseline
-        # The only writer, complete or partial (see above).
         if: always() && steps.baseline-file.outputs.usable == 'true'
         uses: actions/cache/save@v6
         with:
@@ -162,10 +248,11 @@ jobs:
   # only: a dispatch on a branch says nothing about `main`.
   baseline-alert:
     name: Baseline alert
-    needs: baseline
+    needs: [baseline-plan, baseline]
     if: >-
       always() && github.ref == 'refs/heads/main' &&
-      (needs.baseline.result == 'success' || needs.baseline.result == 'failure')
+      (needs.baseline.result == 'success' || needs.baseline.result == 'failure' ||
+      needs.baseline-plan.result == 'failure')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     # Two alerts at once would both find no open issue and both open one.
@@ -177,7 +264,7 @@ jobs:
     steps:
       - uses: actions/github-script@v9
         env:
-          RESULT: ${{ needs.baseline.result }}
+          RESULT: ${{ needs.baseline-plan.result == 'failure' && 'failure' || needs.baseline.result }}
         with:
           script: |
             const { owner, repo } = context.repo;
