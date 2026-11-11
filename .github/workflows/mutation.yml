@@ -136,11 +136,14 @@ jobs:
       - uses: ./.github/actions/mutation-baseline
 
       # The step budget is a backstop: a shard that overruns keeps every chunk it
-      # finished (the merge reads what it records), and the step fails, visibly.
+      # finished (recorded after each one), and the step fails, which the alert
+      # reports. SIGKILL, not SIGINT: a SIGINT reaches Stryker's test workers too,
+      # and Stryker then hangs instead of saving (measured), so a graceful stop
+      # buys nothing here.
       - name: Run the shard
         env:
           SHARD_CHUNKS: ${{ toJSON(matrix.shard.chunks) }}
-        run: timeout --signal=INT --kill-after=2m 75m node scripts/mutation-shards.mjs run-shard
+        run: timeout --signal=KILL 75m node scripts/mutation-shards.mjs run-shard
 
       - name: Upload what the shard finished
         if: always()
@@ -181,15 +184,17 @@ jobs:
         shell: bash
         run: |
           shopt -s nullglob
-          node scripts/mutation-shards.mjs merge \
+          merged=$(node scripts/mutation-shards.mjs merge \
             --out reports/mutation/stryker-incremental.json \
             --fallback reports/mutation/stryker-incremental.json \
-            shards/*
+            shards/*)
+          echo "shards=${merged}" >> "$GITHUB_OUTPUT"
 
       # Saved before the full pass below, so the shards' work is kept even if
-      # that pass is cut off.
+      # that pass is cut off. Not when no shard handed anything over: the file
+      # would only be the restored one again.
       - name: Save the merged baseline
-        if: steps.merge.outcome == 'success'
+        if: steps.merge.outputs.shards != '0'
         uses: actions/cache/save@v6
         with:
           path: reports/mutation/stryker-incremental.json
@@ -248,7 +253,7 @@ jobs:
   # only: a dispatch on a branch says nothing about `main`.
   baseline-alert:
     name: Baseline alert
-    needs: [baseline-plan, baseline]
+    needs: [baseline-plan, baseline-shard, baseline]
     if: >-
       always() && github.ref == 'refs/heads/main' &&
       (needs.baseline.result == 'success' || needs.baseline.result == 'failure' ||
@@ -264,14 +269,20 @@ jobs:
     steps:
       - uses: actions/github-script@v9
         env:
-          RESULT: ${{ needs.baseline-plan.result == 'failure' && 'failure' || needs.baseline.result }}
+          # The first job that failed, in pipeline order: a shard that overran is
+          # a failure too, even when the full pass made up for it.
+          FAILED_JOB: >-
+            ${{ needs.baseline-plan.result == 'failure' && 'Baseline plan' ||
+            needs.baseline-shard.result == 'failure' && 'Shard' ||
+            needs.baseline.result == 'failure' && 'Full scope' || '' }}
         with:
           script: |
             const { owner, repo } = context.repo;
             const label = 'mutation-baseline';
             const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
             const sha = context.sha.slice(0, 7);
-            const failed = process.env.RESULT === 'failure';
+            const failedJob = process.env.FAILED_JOB.trim();
+            const failed = failedJob !== '';
 
             // This endpoint also lists pull requests; a labelled PR must never be closed here.
             const { data: open } = await github.rest.issues.listForRepo({
@@ -293,7 +304,7 @@ jobs:
               return;
             }
 
-            const line = `The \`Full scope\` job ended \`${process.env.RESULT}\` on \`${sha}\`: ${runUrl}`;
+            const line = `The \`${failedJob}\` job failed on \`${sha}\`: ${runUrl}`;
             if (issue) {
               await github.rest.issues.createComment({ owner, repo, issue_number: issue.number, body: line });
               return;
@@ -312,8 +323,10 @@ jobs:
               body: [
                 line,
                 '',
-                'Each failed run saves its partial baseline, so the next one resumes rather than restarting;',
-                'a run that keeps failing at the step timeout means the scope outgrew it.',
+                '- `Baseline plan`: the canary or the shard plan failed; nothing ran.',
+                '- `Shard`: a shard failed or overran; the chunks it finished are kept, so a shard that',
+                '  keeps overrunning means the plan needs more shards or chunks.',
+                '- `Full scope`: the merge or the final pass failed; the merged shards are already saved.',
                 'This issue closes itself on the next successful run.',
                 'Background: docs/decisions/mutation-testing.md, section 4.',
               ].join('\n'),

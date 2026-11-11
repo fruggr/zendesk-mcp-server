@@ -329,16 +329,26 @@ driven by `scripts/mutation-shards.mjs`:
   `durations.ts`, leaves both in the report). So a chunk that **finishes** is
   progress kept. After each one the shard copies the report and records the
   files it finished; a shard killed in its third chunk still hands over its first
-  two.
+  two, and a chunk that fails does not stop the next one. The shard's budget is
+  enforced with SIGKILL, not SIGINT: `timeout` signals the whole process group,
+  so a SIGINT also reaches Stryker's test workers, and Stryker then hung until
+  the kill instead of saving its partial (reproduced locally, exit 137 — likely
+  what happened in CI). Nothing graceful is needed, since every finished chunk
+  is already on disk.
 - **Full scope.** The shard reports are merged: each file from the shard that
-  finished it, otherwise the restored copy, test files unioned. The merged
+  finished it, otherwise the restored copy; test files from the shards over the
+  restored ones, since a stale copy would make the next run re-test every mutant
+  those tests cover. When no shard handed anything over, the pass runs cold. The
+  merged
   baseline is **saved before anything else runs**, then one warm full-scope pass
   reuses every verdict (measured: 116 of 116 reused on a two-file merge), re-runs
   only what a failed shard left, writes the reports and publishes the score.
 
-The interrupt-and-save mechanism above stays as the second line of defence on
-each step. The whole pipeline is one concurrency group, queued and never
-cancelled, and the alert also fires when the plan fails (the canary runs there).
+The full pass keeps the step budget above; it is warm, so it should rarely run
+long, and the shards' work is saved before it starts. The whole pipeline is one concurrency group, queued and never
+cancelled. The alert names the first job that failed: the plan (where the canary
+runs), a shard (one that overruns is a failure even when the full pass makes up
+for it, since it means the plan needs more shards), or the full pass.
 
 **The gate is on changed lines, not changed files.** `scripts/mutation-scope.mjs`
 turns the PR diff into Stryker line ranges (`file:start-end`, which `--mutate`

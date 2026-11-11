@@ -146,6 +146,15 @@ describe('mergeReports', () => {
     });
   });
 
+  it('prefers the test files the shards ran over the restored ones', () => {
+    const restored = report({}, { 't/a.test.ts': 'old ta', 't/old.test.ts': 'gone?' });
+    const shard = { report: report({}, { 't/a.test.ts': 'new ta' }), done: [] };
+    expect(mergeReports({ fallbacks: [restored], shards: [shard] }).testFiles).toEqual({
+      't/a.test.ts': 'new ta',
+      't/old.test.ts': 'gone?',
+    });
+  });
+
   it('unions the test files every shard ran', () => {
     const shard0 = { report: report({}, { 't/a.test.ts': 'ta' }), done: [] };
     const shard1 = { report: report({}, { 't/b.test.ts': 'tb' }), done: [] };

@@ -1,18 +1,11 @@
 #!/usr/bin/env node
-// Splits the full mutation baseline into shards that each finish inside one CI
-// job, runs one, and merges them back. Entry points, used by `mutation.yml`:
+// Splits the full mutation baseline into shards of chunks that each finish
+// inside one CI job, runs one shard, and merges them back. Why, and how the
+// pieces fit: docs/decisions/mutation-testing.md, section 4. Used by mutation.yml:
 //
 //   node scripts/mutation-shards.mjs plan --shards N --chunks K [--baseline <file>]
 //   node scripts/mutation-shards.mjs run-shard     (chunks in $SHARD_CHUNKS, JSON)
 //   node scripts/mutation-shards.mjs merge --out <file> [--fallback <file>] <shard dir>...
-//
-// Why shards and not one interrupted run: a cold baseline costs about 4 h in CI,
-// and the partial report Stryker writes on SIGINT did not survive there (exit
-// 137, nothing written; #451). Under `--incremental` with a narrowed `--mutate`,
-// Stryker still writes the whole project's report, reusing the verdicts of the
-// files it was not asked to mutate. So every chunk that *finishes* moves the
-// baseline forward, with no signal involved. docs/decisions/mutation-testing.md,
-// section 4.
 
 import { spawnSync } from 'node:child_process';
 import {
@@ -24,8 +17,8 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-import { scopeMatcher } from './mutation-scope.mjs';
+import { fileURLToPath } from 'node:url';
+import { loadConfig } from './mutation-scope.mjs';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -100,19 +93,20 @@ export const planShards = (costs, { shards, chunksPerShard }) =>
 
 /**
  * One baseline from the shards. Every report already carries reused copies of
- * the files it did not mutate, so precedence is what matters: whatever the
- * shards reused, then the restored baseline over it, then each file from the
- * shard that finished it. A file whose shard was killed keeps its older copy.
+ * the files it did not mutate, so precedence is what matters. Files: whatever
+ * the shards reused, then the restored baseline over it, then each file from the
+ * shard that finished it (a file whose shard was killed keeps its older copy).
+ * Test files: the shards' over the restored ones, since the shards ran this
+ * commit's tests; a stale copy would make the next run re-test everything.
  */
 export const mergeReports = ({ fallbacks, shards }) => {
-  const reports = [...shards.map((s) => s.report), ...fallbacks];
+  const shardReports = shards.map((s) => s.report);
+  const reports = [...shardReports, ...fallbacks];
   if (reports.length === 0) return null;
   const files = {};
+  for (const report of reports) Object.assign(files, report.files);
   const testFiles = {};
-  for (const report of reports) {
-    Object.assign(files, report.files);
-    Object.assign(testFiles, report.testFiles);
-  }
+  for (const report of [...fallbacks, ...shardReports]) Object.assign(testFiles, report.testFiles);
   for (const { report, done } of shards) {
     for (const path of done) if (report.files?.[path]) files[path] = report.files[path];
   }
@@ -135,25 +129,28 @@ const listFiles = (dir) =>
     return entry.isDirectory() ? listFiles(rel) : [rel];
   });
 
-const loadStryker = async () => {
-  const { default: config } = await import(pathToFileURL(join(repoRoot, 'stryker.config.mjs')));
-  return { inScope: scopeMatcher(config.mutate ?? []), incrementalFile: config.incrementalFile };
-};
-
 const argValue = (args, name) => {
   const i = args.indexOf(name);
   return i === -1 ? undefined : args[i + 1];
 };
 
+const positiveInt = (value, name) => {
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 1)
+    throw new Error(`${name} must be a positive integer, got ${value}`);
+  return n;
+};
+
 const plan = async (args) => {
-  const { inScope } = await loadStryker();
+  const { inScope } = await loadConfig();
   const paths = listFiles('src').filter(inScope).sort();
+  if (paths.length === 0) throw new Error('No file under src/ matches the mutate scope.');
   const sizes = Object.fromEntries(paths.map((p) => [p, statSync(join(repoRoot, p)).size]));
   const baselinePath = argValue(args, '--baseline');
   const baseline = (baselinePath && readJson(baselinePath)?.files) || {};
   const shards = planShards(estimateCosts(paths, baseline, sizes), {
-    shards: Number(argValue(args, '--shards') ?? 8),
-    chunksPerShard: Number(argValue(args, '--chunks') ?? 3),
+    shards: positiveInt(argValue(args, '--shards') ?? 8, '--shards'),
+    chunksPerShard: positiveInt(argValue(args, '--chunks') ?? 3, '--chunks'),
   });
   for (const s of shards) {
     console.error(`shard ${s.index}: cost ${Math.round(s.cost)}, ${s.chunks.flat().length} files`);
@@ -163,9 +160,10 @@ const plan = async (args) => {
 };
 
 const runShard = async () => {
-  const { incrementalFile } = await loadStryker();
+  const { incrementalFile } = await loadConfig();
   const chunks = JSON.parse(process.env.SHARD_CHUNKS ?? '[]');
   const done = [];
+  let failed = 0;
   mkdirSync(join(repoRoot, SHARD_DIR), { recursive: true });
   for (const [i, chunk] of chunks.entries()) {
     console.log(`\n=== chunk ${i + 1}/${chunks.length}: ${chunk.join(', ')}\n`);
@@ -174,11 +172,11 @@ const runShard = async () => {
       ['exec', 'stryker', 'run', '--incremental', '--mutate', chunk.join(',')],
       { cwd: repoRoot, stdio: 'inherit' },
     );
+    // A failed chunk does not stop the next ones: each is independent progress.
     if (status !== 0) {
-      console.error(
-        `chunk ${i + 1} failed (exit ${status}); keeping the ${done.length} files done so far.`,
-      );
-      process.exit(status ?? 1);
+      failed += 1;
+      console.error(`chunk ${i + 1} failed (exit ${status}).`);
+      continue;
     }
     done.push(...chunk);
     copyFileSync(
@@ -187,6 +185,8 @@ const runShard = async () => {
     );
     writeFileSync(join(repoRoot, SHARD_DIR, 'done.json'), JSON.stringify(done));
   }
+  console.log(`\n${done.length} files finished; ${failed} chunk(s) failed.`);
+  if (failed > 0) process.exit(1);
 };
 
 const merge = async (args) => {
@@ -207,10 +207,13 @@ const merge = async (args) => {
     console.error(`${relative(repoRoot, dir) || dir}: ${done.length} files finished.`);
     return [{ report, done }];
   });
+  // stdout: the number of shards merged, for the workflow to decide whether the
+  // merged file is worth its own cache entry.
+  console.log(shards.length);
   const merged = mergeReports({ fallbacks: fallback?.files ? [fallback] : [], shards });
   if (!merged) {
-    console.error('Nothing to merge.');
-    process.exit(1);
+    console.error('Nothing to merge: the full pass will run cold.');
+    return;
   }
   mkdirSync(dirname(out), { recursive: true });
   writeFileSync(out, JSON.stringify(merged));

@@ -156,7 +156,7 @@ export const scoreOf = (counts) => {
  * config itself rather than restated: which paths are in the mutate scope, and
  * where the JSON reporter writes.
  */
-const loadConfig = async () => {
+export const loadConfig = async () => {
   const { default: config } = await import(pathToFileURL(join(repoRoot, 'stryker.config.mjs')));
   const mutate = config.mutate ?? [];
   if (mutate.length === 0) throw new Error('stryker.config.mjs declares no `mutate` patterns.');
@@ -164,7 +164,7 @@ const loadConfig = async () => {
   if (!reportPath) {
     throw new Error('stryker.config.mjs must set `jsonReporter.fileName` — the gate reads it.');
   }
-  return { inScope: scopeMatcher(mutate), reportPath };
+  return { inScope: scopeMatcher(mutate), reportPath, incrementalFile: config.incrementalFile };
 };
 
 // `--src-prefix`/`--dst-prefix` are not decoration: a contributor with
