@@ -204,6 +204,39 @@ describe('mergeReports', () => {
     expect(merged.testFiles['t/a.test.ts'].tests).toHaveLength(1);
   });
 
+  it('drops a kept verdict whose covering test changed since it was computed', () => {
+    // The restored baseline killed `b` with a test the shard now runs in a new version.
+    const restored = {
+      ...report({ 'src/b.ts': 'b' }, {}, ['0']),
+      testFiles: { 't/b.test.ts': { source: 'old body', tests: [{ id: '0', name: 'covers b' }] } },
+    };
+    const shard = {
+      report: report({ 'src/a.ts': 'a' }, { 't/b.test.ts': [{ id: '0', name: 'covers b' }] }, [
+        '0',
+      ]),
+      done: ['src/a.ts'],
+    };
+    const merged = mergeReports({ fallbacks: [restored], shards: [shard] });
+    expect(merged.files['src/b.ts'].mutants).toEqual([]);
+    expect(tagOf(merged)['src/a.ts']).toBe('a');
+  });
+
+  it('keeps a kept verdict whose covering tests did not change', () => {
+    const restored = {
+      ...report({ 'src/b.ts': 'b' }, {}, ['0']),
+      testFiles: {
+        't/b.test.ts': { source: 'src of t/b.test.ts', tests: [{ id: '0', name: 'covers b' }] },
+      },
+    };
+    const shard = {
+      report: report({ 'src/a.ts': 'a' }, { 't/b.test.ts': [{ id: '0', name: 'covers b' }] }, [
+        '0',
+      ]),
+      done: ['src/a.ts'],
+    };
+    expect(tagOf(mergeReports({ fallbacks: [restored], shards: [shard] }))['src/b.ts']).toBe('b');
+  });
+
   it('carries the top-level fields of the reports', () => {
     const merged = mergeReports({ fallbacks: [], shards: [{ report: report({}), done: [] }] });
     expect(merged.schemaVersion).toBe('2');

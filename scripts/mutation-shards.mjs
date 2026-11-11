@@ -130,6 +130,7 @@ export const mergeReports = ({ fallbacks, shards }) => {
   const newIds = new Map();
   const testFiles = {};
   const keyTables = new Map();
+  const testFileOf = new Map();
   // Tests: restored first, shards over it, so this commit's sources win.
   for (const report of [...fallbacks, ...shards.map((s) => s.report)]) {
     const table = new Map();
@@ -143,26 +144,44 @@ export const mergeReports = ({ fallbacks, shards }) => {
           merged.tests.push({ ...test, id: newIds.get(key) });
         }
         table.set(test.id, newIds.get(key));
+        testFileOf.set(newIds.get(key), file);
       }
       testFiles[file] = merged;
     }
     keyTables.set(report, table);
   }
 
+  // A verdict kept from a report whose copy of a test file differs from the
+  // merged one was computed against another version of that test. Stryker diffs
+  // test sources against the merged copy only, so it would reuse the verdict:
+  // drop the mutant instead, and the next pass runs it again.
+  const staleFiles = (report) =>
+    new Set(
+      Object.entries(report.testFiles ?? {})
+        .filter(([file, entry]) => entry.source !== testFiles[file]?.source)
+        .map(([file]) => file),
+    );
   const remap = (ids, table) => ids?.map((id) => table.get(id)).filter((id) => id !== undefined);
   const files = {};
   for (const { report, done, finishing } of sources) {
     const table = keyTables.get(report) ?? new Map();
+    const stale = finishing ? new Set() : staleFiles(report);
     for (const [path, entry] of Object.entries(report.files ?? {})) {
       if (finishing && !done.includes(path)) continue;
-      files[path] = {
-        ...entry,
-        mutants: (entry.mutants ?? []).map((m) => ({
+      const mutants = (entry.mutants ?? [])
+        .map((m) => ({
           ...m,
           ...(m.coveredBy && { coveredBy: remap(m.coveredBy, table) }),
           ...(m.killedBy && { killedBy: remap(m.killedBy, table) }),
-        })),
-      };
+        }))
+        .filter((m) => {
+          if (stale.size === 0) return true;
+          if (m.static) return false;
+          return ![...(m.coveredBy ?? []), ...(m.killedBy ?? [])].some((id) =>
+            stale.has(testFileOf.get(id)),
+          );
+        });
+      files[path] = { ...entry, mutants };
     }
   }
   return { ...sources.at(-1).report, files, testFiles };

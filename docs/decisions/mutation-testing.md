@@ -343,7 +343,12 @@ driven by `scripts/mutation-shards.mjs`:
   file's `coveredBy`/`killedBy` through the table of the report it came from.
   Without that, the first CI run reused 2 133 of 5 418 verdicts and re-ran the
   rest for 43 min (`Tests: 53 files changed (+1109 -0)`); with it, two shards run
-  apart and merged reuse all of their verdicts (measured locally, 116 of 116). When no shard handed anything over, the pass runs cold. The
+  apart and merged reuse all of their verdicts (measured locally, 116 of 116).
+  One more guard: the merged test sources are this commit's, so a verdict kept
+  from the restored baseline (its shard did not finish) would be compared with
+  test code it never ran against, and reused. A kept mutant covered by a test
+  file whose source changed is dropped instead (static ones whenever any test
+  file changed), so the full pass runs it again. When no shard handed anything over, the pass runs cold. The
   merged
   baseline is **saved before anything else runs**, then one warm full-scope pass
   reuses every verdict (measured: 116 of 116 reused on a two-file merge), re-runs
