@@ -194,8 +194,10 @@ describe('mergeReports', () => {
   });
 
   it('prefers the test sources the shards ran over the restored ones', () => {
-    const restored = report({}, { 't/a.test.ts': [{ id: '0', name: 'one' }] });
-    restored.testFiles['t/a.test.ts'].source = 'old source';
+    const restored = {
+      ...report({}),
+      testFiles: { 't/a.test.ts': { source: 'old source', tests: [{ id: '0', name: 'one' }] } },
+    };
     const shard = { report: report({}, { 't/a.test.ts': [{ id: '3', name: 'one' }] }), done: [] };
     const merged = mergeReports({ fallbacks: [restored], shards: [shard] });
     expect(merged.testFiles['t/a.test.ts'].source).toBe('src of t/a.test.ts');
