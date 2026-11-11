@@ -348,7 +348,7 @@ driven by `scripts/mutation-shards.mjs`:
   from the restored baseline (its shard did not finish) would be compared with
   test code it never ran against, and reused. A kept mutant covered by a test
   file whose source changed is dropped instead (static ones whenever any test
-  file changed), so the full pass runs it again. When no shard handed anything over, the pass runs cold. The
+  file changed or appeared), so the full pass runs it again. When no shard handed anything over, the pass runs cold. The
   merged
   baseline is **saved before anything else runs**, then one warm full-scope pass
   reuses every verdict (measured: 116 of 116 reused on a two-file merge), re-runs

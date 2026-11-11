@@ -155,11 +155,13 @@ export const mergeReports = ({ fallbacks, shards }) => {
   // merged one was computed against another version of that test. Stryker diffs
   // test sources against the merged copy only, so it would reuse the verdict:
   // drop the mutant instead, and the next pass runs it again.
+  // A test file the report never saw counts as changed too: a static mutant (run
+  // by every test) kept from it never ran against that file.
   const staleFiles = (report) =>
     new Set(
-      Object.entries(report.testFiles ?? {})
-        .filter(([file, entry]) => entry.source !== testFiles[file]?.source)
-        .map(([file]) => file),
+      Object.keys(testFiles).filter(
+        (file) => report.testFiles?.[file]?.source !== testFiles[file].source,
+      ),
     );
   const remap = (ids, table) => ids?.map((id) => table.get(id)).filter((id) => id !== undefined);
   const files = {};
