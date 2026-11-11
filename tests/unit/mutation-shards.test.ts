@@ -193,6 +193,36 @@ describe('mergeReports', () => {
     expect(merged.files['src/b.ts'].mutants[0].coveredBy.map(nameOf)).toEqual(['covers b']);
   });
 
+  it('renumbers the killing tests the same way', () => {
+    const killedBy = (r: ReturnType<typeof report>, path: string, ids: string[]) => {
+      Object.assign(r.files[path]?.mutants[0] ?? {}, { killedBy: ids });
+      return r;
+    };
+    const shard0 = {
+      report: killedBy(
+        report({ 'src/a.ts': 'a' }, { 't/a.test.ts': [{ id: '0', name: 'kills a' }] }),
+        'src/a.ts',
+        ['0'],
+      ),
+      done: ['src/a.ts'],
+    };
+    const shard1 = {
+      report: killedBy(
+        report({ 'src/b.ts': 'b' }, { 't/b.test.ts': [{ id: '0', name: 'kills b' }] }),
+        'src/b.ts',
+        ['0'],
+      ),
+      done: ['src/b.ts'],
+    };
+    const merged = mergeReports({ fallbacks: [], shards: [shard0, shard1] });
+    const nameOf = (id: string) =>
+      Object.values(merged.testFiles as Record<string, { tests: Test[] }>)
+        .flatMap((f) => f.tests)
+        .find((t) => t.id === id)?.name;
+    expect(merged.files['src/a.ts'].mutants[0].killedBy.map(nameOf)).toEqual(['kills a']);
+    expect(merged.files['src/b.ts'].mutants[0].killedBy.map(nameOf)).toEqual(['kills b']);
+  });
+
   it('prefers the test sources the shards ran over the restored ones', () => {
     const restored = {
       ...report({}),
