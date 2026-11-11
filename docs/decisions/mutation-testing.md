@@ -288,14 +288,17 @@ fit in one:
   parses and lists files before the save.
 - **The save key carries the run id** (`prefix-sha-run_id-attempt`). Entries are
   immutable, so a re-run of a commit that saved a partial could not otherwise
-  save the rest; the prefix restore-key takes the newest entry, which is the most
-  advanced one.
+  save the rest. The prefix restore-key takes the newest entry, which is at least
+  as advanced as the one it restored (a run saves only once Stryker ran, and its
+  report keeps every result it reused); a newer commit may have re-run a few.
 - **No `cancel-in-progress`.** A cancelled baseline is time thrown away; queued,
   the next push waits for it (GitHub keeps one pending run, not a backlog).
 - **A failed baseline opens an issue.** The `baseline-alert` job opens or comments
-  on a single issue labelled `mutation-baseline` on every failed or cancelled run,
+  on a single issue labelled `mutation-baseline` on every failed run on `main`,
   and closes it on the next success: the push actor on `main` is often Renovate,
-  so the run's own notification reaches nobody.
+  so the run's own notification reaches nobody. A cancelled run does not count:
+  GitHub cancels a *waiting* baseline when a newer push queues, which is routine,
+  while a real overrun fails the Stryker step.
 
 The PR gate is unaffected: it judges only the changed lines, so a partial
 baseline costs it time on the mutants it must re-run, never a verdict.
