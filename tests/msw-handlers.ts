@@ -1184,7 +1184,9 @@ export const handlers = [
     };
     if (update['followers']) ticket['follower_ids'] = applied(update['followers']);
     if (update['email_ccs']) ticket['email_cc_ids'] = applied(update['email_ccs']);
-    return HttpResponse.json({ ticket });
+    // A real update answers with its audit too (#444 spike); none of these
+    // fields is a requester or organization change, so it lists none.
+    return HttpResponse.json({ ticket, audit: { id: 1, ticket_id: ticket['id'], events: [] } });
   }),
   http.post(`${BASE}/uploads`, () => HttpResponse.json({ upload: MOCK_UPLOAD })),
 
