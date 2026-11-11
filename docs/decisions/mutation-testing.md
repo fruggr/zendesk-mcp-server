@@ -150,9 +150,10 @@ the whole scope is **13 min 7 s** (measured on #203's branch, 2 043 mutants).
 before both the Stryker 10 bump ([§8](#8-the-1000-bump-and-the-one-mutator-it-adds)
 has the +35 and what it cost) and `src/utils/formatting.ts` re-entering the scope
 with #203. Scaled by mutant count that band becomes roughly 9–14 min, which the
-baseline job's `timeout-minutes: 45` still clears with room; the figure to trust
+baseline job's 45 min budget cleared with room at the time; the figure to trust
 is the first `main` baseline after #203 merges, not this extrapolation. A **warm**
-run is 45 s to 2 min.
+run is 45 s to 2 min. The scope has since outgrown that budget — see
+[When a cold run outgrows the job](#when-a-cold-run-outgrows-the-job).
 
 Those are the `baseline` job, which mutates the **whole** scope. The `Changed
 lines` gate a PR actually waits on mutates only the lines the diff touched, so it
@@ -257,8 +258,47 @@ Two details that make that work, both easy to get wrong:
   would reintroduce exactly the stale reuse this guards against.
 - **Only the `baseline` job saves.** A PR job runs diff-scoped, so if it wrote
   back it would publish a truncated baseline for every later PR. It uses
-  `cache/restore`, which cannot save, and the save step is `if: success()` so a
-  failed or cancelled run never publishes a partial baseline.
+  `cache/restore`, which cannot save.
+
+### When a cold run outgrows the job
+
+The 9–14 min above did not last. On 2026-11-11 the scope held **5 418 mutants**
+(58 files), 922 of them static and estimated by Stryker at 68 % of the run time;
+the last baseline that completed, on 2026-10-21, took 43 min against a 45 min
+budget, and every one after it was cut off (#442). A cut-off run used to save
+nothing, so the next one started cold and hit the same wall: a busy `main` and a
+Renovate bump were enough to keep it there for weeks, unnoticed, since a job
+timeout concludes `cancelled` and notifies nobody.
+
+The baseline job is therefore built to **converge across runs** rather than to
+fit in one:
+
+- **Stryker is stopped by `timeout --signal=INT`, inside the step, not by the
+  job timeout.** On SIGINT/SIGTERM under `--incremental`, Stryker 10 writes a
+  partial incremental report (`MutationTestReportHelper`, its unexpected-exit
+  handler) — measured locally through `pnpm`: 273 results after 2 min 30 s.
+  The step then *fails* (exit 124), which is a red, notifying run; the job's own
+  `timeout-minutes` stays above it as a hang backstop only.
+- **The partial is saved.** It is a superset of what was restored: results
+  reused from the baseline are reported as early results, so they are in it —
+  measured: the next run reused all 114 real verdicts of the 273 (the other 159
+  were `Ignored`, recomputed every run) and added its own. A mutant missing from
+  it is simply run again. So a partial never replays a wrong verdict; it only
+  saves time. What must not be saved is an unreadable file, so a step checks it
+  parses and lists files before the save.
+- **The save key carries the run id** (`prefix-sha-run_id-attempt`). Entries are
+  immutable, so a re-run of a commit that saved a partial could not otherwise
+  save the rest; the prefix restore-key takes the newest entry, which is the most
+  advanced one.
+- **No `cancel-in-progress`.** A cancelled baseline is time thrown away; queued,
+  the next push waits for it (GitHub keeps one pending run, not a backlog).
+- **A failed baseline opens an issue.** The `baseline-alert` job opens or comments
+  on a single issue labelled `mutation-baseline` on every failed or cancelled run,
+  and closes it on the next success: the push actor on `main` is often Renovate,
+  so the run's own notification reaches nobody.
+
+The PR gate is unaffected: it judges only the changed lines, so a partial
+baseline costs it time on the mutants it must re-run, never a verdict.
 
 **The gate is on changed lines, not changed files.** `scripts/mutation-scope.mjs`
 turns the PR diff into Stryker line ranges (`file:start-end`, which `--mutate`
@@ -649,7 +689,7 @@ Only one of the four upstream headlines touches this repo:
 | Requires Node.js 22+ | None. `.nvmrc` is 24 and every job that installs dev dependencies reads it. `smoke-node-floor` never installs them — it runs the packed tarball — so the published `engines: >=22` is untouched. |
 | `empty-expression-mutator` | +37 mutants. The subject of the rest of this section. |
 | Babel 8 | None measurable: mutant counts per mutator are byte-identical to 9.6.1 outside the new one (17 mutators compared). |
-| Partial incremental report on unexpected exit | Latent. The baseline job still saves only `if: success()` — a partial baseline is exactly the stale-verdict problem [section 4](#the-baseline-can-go-stale-and-stryker-will-not-tell-you) exists to prevent, so the feature stays unused until there is a reason. |
+| Partial incremental report on unexpected exit | Used since #442, once a cold run outgrew the job ([section 4](#when-a-cold-run-outgrows-the-job)). It was held back as a stale-verdict risk, but a partial is saved under the same inputs-hash prefix it was computed with, so it carries no verdict from other inputs; the stale-verdict problem [section 4](#the-baseline-can-go-stale-and-stryker-will-not-tell-you) guards against is a change of inputs, which the prefix still rules out. |
 
 The new mutator is registered as **`CallExpression`** (not, as its package name
 suggests, `EmptyExpression` — that is the name to pass to `excludedMutations`).
