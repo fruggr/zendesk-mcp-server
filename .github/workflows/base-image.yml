@@ -1,11 +1,12 @@
 name: Base image
 
-# When a PR moves the container base image (the Dockerfile's FROM lines),
-# Docker Scout compares each moved stage with the base branch's and comments
-# what changed: packages, Node included, and CVEs. A digest bump says nothing
-# on its own, and DHI rebuilds the -dev build image far more often than the
-# runtime one, so both stages are compared. Own workflow so a README edit does
-# not rebuild the image (container.yml).
+# When a PR moves the container base image's runtime FROM line (the image we
+# publish), Docker Scout compares it with the base branch's and comments what
+# changed: packages, Node included, and CVEs. A digest bump says nothing on its
+# own. The -dev build stage has its twin, base-image-build.yml: Scout keys its
+# PR comment on (command, workflow), so a second comparison in this workflow,
+# even in another job, would overwrite this one. Own workflow so a README edit
+# does not rebuild the image (container.yml).
 on:
   pull_request:
     paths:
@@ -16,94 +17,45 @@ permissions:
   contents: read
 
 jobs:
-  stages:
+  compare:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      runtime-before: ${{ steps.base.outputs.runtime-before }}
-      runtime-after: ${{ steps.base.outputs.runtime-after }}
-      build-before: ${{ steps.base.outputs.build-before }}
-      build-after: ${{ steps.base.outputs.build-after }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
 
-      # The runtime stage is the last FROM (the published image); the build
-      # stage is the one named "AS build", never shipped.
+      # The runtime stage is the last FROM. A miss fails the job: an empty
+      # image would compare against nothing.
       - id: base
         run: |
           set -euo pipefail
-          # A miss fails the job: an empty image would compare against nothing.
           runtime() { grep -E '^FROM ' | tail -n 1 | awk '{print $2}' | grep .; }
-          build() { grep -iE '^FROM .+ AS build[[:space:]]*$' | awk '{print $2}' | grep .; }
-          old=$(git show "${{ github.event.pull_request.base.sha }}:Dockerfile")
-          runtime_before=$(runtime <<< "$old")
-          runtime_after=$(runtime < Dockerfile)
-          build_before=$(build <<< "$old")
-          build_after=$(build < Dockerfile)
-          {
-            echo "runtime-before=$runtime_before"
-            echo "runtime-after=$runtime_after"
-            echo "build-before=$build_before"
-            echo "build-after=$build_after"
-          } >> "$GITHUB_OUTPUT"
+          after=$(runtime < Dockerfile)
+          before=$(git show "${{ github.event.pull_request.base.sha }}:Dockerfile" | runtime)
+          echo "after=$after" >> "$GITHUB_OUTPUT"
+          echo "before=$before" >> "$GITHUB_OUTPUT"
+          if [ "$before" != "$after" ]; then echo "changed=true" >> "$GITHUB_OUTPUT"; fi
 
-  # Two jobs rather than a matrix: scout-action keeps one comment per job, and
-  # matrix legs share a job id, so the second comparison would overwrite the
-  # first. The images in each comment tell the stages apart (-dev is build).
-  runtime:
-    needs: stages
-    if: needs.stages.outputs.runtime-before != needs.stages.outputs.runtime-after
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: read
-      pull-requests: write
-    steps:
       # Same read-only repository secret as container.yml: one Docker account,
       # which both pulls from dhi.io and authenticates Scout on Docker Hub.
-      - uses: docker/login-action@v4
+      - if: steps.base.outputs.changed == 'true'
+        uses: docker/login-action@v4
         with:
           registry: dhi.io
           username: ${{ secrets.DHI_USERNAME }}
           password: ${{ secrets.DHI_TOKEN }}
 
-      - id: compare-runtime
+      - if: steps.base.outputs.changed == 'true'
         uses: docker/scout-action@v1
         with:
           command: compare
-          image: registry://${{ needs.stages.outputs.runtime-after }}
-          to: registry://${{ needs.stages.outputs.runtime-before }}
-          platform: linux/amd64
-          ignore-unchanged: true
-          dockerhub-user: ${{ secrets.DHI_USERNAME }}
-          dockerhub-password: ${{ secrets.DHI_TOKEN }}
-          registry-user: ${{ secrets.DHI_USERNAME }}
-          registry-password: ${{ secrets.DHI_TOKEN }}
-
-  build:
-    needs: stages
-    if: needs.stages.outputs.build-before != needs.stages.outputs.build-after
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: read
-      pull-requests: write
-    steps:
-      - uses: docker/login-action@v4
-        with:
-          registry: dhi.io
-          username: ${{ secrets.DHI_USERNAME }}
-          password: ${{ secrets.DHI_TOKEN }}
-
-      - id: compare-build
-        uses: docker/scout-action@v1
-        with:
-          command: compare
-          image: registry://${{ needs.stages.outputs.build-after }}
-          to: registry://${{ needs.stages.outputs.build-before }}
+          image: registry://${{ steps.base.outputs.after }}
+          to: registry://${{ steps.base.outputs.before }}
           platform: linux/amd64
           ignore-unchanged: true
           dockerhub-user: ${{ secrets.DHI_USERNAME }}

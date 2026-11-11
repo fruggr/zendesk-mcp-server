@@ -245,10 +245,11 @@ and its `versionCompatibility` treats only `-dev` as a compatibility marker (ove
 Renovate proposing digests only), so a digest update re-resolves the *same* tag, a tag
 update never leaves Node's major line without dashboard approval, and the build stage never
 swaps to the runtime image. The README badge carries the same tag and moves in the same PR.
-When a PR moves a `FROM` line, `.github/workflows/base-image.yml` runs the official
-[`docker/scout-action`](https://github.com/docker/scout-action) `compare` between the new base
-and the base branch's, once per stage that moved (runtime, and the `-dev` build stage that is
-never shipped), and Scout comments on the PR the packages that changed (Node included) and
+When a PR moves a `FROM` line, the official
+[`docker/scout-action`](https://github.com/docker/scout-action) runs `compare` between the new base
+and the base branch's, once per stage that moved: `.github/workflows/base-image.yml` for the
+runtime, `base-image-build.yml` for the `-dev` build stage that is never shipped (one workflow
+each, since Scout keeps one PR comment per command and workflow), and Scout comments on the PR the packages that changed (Node included) and
 the CVEs fixed or introduced. A digest rebuild of the same tag is titled with the tag, both
 digests and the stage, e.g. `chore(docker): rebuild node.js 24.22.2-alpine3.24-dev (30a6476 to
 0057d01, build stage only)`. When both stages move in one PR, the title shrinks to
