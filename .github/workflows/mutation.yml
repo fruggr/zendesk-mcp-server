@@ -170,10 +170,9 @@ jobs:
       - uses: ./.github/actions/mutation-baseline
         id: cache
 
-      # A run whose shards all failed has nothing to download; the merge then
-      # keeps the restored baseline.
+      # No match is not an error for this action (the merge then keeps the
+      # restored baseline); a failed download is, and must not pass silently.
       - name: Download the shards
-        continue-on-error: true
         uses: actions/download-artifact@v8
         with:
           pattern: mutation-shard-*
@@ -184,10 +183,17 @@ jobs:
         shell: bash
         run: |
           shopt -s nullglob
+          # One matching artifact is extracted into shards/ itself, several into
+          # one subdirectory each.
+          if [[ -f shards/done.json || -f shards/stryker-incremental.json ]]; then
+            dirs=(shards)
+          else
+            dirs=(shards/*/)
+          fi
           merged=$(node scripts/mutation-shards.mjs merge \
             --out reports/mutation/stryker-incremental.json \
             --fallback reports/mutation/stryker-incremental.json \
-            shards/*)
+            "${dirs[@]}")
           echo "shards=${merged}" >> "$GITHUB_OUTPUT"
 
       # Saved before the full pass below, so the shards' work is kept even if
