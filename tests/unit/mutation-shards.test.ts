@@ -106,12 +106,29 @@ describe('planShards', () => {
 });
 
 describe('mergeReports', () => {
-  const report = (files: Record<string, unknown>, testFiles: Record<string, unknown> = {}) => ({
+  interface Test {
+    id: string;
+    name: string;
+  }
+  const report = (
+    files: Record<string, string>,
+    testFiles: Record<string, Test[]> = {},
+    coveredBy: string[] = [],
+  ) => ({
     schemaVersion: '2',
     thresholds: { high: 85, low: 70 },
-    files,
-    testFiles,
+    files: Object.fromEntries(
+      Object.entries(files).map(([path, tag]) => [
+        path,
+        { language: 'typescript', mutants: [{ id: tag, status: 'Killed', coveredBy }] },
+      ]),
+    ),
+    testFiles: Object.fromEntries(
+      Object.entries(testFiles).map(([file, tests]) => [file, { source: `src of ${file}`, tests }]),
+    ),
   });
+  const tagOf = (merged: { files: Record<string, { mutants: { id: string }[] }> }) =>
+    Object.fromEntries(Object.entries(merged.files).map(([p, f]) => [p, f.mutants[0]?.id]));
 
   it('takes each file from the shard that finished it, over any reused copy', () => {
     const restored = report({ 'src/a.ts': 'old a', 'src/b.ts': 'old b' });
@@ -124,13 +141,13 @@ describe('mergeReports', () => {
       done: ['src/b.ts'],
     };
     const merged = mergeReports({ fallbacks: [restored], shards: [shard0, shard1] });
-    expect(merged.files).toEqual({ 'src/a.ts': 'fresh a', 'src/b.ts': 'fresh b' });
+    expect(tagOf(merged)).toEqual({ 'src/a.ts': 'fresh a', 'src/b.ts': 'fresh b' });
   });
 
   it('keeps the restored copy of a file whose shard never finished it', () => {
     const restored = report({ 'src/a.ts': 'old a' });
     const killed = { report: report({ 'src/a.ts': 'half a' }), done: [] };
-    expect(mergeReports({ fallbacks: [restored], shards: [killed] }).files).toEqual({
+    expect(tagOf(mergeReports({ fallbacks: [restored], shards: [killed] }))).toEqual({
       'src/a.ts': 'old a',
     });
   });
@@ -140,28 +157,49 @@ describe('mergeReports', () => {
       report: report({ 'src/a.ts': 'reused a', 'src/b.ts': 'fresh b' }),
       done: ['src/b.ts'],
     };
-    expect(mergeReports({ fallbacks: [], shards: [shard] }).files).toEqual({
+    expect(tagOf(mergeReports({ fallbacks: [], shards: [shard] }))).toEqual({
       'src/a.ts': 'reused a',
       'src/b.ts': 'fresh b',
     });
   });
 
-  it('prefers the test files the shards ran over the restored ones', () => {
-    const restored = report({}, { 't/a.test.ts': 'old ta', 't/old.test.ts': 'gone?' });
-    const shard = { report: report({}, { 't/a.test.ts': 'new ta' }), done: [] };
-    expect(mergeReports({ fallbacks: [restored], shards: [shard] }).testFiles).toEqual({
-      't/a.test.ts': 'new ta',
-      't/old.test.ts': 'gone?',
-    });
+  it("keeps every test a file had in any shard, not only the last shard's subset", () => {
+    const shard0 = { report: report({}, { 't/a.test.ts': [{ id: '0', name: 'one' }] }), done: [] };
+    const shard1 = { report: report({}, { 't/a.test.ts': [{ id: '0', name: 'two' }] }), done: [] };
+    const merged = mergeReports({ fallbacks: [], shards: [shard0, shard1] });
+    expect(merged.testFiles['t/a.test.ts'].tests.map((t: Test) => t.name)).toEqual(['one', 'two']);
   });
 
-  it('unions the test files every shard ran', () => {
-    const shard0 = { report: report({}, { 't/a.test.ts': 'ta' }), done: [] };
-    const shard1 = { report: report({}, { 't/b.test.ts': 'tb' }), done: [] };
-    expect(mergeReports({ fallbacks: [], shards: [shard0, shard1] }).testFiles).toEqual({
-      't/a.test.ts': 'ta',
-      't/b.test.ts': 'tb',
-    });
+  it('renumbers tests so a mutant still points at the tests it ran in its own shard', () => {
+    // Both shards call their only test "0", but they are different tests.
+    const shard0 = {
+      report: report({ 'src/a.ts': 'a' }, { 't/a.test.ts': [{ id: '0', name: 'covers a' }] }, [
+        '0',
+      ]),
+      done: ['src/a.ts'],
+    };
+    const shard1 = {
+      report: report({ 'src/b.ts': 'b' }, { 't/b.test.ts': [{ id: '0', name: 'covers b' }] }, [
+        '0',
+      ]),
+      done: ['src/b.ts'],
+    };
+    const merged = mergeReports({ fallbacks: [], shards: [shard0, shard1] });
+    const nameOf = (id: string) =>
+      Object.values(merged.testFiles as Record<string, { tests: Test[] }>)
+        .flatMap((f) => f.tests)
+        .find((t) => t.id === id)?.name;
+    expect(merged.files['src/a.ts'].mutants[0].coveredBy.map(nameOf)).toEqual(['covers a']);
+    expect(merged.files['src/b.ts'].mutants[0].coveredBy.map(nameOf)).toEqual(['covers b']);
+  });
+
+  it('prefers the test sources the shards ran over the restored ones', () => {
+    const restored = report({}, { 't/a.test.ts': [{ id: '0', name: 'one' }] });
+    restored.testFiles['t/a.test.ts'].source = 'old source';
+    const shard = { report: report({}, { 't/a.test.ts': [{ id: '3', name: 'one' }] }), done: [] };
+    const merged = mergeReports({ fallbacks: [restored], shards: [shard] });
+    expect(merged.testFiles['t/a.test.ts'].source).toBe('src of t/a.test.ts');
+    expect(merged.testFiles['t/a.test.ts'].tests).toHaveLength(1);
   });
 
   it('carries the top-level fields of the reports', () => {

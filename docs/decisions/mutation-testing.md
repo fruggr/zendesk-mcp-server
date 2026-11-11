@@ -336,9 +336,14 @@ driven by `scripts/mutation-shards.mjs`:
   what happened in CI). Nothing graceful is needed, since every finished chunk
   is already on disk.
 - **Full scope.** The shard reports are merged: each file from the shard that
-  finished it, otherwise the restored copy; test files from the shards over the
-  restored ones, since a stale copy would make the next run re-test every mutant
-  those tests cover. When no shard handed anything over, the pass runs cold. The
+  finished it, otherwise the restored copy. Tests are not a plain union: a
+  mutant names its tests by id, and Stryker numbers them per run, so the same id
+  means different tests in two shards. The merge renumbers every test on
+  Stryker's own identity for it (file, position, name) and rewrites each kept
+  file's `coveredBy`/`killedBy` through the table of the report it came from.
+  Without that, the first CI run reused 2 133 of 5 418 verdicts and re-ran the
+  rest for 43 min (`Tests: 53 files changed (+1109 -0)`); with it, two shards run
+  apart and merged reuse all of their verdicts (measured locally, 116 of 116). When no shard handed anything over, the pass runs cold. The
   merged
   baseline is **saved before anything else runs**, then one warm full-scope pass
   reuses every verdict (measured: 116 of 116 reused on a two-file merge), re-runs

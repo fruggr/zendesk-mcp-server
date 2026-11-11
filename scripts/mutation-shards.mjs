@@ -100,26 +100,72 @@ export const planShards = (costs, { shards, chunksPerShard }) =>
     ).map((chunk) => chunk.paths),
   }));
 
+/** Stryker's own identity for a test across runs (`testToIdentifyingKey`, incremental-differ). */
+const testKey = (file, test) => {
+  const start = test.startPosition ?? test.location?.start ?? { line: 0, column: 0 };
+  return `${file}@${start.line}:${start.column}\n${test.name}`;
+};
+
 /**
- * One baseline from the shards. Every report already carries reused copies of
- * the files it did not mutate, so precedence is what matters. Files: whatever
- * the shards reused, then the restored baseline over it, then each file from the
- * shard that finished it (a file whose shard was killed keeps its older copy).
- * Test files: the shards' over the restored ones, since the shards ran this
- * commit's tests; a stale copy would make the next run re-test everything.
+ * One baseline from the shards.
+ *
+ * Files, by precedence: whatever the shards reused, then the restored baseline,
+ * then each file from the shard that finished it (a killed shard's file keeps its
+ * older copy).
+ *
+ * Tests need more than a union. A mutant names its tests by id (`coveredBy`,
+ * `killedBy`), and ids are numbered per run, so the same id means different
+ * tests in two shards. Every test is renumbered on its identity, and each kept
+ * file's mutants are rewritten through the table of the report they came from;
+ * otherwise Stryker reads the coverage as changed and re-runs the mutant.
  */
 export const mergeReports = ({ fallbacks, shards }) => {
-  const shardReports = shards.map((s) => s.report);
-  const reports = [...shardReports, ...fallbacks];
-  if (reports.length === 0) return null;
-  const files = {};
-  for (const report of reports) Object.assign(files, report.files);
+  const sources = [
+    ...shards.map((s) => ({ report: s.report, done: [] })),
+    ...fallbacks.map((report) => ({ report, done: [] })),
+    ...shards.map((s) => ({ report: s.report, done: s.done, finishing: true })),
+  ];
+  if (sources.length === 0) return null;
+
+  const newIds = new Map();
   const testFiles = {};
-  for (const report of [...fallbacks, ...shardReports]) Object.assign(testFiles, report.testFiles);
-  for (const { report, done } of shards) {
-    for (const path of done) if (report.files?.[path]) files[path] = report.files[path];
+  const keyTables = new Map();
+  // Tests: restored first, shards over it, so this commit's sources win.
+  for (const report of [...fallbacks, ...shards.map((s) => s.report)]) {
+    const table = new Map();
+    for (const [file, entry] of Object.entries(report.testFiles ?? {})) {
+      const merged = testFiles[file] ?? { tests: [] };
+      if (entry.source !== undefined) merged.source = entry.source;
+      for (const test of entry.tests ?? []) {
+        const key = testKey(file, test);
+        if (!newIds.has(key)) {
+          newIds.set(key, String(newIds.size));
+          merged.tests.push({ ...test, id: newIds.get(key) });
+        }
+        table.set(test.id, newIds.get(key));
+      }
+      testFiles[file] = merged;
+    }
+    keyTables.set(report, table);
   }
-  return { ...reports.at(-1), files, testFiles };
+
+  const remap = (ids, table) => ids?.map((id) => table.get(id)).filter((id) => id !== undefined);
+  const files = {};
+  for (const { report, done, finishing } of sources) {
+    const table = keyTables.get(report) ?? new Map();
+    for (const [path, entry] of Object.entries(report.files ?? {})) {
+      if (finishing && !done.includes(path)) continue;
+      files[path] = {
+        ...entry,
+        mutants: (entry.mutants ?? []).map((m) => ({
+          ...m,
+          ...(m.coveredBy && { coveredBy: remap(m.coveredBy, table) }),
+          ...(m.killedBy && { killedBy: remap(m.killedBy, table) }),
+        })),
+      };
+    }
+  }
+  return { ...sources.at(-1).report, files, testFiles };
 };
 
 // --- edges --------------------------------------------------------------------
