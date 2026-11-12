@@ -780,7 +780,7 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
       it('rejects an empty attachment_ids in "all" mode and through a proxy', async () => {
         const params = { ticket_id: 1, attachment_ids: [] };
         const expected =
-          'Invalid parameter(s): attachment_ids: Too small: expected array to have >=1 items';
+          "Invalid parameter(s): attachment_ids: attachment_ids cannot be empty: omit it to collect the attachments of the ticket's comments";
 
         connected = await harness.connect(makeConfig({ mode: 'all' }));
         const all = await connected.client.callTool({

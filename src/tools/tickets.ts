@@ -1187,8 +1187,11 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
             'Ticket ID — the numeric id of the ticket whose attachments to fetch. Obtain it from search_tickets or list_tickets.',
           ),
         attachment_ids: z
-          .array(z.number().int())
-          .min(1)
+          .array(z.number().int().positive())
+          .min(
+            1,
+            "attachment_ids cannot be empty: omit it to collect the attachments of the ticket's comments",
+          )
           .optional()
           .describe(
             "Attachment IDs to fetch directly (e.g. extracted from a previous list_ticket_comments or get_ticket(include_comments=true) call). When provided, skips the comments fetch entirely; an empty array is rejected, so omit the parameter instead of passing []. When omitted, the attachments of the ticket's comments are returned, read up to a page cap: on a very long thread the scan stops there, and the response says so.",
@@ -1217,6 +1220,10 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
               truncated: walk.truncated,
             }));
 
+        if (attachments.length === 0 && attachment_ids) {
+          const text = `None of the requested attachment_ids (${attachment_ids.join(', ')}) was found. Omit attachment_ids to collect the attachments of ticket #${ticket_id}'s comments.`;
+          return { content: [{ type: 'text', text }] };
+        }
         if (attachments.length === 0) {
           const text = truncated
             ? `No attachments found on the first ${MAX_COMMENT_PAGES} pages of comments of ticket #${ticket_id}. ${COMMENT_CAP_NOTICE}`
