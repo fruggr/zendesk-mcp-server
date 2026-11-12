@@ -206,7 +206,7 @@ jobs:
 
       # Anti-drift: is the plan still fitting? One table in the job summary, an
       # annotation per warning (a shard over 60 % of its 75 min budget, or the
-      # slowest over 1.5 times the mean), never a red run. The history is what
+      # slowest over 1.5 times the mean once past 15 min), never a red run. The history is what
       # turns three drifting runs in a row into an issue (alert job). ADR §4.
       - name: Restore the drift history
         uses: actions/cache/restore@v6
@@ -433,8 +433,8 @@ jobs:
                 line,
                 '',
                 'The last three baselines on main each warned that a shard used more than 60 % of its',
-                '75 min budget, or that the slowest shard took more than 1.5 times the mean. The runs',
-                'stay green; this is the early warning before a shard overruns. The table is in each',
+                '75 min budget, or that the slowest shard (past 15 min) took more than 1.5 times the mean.',
+                'The runs stay green; this is the early warning before a shard overruns. The table is in each',
                 "run's job summary (Full scope). Usual fixes: more shards or chunks (`--shards`,",
                 '`--chunks` in mutation.yml), or look at what made a file more expensive.',
                 'This issue closes itself on the next run without drift.',

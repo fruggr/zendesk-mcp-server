@@ -194,9 +194,17 @@ export const mergeReports = ({ fallbacks, shards }) => {
 /**
  * Whether the plan still fits: a shard close to its budget, or one far slower
  * than the others, warns before a shard is killed. Thresholds: 60 % of the
- * budget, and 1.5 times the mean. ADR section 4.
+ * budget, and 1.5 times the mean once the slowest passes 20 % of the budget:
+ * below that (a warm run of a few minutes) an imbalance costs nothing.
+ * ADR section 4.
  */
-export const driftReport = ({ shards, budgetSeconds, warnShare = 0.6, imbalanceLimit = 1.5 }) => {
+export const driftReport = ({
+  shards,
+  budgetSeconds,
+  warnShare = 0.6,
+  imbalanceLimit = 1.5,
+  imbalanceFloor = 0.2,
+}) => {
   const timed = shards.filter((s) => typeof s.seconds === 'number');
   const slowest = timed.length ? Math.max(...timed.map((s) => s.seconds)) : null;
   const mean = timed.length ? timed.reduce((sum, s) => sum + s.seconds, 0) / timed.length : null;
@@ -218,7 +226,7 @@ export const driftReport = ({ shards, budgetSeconds, warnShare = 0.6, imbalanceL
         (s) =>
           `Shard ${s.index} took ${minutes(s.seconds)}, ${Math.round((s.seconds / budgetSeconds) * 100)} % of the ${minutes(budgetSeconds)} budget.`,
       ),
-    ...(imbalance !== null && imbalance > imbalanceLimit
+    ...(imbalance !== null && imbalance > imbalanceLimit && slowest > budgetSeconds * imbalanceFloor
       ? [
           `Shards are unbalanced: the slowest took ${imbalance.toFixed(2)} times the mean (${minutes(slowest)} against ${minutes(mean)}).`,
         ]

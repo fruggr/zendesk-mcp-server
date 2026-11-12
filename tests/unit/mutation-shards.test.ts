@@ -362,6 +362,20 @@ describe('driftReport', () => {
     ]);
   });
 
+  it('ignores an imbalance while the slowest shard stays under 20 % of the budget', () => {
+    // A warm run: shards reuse nearly every verdict and take 1 to 3 min.
+    const shards = [
+      { index: 0, cost: 10, seconds: 60 },
+      { index: 1, cost: 10, seconds: 180 },
+      { index: 2, cost: 10, seconds: 90 },
+    ];
+    expect(driftReport({ shards, budgetSeconds }).warnings).toEqual([]);
+    const atFloor = shards.map((s) => ({ ...s, seconds: s.seconds * 5 }));
+    expect(driftReport({ shards: atFloor, budgetSeconds }).warnings).toEqual([]);
+    const overFloor = shards.map((s) => ({ ...s, seconds: s.seconds * 5 + 1 }));
+    expect(driftReport({ shards: overFloor, budgetSeconds }).warnings).toHaveLength(1);
+  });
+
   it('leaves a shard without timing out of the figures, and says so', () => {
     const report = driftReport({
       shards: [

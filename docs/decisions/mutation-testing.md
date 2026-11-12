@@ -364,7 +364,9 @@ chunk next to its planned cost, and the full-scope job turns them into a table
 in the job summary (planned cost, duration, share of the 75 min budget, slowest
 over mean). It annotates the run, without failing it, when a shard uses more
 than 60 % of the budget or the slowest shard takes more than 1.5 times the
-mean. A single warning is noise, so a short history (cached, last ten runs)
+mean. The second check waits until the slowest shard passes 20 % of the budget
+(15 min): a warm run's shards take a few minutes each, and an imbalance there
+costs nothing (the first test run warned at 1.61 on 3 min against 2). A single warning is noise, so a short history (cached, last ten runs)
 escalates only the third drifting run in a row into an issue labelled
 `mutation-baseline-drift`, which closes itself on the next run without drift.
 The thresholds come from the first measured runs: cold shards took 7 to 19.5
