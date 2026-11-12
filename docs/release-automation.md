@@ -237,24 +237,23 @@ and the patch case then auto-merges on its own. Why it is layered this way, and 
 check is not simply made required:
 [`docs/decisions/dependency-automerge.md`](decisions/dependency-automerge.md#3-what-protects-the-repo-and-what-does-not).
 
-**The container base image says what it is.** The Dockerfile pins one Docker Hardened Images
-tag by digest, and the tag names the full versions, `<node x.y.z>-alpine3.<y>[-dev]`: Renovate's
+**The container base image says what it is.** Both `FROM` lines track one Docker Hardened
+Images tag, and the tag names the full versions, `<node x.y.z>-alpine3.<y>[-dev]`: Renovate's
 versioning reads the Node version as major.minor.patch and the Alpine release as a fourth part,
 and its `versionCompatibility` treats only `-dev` as a compatibility marker (overriding
 `config:recommended`'s Node preset, which would cut the tag at its first dash and leave
 Renovate proposing digests only), so a digest update re-resolves the *same* tag, a tag
 update never leaves Node's major line without dashboard approval, and the build stage never
 swaps to the runtime image. The README badge carries the same tag and moves in the same PR.
-When a PR moves a `FROM` line, the official
-[`docker/scout-action`](https://github.com/docker/scout-action) runs `compare` between the new base
-and the base branch's, once per stage that moved: `.github/workflows/base-image.yml` for the
-runtime, `base-image-build.yml` for the `-dev` build stage that is never shipped (one workflow
-each, since Scout keeps one PR comment per command and workflow), and Scout comments on the PR the packages that changed (Node included) and
-the CVEs fixed or introduced. A digest rebuild of the same tag is titled with the tag, both
-digests and the stage, e.g. `chore(docker): rebuild node.js 24.22.2-alpine3.24-dev (30a6476 to
-0057d01, build stage only)`. When both stages move in one PR, the title shrinks to
-`rebuild node.js` and the PR table's Type column (`stage`, `final`) says which moved. The base has no age gate: dhi.io serves no release timestamp, and
-Renovate's default `timestamp-required` would hold every tag update forever.
+Only the runtime `FROM` is pinned by digest: the `-dev` build stage, never shipped, takes the
+newest rebuild of its tag at each build, so DHI's near-daily `-dev` rebuilds open no PR.
+When a PR moves the runtime `FROM` line, `.github/workflows/base-image.yml` runs the official
+[`docker/scout-action`](https://github.com/docker/scout-action) `compare` between the new base
+and the base branch's, and Scout comments on the PR the packages that changed (Node included) and
+the CVEs fixed or introduced. A digest rebuild of the same tag is titled with the tag and both
+digests, e.g. `chore(docker): rebuild node.js 24.22.2-alpine3.24 (8c18e7e to 1a2b3c4)`. The base
+has no age gate: dhi.io serves no release timestamp, and Renovate's default `timestamp-required`
+would hold every tag update forever.
 
 **Dashboard approval** means: no PR is opened automatically. The update appears in the Renovate-managed "Dependency Dashboard" issue with a checkbox. Ticking the checkbox triggers PR creation. This is intentional for majors, which usually require reading the upstream CHANGELOG and following a migration procedure.
 
@@ -270,7 +269,7 @@ Concrete examples:
 - Minor update of `vitest` (tooling) → joins the same `chore(deps): update dependencies` batch → auto-merge → no release.
 - Major update of `vitest` (tooling) → entry in the dashboard, manual approval required.
 - Patch or minor bump of `pnpm` (via `packageManager` field) → PR `chore(deps): update pnpm to X`, on its own → auto-merge → no release. The corepack hash in `packageManager` is updated automatically by Renovate when the format is `pnpm@VERSION+sha512.HASH`. Since pnpm 12 records itself in `pnpm-lock.yaml` under `packageManagerDependencies`, such a PR also has to refresh the lockfile, or CI fails at `pnpm install --frozen-lockfile` with `ERR_PNPM_FROZEN_LOCKFILE_WITH_OUTDATED_LOCKFILE`. Whether Renovate does that for a bare `packageManager` bump is unverified, and it fails closed either way: the PR goes red at install and auto-merge cannot fire, the same shape as a security PR waiting out the age gate.
-- Container base image (DHI Node/Alpine): a Node minor or patch, an Alpine 3.x release or a digest rebuild of the same tag → one `chore(docker)` PR moving both `FROM` lines and the README badge, at any time, no age gate → the **Base image** workflow posts a Docker Scout comparison per moved stage (packages, Node included, and CVEs before/after; advisory, not a required check, so auto-merge does not wait for it) → auto-merge → no release; `release.yml` republishes the latest release on the new base. A Node major goes to the dashboard like any major.
+- Container base image (DHI Node/Alpine): a Node minor or patch, an Alpine 3.x release or a digest rebuild of the runtime tag → one `chore(docker)` PR moving the `FROM` lines and the README badge as needed, at any time, no age gate → the **Base image** workflow posts a Docker Scout comparison of the runtime base (packages, Node included, and CVEs before/after; advisory, not a required check, so auto-merge does not wait for it) → auto-merge → no release; `release.yml` republishes the latest release on the new base. A Node major goes to the dashboard like any major.
 - GitHub Action digest bump → PR `chore(deps): update actions/X` → manual review → no release.
 - Non-vuln patch of `qs` behind the `^6.15.3` override → **no PR**; the range still holds, so the resolved version moves with the next lockfile maintenance run.
 - Advisory against `qs` behind that same override → **no PR either**; a caret range is not a version, so the entry is skipped. Remediation is the next lockfile maintenance run, or raising the floor by hand.

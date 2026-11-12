@@ -3,10 +3,9 @@ name: Base image
 # When a PR moves the container base image's runtime FROM line (the image we
 # publish), Docker Scout compares it with the base branch's and comments what
 # changed: packages, Node included, and CVEs. A digest bump says nothing on its
-# own. The -dev build stage has its twin, base-image-build.yml: Scout keys its
-# PR comment on (command, workflow), so a second comparison in this workflow,
-# even in another job, would overwrite this one. Own workflow so a README edit
-# does not rebuild the image (container.yml).
+# own. The -dev build stage is not compared: it is never shipped and not pinned
+# (Dockerfile). Own workflow so a README edit does not rebuild the image
+# (container.yml).
 on:
   pull_request:
     paths:
