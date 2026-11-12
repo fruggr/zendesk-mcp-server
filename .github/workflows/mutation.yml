@@ -15,6 +15,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  # Weekly cold baseline, nothing restored: the cache key follows only what the
+  # suite imports, and this is what catches a tool acting on the run without
+  # being imported. Sunday night UTC, off the minute GitHub queues on. ADR §4.
+  schedule:
+    - cron: '17 1 * * 0'
 
 permissions:
   contents: read
@@ -25,9 +30,13 @@ permissions:
 # merge-queue runs each get a group of their own, so this never holds them.
 # Not `mutation-baseline`: that name is the old single-job baseline's group, and
 # sharing it made a run of this pipeline wait behind one of those. Per ref: a
-# test dispatch on a branch must not replace main's waiting baseline.
+# test dispatch on a branch must not replace main's waiting baseline. The weekly
+# cold run shares the group: run beside a push baseline, the slower of the two
+# would be the newest cache entry, and a push finishing last would bring back the
+# verdicts the cold run had just cleared. Queued, it can only be replaced by two
+# pushes in its half hour on a Sunday night (ADR section 4).
 concurrency:
-  group: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && format('mutation-baseline-sharded-{0}', github.ref) || format('mutation-{0}', github.run_id) }}
+  group: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule') && format('mutation-baseline-sharded-{0}', github.ref) || format('mutation-{0}', github.run_id) }}
   cancel-in-progress: false
 
 jobs:
@@ -94,7 +103,9 @@ jobs:
   # commit is not `main` yet.
   baseline-plan:
     name: Baseline plan
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    if: >-
+      github.event_name == 'push' || github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:
@@ -104,6 +115,8 @@ jobs:
         with:
           persist-credentials: false
 
+      # Restored even on the weekly cold run: the plan only reads last run's
+      # per-file costs from it, and the shards themselves start cold.
       - uses: ./.github/actions/mutation-baseline
 
       # Same canary as the PR job, once per baseline. On `main` it is what keeps
@@ -137,6 +150,8 @@ jobs:
           persist-credentials: false
 
       - uses: ./.github/actions/mutation-baseline
+        with:
+          restore: ${{ github.event_name != 'schedule' }}
 
       # The step budget is a backstop: a shard that overruns keeps every chunk it
       # finished (recorded after each one), and the step fails, which the alert
@@ -179,6 +194,8 @@ jobs:
 
       - uses: ./.github/actions/mutation-baseline
         id: cache
+        with:
+          restore: ${{ github.event_name != 'schedule' }}
 
       # No match is not an error for this action (the merge then keeps the
       # restored baseline); a failed download is, and must not pass silently.
