@@ -215,9 +215,15 @@ jobs:
           key: mutation-drift-history-${{ github.run_id }}
           restore-keys: mutation-drift-history-
 
+      # Never blocks what follows: the merged baseline and the full pass matter
+      # more than a report about them.
       - name: Check the shards for drift
         id: drift
+        continue-on-error: true
         shell: bash
+        env:
+          # Every planned shard gets a row, including one that left no timing.
+          SHARD_PLAN: ${{ needs.baseline-plan.outputs.shards }}
         run: |
           shopt -s nullglob
           if [[ -f shards/timing.json ]]; then dirs=(shards); else dirs=(shards/*/); fi

@@ -207,6 +207,12 @@ export const driftReport = ({ shards, budgetSeconds, warnShare = 0.6, imbalanceL
       .filter((s) => typeof s.seconds !== 'number')
       .map((s) => `Shard ${s.index} reported no timing (killed or failed early).`),
     ...timed
+      .filter((s) => s.cutOff)
+      .map(
+        (s) =>
+          `Shard ${s.index} was cut off before finishing; ${minutes(s.seconds)} is a lower bound.`,
+      ),
+    ...timed
       .filter((s) => s.seconds / budgetSeconds > warnShare)
       .map(
         (s) =>
@@ -222,6 +228,24 @@ export const driftReport = ({ shards, budgetSeconds, warnShare = 0.6, imbalanceL
 };
 
 const duration = (seconds) => `${Math.floor(seconds / 60)} min ${Math.round(seconds % 60)} s`;
+
+/**
+ * One row per *planned* shard, so a shard that left no timing (killed in its
+ * first chunk, or never started) still shows. `current` marks a chunk that was
+ * running when the shard stopped: its time so far is only a lower bound.
+ */
+export const shardTimings = (planned, timings) => {
+  const byIndex = new Map(timings.map((t) => [t.index, t]));
+  return planned.map(({ index, cost }) => {
+    const t = byIndex.get(index);
+    return {
+      index,
+      cost,
+      seconds: t?.chunks?.length ? t.seconds : null,
+      cutOff: Boolean(t?.current),
+    };
+  });
+};
 
 /** The drift report as Markdown, for the job summary. */
 export const driftMarkdown = (report) => {
@@ -317,9 +341,16 @@ const runShard = async () => {
     chunks: [],
   };
   mkdirSync(join(repoRoot, SHARD_DIR), { recursive: true });
+  const writeTiming = () =>
+    replaceAtomically(join(repoRoot, SHARD_DIR, 'timing.json'), (tmp) =>
+      writeFileSync(tmp, JSON.stringify(timing)),
+    );
   for (const [i, chunk] of chunks.entries()) {
     console.log(`\n=== chunk ${i + 1}/${chunks.length}: ${chunk.join(', ')}\n`);
     const started = Date.now();
+    // Written before the chunk runs: a kill inside it leaves `current` behind.
+    timing.current = { files: chunk, started };
+    writeTiming();
     const { status } = spawnSync(
       'pnpm',
       ['exec', 'stryker', 'run', '--incremental', '--mutate', chunk.join(',')],
@@ -328,9 +359,8 @@ const runShard = async () => {
     const seconds = (Date.now() - started) / 1000;
     timing.seconds += seconds;
     timing.chunks.push({ files: chunk, seconds, ok: status === 0 });
-    replaceAtomically(join(repoRoot, SHARD_DIR, 'timing.json'), (tmp) =>
-      writeFileSync(tmp, JSON.stringify(timing)),
-    );
+    delete timing.current;
+    writeTiming();
     // A failed chunk does not stop the next ones: each is independent progress.
     if (status !== 0) {
       failed += 1;
@@ -388,15 +418,16 @@ const drift = (args) => {
   const summaryPath = argValue(args, '--summary');
   const flags = ['--budget-minutes', '--history', '--history-out', '--summary'];
   const dirs = args.filter((a, i) => !a.startsWith('--') && !flags.includes(args[i - 1]));
-  const shards = dirs
-    .map((dir) => readJson(join(dir, 'timing.json')))
-    .filter(Boolean)
-    .map((t) => ({ index: t.index, cost: t.cost, seconds: t.chunks.length ? t.seconds : null }))
-    .sort((a, b) => a.index - b.index);
+  const timings = dirs.map((dir) => readJson(join(dir, 'timing.json'))).filter(Boolean);
+  const planned = JSON.parse(process.env.SHARD_PLAN ?? '[]');
+  const shards = shardTimings(planned, timings);
   const report = driftReport({ shards, budgetSeconds });
   const drifted = report.warnings.length > 0;
   const { history, escalate } = nextDriftHistory((historyIn && readJson(historyIn)) || [], drifted);
-  if (historyOut) writeFileSync(historyOut, JSON.stringify(history));
+  if (historyOut) {
+    mkdirSync(dirname(historyOut), { recursive: true });
+    writeFileSync(historyOut, JSON.stringify(history));
+  }
   if (summaryPath) writeFileSync(summaryPath, `${driftMarkdown(report)}\n`, { flag: 'a' });
   // Annotations on the run page; they do not fail it.
   for (const warning of report.warnings)

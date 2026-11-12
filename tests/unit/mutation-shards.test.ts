@@ -8,6 +8,7 @@ import {
   mergeReports,
   nextDriftHistory,
   planShards,
+  shardTimings,
   // @ts-expect-error -- plain .mjs helper, no declaration file (same as the other
   // script tests in this directory).
 } from '../../scripts/mutation-shards.mjs';
@@ -371,6 +372,57 @@ describe('driftReport', () => {
     });
     expect(report.slowest).toBe(600);
     expect(report.warnings).toEqual(['Shard 1 reported no timing (killed or failed early).']);
+  });
+});
+
+describe('shardTimings', () => {
+  const plan = [
+    { index: 0, cost: 10 },
+    { index: 1, cost: 20 },
+    { index: 2, cost: 30 },
+  ];
+
+  it('lists every planned shard, with no timing for one that left none', () => {
+    const timings = [{ index: 0, seconds: 300, chunks: [{ seconds: 300 }] }];
+    expect(shardTimings(plan, timings)).toEqual([
+      { index: 0, cost: 10, seconds: 300, cutOff: false },
+      { index: 1, cost: 20, seconds: null, cutOff: false },
+      { index: 2, cost: 30, seconds: null, cutOff: false },
+    ]);
+  });
+
+  it('marks a shard killed inside a chunk as cut off, its time a lower bound', () => {
+    const timings = [
+      { index: 1, seconds: 400, chunks: [{ seconds: 400 }], current: { started: 0 } },
+      { index: 2, seconds: 0, chunks: [], current: { started: 0 } },
+    ];
+    expect(shardTimings(plan, timings).slice(1)).toEqual([
+      { index: 1, cost: 20, seconds: 400, cutOff: true },
+      { index: 2, cost: 30, seconds: null, cutOff: true },
+    ]);
+  });
+});
+
+describe('driftReport on a cut-off shard', () => {
+  it('says the shard was cut off', () => {
+    const report = driftReport({
+      shards: [
+        { index: 0, cost: 10, seconds: 600, cutOff: false },
+        { index: 1, cost: 10, seconds: 500, cutOff: true },
+      ],
+      budgetSeconds: 75 * 60,
+    });
+    expect(report.warnings).toEqual([
+      'Shard 1 was cut off before finishing; 8 min is a lower bound.',
+    ]);
+  });
+
+  it('says a shard cut off in its first chunk left no timing', () => {
+    const report = driftReport({
+      shards: [{ index: 0, cost: 10, seconds: null, cutOff: true }],
+      budgetSeconds: 75 * 60,
+    });
+    expect(report.warnings).toEqual(['Shard 0 reported no timing (killed or failed early).']);
   });
 });
 
