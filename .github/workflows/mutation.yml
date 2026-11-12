@@ -145,6 +145,9 @@ jobs:
       - name: Run the shard
         env:
           SHARD_CHUNKS: ${{ toJSON(matrix.shard.chunks) }}
+          # Recorded with the chunk timings, for the drift check after the merge.
+          SHARD_INDEX: ${{ matrix.shard.index }}
+          SHARD_COST: ${{ matrix.shard.cost }}
         run: timeout --signal=KILL 75m node scripts/mutation-shards.mjs run-shard
 
       - name: Upload what the shard finished
@@ -164,6 +167,9 @@ jobs:
     runs-on: ubuntu-latest
     # 75 + 2 for the step, ~15 for a cold install, the merge, the saves and the upload.
     timeout-minutes: 95
+    outputs:
+      drifted: ${{ steps.drift.outputs.drifted }}
+      drift-escalate: ${{ steps.drift.outputs.escalate }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -197,6 +203,34 @@ jobs:
             --fallback reports/mutation/stryker-incremental.json \
             "${dirs[@]}")
           echo "shards=${merged}" >> "$GITHUB_OUTPUT"
+
+      # Anti-drift: is the plan still fitting? One table in the job summary, an
+      # annotation per warning (a shard over 60 % of its 75 min budget, or the
+      # slowest over 1.5 times the mean), never a red run. The history is what
+      # turns three drifting runs in a row into an issue (alert job). ADR §4.
+      - name: Restore the drift history
+        uses: actions/cache/restore@v6
+        with:
+          path: reports/drift-history.json
+          key: mutation-drift-history-${{ github.run_id }}
+          restore-keys: mutation-drift-history-
+
+      - name: Check the shards for drift
+        id: drift
+        shell: bash
+        run: |
+          shopt -s nullglob
+          if [[ -f shards/timing.json ]]; then dirs=(shards); else dirs=(shards/*/); fi
+          node scripts/mutation-shards.mjs drift --budget-minutes 75 \
+            --history reports/drift-history.json --history-out reports/drift-history.json \
+            --summary "$GITHUB_STEP_SUMMARY" "${dirs[@]}"
+
+      - name: Save the drift history
+        if: steps.drift.outcome == 'success'
+        uses: actions/cache/save@v6
+        with:
+          path: reports/drift-history.json
+          key: mutation-drift-history-${{ github.run_id }}-${{ github.run_attempt }}
 
       # Saved before the full pass below, so the shards' work is kept even if
       # that pass is cut off. Not when no shard handed anything over: the file
@@ -336,6 +370,68 @@ jobs:
                 '  keeps overrunning means the plan needs more shards or chunks.',
                 '- `Full scope`: the merge or the final pass failed; the merged shards are already saved.',
                 'This issue closes itself on the next successful run.',
+                'Background: docs/decisions/mutation-testing.md, section 4.',
+              ].join('\n'),
+            });
+
+      # Drift is not a failure: the run stays green. Three drifting runs in a
+      # row open one issue (labelled apart from the failure one); the first
+      # run without drift closes it.
+      - name: Report shard drift
+        if: needs.baseline.result == 'success'
+        uses: actions/github-script@v9
+        env:
+          DRIFTED: ${{ needs.baseline.outputs.drifted }}
+          ESCALATE: ${{ needs.baseline.outputs.drift-escalate }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const label = 'mutation-baseline-drift';
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+            const { data: open } = await github.rest.issues.listForRepo({
+              owner, repo, labels: label, state: 'open', per_page: 100,
+            });
+            const issue = open.find((item) => !item.pull_request);
+
+            if (process.env.DRIFTED !== 'true') {
+              if (issue) {
+                await github.rest.issues.createComment({
+                  owner, repo, issue_number: issue.number,
+                  body: `Back in bounds on this run: ${runUrl}`,
+                });
+                await github.rest.issues.update({
+                  owner, repo, issue_number: issue.number, state: 'closed', state_reason: 'completed',
+                });
+              }
+              return;
+            }
+            if (process.env.ESCALATE !== 'true') return;
+
+            const line = `Shard drift again on this run (third in a row or more): ${runUrl}`;
+            if (issue) {
+              await github.rest.issues.createComment({ owner, repo, issue_number: issue.number, body: line });
+              return;
+            }
+            try {
+              await github.rest.issues.createLabel({
+                owner, repo, name: label, color: 'fbca04',
+                description: 'Mutation shards drifting from their budget or balance',
+              });
+            } catch (err) {
+              if (err.status !== 422) throw err; // 422: the label already exists
+            }
+            await github.rest.issues.create({
+              owner, repo, labels: [label],
+              title: 'Mutation shards are drifting',
+              body: [
+                line,
+                '',
+                'The last three baselines on main each warned that a shard used more than 60 % of its',
+                '75 min budget, or that the slowest shard took more than 1.5 times the mean. The runs',
+                'stay green; this is the early warning before a shard overruns. The table is in each',
+                "run's job summary (Full scope). Usual fixes: more shards or chunks (`--shards`,",
+                '`--chunks` in mutation.yml), or look at what made a file more expensive.',
+                'This issue closes itself on the next run without drift.',
                 'Background: docs/decisions/mutation-testing.md, section 4.',
               ].join('\n'),
             });

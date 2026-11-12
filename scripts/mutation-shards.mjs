@@ -6,6 +6,8 @@
 //   node scripts/mutation-shards.mjs plan --shards N --chunks K [--baseline <file>]
 //   node scripts/mutation-shards.mjs run-shard     (chunks in $SHARD_CHUNKS, JSON)
 //   node scripts/mutation-shards.mjs merge --out <file> [--fallback <file>] <shard dir>...
+//   node scripts/mutation-shards.mjs drift [--budget-minutes 75] [--history <in>] [--history-out <out>]
+//                                          [--summary <file>] <shard dir>...
 
 import { spawnSync } from 'node:child_process';
 import {
@@ -189,6 +191,70 @@ export const mergeReports = ({ fallbacks, shards }) => {
   return { ...sources.at(-1).report, files, testFiles };
 };
 
+/**
+ * Whether the plan still fits: a shard close to its budget, or one far slower
+ * than the others, warns before a shard is killed. Thresholds: 60 % of the
+ * budget, and 1.5 times the mean. ADR section 4.
+ */
+export const driftReport = ({ shards, budgetSeconds, warnShare = 0.6, imbalanceLimit = 1.5 }) => {
+  const timed = shards.filter((s) => typeof s.seconds === 'number');
+  const slowest = timed.length ? Math.max(...timed.map((s) => s.seconds)) : null;
+  const mean = timed.length ? timed.reduce((sum, s) => sum + s.seconds, 0) / timed.length : null;
+  const imbalance = slowest !== null && mean > 0 ? slowest / mean : null;
+  const minutes = (seconds) => `${Math.round(seconds / 60)} min`;
+  const warnings = [
+    ...shards
+      .filter((s) => typeof s.seconds !== 'number')
+      .map((s) => `Shard ${s.index} reported no timing (killed or failed early).`),
+    ...timed
+      .filter((s) => s.seconds / budgetSeconds > warnShare)
+      .map(
+        (s) =>
+          `Shard ${s.index} took ${minutes(s.seconds)}, ${Math.round((s.seconds / budgetSeconds) * 100)} % of the ${minutes(budgetSeconds)} budget.`,
+      ),
+    ...(imbalance !== null && imbalance > imbalanceLimit
+      ? [
+          `Shards are unbalanced: the slowest took ${imbalance.toFixed(2)} times the mean (${minutes(slowest)} against ${minutes(mean)}).`,
+        ]
+      : []),
+  ];
+  return { shards, budgetSeconds, slowest, mean, imbalance, warnings };
+};
+
+const duration = (seconds) => `${Math.floor(seconds / 60)} min ${Math.round(seconds % 60)} s`;
+
+/** The drift report as Markdown, for the job summary. */
+export const driftMarkdown = (report) => {
+  const rows = report.shards.map((s) =>
+    typeof s.seconds === 'number'
+      ? `| ${s.index} | ${Math.round(s.cost)} | ${duration(s.seconds)} | ${Math.round((s.seconds / report.budgetSeconds) * 100)} % |`
+      : `| ${s.index} | ${Math.round(s.cost)} | n/a | n/a |`,
+  );
+  const stats =
+    report.slowest === null
+      ? 'No shard reported a timing.'
+      : `Slowest: ${duration(report.slowest)}. Mean: ${duration(report.mean)}. Imbalance (slowest / mean): ${report.imbalance.toFixed(2)}.`;
+  return [
+    '### Mutation shards',
+    '',
+    '| Shard | Planned cost | Duration | Share of budget |',
+    '| ---: | ---: | ---: | ---: |',
+    ...rows,
+    '',
+    stats,
+    ...(report.warnings.length ? ['', ...report.warnings.map((w) => `- ${w}`)] : []),
+  ].join('\n');
+};
+
+/**
+ * One warning is noise; the same one run after run means the plan needs more
+ * shards or chunks. Escalates on the third drifting run in a row.
+ */
+export const nextDriftHistory = (history, drifted, keep = 10) => {
+  const next = [...history, drifted].slice(-keep);
+  return { history: next, escalate: next.length >= 3 && next.slice(-3).every(Boolean) };
+};
+
 // --- edges --------------------------------------------------------------------
 
 const readJson = (path) => {
@@ -232,7 +298,11 @@ const plan = async (args) => {
     console.error(`shard ${s.index}: cost ${Math.round(s.cost)}, ${s.chunks.flat().length} files`);
   }
   // One line on stdout: the workflow writes it to $GITHUB_OUTPUT as the matrix.
-  console.log(JSON.stringify(shards.map(({ index, chunks }) => ({ index, chunks }))));
+  console.log(
+    JSON.stringify(
+      shards.map(({ index, cost, chunks }) => ({ index, cost: Math.round(cost), chunks })),
+    ),
+  );
 };
 
 const runShard = async () => {
@@ -240,13 +310,26 @@ const runShard = async () => {
   const chunks = JSON.parse(process.env.SHARD_CHUNKS ?? '[]');
   const done = [];
   let failed = 0;
+  const timing = {
+    index: Number(process.env.SHARD_INDEX),
+    cost: Number(process.env.SHARD_COST),
+    seconds: 0,
+    chunks: [],
+  };
   mkdirSync(join(repoRoot, SHARD_DIR), { recursive: true });
   for (const [i, chunk] of chunks.entries()) {
     console.log(`\n=== chunk ${i + 1}/${chunks.length}: ${chunk.join(', ')}\n`);
+    const started = Date.now();
     const { status } = spawnSync(
       'pnpm',
       ['exec', 'stryker', 'run', '--incremental', '--mutate', chunk.join(',')],
       { cwd: repoRoot, stdio: 'inherit' },
+    );
+    const seconds = (Date.now() - started) / 1000;
+    timing.seconds += seconds;
+    timing.chunks.push({ files: chunk, seconds, ok: status === 0 });
+    replaceAtomically(join(repoRoot, SHARD_DIR, 'timing.json'), (tmp) =>
+      writeFileSync(tmp, JSON.stringify(timing)),
     );
     // A failed chunk does not stop the next ones: each is independent progress.
     if (status !== 0) {
@@ -297,13 +380,42 @@ const merge = async (args) => {
   console.error(`merged ${Object.keys(merged.files).length} files into ${out}`);
 };
 
+const drift = (args) => {
+  const budgetSeconds =
+    positiveInt(argValue(args, '--budget-minutes') ?? 75, '--budget-minutes') * 60;
+  const historyIn = argValue(args, '--history');
+  const historyOut = argValue(args, '--history-out');
+  const summaryPath = argValue(args, '--summary');
+  const flags = ['--budget-minutes', '--history', '--history-out', '--summary'];
+  const dirs = args.filter((a, i) => !a.startsWith('--') && !flags.includes(args[i - 1]));
+  const shards = dirs
+    .map((dir) => readJson(join(dir, 'timing.json')))
+    .filter(Boolean)
+    .map((t) => ({ index: t.index, cost: t.cost, seconds: t.chunks.length ? t.seconds : null }))
+    .sort((a, b) => a.index - b.index);
+  const report = driftReport({ shards, budgetSeconds });
+  const drifted = report.warnings.length > 0;
+  const { history, escalate } = nextDriftHistory((historyIn && readJson(historyIn)) || [], drifted);
+  if (historyOut) writeFileSync(historyOut, JSON.stringify(history));
+  if (summaryPath) writeFileSync(summaryPath, `${driftMarkdown(report)}\n`, { flag: 'a' });
+  // Annotations on the run page; they do not fail it.
+  for (const warning of report.warnings)
+    console.log(`::warning title=Mutation shard drift::${warning}`);
+  if (process.env.GITHUB_OUTPUT) {
+    writeFileSync(process.env.GITHUB_OUTPUT, `drifted=${drifted}\nescalate=${escalate}\n`, {
+      flag: 'a',
+    });
+  }
+};
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const [command, ...args] = process.argv.slice(2);
   if (command === 'plan') await plan(args);
   else if (command === 'run-shard') await runShard();
   else if (command === 'merge') await merge(args);
+  else if (command === 'drift') drift(args);
   else {
-    console.error('usage: mutation-shards.mjs plan | run-shard | merge (see the header)');
+    console.error('usage: mutation-shards.mjs plan | run-shard | merge | drift (see the header)');
     process.exit(2);
   }
 }

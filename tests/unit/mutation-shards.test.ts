@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   balance,
   costOfFile,
+  driftMarkdown,
+  driftReport,
   estimateCosts,
   mergeReports,
+  nextDriftHistory,
   planShards,
   // @ts-expect-error -- plain .mjs helper, no declaration file (same as the other
   // script tests in this directory).
@@ -314,5 +317,101 @@ describe('mergeReports', () => {
 
   it('returns null when there is nothing to merge', () => {
     expect(mergeReports({ fallbacks: [], shards: [] })).toBeNull();
+  });
+});
+
+describe('driftReport', () => {
+  const budgetSeconds = 75 * 60;
+
+  it('passes a balanced run well under the budget', () => {
+    const report = driftReport({
+      shards: [
+        { index: 0, cost: 10, seconds: 600 },
+        { index: 1, cost: 10, seconds: 660 },
+      ],
+      budgetSeconds,
+    });
+    expect(report.warnings).toEqual([]);
+    expect(report.slowest).toBe(660);
+    expect(report.imbalance).toBeCloseTo(660 / 630);
+  });
+
+  it('warns when a shard uses more than 60 % of the budget', () => {
+    const report = driftReport({
+      shards: [
+        { index: 0, cost: 10, seconds: 2800 },
+        { index: 1, cost: 10, seconds: 2700 },
+      ],
+      budgetSeconds,
+    });
+    expect(report.warnings).toEqual(['Shard 0 took 47 min, 62 % of the 75 min budget.']);
+  });
+
+  it('warns when the slowest shard is more than 1.5 times the mean', () => {
+    const report = driftReport({
+      shards: [
+        { index: 0, cost: 10, seconds: 1170 },
+        { index: 1, cost: 10, seconds: 420 },
+        { index: 2, cost: 10, seconds: 600 },
+      ],
+      budgetSeconds,
+    });
+    expect(report.warnings).toEqual([
+      'Shards are unbalanced: the slowest took 1.60 times the mean (20 min against 12 min).',
+    ]);
+  });
+
+  it('leaves a shard without timing out of the figures, and says so', () => {
+    const report = driftReport({
+      shards: [
+        { index: 0, cost: 10, seconds: 600 },
+        { index: 1, cost: 10, seconds: null },
+      ],
+      budgetSeconds,
+    });
+    expect(report.slowest).toBe(600);
+    expect(report.warnings).toEqual(['Shard 1 reported no timing (killed or failed early).']);
+  });
+});
+
+describe('driftMarkdown', () => {
+  it('renders one row per shard and the totals', () => {
+    const report = driftReport({
+      shards: [
+        { index: 0, cost: 1234.4, seconds: 600 },
+        { index: 1, cost: 99, seconds: null },
+      ],
+      budgetSeconds: 75 * 60,
+    });
+    expect(driftMarkdown(report)).toMatchInlineSnapshot(`
+      "### Mutation shards
+
+      | Shard | Planned cost | Duration | Share of budget |
+      | ---: | ---: | ---: | ---: |
+      | 0 | 1234 | 10 min 0 s | 13 % |
+      | 1 | 99 | n/a | n/a |
+
+      Slowest: 10 min 0 s. Mean: 10 min 0 s. Imbalance (slowest / mean): 1.00.
+
+      - Shard 1 reported no timing (killed or failed early)."
+    `);
+  });
+});
+
+describe('nextDriftHistory', () => {
+  it('escalates on the third drifting run in a row', () => {
+    expect(nextDriftHistory([true, true], true)).toEqual({
+      history: [true, true, true],
+      escalate: true,
+    });
+  });
+
+  it('does not escalate when a clean run broke the streak', () => {
+    expect(nextDriftHistory([true, false, true], true).escalate).toBe(false);
+  });
+
+  it('keeps only the last ten runs', () => {
+    const history = Array.from({ length: 10 }, () => false);
+    expect(nextDriftHistory(history, true).history).toHaveLength(10);
   });
 });

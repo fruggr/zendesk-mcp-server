@@ -355,7 +355,20 @@ driven by `scripts/mutation-shards.mjs`:
   only what a failed shard left, writes the reports and publishes the score.
 
 The full pass keeps the step budget above; it is warm, so it should rarely run
-long, and the shards' work is saved before it starts. The whole pipeline is one concurrency group, queued and never
+long, and the shards' work is saved before it starts.
+
+**An anti-drift check watches the plan, not just the outcome.** The plan
+rebalances itself every run on measured costs, but nothing said whether that
+was enough until a shard overran. Each shard now records the wall time of every
+chunk next to its planned cost, and the full-scope job turns them into a table
+in the job summary (planned cost, duration, share of the 75 min budget, slowest
+over mean). It annotates the run, without failing it, when a shard uses more
+than 60 % of the budget or the slowest shard takes more than 1.5 times the
+mean. A single warning is noise, so a short history (cached, last ten runs)
+escalates only the third drifting run in a row into an issue labelled
+`mutation-baseline-drift`, which closes itself on the next run without drift.
+The thresholds come from the first measured runs: cold shards took 7 to 19.5
+min (imbalance about 1.6, on a plan made from file sizes), warm ones 1 to 6 min. The whole pipeline is one concurrency group, queued and never
 cancelled. The alert names the first job that failed: the plan (where the canary
 runs), a shard (one that overruns is a failure even when the full pass makes up
 for it, since it means the plan needs more shards), or the full pass.
