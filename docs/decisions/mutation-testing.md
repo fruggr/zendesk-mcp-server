@@ -256,9 +256,12 @@ with nothing restored, so every mutant runs against the current inputs and the
 result replaces the cache entry. Only the plan reads the previous baseline, for
 last run's per-file costs, so the cold shards are balanced on measurements and
 not on file sizes. A drift therefore lives a week at most, and the cost is about
-26 min of CI on a public repository, where minutes are free. The weekly run has
-a concurrency group of its own: queued behind a push baseline, it would be the
-waiting run a later push replaces, and that week would go unchecked.
+26 min of CI on a public repository, where minutes are free. The weekly run
+shares the baselines' concurrency group, so it never runs beside one: whichever
+finished last would be the newest cache entry, and a push baseline that restored
+the pre-cold entry would bring its verdicts back. Queued instead, it is lost only
+if a push baseline is running and a second push arrives while it waits, on a
+Sunday night; that week then goes unchecked, and the next one catches up.
 
 That hash is **the only such list in the setup**, and both jobs get it from the
 one composite action — they have to agree on cache identity, and only one of them

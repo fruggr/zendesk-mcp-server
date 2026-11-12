@@ -31,10 +31,12 @@ permissions:
 # Not `mutation-baseline`: that name is the old single-job baseline's group, and
 # sharing it made a run of this pipeline wait behind one of those. Per ref: a
 # test dispatch on a branch must not replace main's waiting baseline. The weekly
-# cold run has a group of its own: waiting behind a push baseline, it would be
-# the older waiting run a later push replaces, and that week would go unchecked.
+# cold run shares the group: run beside a push baseline, the slower of the two
+# would be the newest cache entry, and a push finishing last would bring back the
+# verdicts the cold run had just cleared. Queued, it can only be replaced by two
+# pushes in its half hour on a Sunday night (ADR section 4).
 concurrency:
-  group: ${{ github.event_name == 'schedule' && format('mutation-baseline-weekly-{0}', github.ref) || (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && format('mutation-baseline-sharded-{0}', github.ref) || format('mutation-{0}', github.run_id) }}
+  group: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule') && format('mutation-baseline-sharded-{0}', github.ref) || format('mutation-{0}', github.run_id) }}
   cancel-in-progress: false
 
 jobs:
