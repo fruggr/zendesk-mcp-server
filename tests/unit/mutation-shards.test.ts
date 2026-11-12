@@ -238,6 +238,22 @@ describe('mergeReports', () => {
     expect(merged.testFiles['t/a.test.ts'].tests).toHaveLength(1);
   });
 
+  it('drops the restored tests of a test file the shards ran in another version', () => {
+    // A test renamed or moved since the restored baseline must not live on next to its new self.
+    const restored = {
+      ...report({}),
+      testFiles: {
+        't/a.test.ts': { source: 'old source', tests: [{ id: '0', name: 'old name' }] },
+      },
+    };
+    const shard = {
+      report: report({}, { 't/a.test.ts': [{ id: '0', name: 'new name' }] }),
+      done: [],
+    };
+    const merged = mergeReports({ fallbacks: [restored], shards: [shard] });
+    expect(merged.testFiles['t/a.test.ts'].tests.map((t: Test) => t.name)).toEqual(['new name']);
+  });
+
   it('drops a kept verdict whose covering test changed since it was computed', () => {
     // The restored baseline killed `b` with a test the shard now runs in a new version.
     const restored = {
@@ -470,6 +486,14 @@ describe('driftMarkdown', () => {
       - Shard 1 reported no timing (killed or failed early)."
     `);
   });
+
+  it('carries rounded seconds into the minutes', () => {
+    const report = driftReport({
+      shards: [{ index: 0, cost: 1, seconds: 119.7 }],
+      budgetSeconds: 75 * 60,
+    });
+    expect(driftMarkdown(report)).toContain('| 0 | 1 | 2 min 0 s | 3 % |');
+  });
 });
 
 describe('nextDriftHistory', () => {
@@ -482,6 +506,11 @@ describe('nextDriftHistory', () => {
 
   it('does not escalate when a clean run broke the streak', () => {
     expect(nextDriftHistory([true, false, true], true).escalate).toBe(false);
+  });
+
+  it('starts afresh from a history that is not a list', () => {
+    expect(nextDriftHistory({}, true)).toEqual({ history: [true], escalate: false });
+    expect(nextDriftHistory(3, false)).toEqual({ history: [false], escalate: false });
   });
 
   it('keeps only the last ten runs', () => {

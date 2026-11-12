@@ -24,9 +24,10 @@ permissions:
 # run and cancels an older waiting one, which the alert ignores. Pull request and
 # merge-queue runs each get a group of their own, so this never holds them.
 # Not `mutation-baseline`: that name is the old single-job baseline's group, and
-# sharing it made a run of this pipeline wait behind one of those.
+# sharing it made a run of this pipeline wait behind one of those. Per ref: a
+# test dispatch on a branch must not replace main's waiting baseline.
 concurrency:
-  group: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && 'mutation-baseline-sharded' || format('mutation-{0}', github.run_id) }}
+  group: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && format('mutation-baseline-sharded-{0}', github.ref) || format('mutation-{0}', github.run_id) }}
   cancel-in-progress: false
 
 jobs:
@@ -163,9 +164,10 @@ jobs:
     name: Full scope
     needs: [baseline-plan, baseline-shard]
     # Whatever the shards did: each one that finished anything is worth merging.
-    if: always() && needs.baseline-plan.result == 'success'
+    # Not after a manual cancel, though.
+    if: ${{ !cancelled() && needs.baseline-plan.result == 'success' }}
     runs-on: ubuntu-latest
-    # 75 + 2 for the step, ~15 for a cold install, the merge, the saves and the upload.
+    # 75 for the step, ~15 for a cold install, the merge, the saves and the upload.
     timeout-minutes: 95
     outputs:
       drifted: ${{ steps.drift.outputs.drifted }}
@@ -256,17 +258,17 @@ jobs:
         id: stryker
         env:
           STRYKER_DASHBOARD_API_KEY: ${{ secrets.STRYKER_DASHBOARD_API_KEY }}
-        run: timeout --signal=INT --kill-after=2m 75m pnpm test:mutation --incremental
+        run: timeout --signal=KILL 75m pnpm test:mutation --incremental
 
       - name: Score summary
         if: always()
         run: pnpm test:mutation:summary >> "$GITHUB_STEP_SUMMARY"
 
-      # Only an unreadable file must not be saved, nor the merged one again when
-      # the full pass never ran.
+      # Only after a full pass that finished: a killed one writes nothing, and the
+      # merged file is already saved above. An unreadable file is never saved.
       - name: Check the baseline file
         id: baseline-file
-        if: always() && (steps.stryker.outcome == 'success' || steps.stryker.outcome == 'failure')
+        if: always() && steps.stryker.outcome == 'success'
         run: |
           node -e '
             const r = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"));
@@ -399,6 +401,8 @@ jobs:
             });
             const issue = open.find((item) => !item.pull_request);
 
+            // Empty when the drift step itself failed: nothing was measured.
+            if (process.env.DRIFTED === '') return;
             if (process.env.DRIFTED !== 'true') {
               if (issue) {
                 await github.rest.issues.createComment({

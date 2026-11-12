@@ -35,7 +35,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, matchesGlob } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
+export const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 /** Statuses that mean "this change went unnoticed by every test". */
 const ESCAPED = new Set(['Survived', 'NoCoverage']);

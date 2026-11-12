@@ -21,9 +21,7 @@ import {
 } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadConfig } from './mutation-scope.mjs';
-
-const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
+import { loadConfig, repoRoot } from './mutation-scope.mjs';
 
 /**
  * What `run-shard` leaves for the merge: the chunks it finished, and a copy of
@@ -132,13 +130,19 @@ export const mergeReports = ({ fallbacks, shards }) => {
   const newIds = new Map();
   const testFiles = {};
   const keyTables = new Map();
-  const testFileOf = new Map();
-  // Tests: restored first, shards over it, so this commit's sources win.
-  for (const report of [...fallbacks, ...shards.map((s) => s.report)]) {
+  const reports = [...fallbacks, ...shards.map((s) => s.report)];
+  // A test file's source: this commit's (a shard's) over the restored one.
+  const sourceOf = {};
+  for (const report of reports)
+    for (const [file, entry] of Object.entries(report.testFiles ?? {}))
+      if (entry.source !== undefined) sourceOf[file] = entry.source;
+  for (const report of reports) {
     const table = new Map();
     for (const [file, entry] of Object.entries(report.testFiles ?? {})) {
-      const merged = testFiles[file] ?? { tests: [] };
-      if (entry.source !== undefined) merged.source = entry.source;
+      const merged = testFiles[file] ?? { source: sourceOf[file], tests: [] };
+      testFiles[file] = merged;
+      // Tests of another version of the file (moved, renamed) are not this commit's.
+      if (entry.source !== sourceOf[file]) continue;
       for (const test of entry.tests ?? []) {
         const key = testKey(file, test);
         if (!newIds.has(key)) {
@@ -146,9 +150,7 @@ export const mergeReports = ({ fallbacks, shards }) => {
           merged.tests.push({ ...test, id: newIds.get(key) });
         }
         table.set(test.id, newIds.get(key));
-        testFileOf.set(newIds.get(key), file);
       }
-      testFiles[file] = merged;
     }
     keyTables.set(report, table);
   }
@@ -170,21 +172,27 @@ export const mergeReports = ({ fallbacks, shards }) => {
   for (const { report, done, finishing } of sources) {
     const table = keyTables.get(report) ?? new Map();
     const stale = finishing ? new Set() : staleFiles(report);
+    // Judged on the report's own ids: a stale file's tests are not in the merged table.
+    const ownFileOf = new Map(
+      Object.entries(report.testFiles ?? {}).flatMap(([file, entry]) =>
+        (entry.tests ?? []).map((test) => [test.id, file]),
+      ),
+    );
     for (const [path, entry] of Object.entries(report.files ?? {})) {
       if (finishing && !done.includes(path)) continue;
       const mutants = (entry.mutants ?? [])
-        .map((m) => ({
-          ...m,
-          ...(m.coveredBy && { coveredBy: remap(m.coveredBy, table) }),
-          ...(m.killedBy && { killedBy: remap(m.killedBy, table) }),
-        }))
         .filter((m) => {
           if (stale.size === 0) return true;
           if (m.static) return false;
           return ![...(m.coveredBy ?? []), ...(m.killedBy ?? [])].some((id) =>
-            stale.has(testFileOf.get(id)),
+            stale.has(ownFileOf.get(id)),
           );
-        });
+        })
+        .map((m) => ({
+          ...m,
+          ...(m.coveredBy && { coveredBy: remap(m.coveredBy, table) }),
+          ...(m.killedBy && { killedBy: remap(m.killedBy, table) }),
+        }));
       files[path] = { ...entry, mutants };
     }
   }
@@ -235,7 +243,10 @@ export const driftReport = ({
   return { shards, budgetSeconds, slowest, mean, imbalance, warnings };
 };
 
-const duration = (seconds) => `${Math.floor(seconds / 60)} min ${Math.round(seconds % 60)} s`;
+const duration = (seconds) => {
+  const whole = Math.round(seconds);
+  return `${Math.floor(whole / 60)} min ${whole % 60} s`;
+};
 
 /**
  * One row per *planned* shard, so a shard that left no timing (killed in its
@@ -285,7 +296,8 @@ export const driftMarkdown = (report) => {
  * shards or chunks. Escalates on the third drifting run in a row.
  */
 export const nextDriftHistory = (history, drifted, keep = 10) => {
-  const next = [...history, drifted].slice(-keep);
+  // A corrupt or older cached history starts over rather than failing the check.
+  const next = [...(Array.isArray(history) ? history : []), drifted].slice(-keep);
   return { history: next, escalate: next.length >= 3 && next.slice(-3).every(Boolean) };
 };
 

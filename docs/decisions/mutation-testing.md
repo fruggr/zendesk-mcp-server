@@ -334,7 +334,10 @@ driven by `scripts/mutation-shards.mjs`:
   so a SIGINT also reaches Stryker's test workers, and Stryker then hung until
   the kill instead of saving its partial (reproduced locally, exit 137 — likely
   what happened in CI). Nothing graceful is needed, since every finished chunk
-  is already on disk.
+  is already on disk. Chunks have a price: each is a Stryker run of its own,
+  with its own sandbox build and dry run of the whole suite (1 to 2 min), so
+  10 × 3 pays 30 of them where 10 would do. That is what a kill costs at most
+  one chunk instead of a whole shard; the drift check below shows the total.
 - **Full scope.** The shard reports are merged: each file from the shard that
   finished it, otherwise the restored copy. Tests are not a plain union: a
   mutant names its tests by id, and Stryker numbers them per run, so the same id
@@ -348,14 +351,17 @@ driven by `scripts/mutation-shards.mjs`:
   from the restored baseline (its shard did not finish) would be compared with
   test code it never ran against, and reused. A kept mutant covered by a test
   file whose source changed is dropped instead (static ones whenever any test
-  file changed or appeared), so the full pass runs it again. When no shard handed anything over, the pass runs cold. The
-  merged
-  baseline is **saved before anything else runs**, then one warm full-scope pass
-  reuses every verdict (measured: 116 of 116 reused on a two-file merge), re-runs
-  only what a failed shard left, writes the reports and publishes the score.
+  file changed or appeared), so the full pass runs it again; the restored tests
+  of such a file are dropped too, so a moved or renamed test does not live on
+  next to its new self. When no shard handed anything over, the pass runs cold.
+  The merged baseline is **saved before anything else runs**, then one warm
+  full-scope pass reuses every verdict (measured: 116 of 116 reused on a
+  two-file merge), re-runs only what a failed shard left, writes the reports and
+  publishes the score.
 
-The full pass keeps the step budget above; it is warm, so it should rarely run
-long, and the shards' work is saved before it starts.
+The full pass keeps the 75 min budget, enforced with SIGKILL like the shards: it
+is warm, so it should rarely run long, and the shards' work is saved before it
+starts. A pass that is killed saves nothing more.
 
 **An anti-drift check watches the plan, not just the outcome.** The plan
 rebalances itself every run on measured costs, but nothing said whether that
@@ -366,16 +372,18 @@ over mean). It annotates the run, without failing it, when a shard uses more
 than 60 % of the budget or the slowest shard takes more than 1.5 times the
 mean. The second check waits until the slowest shard passes 20 % of the budget
 (15 min): a warm run's shards take a few minutes each, and an imbalance there
-costs nothing (the first test run warned at 1.61 on 3 min against 2). A single warning is noise, so a short history (cached, last ten runs)
-escalates only the third drifting run in a row into an issue labelled
+costs nothing (the first test run warned at 1.61 on 3 min against 2). A single
+warning is noise, so a short history (cached, last ten runs) escalates only the third drifting run in a row into an issue labelled
 `mutation-baseline-drift`, which closes itself on the next run without drift.
 The thresholds come from the first measured runs: cold shards took 7 to 19.5
 min (imbalance about 1.6, on a plan made from file sizes), warm ones 1 to 6 min.
 
-The whole pipeline is one concurrency group (`mutation-baseline-sharded`), so a
-running baseline is never cancelled; GitHub keeps one waiting run and cancels an
-older waiting one when a newer push queues, which the alert ignores. The alert names the first job that failed: the plan (where the canary
-runs), a shard (one that overruns is a failure even when the full pass makes up
+The whole pipeline is one concurrency group per ref
+(`mutation-baseline-sharded-<ref>`), so a running baseline is never cancelled,
+and a test dispatch on a branch never replaces main's waiting one. GitHub keeps
+one waiting run per group and cancels an older waiting one when a newer push
+queues, which the alert ignores. A manual cancel stops the full pass too. The
+alert names the first job that failed: the plan (where the canary runs), a shard (one that overruns is a failure even when the full pass makes up
 for it, since it means the plan needs more shards), or the full pass.
 
 **The gate is on changed lines, not changed files.** `scripts/mutation-scope.mjs`
