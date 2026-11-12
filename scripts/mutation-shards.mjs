@@ -57,15 +57,14 @@ export const costOfFile = (entry) =>
  * proportions between files matter).
  */
 export const estimateCosts = (paths, baselineFiles, sizes) => {
-  const known = paths.filter((p) => baselineFiles[p]);
+  // A file the merge emptied (all its verdicts stale) still has every mutant to run.
+  const measured = (p) => (baselineFiles[p]?.mutants?.length ?? 0) > 0;
+  const known = paths.filter(measured);
   const knownCost = known.reduce((s, p) => s + costOfFile(baselineFiles[p]), 0);
   const knownSize = known.reduce((s, p) => s + (sizes[p] ?? 0), 0);
   const perByte = knownCost > 0 && knownSize > 0 ? knownCost / knownSize : 1;
   return new Map(
-    paths.map((p) => [
-      p,
-      baselineFiles[p] ? costOfFile(baselineFiles[p]) : (sizes[p] ?? 0) * perByte,
-    ]),
+    paths.map((p) => [p, measured(p) ? costOfFile(baselineFiles[p]) : (sizes[p] ?? 0) * perByte]),
   );
 };
 

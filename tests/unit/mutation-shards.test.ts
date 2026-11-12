@@ -54,6 +54,24 @@ describe('estimateCosts', () => {
     expect(costs.get('src/new.ts')).toBe(150);
   });
 
+  it('scales a file whose verdicts the merge all dropped, rather than costing it 0', () => {
+    const baseline = {
+      'src/a.ts': { mutants: [mutant({ testsCompleted: 50 })] },
+      'src/stale.ts': { mutants: [] },
+    };
+    const costs = estimateCosts(['src/a.ts', 'src/stale.ts'], baseline, {
+      'src/a.ts': 100,
+      'src/stale.ts': 300,
+    });
+    expect(costs.get('src/stale.ts')).toBe(150);
+  });
+
+  it('keeps a file of ignored mutants at 0: Stryker never runs them', () => {
+    const baseline = { 'src/ignored.ts': { mutants: [mutant({ status: 'Ignored' })] } };
+    const costs = estimateCosts(['src/ignored.ts'], baseline, { 'src/ignored.ts': 300 });
+    expect(costs.get('src/ignored.ts')).toBe(0);
+  });
+
   it('falls back to the size alone on a cold run', () => {
     const costs = estimateCosts(['src/a.ts'], {}, { 'src/a.ts': 1234 });
     expect(costs.get('src/a.ts')).toBe(1234);
