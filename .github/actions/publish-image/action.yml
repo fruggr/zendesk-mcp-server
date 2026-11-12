@@ -110,6 +110,19 @@ runs:
         sbom: true
         cache-from: type=gha
 
+    # The build stage's -dev tag is not pinned (Dockerfile), so this second
+    # build may have resolved a newer rebuild than the candidate: test what was
+    # pushed before signing it. Pulled first: a push-by-digest never lands in
+    # the local store, and the smoke script's `docker image inspect` does not pull.
+    - name: Smoke-test the pushed digest
+      shell: bash
+      env:
+        REF: ${{ steps.tags.outputs.image }}@${{ steps.push.outputs.digest }}
+      run: |
+        set -euo pipefail
+        docker pull --quiet "$REF"
+        node "$GITHUB_WORKSPACE/scripts/container-smoke.mjs" "$REF"
+
     # No floating major tag in this repository: pin the release.
     - uses: sigstore/cosign-installer@v4.1.3
 
