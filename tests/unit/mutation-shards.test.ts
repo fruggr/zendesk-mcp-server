@@ -401,6 +401,14 @@ describe('shardTimings', () => {
       { index: 2, cost: 30, seconds: null, cutOff: true },
     ]);
   });
+
+  it('marks a shard stopped between chunks as cut off, from the chunks it planned', () => {
+    const planned = [{ index: 0, cost: 10, chunks: [['a.ts'], ['b.ts']] }];
+    const stopped = [{ index: 0, seconds: 120, chunks: [{ seconds: 120 }] }];
+    const finished = [{ index: 0, seconds: 240, chunks: [{ seconds: 120 }, { seconds: 120 }] }];
+    expect(shardTimings(planned, stopped)[0].cutOff).toBe(true);
+    expect(shardTimings(planned, finished)[0].cutOff).toBe(false);
+  });
 });
 
 describe('driftReport on a cut-off shard', () => {

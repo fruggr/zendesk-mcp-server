@@ -231,18 +231,20 @@ const duration = (seconds) => `${Math.floor(seconds / 60)} min ${Math.round(seco
 
 /**
  * One row per *planned* shard, so a shard that left no timing (killed in its
- * first chunk, or never started) still shows. `current` marks a chunk that was
- * running when the shard stopped: its time so far is only a lower bound.
+ * first chunk, or never started) still shows. A shard stopped inside a chunk
+ * (`current` left behind) or between two (fewer chunks recorded than planned)
+ * is cut off: its time so far is only a lower bound.
  */
 export const shardTimings = (planned, timings) => {
   const byIndex = new Map(timings.map((t) => [t.index, t]));
-  return planned.map(({ index, cost }) => {
+  return planned.map(({ index, cost, chunks }) => {
     const t = byIndex.get(index);
+    const recorded = t?.chunks?.length ?? 0;
     return {
       index,
       cost,
-      seconds: t?.chunks?.length ? t.seconds : null,
-      cutOff: Boolean(t?.current),
+      seconds: recorded ? t.seconds : null,
+      cutOff: Boolean(t?.current) || (t !== undefined && recorded < (chunks?.length ?? 0)),
     };
   });
 };
