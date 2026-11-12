@@ -1188,9 +1188,10 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
           ),
         attachment_ids: z
           .array(z.number().int())
+          .min(1)
           .optional()
           .describe(
-            "Attachment IDs to fetch directly (e.g. extracted from a previous list_ticket_comments or get_ticket(include_comments=true) call). When provided, skips the comments fetch entirely. When omitted, the attachments of the ticket's comments are returned, read up to a page cap: on a very long thread the scan stops there, and the response says so.",
+            "Attachment IDs to fetch directly (e.g. extracted from a previous list_ticket_comments or get_ticket(include_comments=true) call). When provided, skips the comments fetch entirely; an empty array is rejected, so omit the parameter instead of passing []. When omitted, the attachments of the ticket's comments are returned, read up to a page cap: on a very long thread the scan stops there, and the response says so.",
           ),
       }),
       annotations: {
@@ -1206,16 +1207,15 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
         };
         const token = await caller.getToken();
 
-        const { attachments, truncated } =
-          attachment_ids && attachment_ids.length > 0
-            ? {
-                attachments: await fetchAttachmentsByIds(subdomain, token, attachment_ids),
-                truncated: false,
-              }
-            : await fetchAllTicketComments(subdomain, token, ticket_id).then((walk) => ({
-                attachments: walk.comments.flatMap((c) => c.attachments ?? []),
-                truncated: walk.truncated,
-              }));
+        const { attachments, truncated } = attachment_ids
+          ? {
+              attachments: await fetchAttachmentsByIds(subdomain, token, attachment_ids),
+              truncated: false,
+            }
+          : await fetchAllTicketComments(subdomain, token, ticket_id).then((walk) => ({
+              attachments: walk.comments.flatMap((c) => c.attachments ?? []),
+              truncated: walk.truncated,
+            }));
 
         if (attachments.length === 0) {
           const text = truncated

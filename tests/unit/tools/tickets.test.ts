@@ -941,6 +941,17 @@ describe('ticket tools', () => {
       expect(allText).toContain('report.pdf');
     });
 
+    it('rejects an empty attachment_ids instead of reading it as "scan every comment"', () => {
+      const { inputSchema } = findTool('get_ticket_attachments');
+      const empty = inputSchema.safeParse({ ticket_id: 1, attachment_ids: [] });
+      expect(empty.success).toBe(false);
+      expect(empty.error?.issues.map(({ path, code }) => ({ path, code }))).toEqual([
+        { path: ['attachment_ids'], code: 'too_small' },
+      ]);
+      expect(inputSchema.safeParse({ ticket_id: 1, attachment_ids: [30001] }).success).toBe(true);
+      expect(inputSchema.safeParse({ ticket_id: 1 }).success).toBe(true);
+    });
+
     it('fail-softs on unknown attachment_ids', async () => {
       const tool = findTool('get_ticket_attachments');
       const result = await tool.handler({ ticket_id: 1, attachment_ids: [30001, 999999] });
