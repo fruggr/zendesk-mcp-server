@@ -1,3 +1,9 @@
+## [3.10.1](https://github.com/fruggr/zendesk-mcp-server/compare/v3.10.0...v3.10.1) (2026-11-11)
+
+### Performance Improvements
+
+* **tickets:** read an organization moved with the requester from the update's audit ([#445](https://github.com/fruggr/zendesk-mcp-server/issues/445)) ([92316ff](https://github.com/fruggr/zendesk-mcp-server/commit/92316ff38634997c57e423865f8242bee00e1b02)), closes [#444](https://github.com/fruggr/zendesk-mcp-server/issues/444), references [#432](https://github.com/fruggr/zendesk-mcp-server/issues/432) [#432](https://github.com/fruggr/zendesk-mcp-server/issues/432) [#432](https://github.com/fruggr/zendesk-mcp-server/issues/432)
+
 ## [3.10.0](https://github.com/fruggr/zendesk-mcp-server/compare/v3.9.1...v3.10.0) (2026-11-11)
 
 ### Features

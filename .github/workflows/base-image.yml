@@ -1,9 +1,10 @@
 name: Base image
 
-# When a PR moves the container base image (the Dockerfile's FROM lines),
-# Docker Scout compares the new runtime base with the base branch's and
-# comments what changed: packages, Node included, and CVEs. A digest bump says
-# nothing on its own. Own workflow so a README edit does not rebuild the image
+# When a PR moves the container base image's runtime FROM line (the image we
+# publish), Docker Scout compares it with the base branch's and comments what
+# changed: packages, Node included, and CVEs. A digest bump says nothing on its
+# own. The -dev build stage is not compared: it is never shipped and not pinned
+# (Dockerfile). Own workflow so a README edit does not rebuild the image
 # (container.yml).
 on:
   pull_request:
@@ -27,11 +28,12 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      # The runtime stage is the last FROM; the build stage is never shipped.
+      # The runtime stage is the last FROM. A miss fails the job: an empty
+      # image would compare against nothing.
       - id: base
         run: |
           set -euo pipefail
-          runtime() { grep -E '^FROM ' | tail -n 1 | awk '{print $2}'; }
+          runtime() { grep -E '^FROM ' | tail -n 1 | awk '{print $2}' | grep .; }
           after=$(runtime < Dockerfile)
           before=$(git show "${{ github.event.pull_request.base.sha }}:Dockerfile" | runtime)
           echo "after=$after" >> "$GITHUB_OUTPUT"

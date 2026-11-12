@@ -24,6 +24,17 @@ on:
 permissions:
   contents: read
 
+# One baseline at a time, end to end (plan, shards, merge): queued, never
+# cancelled, since a cancelled baseline saves nothing. GitHub keeps one waiting
+# run and cancels an older waiting one, which the alert ignores. Pull request and
+# merge-queue runs each get a group of their own, so this never holds them.
+# Not `mutation-baseline`: that name is the old single-job baseline's group, and
+# sharing it made a run of this pipeline wait behind one of those. Per ref: a
+# test dispatch on a branch must not replace main's waiting baseline.
+concurrency:
+  group: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule') && format('mutation-baseline-sharded-{0}', github.ref) || format('mutation-{0}', github.run_id) }}
+  cancel-in-progress: false
+
 jobs:
   diff-gate:
     name: Changed lines
@@ -79,23 +90,99 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
 
-  baseline:
-    name: Full scope
-    # Never on `merge_group`: the baseline is the cache's only writer, and a
-    # queue commit is not `main` yet.
+  # The full baseline, in three steps. A cold run costs ~4 h, and an interrupted
+  # Stryker did not reliably save its partial report in CI (#451), so the work is
+  # split into shards of chunks that each *finish*: under `--incremental` with a
+  # narrowed `--mutate`, Stryker still writes the whole project's report, so a
+  # finished chunk is progress kept. scripts/mutation-shards.mjs, ADR section 4.
+  # Never on `merge_group`: the baseline is the cache's only writer, and a queue
+  # commit is not `main` yet.
+  baseline-plan:
+    name: Baseline plan
     if: >-
       github.event_name == 'push' || github.event_name == 'workflow_dispatch' ||
       github.event_name == 'schedule'
     runs-on: ubuntu-latest
-    # A cold run no longer fits one job, so the budget lives on the Stryker
-    # step (below) and this is only the hang backstop above it. Queue, never
-    # cancel: a cancelled baseline saves nothing, and a busy `main` cancelled
-    # every one. ADR section 4.
-    # 75 + 2 for the step, ~15 for a cold install, the canary, the save and the upload.
+    timeout-minutes: 15
+    outputs:
+      shards: ${{ steps.plan.outputs.shards }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/mutation-baseline
+        with:
+          restore: ${{ github.event_name != 'schedule' }}
+
+      # Same canary as the PR job, once per baseline. On `main` it is what keeps
+      # a merged bump from leaving a baseline of replayed, meaningless verdicts.
+      - name: Canary — is the mutation gate still measuring anything?
+        shell: bash
+        run: pnpm test:mutation:canary | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # Balanced on what each file cost last time (tests its mutants ran), or on
+      # its size when there is no baseline yet.
+      - name: Plan the shards
+        id: plan
+        run: |
+          shards=$(node scripts/mutation-shards.mjs plan --shards 10 --chunks 3 \
+            --baseline reports/mutation/stryker-incremental.json)
+          echo "shards=${shards}" >> "$GITHUB_OUTPUT"
+
+  baseline-shard:
+    name: Shard ${{ matrix.shard.index }}
+    needs: baseline-plan
+    runs-on: ubuntu-latest
+    # 75 + 2 for the step, the rest for a cold install and the upload.
     timeout-minutes: 95
-    concurrency:
-      group: mutation-baseline
-      cancel-in-progress: false
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.baseline-plan.outputs.shards) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/mutation-baseline
+        with:
+          restore: ${{ github.event_name != 'schedule' }}
+
+      # The step budget is a backstop: a shard that overruns keeps every chunk it
+      # finished (recorded after each one), and the step fails, which the alert
+      # reports. SIGKILL, not SIGINT: a SIGINT reaches Stryker's test workers too,
+      # and Stryker then hangs instead of saving (measured), so a graceful stop
+      # buys nothing here.
+      - name: Run the shard
+        env:
+          SHARD_CHUNKS: ${{ toJSON(matrix.shard.chunks) }}
+          # Recorded with the chunk timings, for the drift check after the merge.
+          SHARD_INDEX: ${{ matrix.shard.index }}
+          SHARD_COST: ${{ matrix.shard.cost }}
+        run: timeout --signal=KILL 75m node scripts/mutation-shards.mjs run-shard
+
+      - name: Upload what the shard finished
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mutation-shard-${{ matrix.shard.index }}
+          path: reports/shard/
+          retention-days: 1
+          if-no-files-found: ignore
+
+  baseline:
+    name: Full scope
+    needs: [baseline-plan, baseline-shard]
+    # Whatever the shards did: each one that finished anything is worth merging.
+    # Not after a manual cancel, though.
+    if: ${{ !cancelled() && needs.baseline-plan.result == 'success' }}
+    runs-on: ubuntu-latest
+    # 75 for the step, ~15 for a cold install, the merge, the saves and the upload.
+    timeout-minutes: 95
+    outputs:
+      drifted: ${{ steps.drift.outputs.drifted }}
+      drift-escalate: ${{ steps.drift.outputs.escalate }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -106,36 +193,95 @@ jobs:
         with:
           restore: ${{ github.event_name != 'schedule' }}
 
-      # Same canary as the PR job. On `main` it is what keeps a merged bump from
-      # leaving a whole baseline of replayed, meaningless verdicts behind.
-      - name: Canary — is the mutation gate still measuring anything?
-        shell: bash
-        run: pnpm test:mutation:canary | tee -a "$GITHUB_STEP_SUMMARY"
+      # No match is not an error for this action (the merge then keeps the
+      # restored baseline); a failed download is, and must not pass silently.
+      - name: Download the shards
+        uses: actions/download-artifact@v8
+        with:
+          pattern: mutation-shard-*
+          path: shards
 
-      # Reports, never `break`s. No `--`: pnpm forwards the separator itself.
-      # Step-scoped secret, so only the baseline can publish — same rule as the cache.
-      # `timeout -s INT`, not the job timeout: on SIGINT Stryker writes a partial
-      # incremental report the next run resumes from, and the step *fails*
-      # (exit 124) where a job timeout only cancels, which notifies nobody.
-      # pnpm waits for Stryker on SIGINT: measured, the file is complete and no
-      # Stryker process is left when `timeout` returns.
+      - name: Merge the shards into the baseline
+        id: merge
+        shell: bash
+        run: |
+          shopt -s nullglob
+          # One matching artifact is extracted into shards/ itself, several into
+          # one subdirectory each.
+          if [[ -f shards/done.json || -f shards/stryker-incremental.json ]]; then
+            dirs=(shards)
+          else
+            dirs=(shards/*/)
+          fi
+          merged=$(node scripts/mutation-shards.mjs merge \
+            --out reports/mutation/stryker-incremental.json \
+            --fallback reports/mutation/stryker-incremental.json \
+            "${dirs[@]}")
+          echo "shards=${merged}" >> "$GITHUB_OUTPUT"
+
+      # Anti-drift: is the plan still fitting? One table in the job summary, an
+      # annotation per warning (a shard over 60 % of its 75 min budget, or the
+      # slowest over 1.5 times the mean once past 15 min), never a red run. The history is what
+      # turns three drifting runs in a row into an issue (alert job). ADR §4.
+      - name: Restore the drift history
+        uses: actions/cache/restore@v6
+        with:
+          path: reports/drift-history.json
+          key: mutation-drift-history-${{ github.run_id }}
+          restore-keys: mutation-drift-history-
+
+      # Never blocks what follows: the merged baseline and the full pass matter
+      # more than a report about them.
+      - name: Check the shards for drift
+        id: drift
+        continue-on-error: true
+        shell: bash
+        env:
+          # Every planned shard gets a row, including one that left no timing.
+          SHARD_PLAN: ${{ needs.baseline-plan.outputs.shards }}
+        run: |
+          shopt -s nullglob
+          if [[ -f shards/timing.json ]]; then dirs=(shards); else dirs=(shards/*/); fi
+          node scripts/mutation-shards.mjs drift --budget-minutes 75 \
+            --history reports/drift-history.json --history-out reports/drift-history.json \
+            --summary "$GITHUB_STEP_SUMMARY" "${dirs[@]}"
+
+      - name: Save the drift history
+        if: steps.drift.outcome == 'success'
+        uses: actions/cache/save@v6
+        with:
+          path: reports/drift-history.json
+          key: mutation-drift-history-${{ github.run_id }}-${{ github.run_attempt }}
+
+      # Saved before the full pass below, so the shards' work is kept even if
+      # that pass is cut off. Not when no shard handed anything over: the file
+      # would only be the restored one again.
+      - name: Save the merged baseline
+        if: steps.merge.outputs.shards != '0'
+        uses: actions/cache/save@v6
+        with:
+          path: reports/mutation/stryker-incremental.json
+          key: ${{ steps.cache.outputs.exact }}-shards
+
+      # Warm: reuses every verdict the shards produced, and re-runs only what a
+      # failed shard left. It writes the HTML/JSON reports and publishes the
+      # score. Reports, never `break`s. Step-scoped secret, so only the baseline
+      # can publish — same rule as the cache.
       - name: Run the full scope
         id: stryker
         env:
           STRYKER_DASHBOARD_API_KEY: ${{ secrets.STRYKER_DASHBOARD_API_KEY }}
-        run: timeout --signal=INT --kill-after=2m 75m pnpm test:mutation --incremental
+        run: timeout --signal=KILL 75m pnpm test:mutation --incremental
 
       - name: Score summary
         if: always()
         run: pnpm test:mutation:summary >> "$GITHUB_STEP_SUMMARY"
 
-      # A partial report is safe to publish: it holds every result reused from
-      # the restored baseline plus this run's, and Stryker re-runs whatever is
-      # missing. Only an unreadable file must not be saved, nor the restored one
-      # again when Stryker never ran (setup or canary failed).
+      # Only after a full pass that finished: a killed one writes nothing, and the
+      # merged file is already saved above. An unreadable file is never saved.
       - name: Check the baseline file
         id: baseline-file
-        if: always() && (steps.stryker.outcome == 'success' || steps.stryker.outcome == 'failure')
+        if: always() && steps.stryker.outcome == 'success'
         run: |
           node -e '
             const r = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"));
@@ -145,7 +291,6 @@ jobs:
             || echo "usable=false" >> "$GITHUB_OUTPUT"
 
       - name: Save the refreshed baseline
-        # The only writer, complete or partial (see above).
         if: always() && steps.baseline-file.outputs.usable == 'true'
         uses: actions/cache/save@v6
         with:
@@ -171,10 +316,11 @@ jobs:
   # only: a dispatch on a branch says nothing about `main`.
   baseline-alert:
     name: Baseline alert
-    needs: baseline
+    needs: [baseline-plan, baseline-shard, baseline]
     if: >-
       always() && github.ref == 'refs/heads/main' &&
-      (needs.baseline.result == 'success' || needs.baseline.result == 'failure')
+      (needs.baseline.result == 'success' || needs.baseline.result == 'failure' ||
+      needs.baseline-plan.result == 'failure')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     # Two alerts at once would both find no open issue and both open one.
@@ -186,14 +332,20 @@ jobs:
     steps:
       - uses: actions/github-script@v9
         env:
-          RESULT: ${{ needs.baseline.result }}
+          # The first job that failed, in pipeline order: a shard that overran is
+          # a failure too, even when the full pass made up for it.
+          FAILED_JOB: >-
+            ${{ needs.baseline-plan.result == 'failure' && 'Baseline plan' ||
+            needs.baseline-shard.result == 'failure' && 'Shard' ||
+            needs.baseline.result == 'failure' && 'Full scope' || '' }}
         with:
           script: |
             const { owner, repo } = context.repo;
             const label = 'mutation-baseline';
             const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
             const sha = context.sha.slice(0, 7);
-            const failed = process.env.RESULT === 'failure';
+            const failedJob = process.env.FAILED_JOB.trim();
+            const failed = failedJob !== '';
 
             // This endpoint also lists pull requests; a labelled PR must never be closed here.
             const { data: open } = await github.rest.issues.listForRepo({
@@ -215,7 +367,7 @@ jobs:
               return;
             }
 
-            const line = `The \`Full scope\` job ended \`${process.env.RESULT}\` on \`${sha}\`: ${runUrl}`;
+            const line = `The \`${failedJob}\` job failed on \`${sha}\`: ${runUrl}`;
             if (issue) {
               await github.rest.issues.createComment({ owner, repo, issue_number: issue.number, body: line });
               return;
@@ -234,9 +386,75 @@ jobs:
               body: [
                 line,
                 '',
-                'Each failed run saves its partial baseline, so the next one resumes rather than restarting;',
-                'a run that keeps failing at the step timeout means the scope outgrew it.',
+                '- `Baseline plan`: the canary or the shard plan failed; nothing ran.',
+                '- `Shard`: a shard failed or overran; the chunks it finished are kept, so a shard that',
+                '  keeps overrunning means the plan needs more shards or chunks.',
+                '- `Full scope`: the merge or the final pass failed; the merged shards are already saved.',
                 'This issue closes itself on the next successful run.',
+                'Background: docs/decisions/mutation-testing.md, section 4.',
+              ].join('\n'),
+            });
+
+      # Drift is not a failure: the run stays green. Three drifting runs in a
+      # row open one issue (labelled apart from the failure one); the first
+      # run without drift closes it.
+      - name: Report shard drift
+        if: needs.baseline.result == 'success'
+        uses: actions/github-script@v9
+        env:
+          DRIFTED: ${{ needs.baseline.outputs.drifted }}
+          ESCALATE: ${{ needs.baseline.outputs.drift-escalate }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const label = 'mutation-baseline-drift';
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+            const { data: open } = await github.rest.issues.listForRepo({
+              owner, repo, labels: label, state: 'open', per_page: 100,
+            });
+            const issue = open.find((item) => !item.pull_request);
+
+            // Empty when the drift step itself failed: nothing was measured.
+            if (process.env.DRIFTED === '') return;
+            if (process.env.DRIFTED !== 'true') {
+              if (issue) {
+                await github.rest.issues.createComment({
+                  owner, repo, issue_number: issue.number,
+                  body: `Back in bounds on this run: ${runUrl}`,
+                });
+                await github.rest.issues.update({
+                  owner, repo, issue_number: issue.number, state: 'closed', state_reason: 'completed',
+                });
+              }
+              return;
+            }
+            if (process.env.ESCALATE !== 'true') return;
+
+            const line = `Shard drift again on this run (third in a row or more): ${runUrl}`;
+            if (issue) {
+              await github.rest.issues.createComment({ owner, repo, issue_number: issue.number, body: line });
+              return;
+            }
+            try {
+              await github.rest.issues.createLabel({
+                owner, repo, name: label, color: 'fbca04',
+                description: 'Mutation shards drifting from their budget or balance',
+              });
+            } catch (err) {
+              if (err.status !== 422) throw err; // 422: the label already exists
+            }
+            await github.rest.issues.create({
+              owner, repo, labels: [label],
+              title: 'Mutation shards are drifting',
+              body: [
+                line,
+                '',
+                'The last three baselines on main each warned that a shard used more than 60 % of its',
+                '75 min budget, or that the slowest shard (past 15 min) took more than 1.5 times the mean.',
+                'The runs stay green; this is the early warning before a shard overruns. The table is in each',
+                "run's job summary (Full scope). Usual fixes: more shards or chunks (`--shards`,",
+                '`--chunks` in mutation.yml), or look at what made a file more expensive.',
+                'This issue closes itself on the next run without drift.',
                 'Background: docs/decisions/mutation-testing.md, section 4.',
               ].join('\n'),
             });

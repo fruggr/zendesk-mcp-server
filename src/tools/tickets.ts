@@ -632,34 +632,16 @@ const formatPartyOutcome = (
 
 // A requester change can carry the organization along with it (#417): Zendesk
 // files a ticket under one of its requester's organizations. The agent did not
-// ask for that move, so it is named, from the value read before the write.
-const formatOrganizationMove = (
-  before: number | null | undefined | 'unread',
-  after: number | null,
-): string => {
-  if (before === undefined || before === after) return '';
-  if (before === 'unread') {
-    return '\n\nCould not read the organization before the requester change: check that the organization shown above is the one you expect.';
+// ask for that move, so it is named from the audit the update returns, which
+// is the stored audit, one `Change` event per changed field (#444 spike).
+const formatOrganizationMove = (audit: ZendeskAudit | undefined): string => {
+  if (!audit) {
+    return '\n\nCould not confirm whether the organization moved with the requester: check that the organization shown above is the one you expect.';
   }
-  return `\n\nOrganization changed with the requester: organization_id ${before ?? 'none'} -> ${after ?? 'none'}. Pass organization_id to keep the ticket under another organization the new requester belongs to.`;
-};
-
-// Only feeds formatOrganizationMove, so a failed read must not block the write.
-const readOrganization = async (
-  subdomain: string,
-  token: string,
-  ticketId: number,
-): Promise<number | null | 'unread'> => {
-  try {
-    const { ticket } = await zendeskGet<{ ticket: ZendeskTicket }>(
-      subdomain,
-      token,
-      `/tickets/${ticketId}`,
-    );
-    return ticket.organization_id;
-  } catch {
-    return 'unread';
-  }
+  const move = audit.events?.find((e) => e.type === 'Change' && e.field_name === 'organization_id');
+  if (!move) return '';
+  const id = (v: unknown) => (v === null || v === undefined || v === '' ? 'none' : String(v));
+  return `\n\nOrganization changed with the requester: organization_id ${id(move.previous_value)} -> ${id(move.value)}. Pass organization_id to keep the ticket under another organization the new requester belongs to.`;
 };
 
 // Resolve one entity kind to an id->name map via batched show_many look-ups
@@ -1528,12 +1510,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
         const ccActions = toSubscriberActions(email_ccs);
         if (followerActions) sent.followers = followerActions;
         if (ccActions) sent.email_ccs = ccActions;
-        // An explicit organization_id is checked by formatPartyOutcome instead.
-        const organizationBefore =
-          updates['requester_id'] !== undefined && updates['organization_id'] === undefined
-            ? await readOrganization(subdomain, token, ticket_id)
-            : undefined;
-        const { ticket } = await zendeskPut<{ ticket: ZendeskTicket }>(
+        const { ticket, audit } = await zendeskPut<{ ticket: ZendeskTicket; audit?: ZendeskAudit }>(
           subdomain,
           token,
           `/tickets/${ticket_id}`,
@@ -1550,9 +1527,11 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
           );
           text += formatSubscribersBlock(ticket, names) + formatSubscriberOutcome(sent, ticket);
         }
-        text +=
-          formatPartyOutcome(updates, ticket) +
-          formatOrganizationMove(organizationBefore, ticket.organization_id);
+        text += formatPartyOutcome(updates, ticket);
+        // An explicit organization_id is checked by formatPartyOutcome instead.
+        if (updates['requester_id'] !== undefined && updates['organization_id'] === undefined) {
+          text += formatOrganizationMove(audit);
+        }
         return { content: [{ type: 'text', text }] };
       },
     },

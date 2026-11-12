@@ -1,0 +1,538 @@
+import { describe, expect, it } from 'vitest';
+import {
+  balance,
+  costOfFile,
+  driftMarkdown,
+  driftReport,
+  estimateCosts,
+  mergeReports,
+  nextDriftHistory,
+  planShards,
+  shardTimings,
+  // @ts-expect-error -- plain .mjs helper, no declaration file (same as the other
+  // script tests in this directory).
+} from '../../scripts/mutation-shards.mjs';
+
+// The baseline is split into shards that must each finish inside one job. A
+// shard planned too heavy is killed and saves nothing, and a merge that keeps the
+// wrong copy of a file replays a verdict computed for nothing.
+
+const mutant = (fields: Record<string, unknown>) => ({ id: '1', status: 'Killed', ...fields });
+
+describe('costOfFile', () => {
+  it('sums the tests each mutant actually ran', () => {
+    const entry = { mutants: [mutant({ testsCompleted: 3 }), mutant({ testsCompleted: 2800 })] };
+    expect(costOfFile(entry)).toBe(2803);
+  });
+
+  it('counts an ignored mutant as free, since Stryker never runs it', () => {
+    const entry = {
+      mutants: [mutant({ status: 'Ignored', testsCompleted: 0 }), mutant({ testsCompleted: 4 })],
+    };
+    expect(costOfFile(entry)).toBe(4);
+  });
+
+  it('falls back to the covering tests, then to one, when the count is missing', () => {
+    const entry = { mutants: [mutant({ coveredBy: ['a', 'b'] }), mutant({})] };
+    expect(costOfFile(entry)).toBe(3);
+  });
+});
+
+describe('estimateCosts', () => {
+  it('uses the baseline where it has the file', () => {
+    const baseline = { 'src/a.ts': { mutants: [mutant({ testsCompleted: 50 })] } };
+    const costs = estimateCosts(['src/a.ts'], baseline, { 'src/a.ts': 1000 });
+    expect(costs.get('src/a.ts')).toBe(50);
+  });
+
+  it('scales a file the baseline lacks by the cost per byte of the files it has', () => {
+    const baseline = { 'src/a.ts': { mutants: [mutant({ testsCompleted: 50 })] } };
+    const costs = estimateCosts(['src/a.ts', 'src/new.ts'], baseline, {
+      'src/a.ts': 100,
+      'src/new.ts': 300,
+    });
+    expect(costs.get('src/new.ts')).toBe(150);
+  });
+
+  it('scales a file whose verdicts the merge all dropped, rather than costing it 0', () => {
+    const baseline = {
+      'src/a.ts': { mutants: [mutant({ testsCompleted: 50 })] },
+      'src/stale.ts': { mutants: [] },
+    };
+    const costs = estimateCosts(['src/a.ts', 'src/stale.ts'], baseline, {
+      'src/a.ts': 100,
+      'src/stale.ts': 300,
+    });
+    expect(costs.get('src/stale.ts')).toBe(150);
+  });
+
+  it('keeps a file of ignored mutants at 0: Stryker never runs them', () => {
+    const baseline = { 'src/ignored.ts': { mutants: [mutant({ status: 'Ignored' })] } };
+    const costs = estimateCosts(['src/ignored.ts'], baseline, { 'src/ignored.ts': 300 });
+    expect(costs.get('src/ignored.ts')).toBe(0);
+  });
+
+  it('falls back to the size alone on a cold run', () => {
+    const costs = estimateCosts(['src/a.ts'], {}, { 'src/a.ts': 1234 });
+    expect(costs.get('src/a.ts')).toBe(1234);
+  });
+});
+
+describe('balance', () => {
+  it('puts the heaviest item first on the lightest bin', () => {
+    const bins = balance(
+      [
+        ['a', 10],
+        ['b', 7],
+        ['c', 5],
+        ['d', 4],
+      ],
+      2,
+    );
+    expect(bins).toEqual([
+      { paths: ['a', 'd'], cost: 14 },
+      { paths: ['b', 'c'], cost: 12 },
+    ]);
+  });
+
+  it('drops empty bins when there are fewer items than bins', () => {
+    expect(balance([['a', 1]], 3)).toEqual([{ paths: ['a'], cost: 1 }]);
+  });
+
+  it('is deterministic on equal costs', () => {
+    const items: [string, number][] = [
+      ['b', 1],
+      ['a', 1],
+    ];
+    expect(balance(items, 2)).toEqual([
+      { paths: ['a'], cost: 1 },
+      { paths: ['b'], cost: 1 },
+    ]);
+  });
+});
+
+describe('planShards', () => {
+  it('splits each shard into chunks that Stryker runs one after another', () => {
+    const costs = new Map([
+      ['a', 8],
+      ['b', 4],
+      ['c', 4],
+      ['d', 2],
+      ['e', 2],
+    ]);
+    expect(planShards(costs, { shards: 2, chunksPerShard: 2 })).toEqual([
+      { index: 0, cost: 10, chunks: [['a'], ['d']] },
+      { index: 1, cost: 10, chunks: [['b', 'e'], ['c']] },
+    ]);
+  });
+});
+
+describe('mergeReports', () => {
+  interface Test {
+    id: string;
+    name: string;
+  }
+  const report = (
+    files: Record<string, string>,
+    testFiles: Record<string, Test[]> = {},
+    coveredBy: string[] = [],
+  ) => ({
+    schemaVersion: '2',
+    thresholds: { high: 85, low: 70 },
+    files: Object.fromEntries(
+      Object.entries(files).map(([path, tag]) => [
+        path,
+        { language: 'typescript', mutants: [{ id: tag, status: 'Killed', coveredBy }] },
+      ]),
+    ),
+    testFiles: Object.fromEntries(
+      Object.entries(testFiles).map(([file, tests]) => [file, { source: `src of ${file}`, tests }]),
+    ),
+  });
+  const tagOf = (merged: { files: Record<string, { mutants: { id: string }[] }> }) =>
+    Object.fromEntries(Object.entries(merged.files).map(([p, f]) => [p, f.mutants[0]?.id]));
+
+  it('takes each file from the shard that finished it, over any reused copy', () => {
+    const restored = report({ 'src/a.ts': 'old a', 'src/b.ts': 'old b' });
+    const shard0 = {
+      report: report({ 'src/a.ts': 'fresh a', 'src/b.ts': 'old b' }),
+      done: ['src/a.ts'],
+    };
+    const shard1 = {
+      report: report({ 'src/a.ts': 'old a', 'src/b.ts': 'fresh b' }),
+      done: ['src/b.ts'],
+    };
+    const merged = mergeReports({ fallbacks: [restored], shards: [shard0, shard1] });
+    expect(tagOf(merged)).toEqual({ 'src/a.ts': 'fresh a', 'src/b.ts': 'fresh b' });
+  });
+
+  it('keeps the restored copy of a file whose shard never finished it', () => {
+    const restored = report({ 'src/a.ts': 'old a' });
+    const killed = { report: report({ 'src/a.ts': 'half a' }), done: [] };
+    expect(tagOf(mergeReports({ fallbacks: [restored], shards: [killed] }))).toEqual({
+      'src/a.ts': 'old a',
+    });
+  });
+
+  it('keeps a file only an unfinished shard knows, rather than losing its reused verdicts', () => {
+    const shard = {
+      report: report({ 'src/a.ts': 'reused a', 'src/b.ts': 'fresh b' }),
+      done: ['src/b.ts'],
+    };
+    expect(tagOf(mergeReports({ fallbacks: [], shards: [shard] }))).toEqual({
+      'src/a.ts': 'reused a',
+      'src/b.ts': 'fresh b',
+    });
+  });
+
+  it("keeps every test a file had in any shard, not only the last shard's subset", () => {
+    const shard0 = { report: report({}, { 't/a.test.ts': [{ id: '0', name: 'one' }] }), done: [] };
+    const shard1 = { report: report({}, { 't/a.test.ts': [{ id: '0', name: 'two' }] }), done: [] };
+    const merged = mergeReports({ fallbacks: [], shards: [shard0, shard1] });
+    expect(merged.testFiles['t/a.test.ts'].tests.map((t: Test) => t.name)).toEqual(['one', 'two']);
+  });
+
+  it('renumbers tests so a mutant still points at the tests it ran in its own shard', () => {
+    // Both shards call their only test "0", but they are different tests.
+    const shard0 = {
+      report: report({ 'src/a.ts': 'a' }, { 't/a.test.ts': [{ id: '0', name: 'covers a' }] }, [
+        '0',
+      ]),
+      done: ['src/a.ts'],
+    };
+    const shard1 = {
+      report: report({ 'src/b.ts': 'b' }, { 't/b.test.ts': [{ id: '0', name: 'covers b' }] }, [
+        '0',
+      ]),
+      done: ['src/b.ts'],
+    };
+    const merged = mergeReports({ fallbacks: [], shards: [shard0, shard1] });
+    const nameOf = (id: string) =>
+      Object.values(merged.testFiles as Record<string, { tests: Test[] }>)
+        .flatMap((f) => f.tests)
+        .find((t) => t.id === id)?.name;
+    expect(merged.files['src/a.ts'].mutants[0].coveredBy.map(nameOf)).toEqual(['covers a']);
+    expect(merged.files['src/b.ts'].mutants[0].coveredBy.map(nameOf)).toEqual(['covers b']);
+  });
+
+  it('renumbers the killing tests the same way', () => {
+    const killedBy = (r: ReturnType<typeof report>, path: string, ids: string[]) => {
+      Object.assign(r.files[path]?.mutants[0] ?? {}, { killedBy: ids });
+      return r;
+    };
+    const shard0 = {
+      report: killedBy(
+        report({ 'src/a.ts': 'a' }, { 't/a.test.ts': [{ id: '0', name: 'kills a' }] }),
+        'src/a.ts',
+        ['0'],
+      ),
+      done: ['src/a.ts'],
+    };
+    const shard1 = {
+      report: killedBy(
+        report({ 'src/b.ts': 'b' }, { 't/b.test.ts': [{ id: '0', name: 'kills b' }] }),
+        'src/b.ts',
+        ['0'],
+      ),
+      done: ['src/b.ts'],
+    };
+    const merged = mergeReports({ fallbacks: [], shards: [shard0, shard1] });
+    const nameOf = (id: string) =>
+      Object.values(merged.testFiles as Record<string, { tests: Test[] }>)
+        .flatMap((f) => f.tests)
+        .find((t) => t.id === id)?.name;
+    expect(merged.files['src/a.ts'].mutants[0].killedBy.map(nameOf)).toEqual(['kills a']);
+    expect(merged.files['src/b.ts'].mutants[0].killedBy.map(nameOf)).toEqual(['kills b']);
+  });
+
+  it('prefers the test sources the shards ran over the restored ones', () => {
+    const restored = {
+      ...report({}),
+      testFiles: { 't/a.test.ts': { source: 'old source', tests: [{ id: '0', name: 'one' }] } },
+    };
+    const shard = { report: report({}, { 't/a.test.ts': [{ id: '3', name: 'one' }] }), done: [] };
+    const merged = mergeReports({ fallbacks: [restored], shards: [shard] });
+    expect(merged.testFiles['t/a.test.ts'].source).toBe('src of t/a.test.ts');
+    expect(merged.testFiles['t/a.test.ts'].tests).toHaveLength(1);
+  });
+
+  it('drops the restored tests of a test file the shards ran in another version', () => {
+    // A test renamed or moved since the restored baseline must not live on next to its new self.
+    const restored = {
+      ...report({}),
+      testFiles: {
+        't/a.test.ts': { source: 'old source', tests: [{ id: '0', name: 'old name' }] },
+      },
+    };
+    const shard = {
+      report: report({}, { 't/a.test.ts': [{ id: '0', name: 'new name' }] }),
+      done: [],
+    };
+    const merged = mergeReports({ fallbacks: [restored], shards: [shard] });
+    expect(merged.testFiles['t/a.test.ts'].tests.map((t: Test) => t.name)).toEqual(['new name']);
+  });
+
+  it('drops a kept verdict whose covering test changed since it was computed', () => {
+    // The restored baseline killed `b` with a test the shard now runs in a new version.
+    const restored = {
+      ...report({ 'src/b.ts': 'b' }, {}, ['0']),
+      testFiles: { 't/b.test.ts': { source: 'old body', tests: [{ id: '0', name: 'covers b' }] } },
+    };
+    const shard = {
+      report: report({ 'src/a.ts': 'a' }, { 't/b.test.ts': [{ id: '0', name: 'covers b' }] }, [
+        '0',
+      ]),
+      done: ['src/a.ts'],
+    };
+    const merged = mergeReports({ fallbacks: [restored], shards: [shard] });
+    expect(merged.files['src/b.ts'].mutants).toEqual([]);
+    expect(tagOf(merged)['src/a.ts']).toBe('a');
+  });
+
+  it('keeps a kept verdict whose covering tests did not change', () => {
+    const restored = {
+      ...report({ 'src/b.ts': 'b' }, {}, ['0']),
+      testFiles: {
+        't/b.test.ts': { source: 'src of t/b.test.ts', tests: [{ id: '0', name: 'covers b' }] },
+      },
+    };
+    const shard = {
+      report: report({ 'src/a.ts': 'a' }, { 't/b.test.ts': [{ id: '0', name: 'covers b' }] }, [
+        '0',
+      ]),
+      done: ['src/a.ts'],
+    };
+    expect(tagOf(mergeReports({ fallbacks: [restored], shards: [shard] }))['src/b.ts']).toBe('b');
+  });
+
+  it('drops a kept static verdict when a shard brings a test file the baseline never ran', () => {
+    const restored = report(
+      { 'src/b.ts': 'b' },
+      { 't/b.test.ts': [{ id: '0', name: 'covers b' }] },
+    );
+    Object.assign(restored.files['src/b.ts']?.mutants[0] ?? {}, { static: true });
+    const shard = {
+      report: report(
+        { 'src/a.ts': 'a' },
+        {
+          't/b.test.ts': [{ id: '0', name: 'covers b' }],
+          't/new.test.ts': [{ id: '1', name: 'new test' }],
+        },
+      ),
+      done: ['src/a.ts'],
+    };
+    const merged = mergeReports({ fallbacks: [restored], shards: [shard] });
+    expect(merged.files['src/b.ts'].mutants).toEqual([]);
+  });
+
+  it('keeps a kept per-test verdict when the only new test file does not cover it', () => {
+    const restored = report(
+      { 'src/b.ts': 'b' },
+      { 't/b.test.ts': [{ id: '0', name: 'covers b' }] },
+      ['0'],
+    );
+    const shard = {
+      report: report(
+        { 'src/a.ts': 'a' },
+        {
+          't/b.test.ts': [{ id: '0', name: 'covers b' }],
+          't/new.test.ts': [{ id: '1', name: 'new test' }],
+        },
+      ),
+      done: ['src/a.ts'],
+    };
+    expect(tagOf(mergeReports({ fallbacks: [restored], shards: [shard] }))['src/b.ts']).toBe('b');
+  });
+
+  it('carries the top-level fields of the reports', () => {
+    const merged = mergeReports({ fallbacks: [], shards: [{ report: report({}), done: [] }] });
+    expect(merged.schemaVersion).toBe('2');
+    expect(merged.thresholds).toEqual({ high: 85, low: 70 });
+  });
+
+  it('returns null when there is nothing to merge', () => {
+    expect(mergeReports({ fallbacks: [], shards: [] })).toBeNull();
+  });
+});
+
+describe('driftReport', () => {
+  const budgetSeconds = 75 * 60;
+
+  it('passes a balanced run well under the budget', () => {
+    const report = driftReport({
+      shards: [
+        { index: 0, cost: 10, seconds: 600 },
+        { index: 1, cost: 10, seconds: 660 },
+      ],
+      budgetSeconds,
+    });
+    expect(report.warnings).toEqual([]);
+    expect(report.slowest).toBe(660);
+    expect(report.imbalance).toBeCloseTo(660 / 630);
+  });
+
+  it('warns when a shard uses more than 60 % of the budget', () => {
+    const report = driftReport({
+      shards: [
+        { index: 0, cost: 10, seconds: 2800 },
+        { index: 1, cost: 10, seconds: 2700 },
+      ],
+      budgetSeconds,
+    });
+    expect(report.warnings).toEqual(['Shard 0 took 47 min, 62 % of the 75 min budget.']);
+  });
+
+  it('warns when the slowest shard is more than 1.5 times the mean', () => {
+    const report = driftReport({
+      shards: [
+        { index: 0, cost: 10, seconds: 1170 },
+        { index: 1, cost: 10, seconds: 420 },
+        { index: 2, cost: 10, seconds: 600 },
+      ],
+      budgetSeconds,
+    });
+    expect(report.warnings).toEqual([
+      'Shards are unbalanced: the slowest took 1.60 times the mean (20 min against 12 min).',
+    ]);
+  });
+
+  it('ignores an imbalance while the slowest shard stays under 20 % of the budget', () => {
+    // A warm run: shards reuse nearly every verdict and take 1 to 3 min.
+    const shards = [
+      { index: 0, cost: 10, seconds: 60 },
+      { index: 1, cost: 10, seconds: 180 },
+      { index: 2, cost: 10, seconds: 90 },
+    ];
+    expect(driftReport({ shards, budgetSeconds }).warnings).toEqual([]);
+    const atFloor = shards.map((s) => ({ ...s, seconds: s.seconds * 5 }));
+    expect(driftReport({ shards: atFloor, budgetSeconds }).warnings).toEqual([]);
+    const overFloor = shards.map((s) => ({ ...s, seconds: s.seconds * 5 + 1 }));
+    expect(driftReport({ shards: overFloor, budgetSeconds }).warnings).toHaveLength(1);
+  });
+
+  it('leaves a shard without timing out of the figures, and says so', () => {
+    const report = driftReport({
+      shards: [
+        { index: 0, cost: 10, seconds: 600 },
+        { index: 1, cost: 10, seconds: null },
+      ],
+      budgetSeconds,
+    });
+    expect(report.slowest).toBe(600);
+    expect(report.warnings).toEqual(['Shard 1 reported no timing (killed or failed early).']);
+  });
+});
+
+describe('shardTimings', () => {
+  const plan = [
+    { index: 0, cost: 10 },
+    { index: 1, cost: 20 },
+    { index: 2, cost: 30 },
+  ];
+
+  it('lists every planned shard, with no timing for one that left none', () => {
+    const timings = [{ index: 0, seconds: 300, chunks: [{ seconds: 300 }] }];
+    expect(shardTimings(plan, timings)).toEqual([
+      { index: 0, cost: 10, seconds: 300, cutOff: false },
+      { index: 1, cost: 20, seconds: null, cutOff: false },
+      { index: 2, cost: 30, seconds: null, cutOff: false },
+    ]);
+  });
+
+  it('marks a shard killed inside a chunk as cut off, its time a lower bound', () => {
+    const timings = [
+      { index: 1, seconds: 400, chunks: [{ seconds: 400 }], current: { started: 0 } },
+      { index: 2, seconds: 0, chunks: [], current: { started: 0 } },
+    ];
+    expect(shardTimings(plan, timings).slice(1)).toEqual([
+      { index: 1, cost: 20, seconds: 400, cutOff: true },
+      { index: 2, cost: 30, seconds: null, cutOff: true },
+    ]);
+  });
+
+  it('marks a shard stopped between chunks as cut off, from the chunks it planned', () => {
+    const planned = [{ index: 0, cost: 10, chunks: [['a.ts'], ['b.ts']] }];
+    const stopped = [{ index: 0, seconds: 120, chunks: [{ seconds: 120 }] }];
+    const finished = [{ index: 0, seconds: 240, chunks: [{ seconds: 120 }, { seconds: 120 }] }];
+    expect(shardTimings(planned, stopped)[0].cutOff).toBe(true);
+    expect(shardTimings(planned, finished)[0].cutOff).toBe(false);
+  });
+});
+
+describe('driftReport on a cut-off shard', () => {
+  it('says the shard was cut off', () => {
+    const report = driftReport({
+      shards: [
+        { index: 0, cost: 10, seconds: 600, cutOff: false },
+        { index: 1, cost: 10, seconds: 500, cutOff: true },
+      ],
+      budgetSeconds: 75 * 60,
+    });
+    expect(report.warnings).toEqual([
+      'Shard 1 was cut off before finishing; 8 min is a lower bound.',
+    ]);
+  });
+
+  it('says a shard cut off in its first chunk left no timing', () => {
+    const report = driftReport({
+      shards: [{ index: 0, cost: 10, seconds: null, cutOff: true }],
+      budgetSeconds: 75 * 60,
+    });
+    expect(report.warnings).toEqual(['Shard 0 reported no timing (killed or failed early).']);
+  });
+});
+
+describe('driftMarkdown', () => {
+  it('renders one row per shard and the totals', () => {
+    const report = driftReport({
+      shards: [
+        { index: 0, cost: 1234.4, seconds: 600 },
+        { index: 1, cost: 99, seconds: null },
+      ],
+      budgetSeconds: 75 * 60,
+    });
+    expect(driftMarkdown(report)).toMatchInlineSnapshot(`
+      "### Mutation shards
+
+      | Shard | Planned cost | Duration | Share of budget |
+      | ---: | ---: | ---: | ---: |
+      | 0 | 1234 | 10 min 0 s | 13 % |
+      | 1 | 99 | n/a | n/a |
+
+      Slowest: 10 min 0 s. Mean: 10 min 0 s. Imbalance (slowest / mean): 1.00.
+
+      - Shard 1 reported no timing (killed or failed early)."
+    `);
+  });
+
+  it('carries rounded seconds into the minutes', () => {
+    const report = driftReport({
+      shards: [{ index: 0, cost: 1, seconds: 119.7 }],
+      budgetSeconds: 75 * 60,
+    });
+    expect(driftMarkdown(report)).toContain('| 0 | 1 | 2 min 0 s | 3 % |');
+  });
+});
+
+describe('nextDriftHistory', () => {
+  it('escalates on the third drifting run in a row', () => {
+    expect(nextDriftHistory([true, true], true)).toEqual({
+      history: [true, true, true],
+      escalate: true,
+    });
+  });
+
+  it('does not escalate when a clean run broke the streak', () => {
+    expect(nextDriftHistory([true, false, true], true).escalate).toBe(false);
+  });
+
+  it('starts afresh from a history that is not a list', () => {
+    expect(nextDriftHistory({}, true)).toEqual({ history: [true], escalate: false });
+    expect(nextDriftHistory(3, false)).toEqual({ history: [false], escalate: false });
+  });
+
+  it('keeps only the last ten runs', () => {
+    const history = Array.from({ length: 10 }, () => false);
+    expect(nextDriftHistory(history, true).history).toHaveLength(10);
+  });
+});
