@@ -5,6 +5,7 @@ import {
   importRoots,
   packageIdentity,
   verdictFieldsOf,
+  wiringOf,
   // @ts-expect-error -- plain .mjs helper, no declaration file (same as the other
   // script tests in this directory).
 } from '../../scripts/mutation-cache-inputs.mjs';
@@ -105,6 +106,34 @@ describe('closureOf', () => {
   });
 });
 
+describe('wiringOf', () => {
+  // Two versions of `b` are installed either way; only which one `a` uses moves.
+  const wired = (bForA: string) => ({
+    devDependencies: {
+      a: node(pnpmPath('a@1.0.0', 'a'), { b: node(pnpmPath(bForA, 'b')) }),
+      c: node(pnpmPath('c@1.0.0', 'c'), {
+        b1: node(pnpmPath('b@1.0.0', 'b')),
+        b2: node(pnpmPath('b@2.0.0', 'b')),
+      }),
+    },
+  });
+
+  it('changes when an edge moves between versions already in the closure', () => {
+    const before = wired('b@1.0.0');
+    const after = wired('b@2.0.0');
+    expect(closureOf(after, ['a', 'c'])).toEqual(closureOf(before, ['a', 'c']));
+    expect(wiringOf(after, ['a', 'c'])).not.toEqual(wiringOf(before, ['a', 'c']));
+  });
+
+  it('names what each root resolves to, so a root moving to an installed version counts', () => {
+    expect(wiringOf(wired('b@1.0.0'), ['a'])).toEqual([
+      'a => a@1.0.0',
+      'a@1.0.0 -> b@1.0.0',
+      'b@1.0.0 -> ',
+    ]);
+  });
+});
+
 describe('verdictFieldsOf', () => {
   it('drops the fields a release or a pnpm bump rewrites, and the versions the closure covers', () => {
     const manifest = {
@@ -134,6 +163,18 @@ describe('fingerprint', () => {
 
   it('changes when a kept manifest field moves', () => {
     expect(fingerprint({ ...base, manifest: { name: 'y' } })).not.toBe(fingerprint(base));
+  });
+
+  it('changes when the Node runtime moves, which .nvmrc pins only to a major', () => {
+    expect(fingerprint({ ...base, node: 'v24.2.0' })).not.toBe(
+      fingerprint({ ...base, node: 'v24.1.0' }),
+    );
+  });
+
+  it('changes when the wiring moves', () => {
+    expect(fingerprint({ ...base, wiring: ['a@1.0.0 -> b@1.0.0'] })).not.toBe(
+      fingerprint({ ...base, wiring: ['a@1.0.0 -> b@2.0.0'] }),
+    );
   });
 
   it('is a SHA-256 in hex, usable in a cache key', () => {

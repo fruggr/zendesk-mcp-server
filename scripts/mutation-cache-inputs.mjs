@@ -59,11 +59,11 @@ const childrenOf = (entry) => ({
 });
 
 /**
- * Sorted identities of the roots and everything they depend on, read from
- * `pnpm list --json --depth Infinity`. pnpm prints each subtree once and marks
- * later copies `deduped`, so edges are collected over the whole tree first.
+ * The roots and everything they depend on, read from `pnpm list --json --depth
+ * Infinity`. pnpm prints each subtree once and marks later copies `deduped`, so
+ * edges are collected over the whole tree first.
  */
-export const closureOf = (tree, roots) => {
+const walk = (tree, roots) => {
   const edges = new Map();
   const topLevel = new Map();
   const index = (deps, isTop) => {
@@ -83,11 +83,25 @@ export const closureOf = (tree, roots) => {
     seen.add(id);
     for (const child of edges.get(id) ?? []) visit(child);
   };
-  for (const root of roots) {
-    const id = topLevel.get(root);
-    if (id) visit(id);
-  }
-  return [...seen].sort(byCodeUnit);
+  const resolved = roots.filter((root) => topLevel.has(root));
+  for (const root of resolved) visit(topLevel.get(root));
+  return { seen, edges, topLevel, resolved };
+};
+
+/** Sorted identities of the closure. */
+export const closureOf = (tree, roots) => [...walk(tree, [...roots]).seen].sort(byCodeUnit);
+
+/**
+ * How the closure is wired: each package's dependencies and what each root
+ * resolves to. A `pnpm dedupe` can move an edge between two versions already in
+ * the closure without changing the set of identities.
+ */
+export const wiringOf = (tree, roots) => {
+  const { seen, edges, topLevel, resolved } = walk(tree, [...roots]);
+  return [
+    ...[...seen].map((id) => `${id} -> ${[...(edges.get(id) ?? [])].sort(byCodeUnit).join(' ')}`),
+    ...resolved.map((root) => `${root} => ${topLevel.get(root)}`),
+  ].sort(byCodeUnit);
 };
 
 /**
@@ -100,9 +114,20 @@ export const verdictFieldsOf = (manifest) => {
   return kept;
 };
 
-export const fingerprint = ({ packages, manifest }) =>
+/**
+ * `node` is the exact runtime (`process.version`): `.nvmrc` pins only a major,
+ * and the runner installs whatever release matches it.
+ */
+export const fingerprint = ({ packages, wiring = [], manifest, node = '' }) =>
   createHash('sha256')
-    .update(JSON.stringify({ packages: [...packages].sort(byCodeUnit), manifest }))
+    .update(
+      JSON.stringify({
+        node,
+        packages: [...packages].sort(byCodeUnit),
+        wiring: [...wiring].sort(byCodeUnit),
+        manifest,
+      }),
+    )
     .digest('hex');
 
 const sourcesUnder = (dir) =>
@@ -134,7 +159,13 @@ const collect = () => {
   const manifest = verdictFieldsOf(
     JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8')),
   );
-  return { roots: [...roots].sort(byCodeUnit), packages: closureOf(tree, roots), manifest };
+  return {
+    roots: [...roots].sort(byCodeUnit),
+    packages: closureOf(tree, roots),
+    wiring: wiringOf(tree, roots),
+    manifest,
+    node: process.version,
+  };
 };
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
@@ -142,6 +173,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   if (process.argv.includes('--explain')) {
     console.log(`roots (${inputs.roots.length}):\n  ${inputs.roots.join('\n  ')}`);
     console.log(`packages (${inputs.packages.length}):\n  ${inputs.packages.join('\n  ')}`);
+    console.log(`node: ${inputs.node}`);
   }
   console.log(fingerprint(inputs));
 }

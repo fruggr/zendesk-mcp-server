@@ -236,7 +236,11 @@ instead the closure of what the suite loads:
   editing a list;
 - their transitive closure from `pnpm list --json --depth Infinity`, each package
   identified by its pnpm store directory, which pins version, resolved peers and
-  patch hash together (so editing `patches/` still re-keys);
+  patch hash together (so editing `patches/` still re-keys), and how it is wired
+  (each package's dependencies, what each root resolves to), since a `pnpm dedupe`
+  can move an edge between two versions already in the closure;
+- the exact Node runtime (`process.version`): `.nvmrc` pins only the major, and
+  the runner installs whichever release matches it;
 - `package.json` without `version`, `packageManager` and the dependency ranges
   (the closure is their resolved result).
 
