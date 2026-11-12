@@ -368,8 +368,11 @@ mean. A single warning is noise, so a short history (cached, last ten runs)
 escalates only the third drifting run in a row into an issue labelled
 `mutation-baseline-drift`, which closes itself on the next run without drift.
 The thresholds come from the first measured runs: cold shards took 7 to 19.5
-min (imbalance about 1.6, on a plan made from file sizes), warm ones 1 to 6 min. The whole pipeline is one concurrency group, queued and never
-cancelled. The alert names the first job that failed: the plan (where the canary
+min (imbalance about 1.6, on a plan made from file sizes), warm ones 1 to 6 min.
+
+The whole pipeline is one concurrency group (`mutation-baseline-sharded`), so a
+running baseline is never cancelled; GitHub keeps one waiting run and cancels an
+older waiting one when a newer push queues, which the alert ignores. The alert names the first job that failed: the plan (where the canary
 runs), a shard (one that overruns is a failure even when the full pass makes up
 for it, since it means the plan needs more shards), or the full pass.
 
