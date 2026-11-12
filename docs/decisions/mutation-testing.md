@@ -303,6 +303,89 @@ fit in one:
 The PR gate is unaffected: it judges only the changed lines, so a partial
 baseline costs it time on the mutants it must re-run, never a verdict.
 
+### Shards that finish, rather than one run that is interrupted
+
+The first baseline run with the above (2026-11-11, #451) measured the real cold
+cost: **about 4 h in CI**. After the 75 min step budget, Stryker had tested 3 893
+of 5 259 mutants, but its time-weighted progress read 29 %: the static mutants
+are the slow tail. It also showed that the partial report cannot be relied on.
+Stryker exited 137 (SIGKILL) half a second after the SIGINT and wrote nothing,
+while the same command under `CI=true` with no TTY writes its partial locally;
+the cause in CI is unknown. Only 11 mutants timed out (about 4 min), and Stryker
+already uses all 4 cores, so neither `timeoutMS` nor `concurrency` is a lever.
+
+So the baseline no longer depends on an interrupt. It runs as three jobs,
+driven by `scripts/mutation-shards.mjs`:
+
+- **Plan.** The in-scope files are split into 10 shards of 3 chunks, balanced
+  longest-first on what each file cost last time: the sum of `testsCompleted`
+  over its mutants, which is what makes a static mutant expensive (it runs the
+  whole suite). A file the baseline lacks is costed by its size, scaled by the
+  baseline's cost per byte; with no baseline at all, size alone.
+- **Shards, in a matrix.** Each shard runs its chunks one after another, each
+  `stryker run --incremental --mutate <chunk>`. Under `--incremental`, a narrowed
+  `--mutate` still writes the whole project's report, reusing the verdicts of
+  the other files (measured: a run on `pagination.ts`, then one on
+  `durations.ts`, leaves both in the report). So a chunk that **finishes** is
+  progress kept. After each one the shard copies the report and records the
+  files it finished; a shard killed in its third chunk still hands over its first
+  two, and a chunk that fails does not stop the next one. The shard's budget is
+  enforced with SIGKILL, not SIGINT: `timeout` signals the whole process group,
+  so a SIGINT also reaches Stryker's test workers, and Stryker then hung until
+  the kill instead of saving its partial (reproduced locally, exit 137 — likely
+  what happened in CI). Nothing graceful is needed, since every finished chunk
+  is already on disk. Chunks have a price: each is a Stryker run of its own,
+  with its own sandbox build and dry run of the whole suite (1 to 2 min), so
+  10 × 3 pays 30 of them where 10 would do. That is what a kill costs at most
+  one chunk instead of a whole shard; the drift check below shows the total.
+- **Full scope.** The shard reports are merged: each file from the shard that
+  finished it, otherwise the restored copy. Tests are not a plain union: a
+  mutant names its tests by id, and Stryker numbers them per run, so the same id
+  means different tests in two shards. The merge renumbers every test on
+  Stryker's own identity for it (file, position, name) and rewrites each kept
+  file's `coveredBy`/`killedBy` through the table of the report it came from.
+  Without that, the first CI run reused 2 133 of 5 418 verdicts and re-ran the
+  rest for 43 min (`Tests: 53 files changed (+1109 -0)`); with it, two shards run
+  apart and merged reuse all of their verdicts (measured locally, 116 of 116).
+  One more guard: the merged test sources are this commit's, so a verdict kept
+  from the restored baseline (its shard did not finish) would be compared with
+  test code it never ran against, and reused. A kept mutant covered by a test
+  file whose source changed is dropped instead (static ones whenever any test
+  file changed or appeared), so the full pass runs it again; the restored tests
+  of such a file are dropped too, so a moved or renamed test does not live on
+  next to its new self. When no shard handed anything over, the pass runs cold.
+  The merged baseline is **saved before anything else runs**, then one warm
+  full-scope pass reuses every verdict (measured: 116 of 116 reused on a
+  two-file merge), re-runs only what a failed shard left, writes the reports and
+  publishes the score.
+
+The full pass keeps the 75 min budget, enforced with SIGKILL like the shards: it
+is warm, so it should rarely run long, and the shards' work is saved before it
+starts. A pass that is killed saves nothing more.
+
+**An anti-drift check watches the plan, not just the outcome.** The plan
+rebalances itself every run on measured costs, but nothing said whether that
+was enough until a shard overran. Each shard now records the wall time of every
+chunk next to its planned cost, and the full-scope job turns them into a table
+in the job summary (planned cost, duration, share of the 75 min budget, slowest
+over mean). It annotates the run, without failing it, when a shard uses more
+than 60 % of the budget or the slowest shard takes more than 1.5 times the
+mean. The second check waits until the slowest shard passes 20 % of the budget
+(15 min): a warm run's shards take a few minutes each, and an imbalance there
+costs nothing (the first test run warned at 1.61 on 3 min against 2). A single
+warning is noise, so a short history (cached, last ten runs) escalates only the third drifting run in a row into an issue labelled
+`mutation-baseline-drift`, which closes itself on the next run without drift.
+The thresholds come from the first measured runs: cold shards took 7 to 19.5
+min (imbalance about 1.6, on a plan made from file sizes), warm ones 1 to 6 min.
+
+The whole pipeline is one concurrency group per ref
+(`mutation-baseline-sharded-<ref>`), so a running baseline is never cancelled,
+and a test dispatch on a branch never replaces main's waiting one. GitHub keeps
+one waiting run per group and cancels an older waiting one when a newer push
+queues, which the alert ignores. A manual cancel stops the full pass too. The
+alert names the first job that failed: the plan (where the canary runs), a shard (one that overruns is a failure even when the full pass makes up
+for it, since it means the plan needs more shards), or the full pass.
+
 **The gate is on changed lines, not changed files.** `scripts/mutation-scope.mjs`
 turns the PR diff into Stryker line ranges (`file:start-end`, which `--mutate`
 supports natively) and fails the job if a mutant inside them survived. File

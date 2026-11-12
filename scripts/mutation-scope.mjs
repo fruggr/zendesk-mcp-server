@@ -35,7 +35,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, matchesGlob } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
+export const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 /** Statuses that mean "this change went unnoticed by every test". */
 const ESCAPED = new Set(['Survived', 'NoCoverage']);
@@ -156,7 +156,7 @@ export const scoreOf = (counts) => {
  * config itself rather than restated: which paths are in the mutate scope, and
  * where the JSON reporter writes.
  */
-const loadConfig = async () => {
+export const loadConfig = async () => {
   const { default: config } = await import(pathToFileURL(join(repoRoot, 'stryker.config.mjs')));
   const mutate = config.mutate ?? [];
   if (mutate.length === 0) throw new Error('stryker.config.mjs declares no `mutate` patterns.');
@@ -164,7 +164,7 @@ const loadConfig = async () => {
   if (!reportPath) {
     throw new Error('stryker.config.mjs must set `jsonReporter.fileName` — the gate reads it.');
   }
-  return { inScope: scopeMatcher(mutate), reportPath };
+  return { inScope: scopeMatcher(mutate), reportPath, incrementalFile: config.incrementalFile };
 };
 
 // `--src-prefix`/`--dst-prefix` are not decoration: a contributor with
