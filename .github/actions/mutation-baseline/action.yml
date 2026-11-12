@@ -42,12 +42,17 @@ runs:
     # cannot drift silently. `src/**` and *.test.ts are absent on purpose:
     # Stryker's incremental mode diffs those itself. Why each part is what it is:
     # docs/decisions/mutation-testing.md, §4.
+    #
+    # The assignment on its own line is load-bearing: inside `echo "...$(...)"`
+    # a failing script leaves `bash -e` on echo's status, the hash empty, and one
+    # constant prefix restoring stale baselines across every package change.
     - name: Fingerprint the packages that can change a verdict
       id: packages
       shell: bash
-      run: echo "hash=$(node scripts/mutation-cache-inputs.mjs)" >> "$GITHUB_OUTPUT"
+      run: |
+        hash=$(node scripts/mutation-cache-inputs.mjs)
+        echo "hash=${hash}" >> "$GITHUB_OUTPUT"
 
-    #
     # Key = prefix + sha + run (cache entries are immutable, so a fixed key would
     # freeze the first baseline, and a re-run of a commit that saved a partial
     # could not save the rest); the prefix restore-key, which takes the newest

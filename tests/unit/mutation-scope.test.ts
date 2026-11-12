@@ -2,6 +2,8 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+// @ts-expect-error -- plain .mjs helper, no declaration file.
+import { EXEMPT } from '../../scripts/mutation-cache-inputs.mjs';
 import {
   changedRanges,
   escapedMutants,
@@ -231,7 +233,9 @@ describe('the mutation baseline cache key', () => {
   //
   // `tests/bundle/` is exempt for the same reason: `vitest.config.ts` excludes it,
   // since it runs the built bundle through `vitest.bundle.config.ts` instead.
-  const EXEMPT = new Set(['tests/functional', 'tests/bundle']);
+  //
+  // The set lives in `scripts/mutation-cache-inputs.mjs`, whose package scan
+  // skips the same directories.
 
   // Every remaining file, whatever its extension — not just `.ts`. Filtering by
   // extension would pass today by coincidence and miss the case this exists to

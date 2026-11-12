@@ -1,19 +1,9 @@
 #!/usr/bin/env node
 // Fingerprint of the installed packages that can change a mutation verdict, for
-// the baseline cache key (`.github/actions/mutation-baseline/action.yml`).
-// `node scripts/mutation-cache-inputs.mjs` prints the hash; `--explain` prints
-// what went into it.
-//
-// Why not hash `pnpm-lock.yaml`: Renovate rewrites it several times a week, for
-// Biome, lefthook or semantic-release as much as for vitest, and every rewrite
-// threw away the baseline for a cold run of the whole scope. A verdict depends
-// only on what the suite loads: the packages `src/` and the suite import, the
-// runner, and everything those pull in. That set is derived here from the
-// imports, not listed by hand, so a new dependency joins it by being imported.
-//
-// What import analysis cannot see — a tool acting on the run without being
-// imported — is what the weekly forced cold baseline in `mutation.yml` catches.
-// docs/decisions/mutation-testing.md, section 4.
+// the baseline cache key (`.github/actions/mutation-baseline/action.yml`):
+// the closure of what the suite imports, instead of the whole lockfile.
+// `--explain` prints what went into it. Why, and what the weekly cold baseline
+// covers that this cannot: docs/decisions/mutation-testing.md, section 4.
 
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -32,8 +22,11 @@ const byCodeUnit = (a, b) => Number(a > b) - Number(a < b);
  */
 const RUNNER_ROOTS = ['@stryker-mutator/core', '@stryker-mutator/vitest-runner', 'vitest'];
 
-/** Not loaded by the suite Stryker runs: same exemptions as the cache-key test. */
-const EXEMPT = new Set(['tests/functional', 'tests/bundle']);
+/**
+ * Not loaded by the suite Stryker runs. Shared with the cache-key test in
+ * `tests/unit/mutation-scope.test.ts`, which says why each one is exempt.
+ */
+export const EXEMPT = new Set(['tests/functional', 'tests/bundle']);
 
 const SPECIFIER = /\b(?:from|import)\s*\(?\s*['"]([^'"]+)['"]/g;
 // A loose scan also meets `from '...'` inside strings and comments; keeping only

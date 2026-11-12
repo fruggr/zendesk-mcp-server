@@ -241,17 +241,24 @@ instead the closure of what the suite loads:
   (the closure is their resolved result).
 
 On 2026-11-11 that is 536 of the 884 installed packages; what drops out is
-tooling the suite never loads (Biome, lefthook, semantic-release, tsdown and
-their trees). A lock-file refresh that moves a package inside the closure still
-re-keys, as it should.
+tooling no mutated line depends on (Biome, lefthook, semantic-release, tsdown and
+their trees). The scan stops at `src/` and `tests/`, and does not follow a test
+into `scripts/`: the release-notes tests load `@semantic-release/*` through
+`scripts/release-notes-collapsed.js`, but they cover no mutated file, so their
+packages cannot change a verdict (following them would pull 231 more packages,
+semantic-release among them, back into the key). A lock-file refresh that moves
+a package inside the closure still re-keys, as it should.
 
 What import analysis cannot see is a tool that acts on the run without being
 imported. The backstop is a **weekly cold baseline** (`schedule` in
-`mutation.yml`, Sunday night UTC): the same pipeline (plan, shards, full scope)
+`mutation.yml`, Sunday night UTC): the same pipeline, its shards and full pass
 with nothing restored, so every mutant runs against the current inputs and the
-result replaces the cache entry. A drift therefore lives a week at most, and the
-cost is CI minutes on a public repository, which are free. Its cold shards are
-also what the drift check measures the plan against.
+result replaces the cache entry. Only the plan reads the previous baseline, for
+last run's per-file costs, so the cold shards are balanced on measurements and
+not on file sizes. A drift therefore lives a week at most, and the cost is about
+26 min of CI on a public repository, where minutes are free. The weekly run has
+a concurrency group of its own: queued behind a push baseline, it would be the
+waiting run a later push replaces, and that week would go unchecked.
 
 That hash is **the only such list in the setup**, and both jobs get it from the
 one composite action — they have to agree on cache identity, and only one of them

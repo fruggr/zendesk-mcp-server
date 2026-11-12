@@ -30,9 +30,11 @@ permissions:
 # merge-queue runs each get a group of their own, so this never holds them.
 # Not `mutation-baseline`: that name is the old single-job baseline's group, and
 # sharing it made a run of this pipeline wait behind one of those. Per ref: a
-# test dispatch on a branch must not replace main's waiting baseline.
+# test dispatch on a branch must not replace main's waiting baseline. The weekly
+# cold run has a group of its own: waiting behind a push baseline, it would be
+# the older waiting run a later push replaces, and that week would go unchecked.
 concurrency:
-  group: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule') && format('mutation-baseline-sharded-{0}', github.ref) || format('mutation-{0}', github.run_id) }}
+  group: ${{ github.event_name == 'schedule' && format('mutation-baseline-weekly-{0}', github.ref) || (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && format('mutation-baseline-sharded-{0}', github.ref) || format('mutation-{0}', github.run_id) }}
   cancel-in-progress: false
 
 jobs:
@@ -111,9 +113,9 @@ jobs:
         with:
           persist-credentials: false
 
+      # Restored even on the weekly cold run: the plan only reads last run's
+      # per-file costs from it, and the shards themselves start cold.
       - uses: ./.github/actions/mutation-baseline
-        with:
-          restore: ${{ github.event_name != 'schedule' }}
 
       # Same canary as the PR job, once per baseline. On `main` it is what keeps
       # a merged bump from leaving a baseline of replayed, meaningless verdicts.
