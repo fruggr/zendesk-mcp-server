@@ -40,6 +40,6 @@
     ]
   },
   "env": {
-    "OTEL_RESOURCE_ATTRIBUTES": "d4b.team=product,d4b.project=Zendesk-mcp-server"
+    "OTEL_RESOURCE_ATTRIBUTES": "d4b.team=product,d4b.project=zendesk-mcp-server"
   }
 }
