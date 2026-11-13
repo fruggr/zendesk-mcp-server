@@ -31,22 +31,27 @@ const isCompiled = (schema: z.ZodType): boolean =>
   );
 
 describe('jitless: the server behaves identically with compilation stood down', () => {
-  const tools = createAllTools(ctx);
-  const getTicket = tools.find((t) => t.name === 'get_ticket');
-  if (!getTicket) throw new Error('get_ticket is gone — repoint this test at another read tool');
+  const getTicketTool = () => {
+    const tool = createAllTools(ctx).find((t) => t.name === 'get_ticket');
+    if (!tool) throw new Error('get_ticket is gone — repoint this test at another read tool');
+    return tool;
+  };
 
   it('no schema is compiled', () => {
+    const getTicket = getTicketTool();
     const schema = getTicket.inputSchema.strict();
     schema.safeParse({ ticket_id: 1 });
     expect(isCompiled(schema)).toBe(false);
   });
 
   it('valid params still parse, and defaults still apply', () => {
+    const getTicket = getTicketTool();
     const parse = createStrictParamsParser(getTicket.inputSchema);
     expect(parse({ ticket_id: 1 })).toEqual({ ticket_id: 1, include_comments: false });
   });
 
   it('an unknown parameter still fails with the exact same message', () => {
+    const getTicket = getTicketTool();
     const parse = createStrictParamsParser(getTicket.inputSchema);
     // Byte-identical to what the compiled path produces (tests/unit/utils/validation.test.ts
     // asserts the same wording) — a client cannot tell the two runtimes apart.
@@ -56,6 +61,7 @@ describe('jitless: the server behaves identically with compilation stood down', 
   });
 
   it('a wrongly typed parameter fails with the exact same message', () => {
+    const getTicket = getTicketTool();
     const parse = createStrictParamsParser(getTicket.inputSchema);
     expect(() => parse({ ticket_id: 'abc' })).toThrow(
       /^Invalid parameter\(s\): ticket_id: Invalid input: expected number, received string$/,
@@ -63,6 +69,7 @@ describe('jitless: the server behaves identically with compilation stood down', 
   });
 
   it('the exposed JSON Schema is unaffected', () => {
+    const getTicket = getTicketTool();
     // toJSONSchema reads the schema definition, never the parse path, so a jitless host
     // advertises the same tool surface. Asserted structurally rather than as a snapshot:
     // the descriptions are load-bearing elsewhere (docs/mcp-metadata.md, the tool-quality

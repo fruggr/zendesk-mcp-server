@@ -31,10 +31,10 @@ const openObjects = (node: JsonSchemaNode, path: string): string[] => [
 
 describe('tool input schemas reject unknown keys at every depth', () => {
   // brandIds 'all' adds the brand_id union to every brand-scoped Help Center tool.
-  const tools = createAllTools(testToolContext({ brandIds: ['all'] }));
+  const tools = () => createAllTools(testToolContext({ brandIds: ['all'] }));
 
   it('every object, nested ones included, is advertised with additionalProperties: false', () => {
-    const violations = tools.flatMap((tool) =>
+    const violations = tools().flatMap((tool) =>
       openObjects(
         toStrictStandardSchema(tool.inputSchema)['~standard'].jsonSchema.input({
           target: 'draft-2020-12',

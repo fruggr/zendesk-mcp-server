@@ -17,7 +17,7 @@ const ctx: ToolContext = testToolContext({
   getToken: () => 'test-token',
 });
 // The /mcp/admin back-office tools are held to the same floor.
-const tools = [
+const toolsOf = async () => [
   ...createAllTools(ctx),
   ...createAdminTools({
     config: makeConfig(),
@@ -92,7 +92,8 @@ const gateReport = (problems: string[]): string =>
   `\nTool definition quality gate failed (${problems.length}):\n\n${problems.join('\n\n')}\n`;
 
 describe('tool definition quality gate', () => {
-  it('RULE A — every parameter description explains the param, not just its name', () => {
+  it('RULE A — every parameter description explains the param, not just its name', async () => {
+    const tools = await toolsOf();
     const problems: string[] = [];
     for (const tool of tools) {
       for (const [name, field] of Object.entries(tool.inputSchema.shape)) {
@@ -120,7 +121,8 @@ describe('tool definition quality gate', () => {
     expect(problems.length, gateReport(problems)).toBe(0);
   });
 
-  it('RULE B — every tool description is more than one sentence', () => {
+  it('RULE B — every tool description is more than one sentence', async () => {
+    const tools = await toolsOf();
     const problems: string[] = [];
     for (const tool of tools) {
       if (countSentences(tool.description) < 2) {
@@ -136,7 +138,8 @@ describe('tool definition quality gate', () => {
     expect(problems.length, gateReport(problems)).toBe(0);
   });
 
-  it('RULE C — every write tool states its return value or resulting state', () => {
+  it('RULE C — every write tool states its return value or resulting state', async () => {
+    const tools = await toolsOf();
     const problems: string[] = [];
     for (const tool of tools) {
       if (!tool.readOnly && !OUTCOME.test(tool.description)) {
