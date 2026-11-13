@@ -1194,7 +1194,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
           )
           .optional()
           .describe(
-            "Attachment IDs to fetch directly (e.g. extracted from a previous list_ticket_comments or get_ticket(include_comments=true) call). When provided, skips the comments fetch entirely; an empty array is rejected, so omit the parameter instead of passing []. When omitted, the attachments of the ticket's comments are returned, read up to a page cap: on a very long thread the scan stops there, and the response says so.",
+            "Attachment IDs to fetch directly (e.g. extracted from a previous list_ticket_comments or get_ticket(include_comments=true) call). When provided, skips the comments fetch entirely. When omitted, the attachments of the ticket's comments are returned, read up to a page cap: on a very long thread the scan stops there, and the response says so.",
           ),
       }),
       annotations: {
