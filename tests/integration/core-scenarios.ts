@@ -777,6 +777,31 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         expect(textOf(proxied)).toBe(expected);
       });
 
+      it('rejects an empty attachment_ids in "all" mode and through a proxy', async () => {
+        const params = { ticket_id: 1, attachment_ids: [] };
+        const expected =
+          "Invalid parameter(s): attachment_ids: attachment_ids cannot be empty: omit it to collect the attachments of the ticket's comments";
+
+        connected = await harness.connect(makeConfig({ mode: 'all' }));
+        const all = await connected.client.callTool({
+          name: 'get_ticket_attachments',
+          arguments: params,
+        });
+        await connected.close();
+        connected = await harness.connect(makeConfig({ mode: 'namespace' }));
+        const proxied = await connected.client.callTool({
+          name: 'zendesk_tickets',
+          arguments: { operation: 'get_ticket_attachments', params },
+        });
+
+        expect(all.isError).toBe(true);
+        expect(textOf(all)).toBe(
+          `Input validation error: Invalid arguments for tool get_ticket_attachments: ${expected}`,
+        );
+        expect(proxied.isError).toBe(true);
+        expect(textOf(proxied)).toBe(expected);
+      });
+
       it('advertises nested objects as closed over the wire, so a client sees the strictness', async () => {
         connected = await harness.connect(makeConfig({ mode: 'all' }));
         const { tools } = await connected.client.listTools();

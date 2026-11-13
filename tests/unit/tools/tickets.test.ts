@@ -941,6 +941,33 @@ describe('ticket tools', () => {
       expect(allText).toContain('report.pdf');
     });
 
+    it('rejects an empty attachment_ids instead of reading it as "scan every comment"', () => {
+      const { inputSchema } = findTool('get_ticket_attachments');
+      const empty = inputSchema.safeParse({ ticket_id: 1, attachment_ids: [] });
+      expect(empty.success).toBe(false);
+      expect(
+        empty.error?.issues.map(({ path, code, message }) => ({ path, code, message })),
+      ).toMatchInlineSnapshot(`
+          [
+            {
+              "code": "too_small",
+              "message": "attachment_ids cannot be empty: omit it to collect the attachments of the ticket's comments",
+              "path": [
+                "attachment_ids",
+              ],
+            },
+          ]
+        `);
+      expect(inputSchema.safeParse({ ticket_id: 1, attachment_ids: [30001] }).success).toBe(true);
+      expect(inputSchema.safeParse({ ticket_id: 1 }).success).toBe(true);
+    });
+
+    it('rejects a zero or negative attachment id', () => {
+      const { inputSchema } = findTool('get_ticket_attachments');
+      expect(inputSchema.safeParse({ ticket_id: 1, attachment_ids: [0] }).success).toBe(false);
+      expect(inputSchema.safeParse({ ticket_id: 1, attachment_ids: [-1] }).success).toBe(false);
+    });
+
     it('fail-softs on unknown attachment_ids', async () => {
       const tool = findTool('get_ticket_attachments');
       const result = await tool.handler({ ticket_id: 1, attachment_ids: [30001, 999999] });
@@ -950,11 +977,13 @@ describe('ticket tools', () => {
       expect(allText).not.toContain('999999');
     });
 
-    it('returns "no attachments" when all attachment_ids are unknown', async () => {
+    it('says the requested ids were not found, not that the ticket has none, when all attachment_ids are unknown', async () => {
       const tool = findTool('get_ticket_attachments');
       const result = await tool.handler({ ticket_id: 1, attachment_ids: [999999] });
       expect(result.content).toHaveLength(1);
-      expect(firstText(result)).toContain('No attachments found');
+      expect(firstText(result)).toMatchInlineSnapshot(
+        `"None of the requested attachment_ids (999999) was found. Omit attachment_ids to collect the attachments of ticket #1's comments."`,
+      );
     });
 
     it('preserves order and image/caption pairing across multiple images', async () => {
