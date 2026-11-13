@@ -19,13 +19,13 @@ const upstreamError = (message: string, status?: number): Error =>
   });
 const refusal = (status: number) =>
   upstreamError(`Zendesk refused the refresh_token grant (${status}).`, status);
-const ring = deriveKeyRing(Buffer.alloc(32, 3).toString('base64'));
+const ring = () => deriveKeyRing(Buffer.alloc(32, 3).toString('base64'));
 
 const setup = (refresh = vi.fn(), logger?: Logger) => {
   const records = createSealedCollection<ZendeskTokenSet>(
     createMemoryStore(),
     'ZendeskTokens',
-    ring,
+    ring(),
   );
   let clock = 1_000_000;
   const grants = createZendeskGrants({
