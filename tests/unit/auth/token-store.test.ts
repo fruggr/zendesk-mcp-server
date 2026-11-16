@@ -1033,6 +1033,15 @@ describe('createTokenStore', () => {
       }
     });
 
+    it('takes a refresh that rejected with no error object for an outage', async () => {
+      seedDisk(EXPIRED);
+      refreshAccessTokenMock.mockRejectedValue(null);
+      startBrowserAuthMock.mockResolvedValue(deferredStarted().started);
+      const store = createTokenStore({ ...CONFIG, siblingSettleMs: 0 });
+
+      await expect(store.getToken()).rejects.toThrow('authentication required');
+    });
+
     it('waits for a sibling on a 401 refusal too', async () => {
       vi.useFakeTimers();
       try {

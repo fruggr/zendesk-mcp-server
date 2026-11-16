@@ -378,8 +378,9 @@ export const createTokenStore = (
   const scheduledRefresh = setInterval(() => {
     // Refresh with the newest refresh token, which a sibling may hold: its own
     // refresh may be hours old, so adopting it alone would not keep us alive.
-    if (!refreshing) adoptSiblingToken();
-    if (token?.refreshToken && !refreshing) {
+    if (refreshing) return;
+    adoptSiblingToken();
+    if (token?.refreshToken) {
       refreshing = tryRefresh(token, { dropOnFailure: false }).finally(() => {
         refreshing = undefined;
       });
