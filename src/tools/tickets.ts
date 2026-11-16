@@ -153,13 +153,14 @@ const buildEmbeddedImageBlocks = async (
 // them all is to walk through every comment page and extract their attachments.
 // `truncated` when the walk stopped at MAX_COMMENT_PAGES with comments left: the
 // caller must say so, or a cut-short list reads as the whole ticket.
-// `done` ends the walk early once the caller has what it needs; an early stop is
-// never `truncated`, which only means the page cap cut the walk short.
+// `done` sees each page as it arrives and ends the walk once the caller has what
+// it needs; an early stop is never `truncated`, which only means the page cap cut
+// the walk short. `newestFirst` reads from the latest comment back.
 const fetchAllTicketComments = async (
   subdomain: string,
   token: string,
   ticketId: number,
-  done?: (comments: ZendeskComment[]) => boolean,
+  { done, newestFirst }: { done?: (page: ZendeskComment[]) => boolean; newestFirst?: boolean } = {},
 ): Promise<{ comments: ZendeskComment[]; truncated: boolean }> => {
   const all: ZendeskComment[] = [];
   let cursor: string | undefined;
@@ -172,10 +173,11 @@ const fetchAllTicketComments = async (
     }>(subdomain, token, `/tickets/${ticketId}/comments`, {
       ...buildCursorParams(MAX_PAGE_SIZE, cursor),
       include_inline_images: 'true',
+      ...(newestFirst && { sort: '-created_at' }),
     });
     all.push(...response.comments);
     pages += 1;
-    if (done?.(all)) break;
+    if (done?.(response.comments)) break;
     if (!response.meta?.has_more || !response.meta?.after_cursor) break;
     cursor = response.meta.after_cursor;
     truncated = pages === MAX_COMMENT_PAGES;
@@ -238,6 +240,8 @@ const attachmentsById = (comments: ZendeskComment[]): Map<number, ZendeskTicketA
 
 // Zendesk's attachment object names no ticket, so the ticket's own comments are
 // the only proof an id belongs to it: read them, stopping once every id is seen.
+// Newest first, as list_ticket_comments lists them: that is where the ids an
+// agent holds usually come from, so the walk tends to stop on its first page.
 const selectTicketAttachments = async (
   subdomain: string,
   token: string,
@@ -245,9 +249,13 @@ const selectTicketAttachments = async (
   requested: number[],
 ): Promise<AttachmentSelection> => {
   const ids = [...new Set(requested)];
-  const walk = await fetchAllTicketComments(subdomain, token, ticketId, (comments) => {
-    const seen = attachmentsById(comments);
-    return ids.every((id) => seen.has(id));
+  const pending = new Set(ids);
+  const walk = await fetchAllTicketComments(subdomain, token, ticketId, {
+    newestFirst: true,
+    done: (page) => {
+      for (const id of attachmentsById(page).keys()) pending.delete(id);
+      return pending.size === 0;
+    },
   });
   const seen = attachmentsById(walk.comments);
   const found = ids.flatMap((id) => seen.get(id) ?? []);
@@ -1278,16 +1286,18 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
         };
         const token = await caller.getToken();
 
-        const { attachments, notices } = attachment_ids
+        const { attachments, notices, uncheckedCount } = attachment_ids
           ? await selectTicketAttachments(subdomain, token, ticket_id, attachment_ids).then(
               (selection) => ({
                 attachments: selection.attachments,
                 notices: selectionNotice(selection, ticket_id),
+                uncheckedCount: selection.unchecked.length,
               }),
             )
           : await fetchAllTicketComments(subdomain, token, ticket_id).then((walk) => ({
               attachments: walk.comments.flatMap((c) => c.attachments ?? []),
               notices: walk.truncated ? [COMMENT_CAP_NOTICE] : [],
+              uncheckedCount: 0,
             }));
 
         if (attachments.length === 0 && attachment_ids) {
@@ -1306,7 +1316,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
         }
         const header: ToolTextContent = {
           type: 'text',
-          text: `# Attachments for ticket #${ticket_id} (${attachments.length} total)`,
+          text: `# Attachments for ticket #${ticket_id} (${attachments.length} total${uncheckedCount ? `, ${uncheckedCount} not checked against the ticket` : ''})`,
         };
         // Right after the header, so the response budget can never drop it.
         const notice: ToolTextContent[] = notices.length

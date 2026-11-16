@@ -953,6 +953,30 @@ describe('ticket tools', () => {
       expect(allText).not.toContain('COMMENT_MAX_PAGES');
     });
 
+    it('reads comments newest first and keeps reading until every id is seen', async () => {
+      const sorts: Array<string | null> = [];
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/comments', ({ request }) => {
+          const url = new URL(request.url);
+          sorts.push(url.searchParams.get('sort'));
+          const second = url.searchParams.get('page[after]') === 'p2';
+          return HttpResponse.json(
+            second
+              ? { comments: [MOCK_COMMENT], meta: { has_more: true, after_cursor: 'p3' } }
+              : {
+                  comments: [{ ...MOCK_COMMENT_NOTE, attachments: [MOCK_TICKET_ATTACHMENT_PDF] }],
+                  meta: { has_more: true, after_cursor: 'p2' },
+                },
+          );
+        }),
+      );
+      const tool = findTool('get_ticket_attachments');
+      // 30002 is on page 1, 30001 only on page 2: one id seen is not enough to stop.
+      const result = await tool.handler({ ticket_id: 1, attachment_ids: [30002, 30001] });
+      expect(sorts).toEqual(['-created_at', '-created_at']);
+      expect(firstText(result)).toBe('# Attachments for ticket #1 (2 total)');
+    });
+
     it('lists each requested attachment once when ids repeat', async () => {
       const tool = findTool('get_ticket_attachments');
       const result = await tool.handler({ ticket_id: 1, attachment_ids: [30002, 30002, 30002] });
@@ -1026,7 +1050,7 @@ describe('ticket tools', () => {
       expect(result.content.slice(0, 2)).toMatchInlineSnapshot(`
         [
           {
-            "text": "# Attachments for ticket #1 (1 total)",
+            "text": "# Attachments for ticket #1 (1 total, 1 not checked against the ticket)",
             "type": "text",
           },
           {
