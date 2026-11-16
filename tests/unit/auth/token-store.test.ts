@@ -1057,6 +1057,19 @@ describe('createTokenStore', () => {
       expect(disk.get(RW_PATH)).toEqual(narrow);
     });
 
+    it('signs in again when the refused record vanished from disk meanwhile', async () => {
+      seedDisk(EXPIRED);
+      refreshAccessTokenMock.mockImplementation(async () => {
+        disk.delete(RW_PATH);
+        throw REFUSED;
+      });
+      startBrowserAuthMock.mockResolvedValue(deferredStarted().started);
+      const store = createTokenStore({ ...CONFIG, siblingSettleMs: 0 });
+
+      await expect(store.getToken()).rejects.toThrow('authentication required');
+      expect(clearTokenMock).not.toHaveBeenCalled();
+    });
+
     it('skips the background refresh when a sibling refreshed since', async () => {
       vi.useFakeTimers();
       try {

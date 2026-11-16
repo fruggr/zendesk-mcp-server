@@ -110,21 +110,23 @@ export const createTokenStore = (
   // use, so a record a sibling wrote supersedes ours: adopt it rather than spend
   // a refresh token it already burned. Why no lockfile:
   // `docs/decisions/token-file-keying.md`.
-  const adoptSiblingToken = (): boolean => {
+  // Zendesk mints a new access token on every refresh and sign-in, so a
+  // different one means a sibling wrote the record.
+  const adoptSiblingToken = (): StoredToken | undefined => {
     const onDisk = loadToken(tokenPath);
     if (
       !onDisk ||
-      (onDisk.accessToken === token?.accessToken && onDisk.refreshToken === token?.refreshToken) ||
+      onDisk.accessToken === token?.accessToken ||
       !grantCovers(onDisk.scope, requested)
     ) {
-      return false;
+      return undefined;
     }
     token = onDisk;
     // The sibling minted or refreshed it moments ago: no probe needed.
     probedUnknownExpiry = true;
     // Stryker disable next-line StringLiteral,CallExpression: log call and event name (role 4).
     logger.info('oauth_token_adopted_from_sibling');
-    return true;
+    return onDisk;
   };
 
   const setToken = (accessToken: string, refreshToken?: string | undefined) => {
@@ -166,13 +168,15 @@ export const createTokenStore = (
     spent: StoredToken,
     dropOnFailure: boolean,
   ): Promise<string | undefined> => {
-    if (adoptSiblingToken()) return token?.accessToken;
+    const early = adoptSiblingToken();
+    if (early) return early.accessToken;
     // Refresh token expired/invalid → drop it so we fall back to a fresh flow.
     // Skipped for the background keepalive, which must keep a still-valid token
     // alive across a transient failure, and so has nothing to wait for.
     if (!dropOnFailure) return undefined;
     await sleep(config.siblingSettleMs ?? SIBLING_SETTLE_MS);
-    if (adoptSiblingToken()) return token?.accessToken;
+    const settled = adoptSiblingToken();
+    if (settled) return settled.accessToken;
     token = undefined;
     if (loadToken(tokenPath)?.refreshToken === spent.refreshToken) {
       clearPersistedToken(tokenPath, logger);
@@ -308,7 +312,8 @@ export const createTokenStore = (
     }
 
     // About to refresh or prompt: a sibling may already have done either.
-    if (adoptSiblingToken() && token && !needsRefresh(token)) return token.accessToken;
+    const adopted = adoptSiblingToken();
+    if (adopted && !needsRefresh(adopted)) return adopted.accessToken;
 
     // Expired, near-expiry, or unknown-expiry but refreshable → refresh silently
     // before falling back to a browser prompt.
