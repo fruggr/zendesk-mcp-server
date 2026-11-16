@@ -37,25 +37,41 @@ vi.mock('../../../src/auth/browser-oauth', () => ({
 }));
 
 // Persistence is mocked so the unit tests never touch the real filesystem; the
-// store's disk interactions are asserted through these spies.
-const loadTokenMock = vi.fn<() => unknown>();
-const saveTokenMock = vi.fn();
-const clearTokenMock = vi.fn();
+// store's disk interactions are asserted through these spies. They keep one
+// record per path, like the files they stand for: the store re-reads the file
+// to see what a sibling process wrote, so a disk that forgot writes would lie.
+const disk = new Map<string, unknown>();
+const loadTokenMock = vi.fn((path: string) => disk.get(path));
+const saveTokenMock = vi.fn((path: string, record: unknown, _logger?: unknown) => {
+  disk.set(path, record);
+});
+const clearTokenMock = vi.fn((path: string, _logger?: unknown) => {
+  disk.delete(path);
+});
+const RW_PATH = '/tmp/testsubdomain--test_client--read_write.json';
+const RO_PATH = '/tmp/testsubdomain--test_client--read.json';
+// What a store finds on disk at startup, whichever surface it serves.
+const seedDisk = (record: unknown) => {
+  disk.set(RW_PATH, record);
+  disk.set(RO_PATH, record);
+};
+// Another read-write server process sharing the file writes its own record.
+const siblingWrites = (record: unknown) => disk.set(RW_PATH, record);
 
 // Mirrors the real keying closely enough to prove the store addresses a file
 // per credential; the derivation itself is token-persistence.test.ts's job.
 vi.mock('../../../src/auth/token-persistence', () => ({
   resolveTokenPath: (key: { subdomain: string; oauthClientId: string; scope: string }) =>
     `/tmp/${key.subdomain}--${key.oauthClientId}--${key.scope.replace(' ', '_')}.json`,
-  loadToken: (...args: unknown[]) => loadTokenMock(...(args as [])),
-  saveToken: (...args: unknown[]) => saveTokenMock(...args),
-  clearToken: (...args: unknown[]) => clearTokenMock(...args),
+  loadToken: (path: string) => loadTokenMock(path),
+  saveToken: (path: string, record: unknown, logger: unknown) =>
+    saveTokenMock(path, record, logger),
+  clearToken: (path: string, logger: unknown) => clearTokenMock(path, logger),
 }));
 
 // Imported after vi.mock so the mocked deps are bound.
-const { createAuthRequiredError, createTokenStore, isAuthRequiredError } = await import(
-  '../../../src/auth/token-store'
-);
+const { createAuthRequiredError, createTokenStore, isAuthRequiredError, SIBLING_SETTLE_MS } =
+  await import('../../../src/auth/token-store');
 
 const CONFIG = { subdomain: 'testsubdomain', oauthClientId: 'test_client', readOnly: false };
 // Same tenant, read-only surface: the store must then ask for the `read` scope
@@ -107,10 +123,10 @@ describe('createTokenStore', () => {
   beforeEach(() => {
     startBrowserAuthMock.mockReset();
     refreshAccessTokenMock.mockReset();
-    loadTokenMock.mockReset();
-    loadTokenMock.mockReturnValue(undefined);
-    saveTokenMock.mockReset();
-    clearTokenMock.mockReset();
+    disk.clear();
+    loadTokenMock.mockClear();
+    saveTokenMock.mockClear();
+    clearTokenMock.mockClear();
   });
 
   it('serves the token current when getToken is called, not one installed after', async () => {
@@ -248,7 +264,7 @@ describe('createTokenStore', () => {
   });
 
   it('reuses a token loaded from disk without starting a browser flow', async () => {
-    loadTokenMock.mockReturnValue({ accessToken: 'disk-token' });
+    seedDisk({ accessToken: 'disk-token' });
     const logger = makeLogger();
     const store = createTokenStore(CONFIG, logger);
 
@@ -288,7 +304,7 @@ describe('createTokenStore', () => {
   it('re-authenticates when the cached grant does not cover the requested scope', async () => {
     // A `read` token cannot be widened: OAuth forbids a refresh from granting
     // more than it was given, so the only way out is a new authorization.
-    loadTokenMock.mockReturnValue({
+    seedDisk({
       accessToken: 'ro',
       refreshToken: 'r1',
       scope: 'read',
@@ -315,7 +331,7 @@ describe('createTokenStore', () => {
   });
 
   it('keeps a broader cached token when running read-only', async () => {
-    loadTokenMock.mockReturnValue({
+    seedDisk({
       accessToken: 'rw',
       refreshToken: 'r1',
       scope: 'read write',
@@ -328,7 +344,7 @@ describe('createTokenStore', () => {
   });
 
   it('treats a record with no scope as the read write grant it was minted under', async () => {
-    loadTokenMock.mockReturnValue({ accessToken: 'legacy', expiresAt: FUTURE() });
+    seedDisk({ accessToken: 'legacy', expiresAt: FUTURE() });
     const store = createTokenStore(CONFIG);
 
     await expect(store.getToken()).resolves.toBe('legacy');
@@ -368,7 +384,7 @@ describe('createTokenStore', () => {
   });
 
   it('keeps the previous grant when the refresh response omits the scope', async () => {
-    loadTokenMock.mockReturnValue({
+    seedDisk({
       accessToken: 'old',
       refreshToken: 'r1',
       scope: 'read',
@@ -434,7 +450,7 @@ describe('createTokenStore', () => {
   });
 
   it('serves a refreshed token rather than rotating for a grant that cannot widen', async () => {
-    loadTokenMock.mockReturnValue({
+    seedDisk({
       accessToken: 'old',
       refreshToken: 'r1',
       scope: 'read write',
@@ -449,7 +465,7 @@ describe('createTokenStore', () => {
   });
 
   it('records an empty reported scope as unchanged rather than as a grant of nothing', async () => {
-    loadTokenMock.mockReturnValue({
+    seedDisk({
       accessToken: 'old',
       refreshToken: 'r1',
       scope: 'read write',
@@ -478,7 +494,7 @@ describe('createTokenStore', () => {
   });
 
   it('preserves the recorded grant when invalidating an access token', async () => {
-    loadTokenMock.mockReturnValue({
+    seedDisk({
       accessToken: 'rw',
       refreshToken: 'r1',
       scope: 'read write',
@@ -496,7 +512,7 @@ describe('createTokenStore', () => {
   });
 
   it('refreshes silently when the cached token is expired, persisting the rotated refresh token', async () => {
-    loadTokenMock.mockReturnValue({
+    seedDisk({
       accessToken: 'old',
       refreshToken: 'r1',
       expiresAt: Date.now() - 1000,
@@ -521,7 +537,7 @@ describe('createTokenStore', () => {
   });
 
   it('falls back to the browser flow when the refresh token is rejected', async () => {
-    loadTokenMock.mockReturnValue({
+    seedDisk({
       accessToken: 'old',
       refreshToken: 'bad',
       expiresAt: Date.now() - 1000,
@@ -548,7 +564,7 @@ describe('createTokenStore', () => {
     });
 
     it('refreshes an expired token silently', async () => {
-      loadTokenMock.mockReturnValue({
+      seedDisk({
         accessToken: 'old',
         refreshToken: 'r1',
         expiresAt: Date.now() - 1000,
@@ -565,7 +581,7 @@ describe('createTokenStore', () => {
     });
 
     it('never opens a browser when only a sign-in would help', async () => {
-      loadTokenMock.mockReturnValue({
+      seedDisk({
         accessToken: 'old',
         refreshToken: 'bad',
         expiresAt: Date.now() - 1000,
@@ -586,7 +602,7 @@ describe('createTokenStore', () => {
   });
 
   it('invalidate drops the in-memory and persisted token when there is no refresh token', async () => {
-    loadTokenMock.mockReturnValue({ accessToken: 'live' });
+    seedDisk({ accessToken: 'live' });
     const store = createTokenStore(CONFIG);
 
     await expect(store.getToken()).resolves.toBe('live');
@@ -599,7 +615,7 @@ describe('createTokenStore', () => {
   });
 
   it('invalidate keeps the refresh token so the next call can refresh silently', async () => {
-    loadTokenMock.mockReturnValue({ accessToken: 'old', refreshToken: 'r1' });
+    seedDisk({ accessToken: 'old', refreshToken: 'r1' });
     refreshAccessTokenMock.mockResolvedValue({ access_token: 'new', refresh_token: 'r2' });
     const store = createTokenStore(CONFIG);
 
@@ -623,7 +639,7 @@ describe('createTokenStore', () => {
   it('proactively refreshes a stored token with no expiresAt before serving it', async () => {
     // A token minted before Zendesk enabled expiration has no expiresAt; it must
     // be refreshed ahead of use, not served until a 401 forces recovery.
-    loadTokenMock.mockReturnValue({ accessToken: 'old', refreshToken: 'r1' });
+    seedDisk({ accessToken: 'old', refreshToken: 'r1' });
     refreshAccessTokenMock.mockResolvedValue({
       access_token: 'new',
       refresh_token: 'r2',
@@ -641,7 +657,7 @@ describe('createTokenStore', () => {
   it('probe-refreshes an unknown-expiry token only once, then trusts it', async () => {
     // Refresh response also omits expires_in → the new token still has no
     // expiresAt. We must not refresh on every subsequent call.
-    loadTokenMock.mockReturnValue({ accessToken: 'old', refreshToken: 'r1' });
+    seedDisk({ accessToken: 'old', refreshToken: 'r1' });
     refreshAccessTokenMock.mockResolvedValue({ access_token: 'new', refresh_token: 'r2' });
     const store = createTokenStore(CONFIG);
 
@@ -654,7 +670,7 @@ describe('createTokenStore', () => {
     // The disk token gets probe-refreshed once, marking the store's probe state.
     // A token later installed via setToken has unknown age, so it must be probed
     // too — the probe state must not leak across tokens.
-    loadTokenMock.mockReturnValue({ accessToken: 'old', refreshToken: 'r1' });
+    seedDisk({ accessToken: 'old', refreshToken: 'r1' });
     refreshAccessTokenMock.mockResolvedValueOnce({
       access_token: 'refreshed',
       refresh_token: 'r2',
@@ -680,7 +696,7 @@ describe('createTokenStore', () => {
   it('coalesces concurrent refreshes into a single network round-trip', async () => {
     // Zendesk rotates the refresh token on every use, so two concurrent refreshes
     // would invalidate each other — the refresh must be exclusive.
-    loadTokenMock.mockReturnValue({
+    seedDisk({
       accessToken: 'old',
       refreshToken: 'r1',
       expiresAt: Date.now() - 1000,
@@ -703,7 +719,7 @@ describe('createTokenStore', () => {
   it('refreshes in the background before an idle token can go stale', async () => {
     vi.useFakeTimers();
     try {
-      loadTokenMock.mockReturnValue({
+      seedDisk({
         accessToken: 'old',
         refreshToken: 'r1',
         // Far from expiry, so getToken alone would never refresh.
@@ -745,7 +761,7 @@ describe('createTokenStore', () => {
   it('keeps the existing token when a background refresh fails transiently', async () => {
     vi.useFakeTimers();
     try {
-      loadTokenMock.mockReturnValue({
+      seedDisk({
         accessToken: 'live',
         refreshToken: 'r1',
         // Far from expiry: the background refresh runs preemptively while the
@@ -770,7 +786,7 @@ describe('createTokenStore', () => {
   it('dispose stops the background refresh timer', async () => {
     vi.useFakeTimers();
     try {
-      loadTokenMock.mockReturnValue({
+      seedDisk({
         accessToken: 'old',
         refreshToken: 'r1',
         expiresAt: Date.now() + 12 * 60 * 60 * 1000,
@@ -795,7 +811,7 @@ describe('createTokenStore', () => {
     vi.useFakeTimers();
     try {
       const expired = { accessToken: 'old', refreshToken: 'r1', expiresAt: Date.now() - 1000 };
-      loadTokenMock.mockReturnValue(expired);
+      seedDisk(expired);
       refreshAccessTokenMock.mockResolvedValueOnce({ access_token: 'a', expires_in: 3600 });
       const timed = createTokenStore(CONFIG);
       await expect(timed.getToken()).resolves.toBe('a');
@@ -806,6 +822,8 @@ describe('createTokenStore', () => {
       );
       timed.dispose();
 
+      // A fresh start from the same expired record, not a sibling of `timed`.
+      seedDisk(expired);
       refreshAccessTokenMock.mockResolvedValueOnce({ access_token: 'b' });
       const untimed = createTokenStore(CONFIG);
       await expect(untimed.getToken()).resolves.toBe('b');
@@ -825,7 +843,7 @@ describe('createTokenStore', () => {
     try {
       refreshAccessTokenMock.mockResolvedValue({ access_token: 'new', expires_in: 3600 });
 
-      loadTokenMock.mockReturnValue({
+      seedDisk({
         accessToken: 'outside',
         refreshToken: 'r1',
         expiresAt: Date.now() + 60_001,
@@ -834,7 +852,7 @@ describe('createTokenStore', () => {
       await expect(outside.getToken()).resolves.toBe('outside');
       outside.dispose();
 
-      loadTokenMock.mockReturnValue({
+      seedDisk({
         accessToken: 'inside',
         refreshToken: 'r1',
         expiresAt: Date.now() + 60_000,
@@ -850,7 +868,7 @@ describe('createTokenStore', () => {
   it('holds a call during a background refresh and serves the token it mints', async () => {
     vi.useFakeTimers();
     try {
-      loadTokenMock.mockReturnValue({
+      seedDisk({
         accessToken: 'old',
         refreshToken: 'r1',
         expiresAt: Date.now() + 12 * 60 * 60 * 1000,
@@ -874,7 +892,7 @@ describe('createTokenStore', () => {
   it('shares one on-demand refresh between callers a failed background refresh released', async () => {
     vi.useFakeTimers();
     try {
-      loadTokenMock.mockReturnValue({
+      seedDisk({
         accessToken: 'old',
         refreshToken: 'r1',
         // Inside the skew window by the time the background tick fires.
@@ -901,7 +919,7 @@ describe('createTokenStore', () => {
   it('skips the background tick while an on-demand refresh is in flight', async () => {
     vi.useFakeTimers();
     try {
-      loadTokenMock.mockReturnValue({
+      seedDisk({
         accessToken: 'old',
         refreshToken: 'r1',
         expiresAt: Date.now() - 1000,
@@ -920,6 +938,163 @@ describe('createTokenStore', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  // Issue #465: one server per project and session, all on one token file. Each
+  // keeps its own copy in memory, and Zendesk rotates the refresh token on use.
+  describe('sibling processes sharing the token file', () => {
+    const EXPIRED = { accessToken: 'old', refreshToken: 'r1', expiresAt: Date.now() - 1000 };
+    const SIBLING = { accessToken: 'sibling', refreshToken: 'r2', expiresAt: FUTURE() };
+    const REFUSED = new Error('Token refresh failed (400): invalid_grant');
+
+    it('adopts a token a sibling refreshed rather than spend the rotated-out one', async () => {
+      seedDisk(EXPIRED);
+      const logger = makeLogger();
+      const store = createTokenStore(CONFIG, logger);
+      siblingWrites(SIBLING);
+
+      await expect(store.getToken()).resolves.toBe('sibling');
+      expect(refreshAccessTokenMock).not.toHaveBeenCalled();
+      expect(startBrowserAuthMock).not.toHaveBeenCalled();
+      expect(logger.info).toHaveBeenCalledWith('oauth_token_adopted_from_sibling');
+    });
+
+    it('serves a sign-in a sibling completed instead of opening another browser', async () => {
+      const store = createTokenStore(CONFIG);
+      siblingWrites(SIBLING);
+
+      await expect(store.getToken()).resolves.toBe('sibling');
+      expect(startBrowserAuthMock).not.toHaveBeenCalled();
+    });
+
+    it('trusts an adopted token of unknown expiry instead of probing it', async () => {
+      const store = createTokenStore(CONFIG);
+      siblingWrites({ accessToken: 'sibling', refreshToken: 'r2' });
+
+      await expect(store.getToken()).resolves.toBe('sibling');
+      expect(refreshAccessTokenMock).not.toHaveBeenCalled();
+    });
+
+    it('refreshes an adopted token that is itself stale, with its own refresh token', async () => {
+      const store = createTokenStore(CONFIG);
+      siblingWrites({ ...EXPIRED, refreshToken: 'r2' });
+      refreshAccessTokenMock.mockResolvedValue({ access_token: 'new', refresh_token: 'r3' });
+
+      await expect(store.getToken()).resolves.toBe('new');
+      expect(refreshAccessTokenMock).toHaveBeenCalledWith(
+        expect.objectContaining({ refreshToken: 'r2' }),
+      );
+    });
+
+    it('ignores a sibling record whose grant does not cover this server', async () => {
+      startBrowserAuthMock.mockResolvedValue(deferredStarted().started);
+      const store = createTokenStore(CONFIG);
+      siblingWrites({ ...SIBLING, scope: 'read' });
+
+      await expect(store.getToken()).rejects.toThrow('authentication required');
+    });
+
+    it('keeps the winner of a rotation race, without waiting, when it wrote first', async () => {
+      vi.useFakeTimers();
+      try {
+        seedDisk(EXPIRED);
+        refreshAccessTokenMock.mockImplementation(async () => {
+          siblingWrites(SIBLING);
+          throw REFUSED;
+        });
+        const store = createTokenStore(CONFIG);
+
+        const call = store.getToken();
+        let served: string | undefined;
+        void call.then((t) => {
+          served = t;
+        });
+        // No timer advanced: a record already on disk is adopted at once.
+        await vi.advanceTimersByTimeAsync(0);
+        expect(served).toBe('sibling');
+        expect(clearTokenMock).not.toHaveBeenCalled();
+        expect(disk.get(RW_PATH)).toEqual(SIBLING);
+        store.dispose();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('waits for the winner of a rotation race to write its token', async () => {
+      vi.useFakeTimers();
+      try {
+        seedDisk(EXPIRED);
+        refreshAccessTokenMock.mockRejectedValue(REFUSED);
+        startBrowserAuthMock.mockResolvedValue(deferredStarted().started);
+        const store = createTokenStore(CONFIG);
+
+        const call = store.getToken();
+        await vi.advanceTimersByTimeAsync(SIBLING_SETTLE_MS - 1);
+        siblingWrites(SIBLING);
+        await vi.advanceTimersByTimeAsync(1);
+
+        await expect(call).resolves.toBe('sibling');
+        expect(startBrowserAuthMock).not.toHaveBeenCalled();
+        expect(clearTokenMock).not.toHaveBeenCalled();
+        store.dispose();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('signs in again but leaves a record it does not own on disk', async () => {
+      seedDisk(EXPIRED);
+      const narrow = { ...SIBLING, scope: 'read' };
+      refreshAccessTokenMock.mockImplementation(async () => {
+        siblingWrites(narrow);
+        throw REFUSED;
+      });
+      startBrowserAuthMock.mockResolvedValue(deferredStarted().started);
+      const store = createTokenStore({ ...CONFIG, siblingSettleMs: 0 });
+
+      await expect(store.getToken()).rejects.toThrow('authentication required');
+      expect(clearTokenMock).not.toHaveBeenCalled();
+      expect(disk.get(RW_PATH)).toEqual(narrow);
+    });
+
+    it('skips the background refresh when a sibling refreshed since', async () => {
+      vi.useFakeTimers();
+      try {
+        seedDisk({
+          accessToken: 'live',
+          refreshToken: 'r1',
+          expiresAt: Date.now() + 12 * 3600_000,
+        });
+        const store = createTokenStore(CONFIG);
+        siblingWrites({ ...SIBLING, expiresAt: Date.now() + 12 * 3600_000 });
+
+        await vi.advanceTimersByTimeAsync(FOUR_HOURS);
+        expect(refreshAccessTokenMock).not.toHaveBeenCalled();
+        await expect(store.getToken()).resolves.toBe('sibling');
+        store.dispose();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('adopts the token a sibling wrote while the background refresh was refused', async () => {
+      vi.useFakeTimers();
+      try {
+        const far = Date.now() + 12 * 3600_000;
+        seedDisk({ accessToken: 'live', refreshToken: 'r1', expiresAt: far });
+        refreshAccessTokenMock.mockImplementation(async () => {
+          siblingWrites({ ...SIBLING, expiresAt: far });
+          throw REFUSED;
+        });
+        const store = createTokenStore(CONFIG);
+
+        await vi.advanceTimersByTimeAsync(FOUR_HOURS);
+        await expect(store.getToken()).resolves.toBe('sibling');
+        store.dispose();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   it('lets the background tick and invalidate run on a store with no token', async () => {

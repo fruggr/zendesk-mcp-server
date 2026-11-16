@@ -108,3 +108,24 @@ unprompted.
 So the second instance fails fast with a message naming the likely cause, and
 the caller's own retry — the same contract the "authenticate and retry" error
 already sets — is what picks the port up once it frees.
+
+## Same key, several processes: the file is re-read, not locked
+
+The key separates servers whose credentials differ. Servers whose credentials
+are the same — one declaration per project, several sessions per project, all
+restarted together — still share one record, and each holds a copy in memory.
+Zendesk rotates the refresh token on use, so the first to refresh (on demand or
+the 4h keepalive) burns the token every sibling holds; the loser used to delete
+the file and open a browser (#465).
+
+So the file is the source of truth whenever the in-memory copy is about to be
+spent: before a refresh or a sign-in, on the keepalive tick, and after a refused
+refresh. A record that differs from ours and covers our scope was written by a
+sibling, and is adopted. A refused refresh waits `SIBLING_SETTLE_MS` for the
+winner of a simultaneous refresh to persist, and deletes the file only if it
+still holds the refresh token just refused.
+
+Two siblings can still refresh at the same instant: one call is refused, and
+the wait above is what covers it, at the cost of one second on a refresh that
+was going to end in a sign-in anyway. Same reasons as the port for not taking a
+lockfile.
