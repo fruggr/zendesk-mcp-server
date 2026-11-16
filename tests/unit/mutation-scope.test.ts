@@ -10,6 +10,8 @@ import {
   scopeMatcher,
   scoreOf,
   specsFor,
+  staticMarkdown,
+  staticReport,
   tallyStatuses,
   // @ts-expect-error -- plain .mjs helper, no declaration file (same as the other
   // script tests in this directory).
@@ -287,5 +289,57 @@ describe('tallyStatuses and scoreOf', () => {
 
   it('returns null rather than dividing by zero on an empty report', () => {
     expect(scoreOf(tallyStatuses({}))).toBeNull();
+  });
+});
+
+// A static mutant reruns the whole suite, and a test that calls src/ code at
+// load turns every mutant of that code static (#449). The baseline counts them
+// against a committed ceiling, so such a call is noticed after one run.
+describe('staticReport', () => {
+  const staticMutant = (status: string, isStatic?: boolean) => ({
+    id: '1',
+    status,
+    ...(isStatic === undefined ? {} : { static: isStatic }),
+  });
+  const report = {
+    files: {
+      'src/a.ts': {
+        mutants: [
+          staticMutant('Killed', true),
+          staticMutant('Killed', false),
+          staticMutant('Killed'),
+        ],
+      },
+      'src/b.ts': { mutants: [staticMutant('Killed', true), staticMutant('Survived', true)] },
+      'src/c.ts': { mutants: [staticMutant('Ignored', true)] },
+    },
+  };
+
+  it('counts static mutants per file, heaviest first, ignored ones left out', () => {
+    expect(staticReport(report, 10)).toEqual({
+      count: 3,
+      max: 10,
+      over: false,
+      byFile: [
+        ['src/b.ts', 2],
+        ['src/a.ts', 1],
+      ],
+    });
+  });
+
+  it('is over only past the ceiling, not at it', () => {
+    expect(staticReport(report, 3).over).toBe(false);
+    expect(staticReport(report, 2).over).toBe(true);
+  });
+
+  it('renders the count, the ceiling and the heaviest files for the job summary', () => {
+    expect(staticMarkdown(staticReport(report, 2))).toMatchInlineSnapshot(`
+      "### Static mutants
+
+      3 static mutants (ceiling 2, exceeded). Heaviest files:
+
+      - src/b.ts: 2
+      - src/a.ts: 1"
+    `);
   });
 });

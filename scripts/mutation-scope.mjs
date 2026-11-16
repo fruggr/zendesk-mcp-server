@@ -31,7 +31,7 @@
 // because its cache key encodes every input incremental mode cannot diff).
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 import { dirname, join, matchesGlob } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -141,6 +141,35 @@ export const scopeMatcher = (patterns) => (path) => {
   }
   return included;
 };
+
+/**
+ * Static mutants (code run outside a test, so each one reruns the whole suite),
+ * per file and against the committed ceiling. Ignored ones never run and are
+ * left out. Pure. ADR section 4.
+ */
+export const staticReport = (report, max) => {
+  const perFile = new Map();
+  for (const [file, fileReport] of Object.entries(report.files ?? {})) {
+    for (const mutant of fileReport.mutants ?? []) {
+      if (mutant.static && mutant.status !== 'Ignored') {
+        perFile.set(file, (perFile.get(file) ?? 0) + 1);
+      }
+    }
+  }
+  const byFile = [...perFile].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const count = byFile.reduce((sum, [, n]) => sum + n, 0);
+  return { count, max, over: count > max, byFile };
+};
+
+/** The static report as Markdown, for the job summary. */
+export const staticMarkdown = ({ count, max, over, byFile }) =>
+  [
+    '### Static mutants',
+    '',
+    `${count} static mutants (ceiling ${max}${over ? ', exceeded' : ''}). Heaviest files:`,
+    '',
+    ...byFile.slice(0, 5).map(([file, n]) => `- ${file}: ${n}`),
+  ].join('\n');
 
 /** Mutation score from a status tally, or null when there is nothing to score. */
 export const scoreOf = (counts) => {
@@ -272,9 +301,22 @@ const summary = async () => {
   console.log(lines.join('\n'));
 };
 
+// stdout for the job summary; `over` and the count also go to $GITHUB_OUTPUT
+// for the alert job. Never fails: a rise is reported, not a broken baseline.
+const staticCheck = async () => {
+  const { reportPath } = await loadConfig();
+  const { max } = JSON.parse(readFileSync(join(repoRoot, 'mutation-static-budget.json'), 'utf8'));
+  const result = staticReport(readReport(reportPath), max);
+  console.log(staticMarkdown(result));
+  if (process.env.GITHUB_OUTPUT) {
+    appendFileSync(process.env.GITHUB_OUTPUT, `count=${result.count}\nover=${result.over}\n`);
+  }
+};
+
 const USAGE =
   'usage: pnpm test:mutation:diff <baseSha> <headSha> [...strykerFlags]\n' +
-  '       pnpm test:mutation:summary';
+  '       pnpm test:mutation:summary\n' +
+  '       pnpm test:mutation:static';
 
 // Only dispatch when run as a program — the exports above are unit-tested.
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
@@ -290,6 +332,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     await diffGate(baseSha, headSha, strykerFlags);
   } else if (command === 'summary') {
     await summary();
+  } else if (command === 'static') {
+    await staticCheck();
   } else {
     console.error(USAGE);
     process.exit(2);

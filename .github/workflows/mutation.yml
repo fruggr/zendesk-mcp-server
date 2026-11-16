@@ -187,6 +187,8 @@ jobs:
     outputs:
       drifted: ${{ steps.drift.outputs.drifted }}
       drift-escalate: ${{ steps.drift.outputs.escalate }}
+      static-count: ${{ steps.static.outputs.count }}
+      static-over: ${{ steps.static.outputs.over }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -280,6 +282,16 @@ jobs:
       - name: Score summary
         if: always()
         run: pnpm test:mutation:summary >> "$GITHUB_STEP_SUMMARY"
+
+      # A test that runs src/ code at load makes every mutant of that code
+      # static, and each static mutant reruns the whole suite (#449). Counted
+      # against mutation-static-budget.json; a rise is reported (alert job),
+      # never a red run. Only after a finished pass: every flag is then fresh.
+      - name: Count static mutants
+        id: static
+        if: steps.stryker.outcome == 'success'
+        continue-on-error: true
+        run: pnpm -s test:mutation:static >> "$GITHUB_STEP_SUMMARY"
 
       # Only after a full pass that finished: a killed one writes nothing, and the
       # merged file is already saved above. An unreadable file is never saved.
@@ -395,6 +407,69 @@ jobs:
                 '  keeps overrunning means the plan needs more shards or chunks.',
                 '- `Full scope`: the merge or the final pass failed; the merged shards are already saved.',
                 'This issue closes itself on the next successful run.',
+                'Background: docs/decisions/mutation-testing.md, section 4.',
+              ].join('\n'),
+            });
+
+      # Past the ceiling at once (static counts are deterministic, unlike
+      # timings): one issue, closed by the first run back under it.
+      - name: Report static mutants
+        if: needs.baseline.result == 'success'
+        uses: actions/github-script@v9
+        env:
+          STATIC_COUNT: ${{ needs.baseline.outputs.static-count }}
+          STATIC_OVER: ${{ needs.baseline.outputs.static-over }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const label = 'mutation-static';
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+            // Empty when the count step did not run or failed: nothing was measured.
+            if (process.env.STATIC_OVER === '') return;
+            const { data: open } = await github.rest.issues.listForRepo({
+              owner, repo, labels: label, state: 'open', per_page: 100,
+            });
+            const issue = open.find((item) => !item.pull_request);
+            const count = process.env.STATIC_COUNT;
+
+            if (process.env.STATIC_OVER !== 'true') {
+              if (issue) {
+                await github.rest.issues.createComment({
+                  owner, repo, issue_number: issue.number,
+                  body: `Back under the ceiling on this run (${count} static mutants): ${runUrl}`,
+                });
+                await github.rest.issues.update({
+                  owner, repo, issue_number: issue.number, state: 'closed', state_reason: 'completed',
+                });
+              }
+              return;
+            }
+            const line = `${count} static mutants on this run, above the ceiling in mutation-static-budget.json: ${runUrl}`;
+            if (issue) {
+              await github.rest.issues.createComment({ owner, repo, issue_number: issue.number, body: line });
+              return;
+            }
+            try {
+              await github.rest.issues.createLabel({
+                owner, repo, name: label, color: 'fbca04',
+                description: 'More static mutants than the committed ceiling',
+              });
+            } catch (err) {
+              if (err.status !== 422) throw err; // 422: the label already exists
+            }
+            await github.rest.issues.create({
+              owner, repo, labels: [label],
+              title: 'Static mutants rose above their ceiling',
+              body: [
+                line,
+                '',
+                'A static mutant sits in code run outside a test, so it reruns the whole suite.',
+                'The usual cause is a test that calls src/ code while it loads (module level or a',
+                '`describe` body): every mutant of that code turns static. Compare the per-file counts',
+                "in the run's job summary (Full scope) with the previous run's, then move the call",
+                'inside the tests. If the new static code is real (a schema or table in src/), raise',
+                '`max` in mutation-static-budget.json and say why in the PR.',
+                'This issue closes itself on the next run under the ceiling.',
                 'Background: docs/decisions/mutation-testing.md, section 4.',
               ].join('\n'),
             });
