@@ -153,10 +153,13 @@ const buildEmbeddedImageBlocks = async (
 // them all is to walk through every comment page and extract their attachments.
 // `truncated` when the walk stopped at MAX_COMMENT_PAGES with comments left: the
 // caller must say so, or a cut-short list reads as the whole ticket.
+// `done` ends the walk early once the caller has what it needs; an early stop is
+// never `truncated`, which only means the page cap cut the walk short.
 const fetchAllTicketComments = async (
   subdomain: string,
   token: string,
   ticketId: number,
+  done?: (comments: ZendeskComment[]) => boolean,
 ): Promise<{ comments: ZendeskComment[]; truncated: boolean }> => {
   const all: ZendeskComment[] = [];
   let cursor: string | undefined;
@@ -172,6 +175,7 @@ const fetchAllTicketComments = async (
     });
     all.push(...response.comments);
     pages += 1;
+    if (done?.(all)) break;
     if (!response.meta?.has_more || !response.meta?.after_cursor) break;
     cursor = response.meta.after_cursor;
     truncated = pages === MAX_COMMENT_PAGES;
@@ -216,6 +220,66 @@ const commentPageOrder = (
   const newestFirst = first === last ? sortOrder === 'desc' : first > last;
   return newestFirst ? 'newest first' : 'oldest first';
 };
+
+const MAX_ATTACHMENT_IDS = 25;
+
+interface AttachmentSelection {
+  attachments: ZendeskTicketAttachment[];
+  /** Absent from a complete walk of the ticket's comments. */
+  notOnTicket: number[];
+  /** Past the comment page cap: fetched directly, ticket not checked. */
+  unchecked: number[];
+  /** Past the page cap and unknown to Zendesk (404). */
+  unknown: number[];
+}
+
+const attachmentsById = (comments: ZendeskComment[]): Map<number, ZendeskTicketAttachment> =>
+  new Map(comments.flatMap((c) => (c.attachments ?? []).map((a) => [a.id, a] as const)));
+
+// Zendesk's attachment object names no ticket, so the ticket's own comments are
+// the only proof an id belongs to it: read them, stopping once every id is seen.
+const selectTicketAttachments = async (
+  subdomain: string,
+  token: string,
+  ticketId: number,
+  requested: number[],
+): Promise<AttachmentSelection> => {
+  const ids = [...new Set(requested)];
+  const walk = await fetchAllTicketComments(subdomain, token, ticketId, (comments) => {
+    const seen = attachmentsById(comments);
+    return ids.every((id) => seen.has(id));
+  });
+  const seen = attachmentsById(walk.comments);
+  const found = ids.flatMap((id) => seen.get(id) ?? []);
+  const missing = ids.filter((id) => !seen.has(id));
+  if (!walk.truncated) {
+    return { attachments: found, notOnTicket: missing, unchecked: [], unknown: [] };
+  }
+  const fetched = await fetchAttachmentsByIds(subdomain, token, missing);
+  const fetchedIds = new Set(fetched.map((a) => a.id));
+  return {
+    attachments: [...found, ...fetched],
+    notOnTicket: [],
+    unchecked: [...fetchedIds],
+    unknown: missing.filter((id) => !fetchedIds.has(id)),
+  };
+};
+
+const selectionNotice = (selection: AttachmentSelection, ticketId: number): string[] => [
+  ...(selection.notOnTicket.length
+    ? [
+        `Not attachments of ticket #${ticketId} (absent from all its comments), so not listed: ${selection.notOnTicket.join(', ')}.`,
+      ]
+    : []),
+  ...(selection.unchecked.length
+    ? [
+        `Not in the first ${MAX_COMMENT_PAGES} pages of comments of ticket #${ticketId}, so listed without checking they belong to it: ${selection.unchecked.join(', ')}.`,
+      ]
+    : []),
+  ...(selection.unknown.length
+    ? [`Unknown to Zendesk, so not listed: ${selection.unknown.join(', ')}.`]
+    : []),
+];
 
 // Fetch specific attachments by id. A 404 is swallowed: attachment ids come
 // from an earlier listing the caller may have been holding for a while, and one
@@ -1192,9 +1256,13 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
             1,
             "attachment_ids cannot be empty: omit it to collect the attachments of the ticket's comments",
           )
+          .max(
+            MAX_ATTACHMENT_IDS,
+            `attachment_ids takes at most ${MAX_ATTACHMENT_IDS} ids: split a longer selection over several calls`,
+          )
           .optional()
           .describe(
-            "Attachment IDs to fetch directly (e.g. extracted from a previous list_ticket_comments or get_ticket(include_comments=true) call). When provided, skips the comments fetch entirely. When omitted, the attachments of the ticket's comments are returned, read up to a page cap: on a very long thread the scan stops there, and the response says so.",
+            "Attachment IDs to fetch (e.g. extracted from a previous list_ticket_comments or get_ticket(include_comments=true) call). When provided, the ticket's comments are read only until every id is found, and an id that is not on the ticket is named rather than listed. When omitted, the attachments of the ticket's comments are returned, read up to a page cap: on a very long thread the scan stops there, and the response says so.",
           ),
       }),
       annotations: {
@@ -1210,22 +1278,28 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
         };
         const token = await caller.getToken();
 
-        const { attachments, truncated } = attachment_ids
-          ? {
-              attachments: await fetchAttachmentsByIds(subdomain, token, attachment_ids),
-              truncated: false,
-            }
+        const { attachments, notices } = attachment_ids
+          ? await selectTicketAttachments(subdomain, token, ticket_id, attachment_ids).then(
+              (selection) => ({
+                attachments: selection.attachments,
+                notices: selectionNotice(selection, ticket_id),
+              }),
+            )
           : await fetchAllTicketComments(subdomain, token, ticket_id).then((walk) => ({
               attachments: walk.comments.flatMap((c) => c.attachments ?? []),
-              truncated: walk.truncated,
+              notices: walk.truncated ? [COMMENT_CAP_NOTICE] : [],
             }));
 
         if (attachments.length === 0 && attachment_ids) {
-          const text = `None of the requested attachment_ids (${attachment_ids.join(', ')}) was found. Omit attachment_ids to collect the attachments of ticket #${ticket_id}'s comments.`;
+          const text = [
+            'None of the requested attachment_ids was listed.',
+            ...notices,
+            `Omit attachment_ids to collect the attachments of ticket #${ticket_id}'s comments.`,
+          ].join(' ');
           return { content: [{ type: 'text', text }] };
         }
         if (attachments.length === 0) {
-          const text = truncated
+          const text = notices.length
             ? `No attachments found on the first ${MAX_COMMENT_PAGES} pages of comments of ticket #${ticket_id}. ${COMMENT_CAP_NOTICE}`
             : `No attachments found on ticket #${ticket_id}.`;
           return { content: [{ type: 'text', text }] };
@@ -1235,8 +1309,8 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
           text: `# Attachments for ticket #${ticket_id} (${attachments.length} total)`,
         };
         // Right after the header, so the response budget can never drop it.
-        const notice: ToolTextContent[] = truncated
-          ? [{ type: 'text', text: COMMENT_CAP_NOTICE }]
+        const notice: ToolTextContent[] = notices.length
+          ? [{ type: 'text', text: notices.join(' ') }]
           : [];
         // `+ 1` is the array's opening bracket; blockCost accounts for a trailing
         // separator per element but nothing for the wrapper itself.

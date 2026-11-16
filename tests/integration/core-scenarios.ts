@@ -802,6 +802,38 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         expect(textOf(proxied)).toBe(expected);
       });
 
+      it('caps attachment_ids at 25 through a proxy too', async () => {
+        const params = {
+          ticket_id: 1,
+          attachment_ids: Array.from({ length: 26 }, (_, i) => i + 1),
+        };
+        connected = await harness.connect(makeConfig({ mode: 'namespace' }));
+        const proxied = await connected.client.callTool({
+          name: 'zendesk_tickets',
+          arguments: { operation: 'get_ticket_attachments', params },
+        });
+        expect(proxied.isError).toBe(true);
+        expect(textOf(proxied)).toBe(
+          'Invalid parameter(s): attachment_ids: attachment_ids takes at most 25 ids: split a longer selection over several calls',
+        );
+      });
+
+      it('names an attachment id that is not on the ticket instead of listing it under the ticket', async () => {
+        connected = await harness.connect(makeConfig({ mode: 'all' }));
+        const result = await connected.client.callTool({
+          name: 'get_ticket_attachments',
+          arguments: { ticket_id: 1, attachment_ids: [30002, 77777] },
+        });
+        const texts = (result.content as Array<{ type: string; text?: string }>)
+          .slice(0, 2)
+          .map((block) => block.text);
+        expect(result.isError).toBeFalsy();
+        expect(texts).toEqual([
+          '# Attachments for ticket #1 (1 total)',
+          'Not attachments of ticket #1 (absent from all its comments), so not listed: 77777.',
+        ]);
+      });
+
       it('advertises nested objects as closed over the wire, so a client sees the strictness', async () => {
         connected = await harness.connect(makeConfig({ mode: 'all' }));
         const { tools } = await connected.client.listTools();

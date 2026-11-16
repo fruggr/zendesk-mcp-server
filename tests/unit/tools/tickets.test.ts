@@ -10,8 +10,10 @@ import {
   commentsMorePageHandler,
   commentsWithUsersSideloadHandler,
   MOCK_COMMENT,
+  MOCK_COMMENT_NOTE,
   MOCK_SLA_SIDELOAD,
   MOCK_TICKET,
+  MOCK_TICKET_ATTACHMENT_PDF,
   MOCK_UPLOAD,
   MOCK_USER,
   MOCK_VIEW,
@@ -924,21 +926,116 @@ describe('ticket tools', () => {
       expect(allText).toContain('download failed: 404');
     });
 
-    it('fetches attachments directly via /attachments/:id when attachment_ids is provided', async () => {
-      let commentsCallCount = 0;
+    it('resolves attachment_ids from the ticket comments, with no per-id fetch', async () => {
+      let commentPages = 0;
+      let attachmentCalls = 0;
       mswServer.use(
         http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/comments', () => {
-          commentsCallCount += 1;
-          return HttpResponse.json({ comments: [] });
+          commentPages += 1;
+          return HttpResponse.json({
+            comments: [MOCK_COMMENT],
+            meta: { has_more: true, after_cursor: 'next' },
+          });
+        }),
+        http.get('https://testsubdomain.zendesk.com/api/v2/attachments/:id', () => {
+          attachmentCalls += 1;
+          return HttpResponse.json({}, { status: 404 });
         }),
       );
       const tool = findTool('get_ticket_attachments');
       const result = await tool.handler({ ticket_id: 1, attachment_ids: [30001, 30002] });
-      expect(commentsCallCount).toBe(0);
+      // Both ids sit on the first page: the walk stops there despite has_more.
+      expect([commentPages, attachmentCalls]).toEqual([1, 0]);
       const allText = allTextOf(result);
       expect(allText).toContain('# Attachments for ticket #1 (2 total)');
       expect(allText).toContain('screenshot.png');
       expect(allText).toContain('report.pdf');
+      expect(allText).not.toContain('COMMENT_MAX_PAGES');
+    });
+
+    it('lists each requested attachment once when ids repeat', async () => {
+      const tool = findTool('get_ticket_attachments');
+      const result = await tool.handler({ ticket_id: 1, attachment_ids: [30002, 30002, 30002] });
+      expect(firstText(result)).toBe('# Attachments for ticket #1 (1 total)');
+      // Header plus a single reference block: no second fetch, no second listing.
+      expect(result.content).toHaveLength(2);
+    });
+
+    it('caps attachment_ids at 25 with a message saying how to proceed', () => {
+      const { inputSchema } = findTool('get_ticket_attachments');
+      const ids = (n: number) => Array.from({ length: n }, (_, i) => i + 1);
+      expect(inputSchema.safeParse({ ticket_id: 1, attachment_ids: ids(25) }).success).toBe(true);
+      const tooMany = inputSchema.safeParse({ ticket_id: 1, attachment_ids: ids(26) });
+      expect(
+        tooMany.error?.issues.map(({ path, code, message }) => ({ path, code, message })),
+      ).toMatchInlineSnapshot(`
+        [
+          {
+            "code": "too_big",
+            "message": "attachment_ids takes at most 25 ids: split a longer selection over several calls",
+            "path": [
+              "attachment_ids",
+            ],
+          },
+        ]
+      `);
+    });
+
+    it('never attributes to the ticket an id absent from all its comments', async () => {
+      let attachmentCalls = 0;
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/attachments/:id', () => {
+          attachmentCalls += 1;
+          return HttpResponse.json({ attachment: { ...MOCK_TICKET_ATTACHMENT_PDF, id: 77777 } });
+        }),
+      );
+      const tool = findTool('get_ticket_attachments');
+      const result = await tool.handler({ ticket_id: 1, attachment_ids: [30002, 77777] });
+      expect(attachmentCalls).toBe(0);
+      expect(result.content.slice(0, 2)).toMatchInlineSnapshot(`
+        [
+          {
+            "text": "# Attachments for ticket #1 (1 total)",
+            "type": "text",
+          },
+          {
+            "text": "Not attachments of ticket #1 (absent from all its comments), so not listed: 77777.",
+            "type": "text",
+          },
+        ]
+      `);
+    });
+
+    it('falls back to a direct fetch past the page cap, flagged as unchecked', async () => {
+      const otherFile = { ...MOCK_TICKET_ATTACHMENT_PDF, id: 88888, file_name: 'later.pdf' };
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/comments', () =>
+          HttpResponse.json({
+            comments: [MOCK_COMMENT_NOTE],
+            meta: { has_more: true, after_cursor: 'next' },
+          }),
+        ),
+        http.get('https://testsubdomain.zendesk.com/api/v2/attachments/:id', ({ params }) =>
+          params['id'] === '88888'
+            ? HttpResponse.json({ attachment: otherFile })
+            : HttpResponse.json({}, { status: 404 }),
+        ),
+      );
+      const tool = findTool('get_ticket_attachments');
+      const result = await tool.handler({ ticket_id: 1, attachment_ids: [88888, 99999] });
+      expect(result.content.slice(0, 2)).toMatchInlineSnapshot(`
+        [
+          {
+            "text": "# Attachments for ticket #1 (1 total)",
+            "type": "text",
+          },
+          {
+            "text": "Not in the first 10 pages of comments of ticket #1, so listed without checking they belong to it: 88888. Unknown to Zendesk, so not listed: 99999.",
+            "type": "text",
+          },
+        ]
+      `);
+      expect(allTextOf(result)).toContain('later.pdf');
     });
 
     it('rejects an empty attachment_ids instead of reading it as "scan every comment"', () => {
@@ -968,13 +1065,13 @@ describe('ticket tools', () => {
       expect(inputSchema.safeParse({ ticket_id: 1, attachment_ids: [-1] }).success).toBe(false);
     });
 
-    it('fail-softs on unknown attachment_ids', async () => {
+    it('lists what it found and names the unknown attachment_ids', async () => {
       const tool = findTool('get_ticket_attachments');
       const result = await tool.handler({ ticket_id: 1, attachment_ids: [30001, 999999] });
       const allText = allTextOf(result);
       expect(allText).toContain('# Attachments for ticket #1 (1 total)');
       expect(allText).toContain('screenshot.png');
-      expect(allText).not.toContain('999999');
+      expect(allText).toContain('999999');
     });
 
     it('says the requested ids were not found, not that the ticket has none, when all attachment_ids are unknown', async () => {
@@ -982,7 +1079,7 @@ describe('ticket tools', () => {
       const result = await tool.handler({ ticket_id: 1, attachment_ids: [999999] });
       expect(result.content).toHaveLength(1);
       expect(firstText(result)).toMatchInlineSnapshot(
-        `"None of the requested attachment_ids (999999) was found. Omit attachment_ids to collect the attachments of ticket #1's comments."`,
+        `"None of the requested attachment_ids was listed. Not attachments of ticket #1 (absent from all its comments), so not listed: 999999. Omit attachment_ids to collect the attachments of ticket #1's comments."`,
       );
     });
 

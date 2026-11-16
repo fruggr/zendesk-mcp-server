@@ -134,12 +134,13 @@ it('exposes the tickets tool surface unchanged', async () => {
           "additionalProperties": false,
           "properties": {
             "attachment_ids": {
-              "description": "Attachment IDs to fetch directly (e.g. extracted from a previous list_ticket_comments or get_ticket(include_comments=true) call). When provided, skips the comments fetch entirely. When omitted, the attachments of the ticket's comments are returned, read up to a page cap: on a very long thread the scan stops there, and the response says so.",
+              "description": "Attachment IDs to fetch (e.g. extracted from a previous list_ticket_comments or get_ticket(include_comments=true) call). When provided, the ticket's comments are read only until every id is found, and an id that is not on the ticket is named rather than listed. When omitted, the attachments of the ticket's comments are returned, read up to a page cap: on a very long thread the scan stops there, and the response says so.",
               "items": {
                 "exclusiveMinimum": 0,
                 "maximum": 9007199254740991,
                 "type": "integer",
               },
+              "maxItems": 25,
               "minItems": 1,
               "type": "array",
             },
