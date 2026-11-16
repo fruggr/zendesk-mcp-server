@@ -106,9 +106,10 @@ describe.each(CASES)('$formatter output names', ({ render, writeTools, notShown 
   const inputsOfTools = () => new Set(writeTools.flatMap(inputsOf));
 
   it('annotates only with an input the write tools really take', () => {
+    const accepted = writeTools.map((tool) => ({ tool, inputs: inputsOf(tool) }));
     for (const { label, input } of fieldsOf().filter((f) => f.input)) {
-      for (const tool of writeTools) {
-        expect(inputsOf(tool), `${label} → ${input} on ${tool}`).toContain(input);
+      for (const { tool, inputs } of accepted) {
+        expect(inputs, `${label} → ${input} on ${tool}`).toContain(input);
       }
     }
   });

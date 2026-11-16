@@ -148,6 +148,10 @@ export const scopeMatcher = (patterns) => (path) => {
  * left out. Pure. ADR section 4.
  */
 export const staticReport = (report, max) => {
+  // `count > undefined` is false: a misspelt key would disarm the guard for good.
+  if (!Number.isFinite(max)) {
+    throw new Error('mutation-static-budget.json must set `max` to a number.');
+  }
   const perFile = new Map();
   for (const [file, fileReport] of Object.entries(report.files ?? {})) {
     for (const mutant of fileReport.mutants ?? []) {

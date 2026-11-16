@@ -474,8 +474,9 @@ test covers what it uses (a memoised value is built by the first test only).
 Static mutants went from 922 to 642. A cold run of `formatting.ts` alone went
 from 21 min to 10 min, with the same 708 mutants killed.
 
-The 633 left are module-level code in `src/`: Zod schemas, lookup tables,
-regexes, and each top-level function's own `ArrowFunction` mutant. Built once at
+Most of the 642 left (633 on the `main` baseline) are module-level code in
+`src/`: Zod schemas, lookup tables, regexes, and each top-level function's own
+`ArrowFunction` mutant. Built once at
 load is the right shape for a server, so `src/` is not reshaped to suit the
 tool, and they keep being measured: `ignoreStatic` (everywhere, or on the
 baseline only) would save about 40 % of a cold run, but cold runs are rare

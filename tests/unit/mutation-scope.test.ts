@@ -332,6 +332,13 @@ describe('staticReport', () => {
     expect(staticReport(report, 2).over).toBe(true);
   });
 
+  it('refuses a ceiling that is not a number, rather than never reporting a rise', () => {
+    expect(() => staticReport(report, undefined)).toThrow(
+      'mutation-static-budget.json must set `max` to a number.',
+    );
+    expect(() => staticReport(report, '660')).toThrow(/must set `max` to a number/);
+  });
+
   it('renders the count, the ceiling and the heaviest files for the job summary', () => {
     expect(staticMarkdown(staticReport(report, 2))).toMatchInlineSnapshot(`
       "### Static mutants

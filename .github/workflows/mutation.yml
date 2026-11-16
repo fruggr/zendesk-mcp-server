@@ -414,7 +414,8 @@ jobs:
       # Past the ceiling at once (static counts are deterministic, unlike
       # timings): one issue, closed by the first run back under it.
       - name: Report static mutants
-        if: needs.baseline.result == 'success'
+        # Independent of the step above: its own API error must not skip this one.
+        if: ${{ !cancelled() && needs.baseline.result == 'success' }}
         uses: actions/github-script@v9
         env:
           STATIC_COUNT: ${{ needs.baseline.outputs.static-count }}

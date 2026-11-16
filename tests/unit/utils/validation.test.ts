@@ -8,11 +8,14 @@ import {
 
 // Parsers are built inside the tests, never at load: Stryker counts code run
 // outside a test as static, and a static mutant reruns the whole suite (#449).
-const pageSchema = z.object({
-  page_size: z.number().int().min(1).max(100).default(100),
-  cursor: z.string().optional(),
-});
-const parse = (params: unknown) => createStrictParamsParser(pageSchema)(params);
+// A fresh schema per call: the parser and the Standard Schema are cached per
+// schema in src, so a shared one would be built by the first test only.
+const pageSchema = () =>
+  z.object({
+    page_size: z.number().int().min(1).max(100).default(100),
+    cursor: z.string().optional(),
+  });
+const parse = (params: unknown) => createStrictParamsParser(pageSchema())(params);
 
 describe('createStrictParamsParser', () => {
   it('returns parsed params and applies defaults for valid input', () => {
@@ -85,22 +88,23 @@ const messageOf = (call: () => unknown): string => {
   throw new Error('expected the call to throw');
 };
 
-const nestedSchema = z.object({
-  ticket_id: z.number().int(),
-  status: z.enum(['open', 'solved']).optional(),
-  brand_id: z.union([z.number().int(), z.string().min(1)]).optional(),
-  followers: z
-    .object({ add: z.array(z.number()).optional(), remove: z.array(z.number()).optional() })
-    .strict()
-    .optional(),
-  custom_fields: z
-    .array(z.object({ id: z.number().int(), value: z.unknown() }).strict())
-    .optional(),
-  settings: z.object({}).strict().optional(),
-  by_locale: z.record(z.string(), z.object({ title: z.string() }).strict()).optional(),
-  levels: z.record(z.enum(['low', 'high']), z.number()).optional(),
-});
-const parseNested = (params: unknown) => createStrictParamsParser(nestedSchema)(params);
+const nestedSchema = () =>
+  z.object({
+    ticket_id: z.number().int(),
+    status: z.enum(['open', 'solved']).optional(),
+    brand_id: z.union([z.number().int(), z.string().min(1)]).optional(),
+    followers: z
+      .object({ add: z.array(z.number()).optional(), remove: z.array(z.number()).optional() })
+      .strict()
+      .optional(),
+    custom_fields: z
+      .array(z.object({ id: z.number().int(), value: z.unknown() }).strict())
+      .optional(),
+    settings: z.object({}).strict().optional(),
+    by_locale: z.record(z.string(), z.object({ title: z.string() }).strict()).optional(),
+    levels: z.record(z.enum(['low', 'high']), z.number()).optional(),
+  });
+const parseNested = (params: unknown) => createStrictParamsParser(nestedSchema())(params);
 
 describe('createStrictParamsParser: message shape (#206)', () => {
   it('names the path of an issue nested in an array of objects, segments joined by dots', () => {
@@ -219,11 +223,7 @@ describe('createStrictParamsParser: unknown keys in nested objects', () => {
 });
 
 describe('toStrictStandardSchema', () => {
-  const schema = z.object({
-    page_size: z.number().int().min(1).max(100).default(100),
-    cursor: z.string().optional(),
-  });
-  const standardOf = () => toStrictStandardSchema(schema)['~standard'];
+  const standardOf = () => toStrictStandardSchema(pageSchema())['~standard'];
 
   it('returns the parsed value, defaults applied, for valid input', () => {
     const standard = standardOf();
@@ -243,17 +243,15 @@ describe('toStrictStandardSchema', () => {
   it('advertises exactly the JSON Schema of the strict zod schema', () => {
     const standard = standardOf();
     const options = { target: 'draft-2020-12' } as const;
-    expect(standard.jsonSchema.input(options)).toEqual(
-      schema.strict()['~standard'].jsonSchema.input(options),
-    );
-    expect(standard.jsonSchema.output(options)).toEqual(
-      schema.strict()['~standard'].jsonSchema.output(options),
-    );
+    const strict = pageSchema().strict()['~standard'];
+    expect(standard.jsonSchema.input(options)).toEqual(strict.jsonSchema.input(options));
+    expect(standard.jsonSchema.output(options)).toEqual(strict.jsonSchema.output(options));
   });
 
   // A 2026-07-28 HTTP request registers its tools on a fresh server: the wrapper
   // and its conversion must outlive the server, or every request redoes them.
   it('wraps a zod schema once', () => {
+    const schema = pageSchema();
     expect(toStrictStandardSchema(schema)).toBe(toStrictStandardSchema(schema));
   });
 
@@ -268,7 +266,7 @@ describe('toStrictStandardSchema', () => {
     expect(standard.jsonSchema.output(draft2020)).not.toBe(input);
     expect(standard.jsonSchema.input(draft07)).not.toBe(input);
     expect(standard.jsonSchema.input(draft07)).toEqual(
-      schema.strict()['~standard'].jsonSchema.input(draft07),
+      pageSchema().strict()['~standard'].jsonSchema.input(draft07),
     );
   });
 
