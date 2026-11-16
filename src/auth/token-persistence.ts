@@ -140,12 +140,13 @@ export const saveToken = (
   path: string,
   record: PersistedToken,
   logger: Logger = silentLogger,
-): void => {
+): boolean => {
   try {
     writeFileAtomic(path, record);
     // Stryker disable BlockStatement: the catch below only logs (role 4).
     // Stryker disable next-line StringLiteral,CallExpression: log call and event name (role 4).
     logger.debug('token_persisted');
+    return true;
   } catch (err) {
     // Stryker restore BlockStatement
     // Never fail the auth flow because the token couldn't be cached to disk.
@@ -153,6 +154,7 @@ export const saveToken = (
     logger.warn('token_persist_failed', {
       error: err instanceof Error ? err.message : String(err),
     });
+    return false;
   }
 };
 

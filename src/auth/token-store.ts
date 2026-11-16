@@ -26,6 +26,13 @@ const SCHEDULED_REFRESH_MS = 4 * 60 * 60 * 1000;
 // requests hit Zendesk together, so the winner's write lands within a round trip.
 export const SIBLING_SETTLE_MS = 1000;
 
+// Zendesk answers a spent or revoked refresh token with a 4xx; a 5xx or a
+// network error says nothing about the token.
+const isRefreshRefused = (err: unknown): boolean => {
+  const status = (err as { status?: unknown } | null)?.status;
+  return status === 400 || status === 401;
+};
+
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
@@ -76,6 +83,9 @@ export const createTokenStore = (
   // Seed the in-memory cache from disk so a restart (notably the Cowork-on-Windows
   // process churn) reuses the existing token instead of re-prompting.
   let token: StoredToken | undefined = loadToken(tokenPath);
+  // The access token the file is known to hold: what we last read there or
+  // wrote successfully. A different one on disk means a sibling wrote it.
+  let knownOnDisk = token?.accessToken;
   if (token) {
     if (grantCovers(token.scope, requested)) {
       logger.debug('oauth_token_loaded_from_disk');
@@ -103,27 +113,22 @@ export const createTokenStore = (
   // trusted — see `needsRefresh`.
   let probedUnknownExpiry = false;
 
-  const persist = (t: StoredToken): void => saveToken(tokenPath, t, logger);
+  const persist = (t: StoredToken): void => {
+    if (saveToken(tokenPath, t, logger)) knownOnDisk = t.accessToken;
+  };
 
-  // Sibling processes (one server per project and session) share this file and
-  // each keeps its own copy in memory. Zendesk rotates the refresh token on every
-  // use, so a record a sibling wrote supersedes ours: adopt it rather than spend
-  // a refresh token it already burned. Why no lockfile:
-  // `docs/decisions/token-file-keying.md`.
-  // Zendesk mints a new access token on every refresh and sign-in, so a
-  // different one means a sibling wrote the record.
+  // Sibling processes share this file, and Zendesk rotates the refresh token on
+  // use: a record a sibling wrote supersedes ours, so adopt it rather than spend
+  // a burned refresh token (`docs/decisions/token-file-keying.md`).
   const adoptSiblingToken = (): StoredToken | undefined => {
     const onDisk = loadToken(tokenPath);
-    if (
-      !onDisk ||
-      onDisk.accessToken === token?.accessToken ||
-      !grantCovers(onDisk.scope, requested)
-    ) {
+    if (!onDisk || onDisk.accessToken === knownOnDisk || !grantCovers(onDisk.scope, requested)) {
       return undefined;
     }
     token = onDisk;
-    // The sibling minted or refreshed it moments ago: no probe needed.
-    probedUnknownExpiry = true;
+    knownOnDisk = onDisk.accessToken;
+    // Its age is unknown, like the record read at startup: probe it once.
+    probedUnknownExpiry = false;
     // Stryker disable next-line StringLiteral,CallExpression: log call and event name (role 4).
     logger.info('oauth_token_adopted_from_sibling');
     return onDisk;
@@ -166,20 +171,25 @@ export const createTokenStore = (
   // dead, and only then is it ours to delete.
   const afterFailedRefresh = async (
     spent: StoredToken,
+    err: unknown,
     dropOnFailure: boolean,
   ): Promise<string | undefined> => {
     const early = adoptSiblingToken();
     if (early) return early.accessToken;
     // Refresh token expired/invalid → drop it so we fall back to a fresh flow.
     // Skipped for the background keepalive, which must keep a still-valid token
-    // alive across a transient failure, and so has nothing to wait for.
+    // alive across a transient failure.
     if (!dropOnFailure) return undefined;
-    await sleep(config.siblingSettleMs ?? SIBLING_SETTLE_MS);
-    const settled = adoptSiblingToken();
-    if (settled) return settled.accessToken;
+    // Only a refusal can mean a sibling won the rotation; a network error cannot.
+    if (isRefreshRefused(err)) {
+      await sleep(config.siblingSettleMs ?? SIBLING_SETTLE_MS);
+      const settled = adoptSiblingToken();
+      if (settled) return settled.accessToken;
+    }
     token = undefined;
     if (loadToken(tokenPath)?.refreshToken === spent.refreshToken) {
       clearPersistedToken(tokenPath, logger);
+      knownOnDisk = undefined;
     }
     return undefined;
   };
@@ -225,7 +235,7 @@ export const createTokenStore = (
       logger.warn('oauth_token_refresh_failed', {
         error: err instanceof Error ? err.message : String(err),
       });
-      return afterFailedRefresh(current, dropOnFailure);
+      return afterFailedRefresh(current, err, dropOnFailure);
     }
   };
 
@@ -341,6 +351,9 @@ export const createTokenStore = (
   // the latter and mark the access token expired, so the next getToken tries a
   // silent refresh before the browser.
   const invalidate = (): void => {
+    // The 401 may be for a token a sibling already replaced: take its record
+    // rather than write our stale one over it.
+    if (adoptSiblingToken()) return;
     if (token?.refreshToken) {
       token = {
         accessToken: token.accessToken,
@@ -352,6 +365,7 @@ export const createTokenStore = (
     } else {
       token = undefined;
       clearPersistedToken(tokenPath, logger);
+      knownOnDisk = undefined;
     }
     // Stryker disable next-line StringLiteral,CallExpression: log call and event name (role 4).
     logger.info('oauth_token_invalidated');
@@ -362,8 +376,9 @@ export const createTokenStore = (
   // window. unref()'d so it never keeps the process (or test runner) alive.
   // stdio-only: HTTP carries a per-session bearer.
   const scheduledRefresh = setInterval(() => {
-    // A sibling that refreshed since our last look kept the credential alive.
-    if (!refreshing && adoptSiblingToken()) return;
+    // Refresh with the newest refresh token, which a sibling may hold: its own
+    // refresh may be hours old, so adopting it alone would not keep us alive.
+    if (!refreshing) adoptSiblingToken();
     if (token?.refreshToken && !refreshing) {
       refreshing = tryRefresh(token, { dropOnFailure: false }).finally(() => {
         refreshing = undefined;

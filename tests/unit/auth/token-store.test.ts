@@ -42,8 +42,9 @@ vi.mock('../../../src/auth/browser-oauth', () => ({
 // to see what a sibling process wrote, so a disk that forgot writes would lie.
 const disk = new Map<string, unknown>();
 const loadTokenMock = vi.fn((path: string) => disk.get(path));
-const saveTokenMock = vi.fn((path: string, record: unknown, _logger?: unknown) => {
+const saveTokenMock = vi.fn((path: string, record: unknown, _logger?: unknown): boolean => {
   disk.set(path, record);
+  return true;
 });
 const clearTokenMock = vi.fn((path: string, _logger?: unknown) => {
   disk.delete(path);
@@ -945,7 +946,9 @@ describe('createTokenStore', () => {
   describe('sibling processes sharing the token file', () => {
     const EXPIRED = { accessToken: 'old', refreshToken: 'r1', expiresAt: Date.now() - 1000 };
     const SIBLING = { accessToken: 'sibling', refreshToken: 'r2', expiresAt: FUTURE() };
-    const REFUSED = new Error('Token refresh failed (400): invalid_grant');
+    const REFUSED = Object.assign(new Error('Token refresh failed (400): invalid_grant'), {
+      status: 400,
+    });
 
     it('adopts a token a sibling refreshed rather than spend the rotated-out one', async () => {
       seedDisk(EXPIRED);
@@ -967,12 +970,85 @@ describe('createTokenStore', () => {
       expect(startBrowserAuthMock).not.toHaveBeenCalled();
     });
 
-    it('trusts an adopted token of unknown expiry instead of probing it', async () => {
+    it('probes an adopted token of unknown expiry once, like one read at startup', async () => {
       const store = createTokenStore(CONFIG);
       siblingWrites({ accessToken: 'sibling', refreshToken: 'r2' });
+      refreshAccessTokenMock.mockResolvedValue({ access_token: 'probed', refresh_token: 'r3' });
 
+      await expect(store.getToken()).resolves.toBe('probed');
+      await expect(store.getToken()).resolves.toBe('probed');
+      expect(refreshAccessTokenMock).toHaveBeenCalledTimes(1);
+      expect(refreshAccessTokenMock).toHaveBeenCalledWith(
+        expect.objectContaining({ refreshToken: 'r2' }),
+      );
+    });
+
+    it('keeps its own token when the file holds an older one it failed to replace', async () => {
+      seedDisk(EXPIRED);
+      refreshAccessTokenMock.mockResolvedValueOnce({
+        access_token: 'mine',
+        refresh_token: 'r2',
+        expires_in: 0,
+      });
+      // The write of the refreshed token fails: the file keeps the old record.
+      saveTokenMock.mockReturnValueOnce(false);
+      const store = createTokenStore(CONFIG);
+      await expect(store.getToken()).resolves.toBe('mine');
+
+      refreshAccessTokenMock.mockResolvedValueOnce({ access_token: 'next', refresh_token: 'r3' });
+      await expect(store.getToken()).resolves.toBe('next');
+      expect(refreshAccessTokenMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ refreshToken: 'r2' }),
+      );
+    });
+
+    it('takes the sibling record on a 401 rather than write its stale one over it', async () => {
+      seedDisk({ accessToken: 'live', refreshToken: 'r1', expiresAt: FUTURE() });
+      const store = createTokenStore(CONFIG);
+      siblingWrites(SIBLING);
+
+      store.invalidate();
+      expect(disk.get(RW_PATH)).toEqual(SIBLING);
       await expect(store.getToken()).resolves.toBe('sibling');
       expect(refreshAccessTokenMock).not.toHaveBeenCalled();
+    });
+
+    it('does not wait for a sibling when the refresh failed for want of a network', async () => {
+      vi.useFakeTimers();
+      try {
+        seedDisk(EXPIRED);
+        refreshAccessTokenMock.mockRejectedValue(new Error('fetch failed'));
+        startBrowserAuthMock.mockResolvedValue(deferredStarted().started);
+        const store = createTokenStore(CONFIG);
+
+        let settled = false;
+        void store.getToken().catch(() => {
+          settled = true;
+        });
+        await vi.advanceTimersByTimeAsync(0);
+        expect(settled).toBe(true);
+        store.dispose();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('waits for a sibling on a 401 refusal too', async () => {
+      vi.useFakeTimers();
+      try {
+        seedDisk(EXPIRED);
+        refreshAccessTokenMock.mockRejectedValue(Object.assign(new Error('x'), { status: 401 }));
+        const store = createTokenStore(CONFIG);
+
+        const call = store.getToken();
+        await vi.advanceTimersByTimeAsync(SIBLING_SETTLE_MS - 1);
+        siblingWrites(SIBLING);
+        await vi.advanceTimersByTimeAsync(1);
+        await expect(call).resolves.toBe('sibling');
+        store.dispose();
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('refreshes an adopted token that is itself stale, with its own refresh token', async () => {
@@ -1070,7 +1146,7 @@ describe('createTokenStore', () => {
       expect(clearTokenMock).not.toHaveBeenCalled();
     });
 
-    it('skips the background refresh when a sibling refreshed since', async () => {
+    it('keeps refreshing in the background, with the refresh token a sibling left', async () => {
       vi.useFakeTimers();
       try {
         seedDisk({
@@ -1078,12 +1154,20 @@ describe('createTokenStore', () => {
           refreshToken: 'r1',
           expiresAt: Date.now() + 12 * 3600_000,
         });
+        refreshAccessTokenMock.mockResolvedValue({
+          access_token: 'kept-alive',
+          refresh_token: 'r3',
+          expires_in: 12 * 3600,
+        });
         const store = createTokenStore(CONFIG);
         siblingWrites({ ...SIBLING, expiresAt: Date.now() + 12 * 3600_000 });
 
         await vi.advanceTimersByTimeAsync(FOUR_HOURS);
-        expect(refreshAccessTokenMock).not.toHaveBeenCalled();
-        await expect(store.getToken()).resolves.toBe('sibling');
+        expect(refreshAccessTokenMock).toHaveBeenCalledTimes(1);
+        expect(refreshAccessTokenMock).toHaveBeenCalledWith(
+          expect.objectContaining({ refreshToken: 'r2' }),
+        );
+        await expect(store.getToken()).resolves.toBe('kept-alive');
         store.dispose();
       } finally {
         vi.useRealTimers();

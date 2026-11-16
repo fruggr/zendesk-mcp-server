@@ -119,13 +119,19 @@ the 4h keepalive) burns the token every sibling holds; the loser used to delete
 the file and open a browser (#465).
 
 So the file is the source of truth whenever the in-memory copy is about to be
-spent: before a refresh or a sign-in, on the keepalive tick, and after a refused
-refresh. A record that differs from ours and covers our scope was written by a
-sibling, and is adopted. A refused refresh waits `SIBLING_SETTLE_MS` for the
-winner of a simultaneous refresh to persist, and deletes the file only if it
-still holds the refresh token just refused.
+spent: before a refresh or a sign-in, on a 401, on the keepalive tick, and after
+a failed refresh. A record whose access token differs from the one the process
+last read or wrote there was written by a sibling, and is adopted when its grant
+covers ours; a write of our own that failed therefore never brings an older
+record back. The keepalive still refreshes after adopting, with the sibling's
+refresh token: the sibling's refresh may be hours old.
 
-Two siblings can still refresh at the same instant: one call is refused, and
-the wait above is what covers it, at the cost of one second on a refresh that
-was going to end in a sign-in anyway. Same reasons as the port for not taking a
-lockfile.
+A *refused* refresh (400/401) waits `SIBLING_SETTLE_MS` for the winner of a
+simultaneous refresh to persist; a network error does not wait, since no sibling
+caused it. The file is then deleted only if it still holds the refresh token
+just refused.
+
+What remains: a sibling's write landing between that last read and the delete
+is lost, and two keepalive ticks at the same instant spend one refresh token
+twice (the loser adopts the winner's record). Both windows are milliseconds
+wide; closing them needs the lockfile rejected above.
