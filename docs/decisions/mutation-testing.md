@@ -457,6 +457,45 @@ reasoning in the diff where a reviewer sees it.
 A PR that changes nothing inside the `mutate` scope skips the run entirely rather
 than reporting a vacuous pass.
 
+### Static mutants: what made them, and what stays
+
+A static mutant sits in code that runs outside any test. Stryker cannot tell
+which tests cover it, so it reruns the whole suite for each one. On the `main`
+baseline of 2026-11-12 (#449), the 922 static mutants (17 % of 5,418, all
+killed) carried 68.6 % of the tests the run executed.
+
+A quarter of that came from the tests, not from `src/`. Stryker counts as static
+any code run outside a test (its Vitest setup names the current test in
+`beforeEach` only, so `beforeAll` counts as outside too), and several test files
+called `src/` while loading, at module level or in a `describe` body: `output-input-names.test.ts` rendered
+every formatter, and a dozen files built the whole tool set, a key ring or a
+parser there. Every mutant in those functions turned static: 289 of them, 25.6 %
+of the tests run. Those calls now run inside the tests, unmemoised so that each
+test covers what it uses (a memoised value is built by the first test only).
+Static mutants went from 922 to 642. A cold run of `formatting.ts` alone went
+from 21 min to 10 min, with the same 708 mutants killed.
+
+Most of the 642 left (633 on the `main` baseline) are module-level code in
+`src/`: Zod schemas, lookup tables, regexes, and each top-level function's own
+`ArrowFunction` mutant. Built once at
+load is the right shape for a server, so `src/` is not reshaped to suit the
+tool, and they keep being measured: `ignoreStatic` (everywhere, or on the
+baseline only) would save about 40 % of a cold run, but cold runs are rare
+since the sharded pipeline and the package-based cache key, and all of these
+mutants are killed today. Revisit if cold runs become frequent again.
+
+**Guard.** A test that calls `src/` code while loading is the one way back, and
+it costs nothing until it does. Each baseline counts the static mutants in its
+report (`pnpm test:mutation:static`; Stryker recomputes the flag on every pass,
+reused results included) against `max` in `mutation-static-budget.json`, writes
+the count and the heaviest files to the job summary, and opens an issue
+labelled `mutation-static` when the count is above the ceiling, closed by the
+next run under it. The ceiling sits a little above the current count: bringing
+back a single load-time `createAllTools` call adds about 28. New real static
+code raises `max` in the same PR, with the reason. It runs on the baseline, not
+in the PR gate: the gate instruments only changed lines, so the other files'
+flags are reused from the baseline and would not show a test-only change.
+
 ### What the gate cannot see
 
 Line-range scoping has one blind spot, and it is a consequence of getting the

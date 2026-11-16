@@ -19,10 +19,14 @@ describe('search tools', () => {
   });
 
   describe('search', () => {
-    const [tool] = withCaller(createSearchTools(ctx), ctx);
-    if (!tool) throw new Error('search tool not registered');
+    const searchTool = () => {
+      const [tool] = withCaller(createSearchTools(ctx), ctx);
+      if (!tool) throw new Error('search tool not registered');
+      return tool;
+    };
 
     it('performs unified search with total count', async () => {
+      const tool = searchTool();
       const result = await tool.handler({ query: 'test', per_page: 100, page: 1 });
       expect(firstText(result)).toContain('Total: 2');
       expect(firstText(result)).toContain('ticket');
@@ -30,6 +34,7 @@ describe('search tools', () => {
     });
 
     it('names the next page in its header while more remain', async () => {
+      const tool = searchTool();
       // The default handler reports count 2; one per page leaves a second page.
       const result = await tool.handler({ query: 'test', per_page: 1, page: 1 });
       expect(firstText(result)?.split('\n')[0]).toBe(
@@ -38,6 +43,7 @@ describe('search tools', () => {
     });
 
     it('searches the only group of the caller for group:me, and says so (#389)', async () => {
+      const tool = searchTool();
       const queries: string[] = [];
       mswServer.use(
         http.get('https://testsubdomain.zendesk.com/api/v2/search', ({ request }) => {
@@ -58,6 +64,7 @@ describe('search tools', () => {
     });
 
     it('defaults to a page of 25 (#388)', () => {
+      const tool = searchTool();
       expect(tool.inputSchema.parse({ query: 'test' })).toMatchObject({ per_page: 25, page: 1 });
     });
 
@@ -69,6 +76,7 @@ describe('search tools', () => {
       );
 
     it('cuts a long ticket description to the shared excerpt', async () => {
+      const tool = searchTool();
       searchReturns([{ ...MOCK_TICKET, result_type: 'ticket', description: 'z'.repeat(500) }], 1);
       const text = firstText(await tool.handler({ query: 'test', per_page: 25, page: 1 }));
       expect(text).toContain(`\n${'z'.repeat(200)}… (excerpt; full text: get_ticket)`);
@@ -76,6 +84,7 @@ describe('search tools', () => {
     });
 
     it('stops at the last whole result and names the call that resumes after it', async () => {
+      const tool = searchTool();
       searchReturns(
         Array.from({ length: 100 }, (_, i) => ({
           ...MOCK_TICKET,
@@ -100,6 +109,7 @@ describe('search tools', () => {
     });
 
     it('is readOnly', () => {
+      const tool = searchTool();
       expect(tool.readOnly).toBe(true);
       expect(tool.annotations.readOnlyHint).toBe(true);
     });

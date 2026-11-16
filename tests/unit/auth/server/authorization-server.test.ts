@@ -46,13 +46,13 @@ const recordingLogger = () => {
 const REVOKE_HINT =
   'Revoked in this process only. Fix the store before restarting: its next successful write persists the removal.';
 
-const RING = deriveKeyRing(Buffer.alloc(32, 7).toString('base64'));
+const RING = () => deriveKeyRing(Buffer.alloc(32, 7).toString('base64'));
 
 const build = (persistent: RecordStore, logger?: Logger, issuer = 'https://mcp.example.com') =>
   createAuthorizationServer({
     config: makeConfig({ transport: 'http' }),
     issuer,
-    ring: RING,
+    ring: RING(),
     persistent,
     isAllowedOrigin: () => false,
     logger,
@@ -73,8 +73,8 @@ const forge = (issuer: string, claims: Record<string, unknown>) =>
       }),
     ),
   )
-    .setProtectedHeader({ alg: 'dir', enc: 'A256GCM', kid: RING[0].accessToken.kid })
-    .encrypt(RING[0].accessToken.key);
+    .setProtectedHeader({ alg: 'dir', enc: 'A256GCM', kid: RING()[0].accessToken.kid })
+    .encrypt(RING()[0].accessToken.key);
 
 /** A store whose reads and deletes in one collection can be made to fail. */
 const faultyStore = () => {
@@ -109,7 +109,7 @@ const faultyStore = () => {
 
 describe('createAuthorizationServer', () => {
   it('hands the MCP endpoint the requestState key of the newest secret', () => {
-    expect(build(createMemoryStore()).requestStateKey).toEqual(RING[0].requestState);
+    expect(build(createMemoryStore()).requestStateKey).toEqual(RING()[0].requestState);
   });
 
   it('names the resource after the issuer', () => {
@@ -254,7 +254,7 @@ describe('createAuthorizationServer', () => {
       as = createAuthorizationServer({
         config: makeConfig({ transport: 'http', ...config }),
         issuer: base,
-        ring: RING,
+        ring: RING(),
         persistent,
         isAllowedOrigin: () => false,
         logger,

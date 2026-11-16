@@ -13,7 +13,7 @@ const ctx: ToolContext = testToolContext({
   subdomain: 'testsubdomain',
   getToken: () => 'test-token',
 });
-const tools = createAllTools(ctx);
+const tools = () => createAllTools(ctx);
 
 // The shim records `bag.fallbackRun` when (and only when) it has installed a compiled fast
 // path on the instance. Reaching into `_zod` is the only way to observe compilation —
@@ -25,7 +25,7 @@ const isCompiled = (schema: z.ZodType): boolean =>
 
 describe('tool input schemas compile', () => {
   it('every tool: the strict input schema compiles without falling back', () => {
-    const violations = tools
+    const violations = tools()
       .filter((tool) => {
         try {
           // `.strict()` is what actually ships — registered in `all` mode (src/server.ts)
@@ -48,7 +48,7 @@ describe('tool input schemas compile', () => {
   it('the proxy dispatch path really compiles, it does not merely could-compile', () => {
     // The default mode (namespace/single) validates params through this parser, so this is
     // the one tool-schema parse in the server that the compiler actually reaches.
-    const tool = tools.find((t) => t.name === 'get_ticket');
+    const tool = tools().find((t) => t.name === 'get_ticket');
     if (!tool) throw new Error('get_ticket is gone — repoint this test at another read tool');
 
     // `.strict()` clones, so the parser holds a schema instance nobody else can reach.

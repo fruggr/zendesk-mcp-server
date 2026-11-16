@@ -201,7 +201,7 @@ describe('createAdapterFactory, key layout and expiry', () => {
   let memoryEntries: Entries;
   let persistent: RecordStore;
   let memory: RecordStore;
-  const ring = deriveKeyRing(OLD);
+  const ring = () => deriveKeyRing(OLD);
 
   beforeEach(() => {
     persistentEntries = new Map();
@@ -211,9 +211,9 @@ describe('createAdapterFactory, key layout and expiry', () => {
   });
   afterEach(() => vi.useRealTimers());
 
-  const adapterFor = (name: string) => createAdapterFactory({ persistent, memory }, ring)(name);
+  const adapterFor = (name: string) => createAdapterFactory({ persistent, memory }, ring())(name);
   const grantIndexOf = (grantId: string) =>
-    createSealedCollection<unknown>(persistent, 'RefreshToken:grant', ring).get(grantId);
+    createSealedCollection<unknown>(persistent, 'RefreshToken:grant', ring()).get(grantId);
 
   it('keys records as <model>:<sha256 of the id>, with per-model grant and uid indexes', async () => {
     await adapterFor('RefreshToken').upsert('rt-1', { grantId: 'g-1', exp: futureExp(60) }, 60);
@@ -283,7 +283,7 @@ describe('createAdapterFactory, key layout and expiry', () => {
 
   it('serialises index updates per grant, so a stalled grant never blocks another', async () => {
     const { store, hold } = holdableStore();
-    const adapter = createAdapterFactory({ persistent: store, memory }, ring)('RefreshToken');
+    const adapter = createAdapterFactory({ persistent: store, memory }, ring())('RefreshToken');
     await adapter.upsert('x', { grantId: 'g2', exp: futureExp(60) }, 60);
     const release = hold((key) => key.endsWith(`:${hashed('g1')}`));
     const stalled = adapter.upsert('a', { grantId: 'g1', exp: futureExp(60) }, 60);
@@ -299,7 +299,7 @@ describe('createAdapterFactory, key layout and expiry', () => {
 
   it('lets a revocation through while another grant is being revoked', async () => {
     const { store, hold } = holdableStore();
-    const adapter = createAdapterFactory({ persistent: store, memory }, ring)('RefreshToken');
+    const adapter = createAdapterFactory({ persistent: store, memory }, ring())('RefreshToken');
     await adapter.upsert('a', { grantId: 'g1', exp: futureExp(60) }, 60);
     await adapter.upsert('b', { grantId: 'g2', exp: futureExp(60) }, 60);
     const release = hold((key) => key.endsWith(`:${hashed('g1')}`));

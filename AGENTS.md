@@ -157,6 +157,11 @@ quality bar still hold — the freedom is from Zendesk's shape, not from craft.)
   `// Stryker disable next-line <mutator>: <reason>` whose reason is one sentence, two
   lines at most, so the dashboard shows only new, untriaged survivors. Rationale, scope
   and costs: `docs/decisions/mutation-testing.md`.
+- A test calls `src/` code inside `it` or `beforeEach`, never at module level, in a
+  `describe` body or in `beforeAll`: Stryker counts code run outside a test as static and
+  reruns the whole suite for each of its mutants. Build fixtures that touch `src/` in a
+  function the tests call. `mutation-static-budget.json` caps the count; ADR §4 ("Static
+  mutants").
 
 ## Planning
 

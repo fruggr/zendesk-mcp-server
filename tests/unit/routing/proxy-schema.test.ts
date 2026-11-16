@@ -158,11 +158,12 @@ describe('buildProxyDescription', () => {
 // edit here. Rationale and how to re-verify the limits:
 // docs/decisions/proxy-schema-surface.md.
 describe('proxy surface budgets (real tool set)', () => {
-  const tools = createAllTools(
-    testToolContext({ subdomain: 'testsubdomain', getToken: () => 'test-token' }),
-  );
+  // The tool set is built inside each test, never at load: Stryker counts code
+  // run outside a test as static, and a static mutant reruns the whole suite (#449).
+  const tools = () =>
+    createAllTools(testToolContext({ subdomain: 'testsubdomain', getToken: () => 'test-token' }));
   const proxies = (readOnly: boolean) => {
-    const filtered = filterTools(tools, { readOnly, namespaces: [...Namespace.options] });
+    const filtered = filterTools(tools(), { readOnly, namespaces: [...Namespace.options] });
     // Titles as `registerToolset` passes them: the title is part of the description.
     return [
       ...[...groupByNamespace(filtered)].map(([namespace, nsTools]) => ({
@@ -173,17 +174,28 @@ describe('proxy surface budgets (real tool set)', () => {
       { name: 'single', title: 'Zendesk', tools: filtered },
     ].map((proxy) => ({ ...proxy, readOnly }));
   };
-  const cases = [...proxies(false), ...proxies(true)];
+  // Named from the namespace enum, which is data; the first test checks that
+  // the real proxies are exactly these.
+  const cases = [false, true].flatMap((readOnly) =>
+    [...Namespace.options, 'single'].map((name) => ({ name, readOnly })),
+  );
+  const proxyOf = (name: string, readOnly: boolean) => {
+    const proxy = proxies(readOnly).find((p) => p.name === name);
+    if (!proxy) throw new Error(`no ${name} proxy (readOnly: ${readOnly})`);
+    return proxy;
+  };
 
   it('covers every namespace plus single mode, full and read-only', () => {
-    expect(cases.map((c) => `${c.name}${c.readOnly ? ' (RO)' : ''}`).sort(byName)).toEqual(
+    const real = [...proxies(false), ...proxies(true)];
+    expect(real.map((c) => `${c.name}${c.readOnly ? ' (RO)' : ''}`).sort(byName)).toEqual(
       [...Namespace.options, 'single'].flatMap((n) => [n, `${n} (RO)`]).sort(byName),
     );
   });
 
   it.each(cases)(
     '$name (readOnly: $readOnly) keeps its description under the client cap, name list included',
-    ({ title, tools: proxyTools, readOnly }) => {
+    ({ name, readOnly }) => {
+      const { title, tools: proxyTools } = proxyOf(name, readOnly);
       const description = buildProxyDescription({ title, tools: proxyTools, readOnly });
       expect(description.length).toBeLessThanOrEqual(MAX_TOOL_DESCRIPTION_LENGTH);
       // The fallback that drops the list exists so the cap can never be crossed;
@@ -195,32 +207,52 @@ describe('proxy surface budgets (real tool set)', () => {
 
   it.each(cases)(
     '$name (readOnly: $readOnly) keeps its "operation" field within the client-verified length',
-    ({ tools: proxyTools }) => {
+    ({ name, readOnly }) => {
       expect(
-        buildOperationFieldDescription(proxyTools).length,
+        buildOperationFieldDescription(proxyOf(name, readOnly).tools).length,
         're-run scripts/probe-mcp-description-cap.mjs before raising VERIFIED_SCHEMA_DESCRIPTION_LENGTH',
       ).toBeLessThanOrEqual(VERIFIED_SCHEMA_DESCRIPTION_LENGTH);
     },
   );
 
-  describe.each(tools.map((tool) => ({ name: tool.name, tool })))('$name signature', ({ tool }) => {
-    const signature = operationSignature(tool);
-    const listed = signature
-      .slice(signature.indexOf('(') + 1, -1)
-      .split(', ')
-      .filter(Boolean);
-    const starred = listed.filter((p) => p.endsWith('*')).map((p) => p.slice(0, -1));
+  describe('every tool signature', () => {
+    const signatures = () =>
+      tools().map((tool) => {
+        const signature = operationSignature(tool);
+        const listed = signature
+          .slice(signature.indexOf('(') + 1, -1)
+          .split(', ')
+          .filter(Boolean);
+        return {
+          tool,
+          listed: listed.map((p) => p.replace(/\*$/, '')).sort(byName),
+          starred: listed
+            .filter((p) => p.endsWith('*'))
+            .map((p) => p.slice(0, -1))
+            .sort(byName),
+        };
+      });
 
     it('lists exactly the parameters the strict parser accepts', () => {
-      expect(listed.map((p) => p.replace(/\*$/, '')).sort(byName)).toEqual(
-        Object.keys(tool.inputSchema.shape).sort(byName),
-      );
+      const mismatches = signatures()
+        .map(({ tool, listed }) => ({
+          name: tool.name,
+          listed,
+          accepted: Object.keys(tool.inputSchema.shape).sort(byName),
+        }))
+        .filter(({ listed, accepted }) => listed.join() !== accepted.join());
+      expect(mismatches).toEqual([]);
     });
 
     // Independent oracle: the JSON Schema `required` a flat-mode client receives.
     it('stars exactly the parameters the JSON Schema marks required', () => {
-      const json = z.toJSONSchema(tool.inputSchema, { io: 'input' }) as { required?: string[] };
-      expect(starred.sort(byName)).toEqual([...(json.required ?? [])].sort(byName));
+      const mismatches = signatures()
+        .map(({ tool, starred }) => {
+          const json = z.toJSONSchema(tool.inputSchema, { io: 'input' }) as { required?: string[] };
+          return { name: tool.name, starred, required: [...(json.required ?? [])].sort(byName) };
+        })
+        .filter(({ starred, required }) => starred.join() !== required.join());
+      expect(mismatches).toEqual([]);
     });
   });
 });

@@ -11,7 +11,7 @@ import {
 
 const CLAUDE = 'https://claude.ai/oauth/mcp-oauth-client-metadata';
 const CLAUDE_CALLBACK = 'https://claude.ai/api/mcp/auth_callback';
-const trusted = trustedClientSet([], true);
+const trusted = () => trustedClientSet([], true);
 
 describe('trustedClientSet', () => {
   it('seeds claude.ai and ChatGPT only', () => {
@@ -64,7 +64,7 @@ describe('canSkipConsent', () => {
   };
 
   it('skips for a trusted client using a listed HTTPS redirect', () => {
-    expect(canSkipConsent(base, trusted)).toBe(true);
+    expect(canSkipConsent(base, trusted())).toBe(true);
   });
 
   it('never matches on the domain: Claude Code on claude.ai still sees the screen', () => {
@@ -75,14 +75,14 @@ describe('canSkipConsent', () => {
           redirectUri: 'http://localhost/callback',
           registeredRedirectUris: ['http://localhost/callback'],
         },
-        trusted,
+        trusted(),
       ),
     ).toBe(false);
   });
 
   it('requires the redirect to be listed in the fetched document', () => {
     expect(
-      canSkipConsent({ ...base, registeredRedirectUris: ['https://claude.ai/other'] }, trusted),
+      canSkipConsent({ ...base, registeredRedirectUris: ['https://claude.ai/other'] }, trusted()),
     ).toBe(false);
   });
 
@@ -91,7 +91,7 @@ describe('canSkipConsent', () => {
     expect(
       canSkipConsent(
         { ...base, redirectUri: loopback, registeredRedirectUris: [loopback] },
-        trusted,
+        trusted(),
       ),
     ).toBe(false);
   });

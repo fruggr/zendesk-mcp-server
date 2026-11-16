@@ -6,7 +6,7 @@ import { createAllTools } from '../../../src/tools/index';
 import { testToolContext } from '../../tool-context';
 
 const ctx: ToolContext = testToolContext({ subdomain: 'testsubdomain', getToken: () => 'token' });
-const allTools = createAllTools(ctx);
+const allTools = () => createAllTools(ctx);
 
 const makeConfig = (overrides: Partial<Config> = {}): Config =>
   ConfigSchema.parse({
@@ -30,20 +30,20 @@ const twoTools = [stub('read_thing', 'tickets', true), stub('write_thing', 'tick
 
 describe('renderToolSurface', () => {
   it('states the knobs in force on the first line', () => {
-    const out = renderToolSurface(makeConfig(), allTools);
+    const out = renderToolSurface(makeConfig(), allTools());
     expect(out.split('\n')[0]).toBe(
       'Mode: namespace | Namespaces: tickets, help_center, users, preferences | Read-only: no',
     );
   });
 
   it('reports read-only mode in the header', () => {
-    const out = renderToolSurface(makeConfig({ readOnly: true }), allTools);
+    const out = renderToolSurface(makeConfig({ readOnly: true }), allTools());
     expect(out.split('\n')[0]).toContain('Read-only: yes');
   });
 
   it('names the --tool filter in the header only when one is set', () => {
-    expect(renderToolSurface(makeConfig(), allTools)).not.toContain('Tool filter');
-    const out = renderToolSurface(makeConfig({ mode: 'all', tools: ['get_ticket'] }), allTools);
+    expect(renderToolSurface(makeConfig(), allTools())).not.toContain('Tool filter');
+    const out = renderToolSurface(makeConfig({ mode: 'all', tools: ['get_ticket'] }), allTools());
     expect(out).toContain('Tool filter: get_ticket');
   });
 
@@ -52,7 +52,7 @@ describe('renderToolSurface', () => {
   it('comma-separates several --tool filters', () => {
     const out = renderToolSurface(
       makeConfig({ mode: 'all', tools: ['get_ticket', 'list_tickets'] }),
-      allTools,
+      allTools(),
     );
     expect(out.split('\n')[0]).toBe(
       'Mode: all | Namespaces: tickets, help_center, users, preferences | Read-only: no' +
@@ -94,13 +94,13 @@ describe('renderToolSurface', () => {
   it('keeps list_promoted_articles when the pre-listing is disabled', () => {
     const enabled = renderToolSurface(
       makeConfig({ mode: 'all', namespaces: ['help_center'] }),
-      allTools,
+      allTools(),
     );
     expect(enabled).toContain('list_promoted_articles');
 
     const disabled = renderToolSurface(
       makeConfig({ mode: 'all', namespaces: ['help_center'], promotedArticles: false }),
-      allTools,
+      allTools(),
     );
     expect(disabled).toContain('list_promoted_articles');
   });
@@ -136,14 +136,14 @@ describe('renderToolSurface', () => {
   });
 
   it('says so plainly when the filters leave nothing', () => {
-    const out = renderToolSurface(makeConfig({ mode: 'all', tools: ['no_such_tool'] }), allTools);
+    const out = renderToolSurface(makeConfig({ mode: 'all', tools: ['no_such_tool'] }), allTools());
     expect(out).toContain('No tools exposed. Check --namespace / --tool / --read-only.');
   });
 
   // The whole point of the flag: seeing that the end-user surface is opt-in
   // without booting a server.
   it('shows no requests proxy under the default namespaces', () => {
-    const out = renderToolSurface(makeConfig(), allTools);
+    const out = renderToolSurface(makeConfig(), allTools());
     expect(out).not.toContain('zendesk_requests');
   });
 
