@@ -289,6 +289,89 @@ const selectionNotice = (selection: AttachmentSelection, ticketId: number): stri
     : []),
 ];
 
+// Measured on a live tenant (#423 spike): images pasted into an HTML email body
+// come back with `inline: true`, re-sent under a new name in every quoted reply,
+// and signature icons weigh well under this. Real files are never inline.
+const SMALL_INLINE_IMAGE_BYTES = 4 * 1024;
+
+const isSmallInlineImage = (attachment: ZendeskTicketAttachment): boolean =>
+  attachment.inline === true &&
+  attachment.content_type.startsWith('image/') &&
+  attachment.size < SMALL_INLINE_IMAGE_BYTES;
+
+// For a whole-ticket listing: real attachments first, so inline images never
+// push them past the embedded-image cap or the response budget; then inline
+// images, each content kept once. A quoted reply renames the copies it carries,
+// so type and size identify them, not the file name.
+const arrangeTicketAttachments = (
+  attachments: ZendeskTicketAttachment[],
+): { attachments: ZendeskTicketAttachment[]; repeatedInline: number } => {
+  const seen = new Set<string>();
+  const inline = attachments.filter((a) => {
+    if (!a.inline) return false;
+    const key = `${a.content_type}:${a.size}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  const real = attachments.filter((a) => !a.inline);
+  const inlineCount = attachments.length - real.length;
+  return { attachments: [...real, ...inline], repeatedInline: inlineCount - inline.length };
+};
+
+const smallInlineReason = (attachment: ZendeskTicketAttachment): string | null =>
+  isSmallInlineImage(attachment)
+    ? `not embedded: inline image under ${SMALL_INLINE_IMAGE_BYTES / 1024} KB, as signature icons are`
+    : null;
+
+const listTicketAttachments = async (subdomain: string, token: string, ticketId: number) => {
+  const walk = await fetchAllTicketComments(subdomain, token, ticketId);
+  const arranged = arrangeTicketAttachments(walk.comments.flatMap((c) => c.attachments ?? []));
+  return {
+    attachments: arranged.attachments,
+    notices: [
+      ...(walk.truncated ? [COMMENT_CAP_NOTICE] : []),
+      ...(arranged.repeatedInline
+        ? [
+            `${arranged.repeatedInline} repeated inline image(s) skipped: same type and size as one already listed, as when a reply quotes an earlier email.`,
+          ]
+        : []),
+    ],
+    uncheckedCount: 0,
+    // A whole-ticket listing keeps its embed slots for content, not signature icons.
+    referenceOnly: smallInlineReason,
+  };
+};
+
+// An explicit selection is embedded as asked: no reference-only rule.
+const pickTicketAttachments = async (
+  subdomain: string,
+  token: string,
+  ticketId: number,
+  ids: number[],
+) => {
+  const selection = await selectTicketAttachments(subdomain, token, ticketId, ids);
+  return {
+    attachments: selection.attachments,
+    notices: selectionNotice(selection, ticketId),
+    uncheckedCount: selection.unchecked.length,
+    referenceOnly: undefined,
+  };
+};
+
+const noAttachmentsText = (ticketId: number, notices: string[], ids?: number[]): string => {
+  if (ids) {
+    return [
+      'None of the requested attachment_ids was listed.',
+      ...notices,
+      `Omit attachment_ids to collect the attachments of ticket #${ticketId}'s comments.`,
+    ].join(' ');
+  }
+  return notices.includes(COMMENT_CAP_NOTICE)
+    ? `No attachments found on the first ${MAX_COMMENT_PAGES} pages of comments of ticket #${ticketId}. ${COMMENT_CAP_NOTICE}`
+    : `No attachments found on ticket #${ticketId}.`;
+};
+
 // Fetch specific attachments by id. A 404 is swallowed: attachment ids come
 // from an earlier listing the caller may have been holding for a while, and one
 // stale id should drop out rather than fail the whole request. Any other error
@@ -372,6 +455,8 @@ const collectAttachmentBlocks = async (
   // What the caller already spends on the same response (its header, and the
   // array wrapper). Counted here or the budget bounds only part of the message.
   consumedBytes = 0,
+  // Images listed as a reference whatever room is left, with the reason given.
+  referenceOnly: (attachment: ZendeskTicketAttachment) => string | null = () => null,
 ): Promise<Array<ToolTextContent | ToolImageContent>> => {
   const blocks: Array<ToolTextContent | ToolImageContent> = [];
   let embeddedCount = 0;
@@ -386,7 +471,9 @@ const collectAttachmentBlocks = async (
   for (const [index, attachment] of attachments.entries()) {
     const reference = formatReference(attachment);
     const isImage = attachment.content_type.startsWith('image/');
-    const skipReason = isImage ? imageSkipReason(attachment, embeddedCount, reference, fits) : null;
+    const skipReason = isImage
+      ? (referenceOnly(attachment) ?? imageSkipReason(attachment, embeddedCount, reference, fits))
+      : null;
 
     const produced: Array<ToolTextContent | ToolImageContent> =
       isImage && !skipReason
@@ -1250,7 +1337,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'Get Zendesk Ticket Attachments',
       description:
-        "Download the files attached to a ticket's comments so you can look at them: images come back embedded inline, other files as text references (file name, id, content type, size, download URL). Use it to see an attached image, or a file's name, size and download URL (only images come back with their content); to learn which files a comment carries, list_ticket_comments already shows their ids. Pass those ids as attachment_ids to fetch only them, or omit it to collect the attachments of the ticket's comments, read up to a page cap (10 pages of 100 comments by default); past it the response says later comments were not scanned, and attachment_ids fetches their files. An image over the per-image size limit or past the embedded-image cap comes back as a reference saying why, and once the response size budget is spent the remaining files are counted as omitted.",
+        "Download the files attached to a ticket's comments so you can look at them: images come back embedded inline, other files as text references (file name, id, content type, size, download URL). Use it to see an attached image, or a file's name, size and download URL (only images come back with their content); to learn which files a comment carries, list_ticket_comments already shows their ids. Pass those ids as attachment_ids to fetch only them, or omit it to collect the attachments of the ticket's comments, read up to a page cap (10 pages of 100 comments by default); past it the response says later comments were not scanned, and attachment_ids fetches their files. Without attachment_ids, files attached to comments come first, then images pasted into email bodies, each kept once (quoted replies repeat them), those under 4 KB (signature icons) as references only. An image over the per-image size limit or past the embedded-image cap comes back as a reference saying why, and once the response size budget is spent the remaining files are counted as omitted.",
       inputSchema: z.object({
         ticket_id: z
           .number()
@@ -1286,33 +1373,16 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
         };
         const token = await caller.getToken();
 
-        const { attachments, notices, uncheckedCount } = attachment_ids
-          ? await selectTicketAttachments(subdomain, token, ticket_id, attachment_ids).then(
-              (selection) => ({
-                attachments: selection.attachments,
-                notices: selectionNotice(selection, ticket_id),
-                uncheckedCount: selection.unchecked.length,
-              }),
-            )
-          : await fetchAllTicketComments(subdomain, token, ticket_id).then((walk) => ({
-              attachments: walk.comments.flatMap((c) => c.attachments ?? []),
-              notices: walk.truncated ? [COMMENT_CAP_NOTICE] : [],
-              uncheckedCount: 0,
-            }));
+        const { attachments, notices, uncheckedCount, referenceOnly } = attachment_ids
+          ? await pickTicketAttachments(subdomain, token, ticket_id, attachment_ids)
+          : await listTicketAttachments(subdomain, token, ticket_id);
 
-        if (attachments.length === 0 && attachment_ids) {
-          const text = [
-            'None of the requested attachment_ids was listed.',
-            ...notices,
-            `Omit attachment_ids to collect the attachments of ticket #${ticket_id}'s comments.`,
-          ].join(' ');
-          return { content: [{ type: 'text', text }] };
-        }
         if (attachments.length === 0) {
-          const text = notices.length
-            ? `No attachments found on the first ${MAX_COMMENT_PAGES} pages of comments of ticket #${ticket_id}. ${COMMENT_CAP_NOTICE}`
-            : `No attachments found on ticket #${ticket_id}.`;
-          return { content: [{ type: 'text', text }] };
+          return {
+            content: [
+              { type: 'text', text: noAttachmentsText(ticket_id, notices, attachment_ids) },
+            ],
+          };
         }
         const header: ToolTextContent = {
           type: 'text',
@@ -1329,6 +1399,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
           token,
           attachments,
           [header, ...notice].reduce((total, block) => total + blockCost(block), 1),
+          referenceOnly,
         );
         return { content: [header, ...notice, ...blocks] };
       },

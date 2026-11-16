@@ -653,7 +653,10 @@ export const MOCK_TICKET_ATTACHMENT_IMAGE = {
   content_url: 'https://testsubdomain.zendesk.com/attachments/token/abc/?name=screenshot.png',
   content_type: 'image/png',
   size: 1024,
-  inline: true,
+  // A file attached to the comment, not an image pasted into an HTML body: a
+  // small inline image is listed by reference only (#423), which is not what
+  // the tests built on this fixture exercise.
+  inline: false,
 };
 
 export const MOCK_TICKET_ATTACHMENT_PDF = {

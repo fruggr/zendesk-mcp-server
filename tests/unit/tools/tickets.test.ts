@@ -926,6 +926,67 @@ describe('ticket tools', () => {
       expect(allText).toContain('download failed: 404');
     });
 
+    describe('HTML-embedded (inline) images, attachment_ids omitted', () => {
+      const image = (id: number, size: number, inline: boolean) => ({
+        id,
+        file_name: `img-${id}.png`,
+        content_url: `https://testsubdomain.zendesk.com/attachments/token/i${id}/?bytes=${size}`,
+        content_type: 'image/png',
+        size,
+        inline,
+      });
+      // Shapes measured by the #423 spike: a pasted screenshot and a signature
+      // icon in the first email, both re-sent under new names in the quoted reply.
+      const screenshot = image(91001, 50_000, true);
+      const icon = image(91002, 1_000, true);
+      const quotedScreenshot = image(91003, 50_000, true);
+      const quotedIcon = image(91004, 1_000, true);
+      const realFile = image(91005, 20_000, false);
+
+      const serveComments = () =>
+        mswServer.use(
+          http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/comments', () =>
+            HttpResponse.json({
+              comments: [
+                { ...MOCK_COMMENT, id: 1, attachments: [icon, screenshot] },
+                { ...MOCK_COMMENT, id: 2, attachments: [quotedScreenshot, quotedIcon, realFile] },
+              ],
+              meta: { has_more: false, after_cursor: '' },
+            }),
+          ),
+        );
+
+      it('lists real attachments first, skips repeated inline images and only references small ones', async () => {
+        serveComments();
+        const tool = findTool('get_ticket_attachments');
+        const result = await tool.handler({ ticket_id: 1 });
+        const shape = result.content.map((block) =>
+          block.type === 'image'
+            ? 'image'
+            : (block as { text: string }).text.replace(/ — https\S+/, ''),
+        );
+        expect(shape).toMatchInlineSnapshot(`
+          [
+            "# Attachments for ticket #1 (3 total)",
+            "2 repeated inline image(s) skipped: same type and size as one already listed, as when a reply quotes an earlier email.",
+            "image",
+            "**img-91005.png** (id 91005, image/png, 20000 bytes)",
+            "**img-91002.png** (id 91002, image/png, 1000 bytes) — not embedded: inline image under 4 KB, as signature icons are",
+            "image",
+            "**img-91001.png** (id 91001, image/png, 50000 bytes)",
+          ]
+        `);
+      });
+
+      it('honours an explicit selection as asked: no reordering, no skipping, small images embedded', async () => {
+        serveComments();
+        const tool = findTool('get_ticket_attachments');
+        const result = await tool.handler({ ticket_id: 1, attachment_ids: [91002, 91004] });
+        expect(firstText(result)).toBe('# Attachments for ticket #1 (2 total)');
+        expect(result.content.filter((block) => block.type === 'image')).toHaveLength(2);
+      });
+    });
+
     it('resolves attachment_ids from the ticket comments, with no per-id fetch', async () => {
       let commentPages = 0;
       let attachmentCalls = 0;
