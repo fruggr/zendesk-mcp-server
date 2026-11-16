@@ -968,7 +968,7 @@ describe('ticket tools', () => {
         expect(shape).toMatchInlineSnapshot(`
           [
             "# Attachments for ticket #1 (3 total)",
-            "2 repeated inline image(s) skipped: same type and size as one already listed, as when a reply quotes an earlier email.",
+            "2 repeated inline attachment(s) skipped (ids 91003, 91004): same type and size as one already listed, as when a reply quotes an earlier email.",
             "image",
             "**img-91005.png** (id 91005, image/png, 20000 bytes)",
             "**img-91002.png** (id 91002, image/png, 1000 bytes) — not embedded: inline image under 4 KB, as signature icons are",
@@ -981,9 +981,30 @@ describe('ticket tools', () => {
       it('honours an explicit selection as asked: no reordering, no skipping, small images embedded', async () => {
         serveComments();
         const tool = findTool('get_ticket_attachments');
-        const result = await tool.handler({ ticket_id: 1, attachment_ids: [91002, 91004] });
-        expect(firstText(result)).toBe('# Attachments for ticket #1 (2 total)');
-        expect(result.content.filter((block) => block.type === 'image')).toHaveLength(2);
+        // Inline before real and small before large: the whole-ticket rules
+        // would reorder, skip the quoted copy and reference the icons.
+        const result = await tool.handler({
+          ticket_id: 1,
+          attachment_ids: [91004, 91002, 91003, 91005],
+        });
+        const shape = result.content.map((block) =>
+          block.type === 'image'
+            ? 'image'
+            : (block as { text: string }).text.replace(/ — https\S+/, ''),
+        );
+        expect(shape).toMatchInlineSnapshot(`
+          [
+            "# Attachments for ticket #1 (4 total)",
+            "image",
+            "**img-91004.png** (id 91004, image/png, 1000 bytes)",
+            "image",
+            "**img-91002.png** (id 91002, image/png, 1000 bytes)",
+            "image",
+            "**img-91003.png** (id 91003, image/png, 50000 bytes)",
+            "image",
+            "**img-91005.png** (id 91005, image/png, 20000 bytes)",
+          ]
+        `);
       });
     });
 

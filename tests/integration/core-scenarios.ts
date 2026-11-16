@@ -834,6 +834,56 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         ]);
       });
 
+      it('lists real attachments before inline ones and names skipped inline copies, through a proxy', async () => {
+        const file = (id: number, inline: boolean) => ({
+          id,
+          file_name: `f-${id}.pdf`,
+          content_url: `https://testsubdomain.zendesk.com/attachments/token/def/?name=f-${id}.pdf`,
+          content_type: 'application/pdf',
+          size: 4,
+          inline,
+        });
+        mswServer.use(
+          http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/comments', () =>
+            HttpResponse.json({
+              comments: [
+                {
+                  id: 1,
+                  body: '',
+                  author_id: 1,
+                  public: true,
+                  created_at: '2026-01-01T00:00:00Z',
+                  attachments: [file(1, true)],
+                },
+                {
+                  id: 2,
+                  body: '',
+                  author_id: 1,
+                  public: true,
+                  created_at: '2026-01-02T00:00:00Z',
+                  attachments: [file(2, true), file(3, false)],
+                },
+              ],
+              meta: { has_more: false, after_cursor: '' },
+            }),
+          ),
+        );
+        connected = await harness.connect(makeConfig({ mode: 'namespace' }));
+        const result = await connected.client.callTool({
+          name: 'zendesk_tickets',
+          arguments: { operation: 'get_ticket_attachments', params: { ticket_id: 1 } },
+        });
+        const texts = (result.content as Array<{ text?: string }>).map((block) =>
+          (block.text ?? '').replace(/ — https\S+/, ''),
+        );
+        expect(texts).toEqual([
+          '# Attachments for ticket #1 (2 total)',
+          '1 repeated inline attachment(s) skipped (ids 2): same type and size as one already listed, as when a reply quotes an earlier email.',
+          '**f-3.pdf** (id 3, application/pdf, 4 bytes)',
+          '**f-1.pdf** (id 1, application/pdf, 4 bytes)',
+        ]);
+      });
+
       it('advertises nested objects as closed over the wire, so a client sees the strictness', async () => {
         connected = await harness.connect(makeConfig({ mode: 'all' }));
         const { tools } = await connected.client.listTools();

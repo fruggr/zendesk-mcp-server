@@ -294,10 +294,9 @@ const selectionNotice = (selection: AttachmentSelection, ticketId: number): stri
 // and signature icons weigh well under this. Real files are never inline.
 const SMALL_INLINE_IMAGE_BYTES = 4 * 1024;
 
+// Only consulted for images (collectAttachmentBlocks).
 const isSmallInlineImage = (attachment: ZendeskTicketAttachment): boolean =>
-  attachment.inline === true &&
-  attachment.content_type.startsWith('image/') &&
-  attachment.size < SMALL_INLINE_IMAGE_BYTES;
+  attachment.inline === true && attachment.size < SMALL_INLINE_IMAGE_BYTES;
 
 // For a whole-ticket listing: real attachments first, so inline images never
 // push them past the embedded-image cap or the response budget; then inline
@@ -305,18 +304,18 @@ const isSmallInlineImage = (attachment: ZendeskTicketAttachment): boolean =>
 // so type and size identify them, not the file name.
 const arrangeTicketAttachments = (
   attachments: ZendeskTicketAttachment[],
-): { attachments: ZendeskTicketAttachment[]; repeatedInline: number } => {
+): { attachments: ZendeskTicketAttachment[]; repeatedInline: number[] } => {
   const seen = new Set<string>();
-  const inline = attachments.filter((a) => {
-    if (!a.inline) return false;
+  const inline: ZendeskTicketAttachment[] = [];
+  const repeatedInline: number[] = [];
+  for (const a of attachments.filter((attachment) => attachment.inline)) {
     const key = `${a.content_type}:${a.size}`;
-    if (seen.has(key)) return false;
+    if (seen.has(key)) repeatedInline.push(a.id);
+    else inline.push(a);
     seen.add(key);
-    return true;
-  });
+  }
   const real = attachments.filter((a) => !a.inline);
-  const inlineCount = attachments.length - real.length;
-  return { attachments: [...real, ...inline], repeatedInline: inlineCount - inline.length };
+  return { attachments: [...real, ...inline], repeatedInline };
 };
 
 const smallInlineReason = (attachment: ZendeskTicketAttachment): string | null =>
@@ -331,9 +330,10 @@ const listTicketAttachments = async (subdomain: string, token: string, ticketId:
     attachments: arranged.attachments,
     notices: [
       ...(walk.truncated ? [COMMENT_CAP_NOTICE] : []),
-      ...(arranged.repeatedInline
+      // Ids named so a wrong match (two contents of equal size) stays reachable.
+      ...(arranged.repeatedInline.length
         ? [
-            `${arranged.repeatedInline} repeated inline image(s) skipped: same type and size as one already listed, as when a reply quotes an earlier email.`,
+            `${arranged.repeatedInline.length} repeated inline attachment(s) skipped (ids ${arranged.repeatedInline.join(', ')}): same type and size as one already listed, as when a reply quotes an earlier email.`,
           ]
         : []),
     ],
@@ -342,6 +342,8 @@ const listTicketAttachments = async (subdomain: string, token: string, ticketId:
     referenceOnly: smallInlineReason,
   };
 };
+
+const embedAsAsked = (): null => null;
 
 // An explicit selection is embedded as asked: no reference-only rule.
 const pickTicketAttachments = async (
@@ -355,7 +357,7 @@ const pickTicketAttachments = async (
     attachments: selection.attachments,
     notices: selectionNotice(selection, ticketId),
     uncheckedCount: selection.unchecked.length,
-    referenceOnly: undefined,
+    referenceOnly: embedAsAsked,
   };
 };
 
@@ -1357,7 +1359,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
           )
           .optional()
           .describe(
-            "Attachment IDs to fetch (e.g. extracted from a previous list_ticket_comments or get_ticket(include_comments=true) call). When provided, the ticket's comments are read only until every id is found, and an id that is not on the ticket is named rather than listed. When omitted, the attachments of the ticket's comments are returned, read up to a page cap: on a very long thread the scan stops there, and the response says so.",
+            "Attachment IDs to fetch (e.g. extracted from a previous list_ticket_comments or get_ticket(include_comments=true) call). When provided, the ticket's comments are read only until every id is found, and an id that is not on the ticket is named rather than listed. When omitted, the attachments of the ticket's comments are returned (repeated inline images once), read up to a page cap: on a very long thread the scan stops there, and the response says so.",
           ),
       }),
       annotations: {
