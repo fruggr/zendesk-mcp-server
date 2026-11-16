@@ -97,7 +97,13 @@ const walkComments = async (
       `GET /tickets/${ticketId}/comments include_inline_images=${inline}`,
       () => zendeskGet<CommentsPage>(subdomain, token, `/tickets/${ticketId}/comments`, params),
     );
-    if (!response) return all.length ? all : undefined;
+    // A partial walk would make every attachment of the unfetched pages look
+    // like it appears with one flag only: discard it rather than skew Q2.
+    if (!response) {
+      if (all.length)
+        console.log(`  (partial walk: ${all.length} comments before failure, discarded)`);
+      return undefined;
+    }
     all.push(...response.comments);
     if (!response.meta?.has_more || !response.meta.after_cursor) break;
     cursor = response.meta.after_cursor;
