@@ -316,15 +316,23 @@ describe('staticReport', () => {
   };
 
   it('counts static mutants per file, heaviest first, ignored ones left out', () => {
-    expect(staticReport(report, 10)).toEqual({
-      count: 3,
-      max: 10,
-      over: false,
-      byFile: [
-        ['src/b.ts', 2],
-        ['src/a.ts', 1],
-      ],
-    });
+    expect(staticReport(report, 10)).toMatchInlineSnapshot(`
+      {
+        "byFile": [
+          [
+            "src/b.ts",
+            2,
+          ],
+          [
+            "src/a.ts",
+            1,
+          ],
+        ],
+        "count": 3,
+        "max": 10,
+        "over": false,
+      }
+    `);
   });
 
   it('is over only past the ceiling, not at it', () => {

@@ -465,8 +465,9 @@ baseline of 2026-11-12 (#449), the 922 static mutants (17 % of 5,418, all
 killed) carried 68.6 % of the tests the run executed.
 
 A quarter of that came from the tests, not from `src/`. Stryker counts as static
-any code run outside a test, and several test files called `src/` while loading,
-at module level or in a `describe` body: `output-input-names.test.ts` rendered
+any code run outside a test (its Vitest setup names the current test in
+`beforeEach` only, so `beforeAll` counts as outside too), and several test files
+called `src/` while loading, at module level or in a `describe` body: `output-input-names.test.ts` rendered
 every formatter, and a dozen files built the whole tool set, a key ring or a
 parser there. Every mutant in those functions turned static: 289 of them, 25.6 %
 of the tests run. Those calls now run inside the tests, unmemoised so that each
