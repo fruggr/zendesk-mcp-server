@@ -1112,6 +1112,8 @@ describe('createTokenStore', () => {
         const store = createTokenStore({ ...CONFIG, siblingSettleMs: 0 });
 
         await vi.advanceTimersByTimeAsync(FOUR_HOURS);
+        // Lets any settle wait the refusal might start run out.
+        await vi.advanceTimersByTimeAsync(SIBLING_SETTLE_MS);
         expect(refreshAccessTokenMock).toHaveBeenLastCalledWith(
           expect.objectContaining({ refreshToken: 'r2' }),
         );
