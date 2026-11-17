@@ -131,8 +131,12 @@ spike before the plan is written (`.claude/skills/probe-spike`). Conventions:
   resolved, and prints only the headers it asks about.
 - Credentials from `live-auth.ts`, never from the caller.
 - Print keys, ids, stages, timestamps and numbers, never subjects, bodies or
-  names, so the output can go in a PR comment as is.
+  names. This is best effort, not a guarantee: whoever runs the probe redacts
+  the output before posting it.
 - A step that fails is a finding: report it and carry on.
+- A probe is disposable: review it for safety (GETs only, the token never
+  printed or exported) and for counts that would skew its answers, not for
+  polish, robustness or edge-case naming.
 - Keep a probe while its question can come back; the history holds the ones
   dropped once answered (`git log --diff-filter=D -- 'scripts/probe-*'`).
 

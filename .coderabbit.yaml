@@ -72,6 +72,14 @@ reviews:
           without reading the source.
         Also flag factual claims about Zendesk API behavior (tags, locales,
         pagination) that look unverified or wrong.
+    - path: 'scripts/probe-*.ts'
+      instructions: |
+        Probes are disposable, read-only spike scripts run by hand
+        (docs/live-testing.md, Probes). Flag only: a call that writes to
+        Zendesk, the token printed or exported, or a count that would skew the
+        answers the probe exists to give. Do not raise style, robustness,
+        comment or edge-case output-hygiene findings: the person running the
+        probe redacts its output before posting it.
     - path: 'tests/**'
       instructions: |
         Zendesk API calls in tests must go through MSW handlers in

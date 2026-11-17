@@ -44,8 +44,8 @@ MCP tools, or already pinned by a mock that a live run confirmed.
    - **Human hand-offs**: say exactly what to ask the human when the tenant
      lacks the state a question needs (a view column, an SLA policy). The
      executor asks; it never changes the tenant itself.
-   - **Report shape**: one section per question, then anomalies, then the raw
-     probe output in a collapsed `<details>` block.
+   - **Report shape**: one section per question, then anomalies, then the
+     probe output, redacted, in a collapsed `<details>` block.
 4. **Subscribe to the PR** and wait for the report. Do not start coding.
 
 ## Executor side
@@ -56,6 +56,9 @@ You are handed a PR whose description holds a `## Spike protocol`. Run it
 - Follow the hard rules. When a step fails for lack of credentials or egress,
   report it as `BLOCKED`; do not work around it with a token or a raw HTTP call.
 - Run every step even when an earlier one fails: a failure is a finding.
+- Before posting, redact the probe output: replace any subject, body, name,
+  email or tenant URL with a placeholder (`<name>`, `<subject>`). Review bots
+  do not check probe output hygiene; this step is the safeguard.
 - Report facts, not recommendations: what Zendesk returned, where, in what
   format. The plan is the author's call.
 - Post one PR comment in English, shaped as the protocol asks, and state your
