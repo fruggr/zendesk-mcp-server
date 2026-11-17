@@ -1,3 +1,17 @@
+## [3.11.0](https://github.com/fruggr/zendesk-mcp-server/compare/v3.10.2...v3.11.0) (2026-11-17)
+
+### Features
+
+* **tools:** optimise get_ticket_attachments (empty, bounded, ticket-checked selection; embedded images) ([#457](https://github.com/fruggr/zendesk-mcp-server/issues/457)) ([e957e60](https://github.com/fruggr/zendesk-mcp-server/commit/e957e60352585bad98553a947d2ee2460e65deff)), closes [#423](https://github.com/fruggr/zendesk-mcp-server/issues/423), references [#423](https://github.com/fruggr/zendesk-mcp-server/issues/423) [#T](https://github.com/fruggr/zendesk-mcp-server/issues/T) [#7576](https://github.com/fruggr/zendesk-mcp-server/issues/7576) [#7576](https://github.com/fruggr/zendesk-mcp-server/issues/7576)
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Chores
+
+* **review:** scope probe reviews to safety, not polish ([#468](https://github.com/fruggr/zendesk-mcp-server/issues/468)) ([1cd8c12](https://github.com/fruggr/zendesk-mcp-server/commit/1cd8c12cf2d73e76ebf80725c4f40a13bc2213c2)), references [#457](https://github.com/fruggr/zendesk-mcp-server/issues/457) [#457](https://github.com/fruggr/zendesk-mcp-server/issues/457)
+</details>
+
 ## [3.10.2](https://github.com/fruggr/zendesk-mcp-server/compare/v3.10.1...v3.10.2) (2026-11-17)
 
 ### Bug Fixes
