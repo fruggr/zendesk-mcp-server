@@ -148,35 +148,44 @@ const buildEmbeddedImageBlocks = async (
   ];
 };
 
-// Zendesk has no endpoint to list a ticket's attachments directly.
-// Attachments are always attached to comments, so the only way to collect
-// them all is to walk through every comment page and extract their attachments.
-// `truncated` when the walk stopped at MAX_COMMENT_PAGES with comments left: the
-// caller must say so, or a cut-short list reads as the whole ticket.
+// Zendesk lists attachments only on comments, hence the walk. `truncated`: the
+// page cap cut it short, which the caller must say. `complete`: every comment was
+// read or `done` had enough; an offset-paged answer leaves it false.
 const fetchAllTicketComments = async (
   subdomain: string,
   token: string,
   ticketId: number,
-): Promise<{ comments: ZendeskComment[]; truncated: boolean }> => {
+  { done, newestFirst }: { done?: (page: ZendeskComment[]) => boolean; newestFirst?: boolean } = {},
+): Promise<{ comments: ZendeskComment[]; truncated: boolean; complete: boolean }> => {
   const all: ZendeskComment[] = [];
   let cursor: string | undefined;
   let pages = 0;
   let truncated = false;
+  let complete = false;
   while (pages < MAX_COMMENT_PAGES) {
     const response = await zendeskGet<{
       comments: ZendeskComment[];
       meta?: { has_more: boolean; after_cursor: string };
+      next_page?: string | null;
     }>(subdomain, token, `/tickets/${ticketId}/comments`, {
       ...buildCursorParams(MAX_PAGE_SIZE, cursor),
       include_inline_images: 'true',
+      ...(newestFirst && { sort: '-created_at' }),
     });
     all.push(...response.comments);
     pages += 1;
-    if (!response.meta?.has_more || !response.meta?.after_cursor) break;
+    if (done?.(response.comments)) {
+      complete = true;
+      break;
+    }
+    if (!response.meta?.has_more || !response.meta?.after_cursor) {
+      complete = !response.meta?.has_more && response.next_page == null;
+      break;
+    }
     cursor = response.meta.after_cursor;
     truncated = pages === MAX_COMMENT_PAGES;
   }
-  return { comments: all, truncated };
+  return { comments: all, truncated, complete };
 };
 
 const COMMENT_CAP_NOTICE = `Comment scan stopped at its page cap (${MAX_COMMENT_PAGES} pages, COMMENT_MAX_PAGES): attachments on any later comments are not listed. Pass attachment_ids taken from list_ticket_comments to fetch them.`;
@@ -215,6 +224,159 @@ const commentPageOrder = (
   const last = comments.at(-1)?.created_at ?? '';
   const newestFirst = first === last ? sortOrder === 'desc' : first > last;
   return newestFirst ? 'newest first' : 'oldest first';
+};
+
+const MAX_ATTACHMENT_IDS = 25;
+
+interface AttachmentSelection {
+  attachments: ZendeskTicketAttachment[];
+  /** Absent from a complete walk of the ticket's comments. */
+  notOnTicket: number[];
+  /** Past the comment page cap: fetched directly, ticket not checked. */
+  unchecked: number[];
+  /** Past the page cap and unknown to Zendesk (404). */
+  unknown: number[];
+}
+
+const attachmentsById = (comments: ZendeskComment[]): Map<number, ZendeskTicketAttachment> =>
+  new Map(comments.flatMap((c) => (c.attachments ?? []).map((a) => [a.id, a] as const)));
+
+// Zendesk's attachment object names no ticket, so the ticket's own comments are
+// the only proof an id belongs to it: read them, stopping once every id is seen.
+// Newest first, as list_ticket_comments lists them: that is where the ids an
+// agent holds usually come from, so the walk tends to stop on its first page.
+const selectTicketAttachments = async (
+  subdomain: string,
+  token: string,
+  ticketId: number,
+  requested: number[],
+): Promise<AttachmentSelection> => {
+  const ids = [...new Set(requested)];
+  const pending = new Set(ids);
+  const walk = await fetchAllTicketComments(subdomain, token, ticketId, {
+    newestFirst: true,
+    done: (page) => {
+      for (const id of attachmentsById(page).keys()) pending.delete(id);
+      return pending.size === 0;
+    },
+  });
+  const seen = attachmentsById(walk.comments);
+  const found = ids.flatMap((id) => seen.get(id) ?? []);
+  const missing = ids.filter((id) => !seen.has(id));
+  if (walk.complete) {
+    return { attachments: found, notOnTicket: missing, unchecked: [], unknown: [] };
+  }
+  const fetched = await fetchAttachmentsByIds(subdomain, token, missing);
+  const fetchedIds = new Set(fetched.map((a) => a.id));
+  const resolved = new Map([...found, ...fetched].map((a) => [a.id, a] as const));
+  return {
+    // In the order asked for, verified or not.
+    attachments: ids.flatMap((id) => resolved.get(id) ?? []),
+    notOnTicket: [],
+    unchecked: [...fetchedIds],
+    unknown: missing.filter((id) => !fetchedIds.has(id)),
+  };
+};
+
+const selectionNotice = (selection: AttachmentSelection, ticketId: number): string[] => [
+  ...(selection.notOnTicket.length
+    ? [
+        `Not attachments of ticket #${ticketId} (absent from all its comments), so not listed: ${selection.notOnTicket.join(', ')}.`,
+      ]
+    : []),
+  ...(selection.unchecked.length
+    ? [
+        `Not in the comments of ticket #${ticketId} that could be read (at most ${MAX_COMMENT_PAGES} pages), so listed without checking they belong to it: ${selection.unchecked.join(', ')}.`,
+      ]
+    : []),
+  ...(selection.unknown.length
+    ? [`Unknown to Zendesk, so not listed: ${selection.unknown.join(', ')}.`]
+    : []),
+];
+
+// Measured on a live tenant (#423 spike): images pasted into an HTML email body
+// come back with `inline: true`, re-sent under a new name in every quoted reply,
+// and signature icons weigh well under this. Real files are never inline.
+const SMALL_INLINE_IMAGE_BYTES = 4 * 1024;
+
+// Only consulted for images (collectAttachmentBlocks).
+const isSmallInlineImage = (attachment: ZendeskTicketAttachment): boolean =>
+  attachment.inline === true && attachment.size < SMALL_INLINE_IMAGE_BYTES;
+
+// For a whole-ticket listing: real attachments first, so inline images never
+// push them past the embedded-image cap or the response budget; then inline
+// images, each content kept once. A quoted reply renames the copies it carries,
+// so type and size identify them, not the file name.
+const arrangeTicketAttachments = (
+  attachments: ZendeskTicketAttachment[],
+): { attachments: ZendeskTicketAttachment[]; repeatedInline: number[] } => {
+  const seen = new Set<string>();
+  const inline: ZendeskTicketAttachment[] = [];
+  const repeatedInline: number[] = [];
+  for (const a of attachments.filter((attachment) => attachment.inline)) {
+    const key = `${a.content_type}:${a.size}`;
+    if (seen.has(key)) repeatedInline.push(a.id);
+    else inline.push(a);
+    seen.add(key);
+  }
+  const real = attachments.filter((a) => !a.inline);
+  return { attachments: [...real, ...inline], repeatedInline };
+};
+
+const smallInlineReason = (attachment: ZendeskTicketAttachment): string | null =>
+  isSmallInlineImage(attachment)
+    ? `not embedded: inline image under ${SMALL_INLINE_IMAGE_BYTES / 1024} KB, as signature icons are`
+    : null;
+
+const listTicketAttachments = async (subdomain: string, token: string, ticketId: number) => {
+  const walk = await fetchAllTicketComments(subdomain, token, ticketId);
+  const arranged = arrangeTicketAttachments(walk.comments.flatMap((c) => c.attachments ?? []));
+  return {
+    attachments: arranged.attachments,
+    notices: [
+      ...(walk.truncated ? [COMMENT_CAP_NOTICE] : []),
+      // Ids named so a wrong match (two contents of equal size) stays reachable.
+      ...(arranged.repeatedInline.length
+        ? [
+            `${arranged.repeatedInline.length} repeated inline attachment(s) skipped (ids ${arranged.repeatedInline.join(', ')}): same type and size as one already listed, as when a reply quotes an earlier email.`,
+          ]
+        : []),
+    ],
+    uncheckedCount: 0,
+    // A whole-ticket listing keeps its embed slots for content, not signature icons.
+    referenceOnly: smallInlineReason,
+  };
+};
+
+const embedAsAsked = (): null => null;
+
+// An explicit selection is embedded as asked: no reference-only rule.
+const pickTicketAttachments = async (
+  subdomain: string,
+  token: string,
+  ticketId: number,
+  ids: number[],
+) => {
+  const selection = await selectTicketAttachments(subdomain, token, ticketId, ids);
+  return {
+    attachments: selection.attachments,
+    notices: selectionNotice(selection, ticketId),
+    uncheckedCount: selection.unchecked.length,
+    referenceOnly: embedAsAsked,
+  };
+};
+
+const noAttachmentsText = (ticketId: number, notices: string[], ids?: number[]): string => {
+  if (ids) {
+    return [
+      'None of the requested attachment_ids was listed.',
+      ...notices,
+      `Omit attachment_ids to collect the attachments of ticket #${ticketId}'s comments.`,
+    ].join(' ');
+  }
+  return notices.includes(COMMENT_CAP_NOTICE)
+    ? `No attachments found on the first ${MAX_COMMENT_PAGES} pages of comments of ticket #${ticketId}. ${COMMENT_CAP_NOTICE}`
+    : `No attachments found on ticket #${ticketId}.`;
 };
 
 // Fetch specific attachments by id. A 404 is swallowed: attachment ids come
@@ -300,6 +462,8 @@ const collectAttachmentBlocks = async (
   // What the caller already spends on the same response (its header, and the
   // array wrapper). Counted here or the budget bounds only part of the message.
   consumedBytes = 0,
+  // Images listed as a reference whatever room is left, with the reason given.
+  referenceOnly: (attachment: ZendeskTicketAttachment) => string | null = () => null,
 ): Promise<Array<ToolTextContent | ToolImageContent>> => {
   const blocks: Array<ToolTextContent | ToolImageContent> = [];
   let embeddedCount = 0;
@@ -314,7 +478,9 @@ const collectAttachmentBlocks = async (
   for (const [index, attachment] of attachments.entries()) {
     const reference = formatReference(attachment);
     const isImage = attachment.content_type.startsWith('image/');
-    const skipReason = isImage ? imageSkipReason(attachment, embeddedCount, reference, fits) : null;
+    const skipReason = isImage
+      ? (referenceOnly(attachment) ?? imageSkipReason(attachment, embeddedCount, reference, fits))
+      : null;
 
     const produced: Array<ToolTextContent | ToolImageContent> =
       isImage && !skipReason
@@ -1178,7 +1344,8 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'Get Zendesk Ticket Attachments',
       description:
-        "Download the files attached to a ticket's comments so you can look at them: images come back embedded inline, other files as text references (file name, id, content type, size, download URL). Use it to see an attached image, or a file's name, size and download URL (only images come back with their content); to learn which files a comment carries, list_ticket_comments already shows their ids. Pass those ids as attachment_ids to fetch only them, or omit it to collect the attachments of the ticket's comments, read up to a page cap (10 pages of 100 comments by default); past it the response says later comments were not scanned, and attachment_ids fetches their files. An image over the per-image size limit or past the embedded-image cap comes back as a reference saying why, and once the response size budget is spent the remaining files are counted as omitted.",
+        "Download the files attached to a ticket's comments so you can look at them: images come back embedded inline, other files as text references (file name, id, content type, size, download URL). To learn which files a comment carries, list_ticket_comments is enough; pass their ids as attachment_ids to fetch only those. Without attachment_ids, the ticket's comments are read up to a page cap (10 pages of 100 comments by default; the response says when later ones were not scanned, and attachment_ids reaches their files): files attached to comments come first, then images pasted into email bodies, once each (quoted replies repeat them), those under 4 KB (signature icons) as references only. An image over the per-image size limit or past the embedded-image cap comes back as a reference saying why; once the response size budget is spent, the remaining files are counted as omitted.",
+
       inputSchema: z.object({
         ticket_id: z
           .number()
@@ -1187,10 +1354,18 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
             'Ticket ID — the numeric id of the ticket whose attachments to fetch. Obtain it from search_tickets or list_tickets.',
           ),
         attachment_ids: z
-          .array(z.number().int())
+          .array(z.number().int().positive())
+          .min(
+            1,
+            "attachment_ids cannot be empty: omit it to collect the attachments of the ticket's comments",
+          )
+          .max(
+            MAX_ATTACHMENT_IDS,
+            `attachment_ids takes at most ${MAX_ATTACHMENT_IDS} ids: split a longer selection over several calls`,
+          )
           .optional()
           .describe(
-            "Attachment IDs to fetch directly (e.g. extracted from a previous list_ticket_comments or get_ticket(include_comments=true) call). When provided, skips the comments fetch entirely. When omitted, the attachments of the ticket's comments are returned, read up to a page cap: on a very long thread the scan stops there, and the response says so.",
+            "Attachment IDs to fetch (e.g. extracted from a previous list_ticket_comments or get_ticket(include_comments=true) call). When provided, the ticket's comments are read only until every id is found, and an id that is not on the ticket is named rather than listed. When omitted, the attachments of the ticket's comments are returned (repeated inline images once), read up to a page cap: on a very long thread the scan stops there, and the response says so.",
           ),
       }),
       annotations: {
@@ -1206,30 +1381,24 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
         };
         const token = await caller.getToken();
 
-        const { attachments, truncated } =
-          attachment_ids && attachment_ids.length > 0
-            ? {
-                attachments: await fetchAttachmentsByIds(subdomain, token, attachment_ids),
-                truncated: false,
-              }
-            : await fetchAllTicketComments(subdomain, token, ticket_id).then((walk) => ({
-                attachments: walk.comments.flatMap((c) => c.attachments ?? []),
-                truncated: walk.truncated,
-              }));
+        const { attachments, notices, uncheckedCount, referenceOnly } = attachment_ids
+          ? await pickTicketAttachments(subdomain, token, ticket_id, attachment_ids)
+          : await listTicketAttachments(subdomain, token, ticket_id);
 
         if (attachments.length === 0) {
-          const text = truncated
-            ? `No attachments found on the first ${MAX_COMMENT_PAGES} pages of comments of ticket #${ticket_id}. ${COMMENT_CAP_NOTICE}`
-            : `No attachments found on ticket #${ticket_id}.`;
-          return { content: [{ type: 'text', text }] };
+          return {
+            content: [
+              { type: 'text', text: noAttachmentsText(ticket_id, notices, attachment_ids) },
+            ],
+          };
         }
         const header: ToolTextContent = {
           type: 'text',
-          text: `# Attachments for ticket #${ticket_id} (${attachments.length} total)`,
+          text: `# Attachments for ticket #${ticket_id} (${attachments.length} total${uncheckedCount ? `, ${uncheckedCount} not checked against the ticket` : ''})`,
         };
         // Right after the header, so the response budget can never drop it.
-        const notice: ToolTextContent[] = truncated
-          ? [{ type: 'text', text: COMMENT_CAP_NOTICE }]
+        const notice: ToolTextContent[] = notices.length
+          ? [{ type: 'text', text: notices.join(' ') }]
           : [];
         // `+ 1` is the array's opening bracket; blockCost accounts for a trailing
         // separator per element but nothing for the wrapper itself.
@@ -1238,6 +1407,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
           token,
           attachments,
           [header, ...notice].reduce((total, block) => total + blockCost(block), 1),
+          referenceOnly,
         );
         return { content: [header, ...notice, ...blocks] };
       },

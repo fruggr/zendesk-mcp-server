@@ -10,8 +10,10 @@ import {
   commentsMorePageHandler,
   commentsWithUsersSideloadHandler,
   MOCK_COMMENT,
+  MOCK_COMMENT_NOTE,
   MOCK_SLA_SIDELOAD,
   MOCK_TICKET,
+  MOCK_TICKET_ATTACHMENT_PDF,
   MOCK_UPLOAD,
   MOCK_USER,
   MOCK_VIEW,
@@ -924,37 +926,313 @@ describe('ticket tools', () => {
       expect(allText).toContain('download failed: 404');
     });
 
-    it('fetches attachments directly via /attachments/:id when attachment_ids is provided', async () => {
-      let commentsCallCount = 0;
+    describe('HTML-embedded (inline) images, attachment_ids omitted', () => {
+      const image = (id: number, size: number, inline: boolean) => ({
+        id,
+        file_name: `img-${id}.png`,
+        content_url: `https://testsubdomain.zendesk.com/attachments/token/i${id}/?bytes=${size}`,
+        content_type: 'image/png',
+        size,
+        inline,
+      });
+      // Shapes measured by the #423 spike: a pasted screenshot and a signature
+      // icon in the first email, both re-sent under new names in the quoted reply.
+      const screenshot = image(91001, 50_000, true);
+      const icon = image(91002, 1_000, true);
+      const quotedScreenshot = image(91003, 50_000, true);
+      const quotedIcon = image(91004, 1_000, true);
+      const realFile = image(91005, 20_000, false);
+
+      const serveComments = () =>
+        mswServer.use(
+          http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/comments', () =>
+            HttpResponse.json({
+              comments: [
+                { ...MOCK_COMMENT, id: 1, attachments: [icon, screenshot] },
+                { ...MOCK_COMMENT, id: 2, attachments: [quotedScreenshot, quotedIcon, realFile] },
+              ],
+              meta: { has_more: false, after_cursor: '' },
+            }),
+          ),
+        );
+
+      it('lists real attachments first, skips repeated inline images and only references small ones', async () => {
+        serveComments();
+        const tool = findTool('get_ticket_attachments');
+        const result = await tool.handler({ ticket_id: 1 });
+        const shape = result.content.map((block) =>
+          block.type === 'image'
+            ? 'image'
+            : (block as { text: string }).text.replace(/ — https\S+/, ''),
+        );
+        expect(shape).toMatchInlineSnapshot(`
+          [
+            "# Attachments for ticket #1 (3 total)",
+            "2 repeated inline attachment(s) skipped (ids 91003, 91004): same type and size as one already listed, as when a reply quotes an earlier email.",
+            "image",
+            "**img-91005.png** (id 91005, image/png, 20000 bytes)",
+            "**img-91002.png** (id 91002, image/png, 1000 bytes) — not embedded: inline image under 4 KB, as signature icons are",
+            "image",
+            "**img-91001.png** (id 91001, image/png, 50000 bytes)",
+          ]
+        `);
+      });
+
+      it('honours an explicit selection as asked: no reordering, no skipping, small images embedded', async () => {
+        serveComments();
+        const tool = findTool('get_ticket_attachments');
+        // Inline before real and small before large: the whole-ticket rules
+        // would reorder, skip the quoted copy and reference the icons.
+        const result = await tool.handler({
+          ticket_id: 1,
+          attachment_ids: [91004, 91002, 91003, 91005],
+        });
+        const shape = result.content.map((block) =>
+          block.type === 'image'
+            ? 'image'
+            : (block as { text: string }).text.replace(/ — https\S+/, ''),
+        );
+        expect(shape).toMatchInlineSnapshot(`
+          [
+            "# Attachments for ticket #1 (4 total)",
+            "image",
+            "**img-91004.png** (id 91004, image/png, 1000 bytes)",
+            "image",
+            "**img-91002.png** (id 91002, image/png, 1000 bytes)",
+            "image",
+            "**img-91003.png** (id 91003, image/png, 50000 bytes)",
+            "image",
+            "**img-91005.png** (id 91005, image/png, 20000 bytes)",
+          ]
+        `);
+      });
+    });
+
+    it('resolves attachment_ids from the ticket comments, with no per-id fetch', async () => {
+      let commentPages = 0;
+      let attachmentCalls = 0;
       mswServer.use(
         http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/comments', () => {
-          commentsCallCount += 1;
-          return HttpResponse.json({ comments: [] });
+          commentPages += 1;
+          return HttpResponse.json({
+            comments: [MOCK_COMMENT],
+            meta: { has_more: true, after_cursor: 'next' },
+          });
+        }),
+        http.get('https://testsubdomain.zendesk.com/api/v2/attachments/:id', () => {
+          attachmentCalls += 1;
+          return HttpResponse.json({}, { status: 404 });
         }),
       );
       const tool = findTool('get_ticket_attachments');
       const result = await tool.handler({ ticket_id: 1, attachment_ids: [30001, 30002] });
-      expect(commentsCallCount).toBe(0);
+      // Both ids sit on the first page: the walk stops there despite has_more.
+      expect([commentPages, attachmentCalls]).toEqual([1, 0]);
       const allText = allTextOf(result);
       expect(allText).toContain('# Attachments for ticket #1 (2 total)');
       expect(allText).toContain('screenshot.png');
       expect(allText).toContain('report.pdf');
+      expect(allText).not.toContain('COMMENT_MAX_PAGES');
     });
 
-    it('fail-softs on unknown attachment_ids', async () => {
+    it('reads comments newest first and keeps reading until every id is seen', async () => {
+      const sorts: Array<string | null> = [];
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/comments', ({ request }) => {
+          const url = new URL(request.url);
+          sorts.push(url.searchParams.get('sort'));
+          const second = url.searchParams.get('page[after]') === 'p2';
+          return HttpResponse.json(
+            second
+              ? { comments: [MOCK_COMMENT], meta: { has_more: true, after_cursor: 'p3' } }
+              : {
+                  comments: [{ ...MOCK_COMMENT_NOTE, attachments: [MOCK_TICKET_ATTACHMENT_PDF] }],
+                  meta: { has_more: true, after_cursor: 'p2' },
+                },
+          );
+        }),
+      );
+      const tool = findTool('get_ticket_attachments');
+      // 30002 is on page 1, 30001 only on page 2: one id seen is not enough to stop.
+      const result = await tool.handler({ ticket_id: 1, attachment_ids: [30002, 30001] });
+      expect(sorts).toEqual(['-created_at', '-created_at']);
+      expect(firstText(result)).toBe('# Attachments for ticket #1 (2 total)');
+    });
+
+    it('keeps the requested order when some ids come from the page-cap fallback', async () => {
+      const later = { ...MOCK_TICKET_ATTACHMENT_PDF, id: 88888, file_name: 'later.pdf' };
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/comments', () =>
+          HttpResponse.json({
+            comments: [{ ...MOCK_COMMENT_NOTE, attachments: [MOCK_TICKET_ATTACHMENT_PDF] }],
+            meta: { has_more: true, after_cursor: 'next' },
+          }),
+        ),
+        http.get('https://testsubdomain.zendesk.com/api/v2/attachments/:id', () =>
+          HttpResponse.json({ attachment: later }),
+        ),
+      );
+      const tool = findTool('get_ticket_attachments');
+      const result = await tool.handler({ ticket_id: 1, attachment_ids: [88888, 30002] });
+      const listed = result.content
+        .slice(2)
+        .map((block) => (block as { text: string }).text.match(/\(id (\d+)/)?.[1]);
+      expect(listed).toEqual(['88888', '30002']);
+    });
+
+    it('does not call an id absent when Zendesk paged by offset and the walk could not go on', async () => {
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/comments', () =>
+          HttpResponse.json({
+            comments: [MOCK_COMMENT_NOTE],
+            next_page: 'https://testsubdomain.zendesk.com/api/v2/tickets/1/comments?page=2',
+          }),
+        ),
+      );
+      const tool = findTool('get_ticket_attachments');
+      const result = await tool.handler({ ticket_id: 1, attachment_ids: [30002] });
+      expect(result.content.slice(0, 2)).toMatchInlineSnapshot(`
+        [
+          {
+            "text": "# Attachments for ticket #1 (1 total, 1 not checked against the ticket)",
+            "type": "text",
+          },
+          {
+            "text": "Not in the comments of ticket #1 that could be read (at most 10 pages), so listed without checking they belong to it: 30002.",
+            "type": "text",
+          },
+        ]
+      `);
+    });
+
+    it('lists each requested attachment once when ids repeat', async () => {
+      const tool = findTool('get_ticket_attachments');
+      const result = await tool.handler({ ticket_id: 1, attachment_ids: [30002, 30002, 30002] });
+      expect(firstText(result)).toBe('# Attachments for ticket #1 (1 total)');
+      // Header plus a single reference block: no second fetch, no second listing.
+      expect(result.content).toHaveLength(2);
+    });
+
+    it('caps attachment_ids at 25 with a message saying how to proceed', () => {
+      const { inputSchema } = findTool('get_ticket_attachments');
+      const ids = (n: number) => Array.from({ length: n }, (_, i) => i + 1);
+      expect(inputSchema.safeParse({ ticket_id: 1, attachment_ids: ids(25) }).success).toBe(true);
+      const tooMany = inputSchema.safeParse({ ticket_id: 1, attachment_ids: ids(26) });
+      expect(
+        tooMany.error?.issues.map(({ path, code, message }) => ({ path, code, message })),
+      ).toMatchInlineSnapshot(`
+        [
+          {
+            "code": "too_big",
+            "message": "attachment_ids takes at most 25 ids: split a longer selection over several calls",
+            "path": [
+              "attachment_ids",
+            ],
+          },
+        ]
+      `);
+    });
+
+    it('never attributes to the ticket an id absent from all its comments', async () => {
+      let attachmentCalls = 0;
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/attachments/:id', () => {
+          attachmentCalls += 1;
+          return HttpResponse.json({ attachment: { ...MOCK_TICKET_ATTACHMENT_PDF, id: 77777 } });
+        }),
+      );
+      const tool = findTool('get_ticket_attachments');
+      const result = await tool.handler({ ticket_id: 1, attachment_ids: [30002, 77777] });
+      expect(attachmentCalls).toBe(0);
+      expect(result.content.slice(0, 2)).toMatchInlineSnapshot(`
+        [
+          {
+            "text": "# Attachments for ticket #1 (1 total)",
+            "type": "text",
+          },
+          {
+            "text": "Not attachments of ticket #1 (absent from all its comments), so not listed: 77777.",
+            "type": "text",
+          },
+        ]
+      `);
+    });
+
+    it('falls back to a direct fetch past the page cap, flagged as unchecked', async () => {
+      const otherFile = { ...MOCK_TICKET_ATTACHMENT_PDF, id: 88888, file_name: 'later.pdf' };
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/comments', () =>
+          HttpResponse.json({
+            comments: [MOCK_COMMENT_NOTE],
+            meta: { has_more: true, after_cursor: 'next' },
+          }),
+        ),
+        http.get('https://testsubdomain.zendesk.com/api/v2/attachments/:id', ({ params }) =>
+          params['id'] === '88888'
+            ? HttpResponse.json({ attachment: otherFile })
+            : HttpResponse.json({}, { status: 404 }),
+        ),
+      );
+      const tool = findTool('get_ticket_attachments');
+      const result = await tool.handler({ ticket_id: 1, attachment_ids: [88888, 99999] });
+      expect(result.content.slice(0, 2)).toMatchInlineSnapshot(`
+        [
+          {
+            "text": "# Attachments for ticket #1 (1 total, 1 not checked against the ticket)",
+            "type": "text",
+          },
+          {
+            "text": "Not in the comments of ticket #1 that could be read (at most 10 pages), so listed without checking they belong to it: 88888. Unknown to Zendesk, so not listed: 99999.",
+            "type": "text",
+          },
+        ]
+      `);
+      expect(allTextOf(result)).toContain('later.pdf');
+    });
+
+    it('rejects an empty attachment_ids instead of reading it as "scan every comment"', () => {
+      const { inputSchema } = findTool('get_ticket_attachments');
+      const empty = inputSchema.safeParse({ ticket_id: 1, attachment_ids: [] });
+      expect(empty.success).toBe(false);
+      expect(
+        empty.error?.issues.map(({ path, code, message }) => ({ path, code, message })),
+      ).toMatchInlineSnapshot(`
+          [
+            {
+              "code": "too_small",
+              "message": "attachment_ids cannot be empty: omit it to collect the attachments of the ticket's comments",
+              "path": [
+                "attachment_ids",
+              ],
+            },
+          ]
+        `);
+      expect(inputSchema.safeParse({ ticket_id: 1, attachment_ids: [30001] }).success).toBe(true);
+      expect(inputSchema.safeParse({ ticket_id: 1 }).success).toBe(true);
+    });
+
+    it('rejects a zero or negative attachment id', () => {
+      const { inputSchema } = findTool('get_ticket_attachments');
+      expect(inputSchema.safeParse({ ticket_id: 1, attachment_ids: [0] }).success).toBe(false);
+      expect(inputSchema.safeParse({ ticket_id: 1, attachment_ids: [-1] }).success).toBe(false);
+    });
+
+    it('lists what it found and names the unknown attachment_ids', async () => {
       const tool = findTool('get_ticket_attachments');
       const result = await tool.handler({ ticket_id: 1, attachment_ids: [30001, 999999] });
       const allText = allTextOf(result);
       expect(allText).toContain('# Attachments for ticket #1 (1 total)');
       expect(allText).toContain('screenshot.png');
-      expect(allText).not.toContain('999999');
+      expect(allText).toContain('999999');
     });
 
-    it('returns "no attachments" when all attachment_ids are unknown', async () => {
+    it('says the requested ids were not found, not that the ticket has none, when all attachment_ids are unknown', async () => {
       const tool = findTool('get_ticket_attachments');
       const result = await tool.handler({ ticket_id: 1, attachment_ids: [999999] });
       expect(result.content).toHaveLength(1);
-      expect(firstText(result)).toContain('No attachments found');
+      expect(firstText(result)).toMatchInlineSnapshot(
+        `"None of the requested attachment_ids was listed. Not attachments of ticket #1 (absent from all its comments), so not listed: 999999. Omit attachment_ids to collect the attachments of ticket #1's comments."`,
+      );
     });
 
     it('preserves order and image/caption pairing across multiple images', async () => {

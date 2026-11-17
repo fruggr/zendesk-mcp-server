@@ -777,6 +777,113 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         expect(textOf(proxied)).toBe(expected);
       });
 
+      it('rejects an empty attachment_ids in "all" mode and through a proxy', async () => {
+        const params = { ticket_id: 1, attachment_ids: [] };
+        const expected =
+          "Invalid parameter(s): attachment_ids: attachment_ids cannot be empty: omit it to collect the attachments of the ticket's comments";
+
+        connected = await harness.connect(makeConfig({ mode: 'all' }));
+        const all = await connected.client.callTool({
+          name: 'get_ticket_attachments',
+          arguments: params,
+        });
+        await connected.close();
+        connected = await harness.connect(makeConfig({ mode: 'namespace' }));
+        const proxied = await connected.client.callTool({
+          name: 'zendesk_tickets',
+          arguments: { operation: 'get_ticket_attachments', params },
+        });
+
+        expect(all.isError).toBe(true);
+        expect(textOf(all)).toBe(
+          `Input validation error: Invalid arguments for tool get_ticket_attachments: ${expected}`,
+        );
+        expect(proxied.isError).toBe(true);
+        expect(textOf(proxied)).toBe(expected);
+      });
+
+      it('caps attachment_ids at 25 through a proxy too', async () => {
+        const params = {
+          ticket_id: 1,
+          attachment_ids: Array.from({ length: 26 }, (_, i) => i + 1),
+        };
+        connected = await harness.connect(makeConfig({ mode: 'namespace' }));
+        const proxied = await connected.client.callTool({
+          name: 'zendesk_tickets',
+          arguments: { operation: 'get_ticket_attachments', params },
+        });
+        expect(proxied.isError).toBe(true);
+        expect(textOf(proxied)).toBe(
+          'Invalid parameter(s): attachment_ids: attachment_ids takes at most 25 ids: split a longer selection over several calls',
+        );
+      });
+
+      it('names an attachment id that is not on the ticket instead of listing it under the ticket', async () => {
+        connected = await harness.connect(makeConfig({ mode: 'all' }));
+        const result = await connected.client.callTool({
+          name: 'get_ticket_attachments',
+          arguments: { ticket_id: 1, attachment_ids: [30002, 77777] },
+        });
+        const texts = (result.content as Array<{ type: string; text?: string }>)
+          .slice(0, 2)
+          .map((block) => block.text);
+        expect(result.isError).toBeFalsy();
+        expect(texts).toEqual([
+          '# Attachments for ticket #1 (1 total)',
+          'Not attachments of ticket #1 (absent from all its comments), so not listed: 77777.',
+        ]);
+      });
+
+      it('lists real attachments before inline ones and names skipped inline copies, through a proxy', async () => {
+        const file = (id: number, inline: boolean) => ({
+          id,
+          file_name: `f-${id}.pdf`,
+          content_url: `https://testsubdomain.zendesk.com/attachments/token/def/?name=f-${id}.pdf`,
+          content_type: 'application/pdf',
+          size: 4,
+          inline,
+        });
+        mswServer.use(
+          http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/comments', () =>
+            HttpResponse.json({
+              comments: [
+                {
+                  id: 1,
+                  body: '',
+                  author_id: 1,
+                  public: true,
+                  created_at: '2026-01-01T00:00:00Z',
+                  attachments: [file(1, true)],
+                },
+                {
+                  id: 2,
+                  body: '',
+                  author_id: 1,
+                  public: true,
+                  created_at: '2026-01-02T00:00:00Z',
+                  attachments: [file(2, true), file(3, false)],
+                },
+              ],
+              meta: { has_more: false, after_cursor: '' },
+            }),
+          ),
+        );
+        connected = await harness.connect(makeConfig({ mode: 'namespace' }));
+        const result = await connected.client.callTool({
+          name: 'zendesk_tickets',
+          arguments: { operation: 'get_ticket_attachments', params: { ticket_id: 1 } },
+        });
+        const texts = (result.content as Array<{ text?: string }>).map((block) =>
+          (block.text ?? '').replace(/ — https\S+/, ''),
+        );
+        expect(texts).toEqual([
+          '# Attachments for ticket #1 (2 total)',
+          '1 repeated inline attachment(s) skipped (ids 2): same type and size as one already listed, as when a reply quotes an earlier email.',
+          '**f-3.pdf** (id 3, application/pdf, 4 bytes)',
+          '**f-1.pdf** (id 1, application/pdf, 4 bytes)',
+        ]);
+      });
+
       it('advertises nested objects as closed over the wire, so a client sees the strictness', async () => {
         connected = await harness.connect(makeConfig({ mode: 'all' }));
         const { tools } = await connected.client.listTools();

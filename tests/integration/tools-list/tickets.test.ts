@@ -128,18 +128,20 @@ it('exposes the tickets tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "Download the files attached to a ticket's comments so you can look at them: images come back embedded inline, other files as text references (file name, id, content type, size, download URL). Use it to see an attached image, or a file's name, size and download URL (only images come back with their content); to learn which files a comment carries, list_ticket_comments already shows their ids. Pass those ids as attachment_ids to fetch only them, or omit it to collect the attachments of the ticket's comments, read up to a page cap (10 pages of 100 comments by default); past it the response says later comments were not scanned, and attachment_ids fetches their files. An image over the per-image size limit or past the embedded-image cap comes back as a reference saying why, and once the response size budget is spent the remaining files are counted as omitted.",
+        "description": "Download the files attached to a ticket's comments so you can look at them: images come back embedded inline, other files as text references (file name, id, content type, size, download URL). To learn which files a comment carries, list_ticket_comments is enough; pass their ids as attachment_ids to fetch only those. Without attachment_ids, the ticket's comments are read up to a page cap (10 pages of 100 comments by default; the response says when later ones were not scanned, and attachment_ids reaches their files): files attached to comments come first, then images pasted into email bodies, once each (quoted replies repeat them), those under 4 KB (signature icons) as references only. An image over the per-image size limit or past the embedded-image cap comes back as a reference saying why; once the response size budget is spent, the remaining files are counted as omitted.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "attachment_ids": {
-              "description": "Attachment IDs to fetch directly (e.g. extracted from a previous list_ticket_comments or get_ticket(include_comments=true) call). When provided, skips the comments fetch entirely. When omitted, the attachments of the ticket's comments are returned, read up to a page cap: on a very long thread the scan stops there, and the response says so.",
+              "description": "Attachment IDs to fetch (e.g. extracted from a previous list_ticket_comments or get_ticket(include_comments=true) call). When provided, the ticket's comments are read only until every id is found, and an id that is not on the ticket is named rather than listed. When omitted, the attachments of the ticket's comments are returned (repeated inline images once), read up to a page cap: on a very long thread the scan stops there, and the response says so.",
               "items": {
+                "exclusiveMinimum": 0,
                 "maximum": 9007199254740991,
-                "minimum": -9007199254740991,
                 "type": "integer",
               },
+              "maxItems": 25,
+              "minItems": 1,
               "type": "array",
             },
             "ticket_id": {
