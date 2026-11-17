@@ -148,16 +148,9 @@ const buildEmbeddedImageBlocks = async (
   ];
 };
 
-// Zendesk has no endpoint to list a ticket's attachments directly.
-// Attachments are always attached to comments, so the only way to collect
-// them all is to walk through every comment page and extract their attachments.
-// `truncated` when the walk stopped at MAX_COMMENT_PAGES with comments left: the
-// caller must say so, or a cut-short list reads as the whole ticket.
-// `done` sees each page as it arrives and ends the walk once the caller has what
-// it needs; an early stop is never `truncated`, which only means the page cap cut
-// the walk short. `complete` means every comment was read (or `done` said
-// enough): an offset-paged answer with no cursor onwards leaves it false.
-// `newestFirst` reads from the latest comment back.
+// Zendesk lists attachments only on comments, hence the walk. `truncated`: the
+// page cap cut it short, which the caller must say. `complete`: every comment was
+// read or `done` had enough; an offset-paged answer leaves it false.
 const fetchAllTicketComments = async (
   subdomain: string,
   token: string,
@@ -1351,7 +1344,8 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'Get Zendesk Ticket Attachments',
       description:
-        "Download the files attached to a ticket's comments so you can look at them: images come back embedded inline, other files as text references (file name, id, content type, size, download URL). Use it to see an attached image, or a file's name, size and download URL (only images come back with their content); to learn which files a comment carries, list_ticket_comments already shows their ids. Pass those ids as attachment_ids to fetch only them, or omit it to collect the attachments of the ticket's comments, read up to a page cap (10 pages of 100 comments by default); past it the response says later comments were not scanned, and attachment_ids fetches their files. Without attachment_ids, files attached to comments come first, then images pasted into email bodies, each kept once (quoted replies repeat them), those under 4 KB (signature icons) as references only. An image over the per-image size limit or past the embedded-image cap comes back as a reference saying why, and once the response size budget is spent the remaining files are counted as omitted.",
+        "Download the files attached to a ticket's comments so you can look at them: images come back embedded inline, other files as text references (file name, id, content type, size, download URL). To learn which files a comment carries, list_ticket_comments is enough; pass their ids as attachment_ids to fetch only those. Without attachment_ids, the ticket's comments are read up to a page cap (10 pages of 100 comments by default; the response says when later ones were not scanned, and attachment_ids reaches their files): files attached to comments come first, then images pasted into email bodies, once each (quoted replies repeat them), those under 4 KB (signature icons) as references only. An image over the per-image size limit or past the embedded-image cap comes back as a reference saying why; once the response size budget is spent, the remaining files are counted as omitted.",
+
       inputSchema: z.object({
         ticket_id: z
           .number()
