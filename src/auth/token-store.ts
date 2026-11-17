@@ -174,8 +174,12 @@ export const createTokenStore = (
     err: unknown,
     dropOnFailure: boolean,
   ): Promise<string | undefined> => {
+    // A record taken over from a sibling may itself be past expiry: refresh it,
+    // inside the same in-flight refresh, rather than serve a dead access token.
+    const serve = (t: StoredToken): Promise<string | undefined> | string =>
+      needsRefresh(t) ? tryRefresh(t, { dropOnFailure }) : t.accessToken;
     const early = adoptSiblingToken();
-    if (early) return early.accessToken;
+    if (early) return serve(early);
     // Refresh token expired/invalid → drop it so we fall back to a fresh flow.
     // Skipped for the background keepalive, which must keep a still-valid token
     // alive across a transient failure.
@@ -185,7 +189,10 @@ export const createTokenStore = (
     // A refusal may mean a sibling won the rotation: give its write time to land.
     await sleep(config.siblingSettleMs ?? SIBLING_SETTLE_MS);
     const settled = adoptSiblingToken();
-    if (settled) return settled.accessToken;
+    if (settled) return serve(settled);
+    // A 401 elsewhere may have adopted a sibling's record while this refresh was
+    // in flight: that one is not the credential just refused.
+    if (token && token.refreshToken !== spent.refreshToken) return serve(token);
     token = undefined;
     if (loadToken(tokenPath)?.refreshToken === spent.refreshToken) {
       clearPersistedToken(tokenPath, logger);

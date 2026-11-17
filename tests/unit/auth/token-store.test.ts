@@ -1062,6 +1062,41 @@ describe('createTokenStore', () => {
       );
     });
 
+    it('keeps a sibling record a 401 adopted while its own refresh was in flight', async () => {
+      seedDisk(EXPIRED);
+      const held = deferredRefresh();
+      refreshAccessTokenMock.mockReturnValueOnce(held.promise);
+      startBrowserAuthMock.mockResolvedValue(deferredStarted().started);
+      const store = createTokenStore({ ...CONFIG, siblingSettleMs: 0 });
+
+      const call = store.getToken();
+      siblingWrites(SIBLING);
+      // Another tool call hits a 401 meanwhile and takes the sibling's record.
+      expect(store.invalidate()).toBe(true);
+      held.reject(REFUSED);
+
+      await expect(call).resolves.toBe('sibling');
+      await expect(store.getToken()).resolves.toBe('sibling');
+      expect(startBrowserAuthMock).not.toHaveBeenCalled();
+      expect(disk.get(RW_PATH)).toEqual(SIBLING);
+    });
+
+    it('refreshes a sibling record it took over after a refusal when that one is stale too', async () => {
+      seedDisk(EXPIRED);
+      refreshAccessTokenMock
+        .mockImplementationOnce(async () => {
+          siblingWrites({ ...EXPIRED, accessToken: 'sibling-stale', refreshToken: 'r2' });
+          throw REFUSED;
+        })
+        .mockResolvedValueOnce({ access_token: 'fresh', refresh_token: 'r3', expires_in: 3600 });
+      const store = createTokenStore(CONFIG);
+
+      await expect(store.getToken()).resolves.toBe('fresh');
+      expect(refreshAccessTokenMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ refreshToken: 'r2' }),
+      );
+    });
+
     it('waits for a sibling on a 401 refusal too', async () => {
       vi.useFakeTimers();
       try {
