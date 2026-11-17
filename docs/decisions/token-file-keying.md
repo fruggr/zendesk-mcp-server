@@ -127,9 +127,9 @@ record back. The keepalive still refreshes after adopting, with the sibling's
 refresh token: the sibling's refresh may be hours old.
 
 A *refused* refresh (400/401) waits `SIBLING_SETTLE_MS` for the winner of a
-simultaneous refresh to persist; a network error does not wait, since no sibling
-caused it. The file is then deleted only if it still holds the refresh token
-just refused.
+simultaneous refresh to persist, then deletes the file only if it still holds
+the refresh token just refused. A network error or a 5xx says nothing about the
+token: it is kept, in memory and on disk, for the next call to retry.
 
 What remains: a sibling's write landing between that last read and the delete
 is lost, and two keepalive ticks at the same instant spend one refresh token

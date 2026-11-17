@@ -104,6 +104,9 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
 
 const FOUR_HOURS = 4 * 60 * 60 * 1000;
 
+// What refreshAccessToken throws when Zendesk refuses the refresh token.
+const refused = (message: string) => Object.assign(new Error(message), { status: 400 });
+
 // A refresh response the test settles, to hold a refresh in flight.
 const deferredRefresh = () => Promise.withResolvers<TokenResult>();
 
@@ -248,7 +251,7 @@ describe('createTokenStore', () => {
   });
 
   it('clears only its own record when its refresh token is rejected', async () => {
-    refreshAccessTokenMock.mockRejectedValue(new Error('refresh token rotated out'));
+    refreshAccessTokenMock.mockRejectedValue(refused('refresh token rotated out'));
     startBrowserAuthMock.mockResolvedValue(deferredStarted().started);
     const store = createTokenStore(RO_CONFIG);
     store.setToken('ro-access', 'ro-refresh');
@@ -543,9 +546,7 @@ describe('createTokenStore', () => {
       refreshToken: 'bad',
       expiresAt: Date.now() - 1000,
     });
-    refreshAccessTokenMock.mockRejectedValue(
-      new Error('Token refresh failed (400): invalid_grant'),
-    );
+    refreshAccessTokenMock.mockRejectedValue(refused('Token refresh failed (400): invalid_grant'));
     startBrowserAuthMock.mockResolvedValue(deferredStarted().started);
     const store = createTokenStore(CONFIG);
 
@@ -588,7 +589,7 @@ describe('createTokenStore', () => {
         expiresAt: Date.now() - 1000,
       });
       refreshAccessTokenMock.mockRejectedValue(
-        new Error('Token refresh failed (400): invalid_grant'),
+        refused('Token refresh failed (400): invalid_grant'),
       );
       const store = createTokenStore(CONFIG);
 
@@ -946,9 +947,7 @@ describe('createTokenStore', () => {
   describe('sibling processes sharing the token file', () => {
     const EXPIRED = { accessToken: 'old', refreshToken: 'r1', expiresAt: Date.now() - 1000 };
     const SIBLING = { accessToken: 'sibling', refreshToken: 'r2', expiresAt: FUTURE() };
-    const REFUSED = Object.assign(new Error('Token refresh failed (400): invalid_grant'), {
-      status: 400,
-    });
+    const REFUSED = refused('Token refresh failed (400): invalid_grant');
 
     it('adopts a token a sibling refreshed rather than spend the rotated-out one', async () => {
       seedDisk(EXPIRED);
@@ -1040,6 +1039,25 @@ describe('createTokenStore', () => {
       const store = createTokenStore({ ...CONFIG, siblingSettleMs: 0 });
 
       await expect(store.getToken()).rejects.toThrow('authentication required');
+      expect(disk.get(RW_PATH)).toEqual(EXPIRED);
+    });
+
+    it('keeps the credential, here and for its siblings, across a network error', async () => {
+      seedDisk(EXPIRED);
+      refreshAccessTokenMock
+        .mockRejectedValueOnce(new Error('fetch failed'))
+        .mockResolvedValueOnce({ access_token: 'new', refresh_token: 'r2' });
+      startBrowserAuthMock.mockResolvedValue(deferredStarted().started);
+      const store = createTokenStore(CONFIG);
+
+      await expect(store.getToken()).rejects.toThrow('authentication required');
+      expect(clearTokenMock).not.toHaveBeenCalled();
+      expect(disk.get(RW_PATH)).toEqual(EXPIRED);
+
+      await expect(store.getToken()).resolves.toBe('new');
+      expect(refreshAccessTokenMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ refreshToken: 'r1' }),
+      );
     });
 
     it('waits for a sibling on a 401 refusal too', async () => {

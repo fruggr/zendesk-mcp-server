@@ -179,13 +179,13 @@ export const createTokenStore = (
     // Refresh token expired/invalid → drop it so we fall back to a fresh flow.
     // Skipped for the background keepalive, which must keep a still-valid token
     // alive across a transient failure.
-    if (!dropOnFailure) return undefined;
-    // Only a refusal can mean a sibling won the rotation; a network error cannot.
-    if (isRefreshRefused(err)) {
-      await sleep(config.siblingSettleMs ?? SIBLING_SETTLE_MS);
-      const settled = adoptSiblingToken();
-      if (settled) return settled.accessToken;
-    }
+    // A network error or 5xx says nothing about the token: keep it, here and
+    // on disk, for the next call to retry.
+    if (!(dropOnFailure && isRefreshRefused(err))) return undefined;
+    // A refusal may mean a sibling won the rotation: give its write time to land.
+    await sleep(config.siblingSettleMs ?? SIBLING_SETTLE_MS);
+    const settled = adoptSiblingToken();
+    if (settled) return settled.accessToken;
     token = undefined;
     if (loadToken(tokenPath)?.refreshToken === spent.refreshToken) {
       clearPersistedToken(tokenPath, logger);
