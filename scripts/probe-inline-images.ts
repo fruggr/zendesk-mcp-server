@@ -82,7 +82,9 @@ interface CommentsPage {
 }
 
 const hash8 = (text: string): string => createHash('sha256').update(text).digest('hex').slice(0, 8);
-const extension = (name: string): string => name.split('.').at(-1)?.toLowerCase() ?? '';
+// No dot means no extension: printing the last segment would print the name.
+const extension = (name: string): string =>
+  name.includes('.') ? (name.split('.').at(-1)?.toLowerCase() ?? '') : '';
 const downloadToken = (url: string): string | undefined => url.match(/\/token\/([^/]+)/)?.[1];
 
 const walkComments = async (
@@ -137,6 +139,7 @@ const totals = {
   onlyWithInline: 0,
   onlyWithInlineFlagTrue: 0,
   bothFlagTrue: 0,
+  comparisonUnavailable: 0,
   referencedInlineTrue: 0,
   referencedInlineFalse: 0,
   unreferencedInlineTrue: 0,
@@ -190,7 +193,9 @@ for (const ticketId of tickets) {
       if (a.inline) totals.repeatedInlineTrue += 1;
       else totals.repeatedInlineFalse += 1;
     }
-    if (onlyWithInline) {
+    // Without the second walk there is nothing to compare: count neither side.
+    if (!without) totals.comparisonUnavailable += 1;
+    else if (onlyWithInline) {
       totals.onlyWithInline += 1;
       if (a.inline) totals.onlyWithInlineFlagTrue += 1;
     } else if (a.inline) totals.bothFlagTrue += 1;

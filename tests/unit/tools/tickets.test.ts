@@ -1059,6 +1059,52 @@ describe('ticket tools', () => {
       expect(firstText(result)).toBe('# Attachments for ticket #1 (2 total)');
     });
 
+    it('keeps the requested order when some ids come from the page-cap fallback', async () => {
+      const later = { ...MOCK_TICKET_ATTACHMENT_PDF, id: 88888, file_name: 'later.pdf' };
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/comments', () =>
+          HttpResponse.json({
+            comments: [{ ...MOCK_COMMENT_NOTE, attachments: [MOCK_TICKET_ATTACHMENT_PDF] }],
+            meta: { has_more: true, after_cursor: 'next' },
+          }),
+        ),
+        http.get('https://testsubdomain.zendesk.com/api/v2/attachments/:id', () =>
+          HttpResponse.json({ attachment: later }),
+        ),
+      );
+      const tool = findTool('get_ticket_attachments');
+      const result = await tool.handler({ ticket_id: 1, attachment_ids: [88888, 30002] });
+      const listed = result.content
+        .slice(2)
+        .map((block) => (block as { text: string }).text.match(/\(id (\d+)/)?.[1]);
+      expect(listed).toEqual(['88888', '30002']);
+    });
+
+    it('does not call an id absent when Zendesk paged by offset and the walk could not go on', async () => {
+      mswServer.use(
+        http.get('https://testsubdomain.zendesk.com/api/v2/tickets/:id/comments', () =>
+          HttpResponse.json({
+            comments: [MOCK_COMMENT_NOTE],
+            next_page: 'https://testsubdomain.zendesk.com/api/v2/tickets/1/comments?page=2',
+          }),
+        ),
+      );
+      const tool = findTool('get_ticket_attachments');
+      const result = await tool.handler({ ticket_id: 1, attachment_ids: [30002] });
+      expect(result.content.slice(0, 2)).toMatchInlineSnapshot(`
+        [
+          {
+            "text": "# Attachments for ticket #1 (1 total, 1 not checked against the ticket)",
+            "type": "text",
+          },
+          {
+            "text": "Not in the comments of ticket #1 that could be read (at most 10 pages), so listed without checking they belong to it: 30002.",
+            "type": "text",
+          },
+        ]
+      `);
+    });
+
     it('lists each requested attachment once when ids repeat', async () => {
       const tool = findTool('get_ticket_attachments');
       const result = await tool.handler({ ticket_id: 1, attachment_ids: [30002, 30002, 30002] });
@@ -1136,7 +1182,7 @@ describe('ticket tools', () => {
             "type": "text",
           },
           {
-            "text": "Not in the first 10 pages of comments of ticket #1, so listed without checking they belong to it: 88888. Unknown to Zendesk, so not listed: 99999.",
+            "text": "Not in the comments of ticket #1 that could be read (at most 10 pages), so listed without checking they belong to it: 88888. Unknown to Zendesk, so not listed: 99999.",
             "type": "text",
           },
         ]

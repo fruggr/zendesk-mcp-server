@@ -155,21 +155,25 @@ const buildEmbeddedImageBlocks = async (
 // caller must say so, or a cut-short list reads as the whole ticket.
 // `done` sees each page as it arrives and ends the walk once the caller has what
 // it needs; an early stop is never `truncated`, which only means the page cap cut
-// the walk short. `newestFirst` reads from the latest comment back.
+// the walk short. `complete` means every comment was read (or `done` said
+// enough): an offset-paged answer with no cursor onwards leaves it false.
+// `newestFirst` reads from the latest comment back.
 const fetchAllTicketComments = async (
   subdomain: string,
   token: string,
   ticketId: number,
   { done, newestFirst }: { done?: (page: ZendeskComment[]) => boolean; newestFirst?: boolean } = {},
-): Promise<{ comments: ZendeskComment[]; truncated: boolean }> => {
+): Promise<{ comments: ZendeskComment[]; truncated: boolean; complete: boolean }> => {
   const all: ZendeskComment[] = [];
   let cursor: string | undefined;
   let pages = 0;
   let truncated = false;
+  let complete = false;
   while (pages < MAX_COMMENT_PAGES) {
     const response = await zendeskGet<{
       comments: ZendeskComment[];
       meta?: { has_more: boolean; after_cursor: string };
+      next_page?: string | null;
     }>(subdomain, token, `/tickets/${ticketId}/comments`, {
       ...buildCursorParams(MAX_PAGE_SIZE, cursor),
       include_inline_images: 'true',
@@ -177,12 +181,18 @@ const fetchAllTicketComments = async (
     });
     all.push(...response.comments);
     pages += 1;
-    if (done?.(response.comments)) break;
-    if (!response.meta?.has_more || !response.meta?.after_cursor) break;
+    if (done?.(response.comments)) {
+      complete = true;
+      break;
+    }
+    if (!response.meta?.has_more || !response.meta?.after_cursor) {
+      complete = !response.meta?.has_more && response.next_page == null;
+      break;
+    }
     cursor = response.meta.after_cursor;
     truncated = pages === MAX_COMMENT_PAGES;
   }
-  return { comments: all, truncated };
+  return { comments: all, truncated, complete };
 };
 
 const COMMENT_CAP_NOTICE = `Comment scan stopped at its page cap (${MAX_COMMENT_PAGES} pages, COMMENT_MAX_PAGES): attachments on any later comments are not listed. Pass attachment_ids taken from list_ticket_comments to fetch them.`;
@@ -260,13 +270,15 @@ const selectTicketAttachments = async (
   const seen = attachmentsById(walk.comments);
   const found = ids.flatMap((id) => seen.get(id) ?? []);
   const missing = ids.filter((id) => !seen.has(id));
-  if (!walk.truncated) {
+  if (walk.complete) {
     return { attachments: found, notOnTicket: missing, unchecked: [], unknown: [] };
   }
   const fetched = await fetchAttachmentsByIds(subdomain, token, missing);
   const fetchedIds = new Set(fetched.map((a) => a.id));
+  const resolved = new Map([...found, ...fetched].map((a) => [a.id, a] as const));
   return {
-    attachments: [...found, ...fetched],
+    // In the order asked for, verified or not.
+    attachments: ids.flatMap((id) => resolved.get(id) ?? []),
     notOnTicket: [],
     unchecked: [...fetchedIds],
     unknown: missing.filter((id) => !fetchedIds.has(id)),
@@ -281,7 +293,7 @@ const selectionNotice = (selection: AttachmentSelection, ticketId: number): stri
     : []),
   ...(selection.unchecked.length
     ? [
-        `Not in the first ${MAX_COMMENT_PAGES} pages of comments of ticket #${ticketId}, so listed without checking they belong to it: ${selection.unchecked.join(', ')}.`,
+        `Not in the comments of ticket #${ticketId} that could be read (at most ${MAX_COMMENT_PAGES} pages), so listed without checking they belong to it: ${selection.unchecked.join(', ')}.`,
       ]
     : []),
   ...(selection.unknown.length
