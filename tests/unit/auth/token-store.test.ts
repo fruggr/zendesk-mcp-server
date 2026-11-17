@@ -1097,6 +1097,32 @@ describe('createTokenStore', () => {
       );
     });
 
+    it('never drops a stale sibling record from the background, even when refused', async () => {
+      vi.useFakeTimers();
+      try {
+        const far = Date.now() + 12 * 3600_000;
+        seedDisk({ accessToken: 'live', refreshToken: 'r1', expiresAt: far });
+        const stale = { ...EXPIRED, accessToken: 'sibling-stale', refreshToken: 'r2' };
+        refreshAccessTokenMock
+          .mockImplementationOnce(async () => {
+            siblingWrites(stale);
+            throw REFUSED;
+          })
+          .mockRejectedValueOnce(REFUSED);
+        const store = createTokenStore({ ...CONFIG, siblingSettleMs: 0 });
+
+        await vi.advanceTimersByTimeAsync(FOUR_HOURS);
+        expect(refreshAccessTokenMock).toHaveBeenLastCalledWith(
+          expect.objectContaining({ refreshToken: 'r2' }),
+        );
+        expect(clearTokenMock).not.toHaveBeenCalled();
+        expect(disk.get(RW_PATH)).toEqual(stale);
+        store.dispose();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('waits for a sibling on a 401 refusal too', async () => {
       vi.useFakeTimers();
       try {

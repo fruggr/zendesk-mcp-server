@@ -188,10 +188,9 @@ export const createTokenStore = (
     if (!(dropOnFailure && isRefreshRefused(err))) return undefined;
     // A refusal may mean a sibling won the rotation: give its write time to land.
     await sleep(config.siblingSettleMs ?? SIBLING_SETTLE_MS);
-    const settled = adoptSiblingToken();
-    if (settled) return serve(settled);
-    // A 401 elsewhere may have adopted a sibling's record while this refresh was
-    // in flight: that one is not the credential just refused.
+    adoptSiblingToken();
+    // The sibling's record, adopted just now or by a 401 elsewhere while this
+    // refresh was in flight, is not the credential just refused.
     if (token && token.refreshToken !== spent.refreshToken) return serve(token);
     token = undefined;
     if (loadToken(tokenPath)?.refreshToken === spent.refreshToken) {
