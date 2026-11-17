@@ -1,3 +1,35 @@
+## [3.10.2](https://github.com/fruggr/zendesk-mcp-server/compare/v3.10.1...v3.10.2) (2026-11-17)
+
+### Bug Fixes
+
+* **auth:** stop parallel stdio sessions from signing each other out ([#466](https://github.com/fruggr/zendesk-mcp-server/issues/466)) ([0c414f1](https://github.com/fruggr/zendesk-mcp-server/commit/0c414f1f3425659e7909694edacb9d998c5e4dc6)), closes [#465](https://github.com/fruggr/zendesk-mcp-server/issues/465)
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Chores
+
+* **claude:** tag OTLP telemetry with team and project resource attributes ([#458](https://github.com/fruggr/zendesk-mcp-server/issues/458)) ([9c60536](https://github.com/fruggr/zendesk-mcp-server/commit/9c60536103218ade9616922b49abbf0efb2dd2a5))
+* **deps:** update pnpm to v12.18.0 ([#439](https://github.com/fruggr/zendesk-mcp-server/issues/439)) ([a353b5a](https://github.com/fruggr/zendesk-mcp-server/commit/a353b5a7b387562330785e74c3e337379d487d51))
+* **deps:** update pnpm to v12.20.0 ([#463](https://github.com/fruggr/zendesk-mcp-server/issues/463)) ([adcf370](https://github.com/fruggr/zendesk-mcp-server/commit/adcf370a592c31f457282bd3e6be953b9c5482c4))
+* **deps:** update pnpm to v12.21.0 ([#467](https://github.com/fruggr/zendesk-mcp-server/issues/467)) ([d2b1194](https://github.com/fruggr/zendesk-mcp-server/commit/d2b119412c1c5ca3161881792795f60ee0de2ef9))
+* **deps:** update sigstore/cosign-installer action to v4.1.3 ([#438](https://github.com/fruggr/zendesk-mcp-server/issues/438)) ([e92b17e](https://github.com/fruggr/zendesk-mcp-server/commit/e92b17ea1dd3380344020170fad69c1047055af5))
+* **docker:** update container base image ([#455](https://github.com/fruggr/zendesk-mcp-server/issues/455)) ([0d61cc4](https://github.com/fruggr/zendesk-mcp-server/commit/0d61cc4ea44212437e4529d8c9accb81ea1229d3))
+* **docker:** update node.js to 0036f8a ([#454](https://github.com/fruggr/zendesk-mcp-server/issues/454)) ([98fda30](https://github.com/fruggr/zendesk-mcp-server/commit/98fda3094a2a27006206a57738dbaf4b367a0090))
+* **docker:** update node.js to v24.22.3-alpine3.24 ([#456](https://github.com/fruggr/zendesk-mcp-server/issues/456)) ([d965ef3](https://github.com/fruggr/zendesk-mcp-server/commit/d965ef37ad6a971c91b963156d6d5f4f51e10515))
+
+### Tests
+
+* **mutation:** keep mutants per-test, and cap the static mutant count ([#460](https://github.com/fruggr/zendesk-mcp-server/issues/460)) ([211a0f1](https://github.com/fruggr/zendesk-mcp-server/commit/211a0f1779a38ff86852db5430abd6892dfebd97)), closes [#449](https://github.com/fruggr/zendesk-mcp-server/issues/449), references [#452](https://github.com/fruggr/zendesk-mcp-server/issues/452) [#447](https://github.com/fruggr/zendesk-mcp-server/issues/447)
+
+### Continuous Integration
+
+* **docker:** stop build-stage digest PRs and make base image bumps say what moved ([#453](https://github.com/fruggr/zendesk-mcp-server/issues/453)) ([80d1214](https://github.com/fruggr/zendesk-mcp-server/commit/80d1214d3f2e561db4f3cf037efdfba57d2b3568)), references [#436](https://github.com/fruggr/zendesk-mcp-server/issues/436) [#433](https://github.com/fruggr/zendesk-mcp-server/issues/433) [#434](https://github.com/fruggr/zendesk-mcp-server/issues/434) [#436](https://github.com/fruggr/zendesk-mcp-server/issues/436) [#437](https://github.com/fruggr/zendesk-mcp-server/issues/437) [#441](https://github.com/fruggr/zendesk-mcp-server/issues/441) [#454](https://github.com/fruggr/zendesk-mcp-server/issues/454)
+* **mutation:** key the baseline on what the suite loads, not the lockfile ([#447](https://github.com/fruggr/zendesk-mcp-server/issues/447)) ([6fc033b](https://github.com/fruggr/zendesk-mcp-server/commit/6fc033bf9fefb349e3bce4d494ec9215cabc0703)), closes [#443](https://github.com/fruggr/zendesk-mcp-server/issues/443), references [#452](https://github.com/fruggr/zendesk-mcp-server/issues/452) [#448](https://github.com/fruggr/zendesk-mcp-server/issues/448)
+* **mutation:** let the baseline resume across runs and alert when it fails ([#446](https://github.com/fruggr/zendesk-mcp-server/issues/446)) ([c6e80e1](https://github.com/fruggr/zendesk-mcp-server/commit/c6e80e181aa02c7e5d17121ab51e7a2c0ff590f7)), closes [#442](https://github.com/fruggr/zendesk-mcp-server/issues/442), references [#447](https://github.com/fruggr/zendesk-mcp-server/issues/447)
+* **mutation:** split the baseline into parallel shards that each finish ([#452](https://github.com/fruggr/zendesk-mcp-server/issues/452)) ([694b1df](https://github.com/fruggr/zendesk-mcp-server/commit/694b1df88c50683cc20387ffb7c9eb168e49c616)), closes [#451](https://github.com/fruggr/zendesk-mcp-server/issues/451), references [#446](https://github.com/fruggr/zendesk-mcp-server/issues/446) [#448](https://github.com/fruggr/zendesk-mcp-server/issues/448) [#447](https://github.com/fruggr/zendesk-mcp-server/issues/447) [#449](https://github.com/fruggr/zendesk-mcp-server/issues/449)
+</details>
+
 ## [3.10.1](https://github.com/fruggr/zendesk-mcp-server/compare/v3.10.0...v3.10.1) (2026-11-11)
 
 ### Performance Improvements
