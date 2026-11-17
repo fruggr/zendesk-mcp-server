@@ -108,3 +108,35 @@ unprompted.
 So the second instance fails fast with a message naming the likely cause, and
 the caller's own retry — the same contract the "authenticate and retry" error
 already sets — is what picks the port up once it frees.
+
+## Same key, several processes: the file is re-read, not locked
+
+The key separates servers whose credentials differ. Servers whose credentials
+are the same — one declaration per project, several sessions per project, all
+restarted together — still share one record, and each holds a copy in memory.
+Zendesk rotates the refresh token on use, so the first to refresh (on demand or
+the 4h keepalive) burns the token every sibling holds; the loser used to delete
+the file and open a browser (#465).
+
+So the file is the source of truth whenever the in-memory copy is about to be
+spent: before a refresh or a sign-in, on a 401, on the keepalive tick, and after
+a failed refresh. A record whose access token differs from the one the process
+last read or wrote there was written by a sibling, and is adopted when its grant
+covers ours; a write of our own that failed therefore never brings an older
+record back. The keepalive still refreshes after adopting, with the sibling's
+refresh token: the sibling's refresh may be hours old.
+
+A *refused* refresh (400/401) waits `SIBLING_SETTLE_MS` for the winner of a
+simultaneous refresh to persist, then deletes the file only if it still holds
+the refresh token just refused. A network error or a 5xx says nothing about the
+token: it is kept, in memory and on disk, for the next call to retry.
+
+A 401 on a token a sibling already replaced adopts the sibling's record, and a
+read-only tool is then replayed once on it, so the agent never sees the
+rotation; a write is not, since a handler fanning out several calls may already
+have applied some of them.
+
+What remains: a sibling's write landing between that last read and the delete
+is lost, and two keepalive ticks at the same instant spend one refresh token
+twice (the loser adopts the winner's record). Both windows are milliseconds
+wide; closing them needs the lockfile rejected above.

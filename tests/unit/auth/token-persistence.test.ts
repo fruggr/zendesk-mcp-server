@@ -286,7 +286,9 @@ describe('token-persistence', () => {
     const path = '/cfg/acme.json';
     const { saveToken, loadToken } = await importFresh();
 
-    saveToken(path, { accessToken: 'a', refreshToken: 'r', expiresAt: 123, scope: 'read' });
+    expect(
+      saveToken(path, { accessToken: 'a', refreshToken: 'r', expiresAt: 123, scope: 'read' }),
+    ).toBe(true);
 
     expect(loadToken(path)).toEqual({
       accessToken: 'a',
@@ -377,7 +379,8 @@ describe('token-persistence', () => {
   it('never throws when the write fails', async () => {
     failWrite = true;
     const { saveToken } = await importFresh();
-    expect(() => saveToken('/cfg/acme.json', { accessToken: 'x' })).not.toThrow();
+    // Reports the failure instead: the store must not take the file for ours.
+    expect(saveToken('/cfg/acme.json', { accessToken: 'x' })).toBe(false);
   });
 
   it('does not chmod on Windows', async () => {

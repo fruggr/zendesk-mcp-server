@@ -762,4 +762,16 @@ describe('refreshAccessToken', () => {
       refreshAccessToken({ subdomain: SUB, oauthClientId: CLIENT_ID, refreshToken: 'dead' }),
     ).rejects.toThrow(/Token refresh failed \(400\)/);
   });
+
+  it('carries the HTTP status, so a refusal can be told from an outage', async () => {
+    mswServer.use(
+      http.post(`https://${SUB}.zendesk.com/oauth/tokens`, () =>
+        HttpResponse.text('invalid_grant', { status: 400 }),
+      ),
+    );
+
+    await expect(
+      refreshAccessToken({ subdomain: SUB, oauthClientId: CLIENT_ID, refreshToken: 'dead' }),
+    ).rejects.toMatchObject({ status: 400 });
+  });
 });

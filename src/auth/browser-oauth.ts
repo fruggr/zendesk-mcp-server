@@ -381,7 +381,10 @@ export const refreshAccessToken = async (
 
   if (!response.ok) {
     const errorBody = await response.text();
-    throw new Error(`Token refresh failed (${response.status}): ${errorBody}`);
+    // `status` lets the token store tell a refusal from an outage.
+    throw Object.assign(new Error(`Token refresh failed (${response.status}): ${errorBody}`), {
+      status: response.status,
+    });
   }
 
   const tokenData = (await response.json()) as TokenResult;

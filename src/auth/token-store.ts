@@ -21,6 +21,20 @@ const EXPIRY_SKEW_MS = 60_000;
 // possibly idle stdio session's token alive with comfortable margin.
 const SCHEDULED_REFRESH_MS = 4 * 60 * 60 * 1000;
 
+// How long a refused refresh waits for a sibling process to persist the token
+// it won the rotation race with, before calling the credential dead. The two
+// requests hit Zendesk together, so the winner's write lands within a round trip.
+export const SIBLING_SETTLE_MS = 1000;
+
+// Zendesk answers a spent or revoked refresh token with a 4xx; a 5xx or a
+// network error says nothing about the token.
+const isRefreshRefused = (err: unknown): boolean => {
+  const status = (err as { status?: unknown } | null)?.status;
+  return status === 400 || status === 401;
+};
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
 /**
  * Signals that interactive sign-in is required. The message is user-facing: MCP
  * surfaces it as the tool-call error text, so it carries the authorize URL and
@@ -55,6 +69,7 @@ export const createTokenStore = (
     oauthClientId: string;
     callbackPort?: number | undefined;
     readOnly: boolean;
+    siblingSettleMs?: number | undefined;
   },
   logger: Logger = silentLogger,
 ) => {
@@ -68,6 +83,9 @@ export const createTokenStore = (
   // Seed the in-memory cache from disk so a restart (notably the Cowork-on-Windows
   // process churn) reuses the existing token instead of re-prompting.
   let token: StoredToken | undefined = loadToken(tokenPath);
+  // The access token the file is known to hold: what we last read there or
+  // wrote successfully. A different one on disk means a sibling wrote it.
+  let knownOnDisk = token?.accessToken;
   if (token) {
     if (grantCovers(token.scope, requested)) {
       logger.debug('oauth_token_loaded_from_disk');
@@ -95,7 +113,26 @@ export const createTokenStore = (
   // trusted — see `needsRefresh`.
   let probedUnknownExpiry = false;
 
-  const persist = (t: StoredToken): void => saveToken(tokenPath, t, logger);
+  const persist = (t: StoredToken): void => {
+    if (saveToken(tokenPath, t, logger)) knownOnDisk = t.accessToken;
+  };
+
+  // Sibling processes share this file, and Zendesk rotates the refresh token on
+  // use: a record a sibling wrote supersedes ours, so adopt it rather than spend
+  // a burned refresh token (`docs/decisions/token-file-keying.md`).
+  const adoptSiblingToken = (): StoredToken | undefined => {
+    const onDisk = loadToken(tokenPath);
+    if (!onDisk || onDisk.accessToken === knownOnDisk || !grantCovers(onDisk.scope, requested)) {
+      return undefined;
+    }
+    token = onDisk;
+    knownOnDisk = onDisk.accessToken;
+    // Its age is unknown, like the record read at startup: probe it once.
+    probedUnknownExpiry = false;
+    // Stryker disable next-line StringLiteral,CallExpression: log call and event name (role 4).
+    logger.info('oauth_token_adopted_from_sibling');
+    return onDisk;
+  };
 
   const setToken = (accessToken: string, refreshToken?: string | undefined) => {
     // Recorded like any other installation path: an absent scope means "the
@@ -127,6 +164,40 @@ export const createTokenStore = (
       logger.warn('oauth_token_grant_narrowed', { requested, granted });
     }
     return granted;
+  };
+
+  // A sibling may have spent this refresh token first: its record, once written,
+  // is the live credential. Only a file still holding the token just refused is
+  // dead, and only then is it ours to delete.
+  const afterFailedRefresh = async (
+    spent: StoredToken,
+    err: unknown,
+    dropOnFailure: boolean,
+  ): Promise<string | undefined> => {
+    // A record taken over from a sibling may itself be past expiry: refresh it,
+    // inside the same in-flight refresh, rather than serve a dead access token.
+    const serve = (t: StoredToken): Promise<string | undefined> | string =>
+      needsRefresh(t) ? tryRefresh(t, { dropOnFailure }) : t.accessToken;
+    const early = adoptSiblingToken();
+    if (early) return serve(early);
+    // Refresh token expired/invalid → drop it so we fall back to a fresh flow.
+    // Skipped for the background keepalive, which must keep a still-valid token
+    // alive across a transient failure.
+    // A network error or 5xx says nothing about the token: keep it, here and
+    // on disk, for the next call to retry.
+    if (!(dropOnFailure && isRefreshRefused(err))) return undefined;
+    // A refusal may mean a sibling won the rotation: give its write time to land.
+    await sleep(config.siblingSettleMs ?? SIBLING_SETTLE_MS);
+    adoptSiblingToken();
+    // The sibling's record, adopted just now or by a 401 elsewhere while this
+    // refresh was in flight, is not the credential just refused.
+    if (token && token.refreshToken !== spent.refreshToken) return serve(token);
+    token = undefined;
+    if (loadToken(tokenPath)?.refreshToken === spent.refreshToken) {
+      clearPersistedToken(tokenPath, logger);
+      knownOnDisk = undefined;
+    }
+    return undefined;
   };
 
   // Silently mints an access token from the stored refresh token. On failure the
@@ -170,14 +241,7 @@ export const createTokenStore = (
       logger.warn('oauth_token_refresh_failed', {
         error: err instanceof Error ? err.message : String(err),
       });
-      // Refresh token expired/invalid → drop it so we fall back to a fresh flow.
-      // Skipped for the background keepalive, which must keep a still-valid token
-      // alive across a transient failure.
-      if (dropOnFailure) {
-        token = undefined;
-        clearPersistedToken(tokenPath, logger);
-      }
-      return undefined;
+      return afterFailedRefresh(current, err, dropOnFailure);
     }
   };
 
@@ -263,6 +327,10 @@ export const createTokenStore = (
       return token.accessToken;
     }
 
+    // About to refresh or prompt: a sibling may already have done either.
+    const adopted = adoptSiblingToken();
+    if (adopted && !needsRefresh(adopted)) return adopted.accessToken;
+
     // Expired, near-expiry, or unknown-expiry but refreshable → refresh silently
     // before falling back to a browser prompt.
     return refreshIfPossible();
@@ -287,8 +355,14 @@ export const createTokenStore = (
   // Backstop for an access token the server rejected mid-life (revoked, say). A
   // 401 invalidates the *access* token, not necessarily the refresh token — keep
   // the latter and mark the access token expired, so the next getToken tries a
-  // silent refresh before the browser.
-  const invalidate = (): void => {
+  // silent refresh before the browser. Returns whether that next getToken can
+  // serve a token without a sign-in: a sibling's, or one refreshed silently.
+  const invalidate = (): boolean => {
+    // The 401 may be for a token a sibling already replaced: take its record
+    // rather than write our stale one over it.
+    if (adoptSiblingToken()) return true;
+    // Stryker disable next-line StringLiteral,CallExpression: log call and event name (role 4).
+    logger.info('oauth_token_invalidated');
     if (token?.refreshToken) {
       token = {
         accessToken: token.accessToken,
@@ -297,12 +371,12 @@ export const createTokenStore = (
         scope: token.scope,
       };
       persist(token);
-    } else {
-      token = undefined;
-      clearPersistedToken(tokenPath, logger);
+      return true;
     }
-    // Stryker disable next-line StringLiteral,CallExpression: log call and event name (role 4).
-    logger.info('oauth_token_invalidated');
+    token = undefined;
+    clearPersistedToken(tokenPath, logger);
+    knownOnDisk = undefined;
+    return false;
   };
 
   // Keeps a long-lived, possibly idle stdio session's token fresh: every 4h means
@@ -310,7 +384,11 @@ export const createTokenStore = (
   // window. unref()'d so it never keeps the process (or test runner) alive.
   // stdio-only: HTTP carries a per-session bearer.
   const scheduledRefresh = setInterval(() => {
-    if (token?.refreshToken && !refreshing) {
+    // Refresh with the newest refresh token, which a sibling may hold: its own
+    // refresh may be hours old, so adopting it alone would not keep us alive.
+    if (refreshing) return;
+    adoptSiblingToken();
+    if (token?.refreshToken) {
       refreshing = tryRefresh(token, { dropOnFailure: false }).finally(() => {
         refreshing = undefined;
       });

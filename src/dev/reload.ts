@@ -11,6 +11,7 @@ import {
   createServerCaches,
   createServerShell,
   installAlertSubscriptions,
+  type OnUnauthorized,
   pollingIdentity,
   registerToolset,
   slaSettings,
@@ -76,7 +77,7 @@ export const createReloadableServer = (
   config: Config,
   getToken: () => string | Promise<string>,
   logger: Logger = silentLogger,
-  onUnauthorized?: () => void,
+  onUnauthorized?: OnUnauthorized,
   // Test seam: how a reload obtains the fresh tool definitions. Defaults to
   // re-importing the leaf modules from disk; tests inject a stub to drive the
   // re-registration failure/rollback path deterministically.
@@ -217,7 +218,7 @@ export const startDevServer = (
   config: Config,
   getToken: () => string | Promise<string>,
   logger: Logger = silentLogger,
-  onUnauthorized?: () => void,
+  onUnauthorized?: OnUnauthorized,
   slaRuntime?: SlaRuntime,
   getBackgroundToken?: () => string | Promise<string>,
 ): StdioServerHandle => {

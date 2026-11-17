@@ -73,9 +73,19 @@ import {
   toStrictStandardSchema,
 } from './utils/validation';
 
-const noteUnauthorized = (err: unknown, onUnauthorized: (() => void) | undefined): void => {
-  if (onUnauthorized && err instanceof ZendeskApiError && err.status === 401) onUnauthorized();
-};
+/**
+ * Called when Zendesk answers 401. Returns `true` when the caller may replay a
+ * read at once: a renewed token is in hand or one refresh away. Any other
+ * return (the HTTP per-session bearer returns nothing) means it may not.
+ */
+export type OnUnauthorized = () => unknown;
+
+// Whether the call may be replayed on a renewed token.
+const noteUnauthorized = (err: unknown, onUnauthorized: OnUnauthorized | undefined): boolean =>
+  onUnauthorized !== undefined &&
+  err instanceof ZendeskApiError &&
+  err.status === 401 &&
+  onUnauthorized() === true;
 
 /**
  * Invoke a tool handler, notifying `onUnauthorized` when Zendesk rejects the
@@ -83,17 +93,18 @@ const noteUnauthorized = (err: unknown, onUnauthorized: (() => void) | undefined
  * The callback is omitted only where there is nothing to invalidate (the HTTP
  * per-session bearer, owned by the client).
  *
- * The 401 is a *backstop*, not a transparent retry: the current call still
- * surfaces the error, and recovery happens on the *next* one, whose `getToken`
- * refreshes silently (or falls back to browser re-auth). Proactive refresh keeps
- * this rare — it fires only for a token revoked between the pre-call check and
- * the request.
+ * A read-only tool is replayed once when the store renewed the token (a sibling
+ * process rotated it, say); a write never is, since a handler fanning out
+ * several calls may already have applied some. Otherwise the call surfaces the
+ * error and the *next* one recovers, its `getToken` refreshing silently (or
+ * falling back to browser re-auth).
  */
 const runHandler = async (
   def: ToolDefinition,
   params: Record<string, unknown>,
-  onUnauthorized: (() => void) | undefined,
+  onUnauthorized: OnUnauthorized | undefined,
   call: ToolCall,
+  replayed = false,
 ): Promise<ToolResult> => {
   try {
     return await def.handler(params, call);
@@ -102,7 +113,9 @@ const runHandler = async (
     // result, which it relays (or, for a 2025-era client, turns into an
     // `elicitation/create` round) before calling the handler again.
     if (isInputRequiredError(err)) return err.inputRequired as unknown as ToolResult;
-    noteUnauthorized(err, onUnauthorized);
+    if (noteUnauthorized(err, onUnauthorized) && def.annotations.readOnlyHint && !replayed) {
+      return runHandler(def, params, onUnauthorized, call, true);
+    }
     throw err;
   }
 };
@@ -143,7 +156,7 @@ type ProxyDispatch = (args: Record<string, unknown>, call: ToolCall) => Promise<
 // but the call would still succeed.
 export const buildProxyDispatch = (
   tools: ToolDefinition[],
-  onUnauthorized: (() => void) | undefined,
+  onUnauthorized: OnUnauthorized | undefined,
 ): ProxyDispatch => {
   const operationNames = tools.map((t) => t.name);
   // Each entry carries a strict params parser built once here (not per call) so
@@ -233,7 +246,7 @@ interface ProxyRegistration {
   /** The user this server's calls act for. */
   caller: ToolCaller;
   readOnlyMode: boolean;
-  onUnauthorized: (() => void) | undefined;
+  onUnauthorized: OnUnauthorized | undefined;
 }
 
 const registerProxyTool = (
@@ -336,7 +349,7 @@ export interface ServerCaches {
 export const createServerCaches = (
   config: Config,
   getToken: () => string | Promise<string>,
-  onUnauthorized?: () => void,
+  onUnauthorized?: OnUnauthorized,
 ): ServerCaches => {
   // ONE resolver for the tools AND the topology/article resources, so they
   // resolve against a single cached brand list: one `GET /brands` walk, not one
@@ -378,7 +391,7 @@ export interface ToolsetParams {
   // Called when a tool handler hits a 401 from Zendesk. Lets the OAuth token
   // store invalidate the rejected token. Omitted where there is nothing to
   // invalidate (e.g. the HTTP per-session bearer is owned by the client).
-  onUnauthorized?: (() => void) | undefined;
+  onUnauthorized?: OnUnauthorized | undefined;
   logger?: Logger;
   /**
    * The SLA service the tools got: the alert resources read with it. Optional
@@ -481,7 +494,7 @@ export const slaSettings = (config: Config): Config => ({
 /** `reader`, with a Zendesk 401 reported like a tool's: the dead token is dropped, not replayed. */
 const reportingUnauthorized = (
   reader: AlertsReader,
-  onUnauthorized: (() => void) | undefined,
+  onUnauthorized: OnUnauthorized | undefined,
 ): AlertsReader => {
   const note = (err: unknown): never => {
     noteUnauthorized(err, onUnauthorized);
@@ -500,7 +513,7 @@ export interface AlertPollingReaderParams {
   /** The caller's Zendesk user id, read with that same token source. */
   resolveUserId: () => Promise<number>;
   slaRuntime: SlaRuntime;
-  onUnauthorized?: (() => void) | undefined;
+  onUnauthorized?: OnUnauthorized | undefined;
 }
 
 /** The reader the SLA alert poller checks with. */
@@ -603,7 +616,7 @@ export interface GrantAlertWatchParams {
   listens: Pick<ListenFeed, 'attach'>;
   notify: (uri: string) => void;
   /** A Zendesk 401 while polling: the grant's token is dead. */
-  onUnauthorized?: () => void;
+  onUnauthorized?: OnUnauthorized;
 }
 
 /**
@@ -954,7 +967,7 @@ export const createMcpServer = (
   config: Config,
   getToken: () => string | Promise<string>,
   logger: Logger = silentLogger,
-  onUnauthorized?: () => void,
+  onUnauthorized?: OnUnauthorized,
   {
     caches = createServerCaches(config, getToken, onUnauthorized),
     requestStateCodec,
@@ -996,7 +1009,7 @@ export interface ServerBuildContext {
   config: Config;
   getToken: () => string | Promise<string>;
   logger: Logger;
-  onUnauthorized?: () => void;
+  onUnauthorized?: OnUnauthorized;
   caches?: ServerCaches;
   /** The transport's tool definitions, shared by every server it builds. */
   tools?: ToolDefinition[];
