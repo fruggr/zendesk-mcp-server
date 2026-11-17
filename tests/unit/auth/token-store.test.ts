@@ -609,7 +609,8 @@ describe('createTokenStore', () => {
 
     await expect(store.getToken()).resolves.toBe('live');
 
-    store.invalidate();
+    // Nothing to renew it with: a replay could only prompt for a sign-in.
+    expect(store.invalidate()).toBe(false);
     expect(clearTokenMock).toHaveBeenCalledWith(expect.any(String), expect.anything());
 
     startBrowserAuthMock.mockResolvedValue(deferredStarted().started);
@@ -621,7 +622,8 @@ describe('createTokenStore', () => {
     refreshAccessTokenMock.mockResolvedValue({ access_token: 'new', refresh_token: 'r2' });
     const store = createTokenStore(CONFIG);
 
-    store.invalidate();
+    // A silent refresh is one call away, so the failed read may be replayed.
+    expect(store.invalidate()).toBe(true);
     // The record is preserved (persisted), not cleared.
     expect(clearTokenMock).not.toHaveBeenCalled();
     expect(saveTokenMock).toHaveBeenCalledWith(
@@ -1006,7 +1008,7 @@ describe('createTokenStore', () => {
       const store = createTokenStore(CONFIG);
       siblingWrites(SIBLING);
 
-      store.invalidate();
+      expect(store.invalidate()).toBe(true);
       expect(disk.get(RW_PATH)).toEqual(SIBLING);
       await expect(store.getToken()).resolves.toBe('sibling');
       expect(refreshAccessTokenMock).not.toHaveBeenCalled();

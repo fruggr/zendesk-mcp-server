@@ -349,11 +349,14 @@ export const createTokenStore = (
   // Backstop for an access token the server rejected mid-life (revoked, say). A
   // 401 invalidates the *access* token, not necessarily the refresh token — keep
   // the latter and mark the access token expired, so the next getToken tries a
-  // silent refresh before the browser.
-  const invalidate = (): void => {
+  // silent refresh before the browser. Returns whether that next getToken can
+  // serve a token without a sign-in: a sibling's, or one refreshed silently.
+  const invalidate = (): boolean => {
     // The 401 may be for a token a sibling already replaced: take its record
     // rather than write our stale one over it.
-    if (adoptSiblingToken()) return;
+    if (adoptSiblingToken()) return true;
+    // Stryker disable next-line StringLiteral,CallExpression: log call and event name (role 4).
+    logger.info('oauth_token_invalidated');
     if (token?.refreshToken) {
       token = {
         accessToken: token.accessToken,
@@ -362,13 +365,12 @@ export const createTokenStore = (
         scope: token.scope,
       };
       persist(token);
-    } else {
-      token = undefined;
-      clearPersistedToken(tokenPath, logger);
-      knownOnDisk = undefined;
+      return true;
     }
-    // Stryker disable next-line StringLiteral,CallExpression: log call and event name (role 4).
-    logger.info('oauth_token_invalidated');
+    token = undefined;
+    clearPersistedToken(tokenPath, logger);
+    knownOnDisk = undefined;
+    return false;
   };
 
   // Keeps a long-lived, possibly idle stdio session's token fresh: every 4h means

@@ -131,6 +131,11 @@ simultaneous refresh to persist, then deletes the file only if it still holds
 the refresh token just refused. A network error or a 5xx says nothing about the
 token: it is kept, in memory and on disk, for the next call to retry.
 
+A 401 on a token a sibling already replaced adopts the sibling's record, and a
+read-only tool is then replayed once on it, so the agent never sees the
+rotation; a write is not, since a handler fanning out several calls may already
+have applied some of them.
+
 What remains: a sibling's write landing between that last read and the delete
 is lost, and two keepalive ticks at the same instant spend one refresh token
 twice (the loser adopts the winner's record). Both windows are milliseconds
