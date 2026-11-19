@@ -12,6 +12,7 @@ import {
   startHttpTransport,
 } from '../../../src/transports/http';
 import { type Logger, silentLogger } from '../../../src/utils/logger';
+import { readPackageInfo } from '../../../src/utils/package-info';
 import { makeConfig } from '../../integration/harness';
 import {
   authorize,
@@ -273,8 +274,12 @@ describe('startHttpTransport (HTTP roundtrip)', () => {
     handle = await startHttpTransport(baseConfig);
     const res = await fetch(`http://127.0.0.1:${handle.port}/healthz`);
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { status: string; subdomain: string };
-    expect(body).toEqual({ status: 'ok', subdomain: 'testsubdomain' });
+    const body = (await res.json()) as { status: string; subdomain: string; version: string };
+    expect(body).toEqual({
+      status: 'ok',
+      subdomain: 'testsubdomain',
+      version: readPackageInfo().version,
+    });
   });
 
   it('returns 404 on unknown routes', async () => {

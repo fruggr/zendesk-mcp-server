@@ -15,7 +15,10 @@ whole feature degrades silently, it never breaks a session.
 
 ## `instructions` (sent on `initialize`)
 
-A short, static blob auto-loaded by compliant clients. It names the Zendesk
+A short, static blob auto-loaded by compliant clients. It always opens with
+one line naming the server package and its running version: clients pass
+`instructions` to the model but not `serverInfo`, so this is how an agent can
+tell which release it talks to. The Help Center part then names the Zendesk
 subdomain (and the brand scope, when `--brand-ids` restricts the server) and
 points at the topology resource. No Zendesk request is made to build it.
 
@@ -25,8 +28,8 @@ set) it ends with one SLA line of its own: that `list_sla_alerts` and the
 and how a user changes theirs: `configure_sla_alerts` only where it is exposed
 too, otherwise the thresholds apply to everyone. That line stays under
 `--no-topology` and without `--sla-push` (it just does not mention subscriptions
-there); with neither Help Center context nor SLA alerts, there are no
-instructions at all.
+there); with neither Help Center context nor SLA alerts, the version line is
+all that is sent.
 
 On HTTP, the instructions Zendesk admins wrote from `/mcp/admin` follow: the
 global ones, then those of each namespace the session exposes. They reach new

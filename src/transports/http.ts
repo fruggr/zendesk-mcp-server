@@ -42,6 +42,7 @@ import { createAllTools } from '../tools/index';
 import { createGrantRegistry } from '../utils/grant-registry';
 import { createListenFeed, type ListenFeed, listenedUris } from '../utils/listen-feed';
 import { type Logger, silentLogger } from '../utils/logger';
+import { readPackageInfo } from '../utils/package-info';
 import { createRequestStateCodec } from '../utils/request-state';
 import { startSlaRuntime } from '../utils/sla-service';
 
@@ -793,7 +794,11 @@ export const startHttpTransport = async (
       return;
     }
     if (req.method === 'GET' && url.pathname === '/healthz') {
-      sendJson(res, 200, { status: 'ok', subdomain: config.subdomain });
+      sendJson(res, 200, {
+        status: 'ok',
+        subdomain: config.subdomain,
+        version: readPackageInfo().version,
+      });
       return;
     }
     if (url.pathname === '/mcp') {

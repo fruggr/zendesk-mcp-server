@@ -1,5 +1,6 @@
 import { HttpResponse, http } from 'msw';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { readPackageInfo } from '../../src/utils/package-info';
 import {
   errorHandlers,
   MOCK_BRAND,
@@ -66,9 +67,18 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         expect(instructions).toContain('testsubdomain');
       });
 
-      it('omits instructions and the resource when help_center is filtered out', async () => {
+      it('opens the instructions with the server name and version (#469)', async () => {
+        connected = await harness.connect(makeConfig());
+        const { name, version } = readPackageInfo();
+        expect(connected.client.getInstructions()?.split('\n')[0]).toBe(
+          `Server: ${name} ${version}.`,
+        );
+      });
+
+      it('keeps only the version line and drops the resource when help_center is filtered out', async () => {
         connected = await harness.connect(makeConfig({ mode: 'namespace', namespaces: ['users'] }));
-        expect(connected.client.getInstructions()).toBeUndefined();
+        const { name, version } = readPackageInfo();
+        expect(connected.client.getInstructions()).toBe(`Server: ${name} ${version}.`);
         expect(connected.client.getServerCapabilities()?.resources).toBeUndefined();
       });
 
@@ -84,11 +94,11 @@ export const registerCoreScenarios = (harness: IntegrationHarness): void => {
         ]);
       });
 
-      it('omits instructions and the topology resource when topology is disabled', async () => {
+      it('drops the Help Center instructions and the topology resource when topology is disabled', async () => {
         connected = await harness.connect(makeConfig({ topology: false }));
         // The Help Center block of the instructions is topology-gated; the SLA
         // line belongs to tickets and stays.
-        expect(connected.client.getInstructions()).toMatch(/^SLA alerts: /);
+        expect(connected.client.getInstructions()).toMatch(/^Server: .+\.\n\nSLA alerts: /);
         // The article resources are a separate,
         // still-enabled feature, so the resources capability is still advertised
         // — only the topology resource itself is gone from the listing.
