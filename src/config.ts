@@ -209,6 +209,12 @@ export const ConfigSchema = z.object({
    */
   slaPush: z.boolean().default(false),
   /**
+   * Whether the unauthenticated `GET /healthz` reports the running version (off
+   * by default; `--healthz-version` / `HEALTHZ_VERSION=true` turn it on): a public
+   * version lets anyone spot a release with a known flaw (#469).
+   */
+  healthzVersion: z.boolean().default(false),
+  /**
    * How long one user's SLA scope fetch is reused, in seconds (default 60; 0
    * turns the cache off). Zendesk charges a 304 revalidation as a full request,
    * so this lifetime is the only quota saving (PR #387 spike 2).
@@ -269,6 +275,7 @@ interface CliResult {
   oauthTrustedClients?: string[];
   defaultTrustedClients?: boolean;
   slaPush?: boolean;
+  healthzVersion?: boolean;
   slaReplyThresholds?: string;
   slaWaitThresholds?: string;
   slaCacheTtlSeconds?: string;
@@ -421,6 +428,7 @@ const CLI_OPTIONS = {
   dev: { type: 'boolean' },
   'print-tools': { type: 'boolean' },
   'sla-push': { type: 'boolean' },
+  'healthz-version': { type: 'boolean' },
   'no-sla-user-preferences': { type: 'boolean' },
   'sla-reply-thresholds': { type: 'string' },
   'sla-wait-thresholds': { type: 'string' },
@@ -472,6 +480,7 @@ const STANDALONE_EFFECTS = new Map<string, Partial<CliResult>>([
   ['print-tools', { printTools: true }],
   ['no-default-trusted-clients', { defaultTrustedClients: false }],
   ['sla-push', { slaPush: true }],
+  ['healthz-version', { healthzVersion: true }],
   ['no-sla-user-preferences', { slaUserPreferences: false }],
 ]);
 
@@ -704,6 +713,7 @@ const resolveSlaSettings = (cli: CliResult) => ({
     ),
   },
   slaPush: cli.slaPush ?? booleanEnv('SLA_PUSH'),
+  healthzVersion: cli.healthzVersion ?? booleanEnv('HEALTHZ_VERSION'),
   slaCacheTtlSeconds: secondsSetting(
     cli.slaCacheTtlSeconds,
     'SLA_CACHE_TTL_SECONDS',

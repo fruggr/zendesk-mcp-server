@@ -274,8 +274,14 @@ describe('startHttpTransport (HTTP roundtrip)', () => {
     handle = await startHttpTransport(baseConfig);
     const res = await fetch(`http://127.0.0.1:${handle.port}/healthz`);
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { status: string; subdomain: string; version: string };
-    expect(body).toEqual({
+    const body = (await res.json()) as { status: string; subdomain: string };
+    expect(body).toStrictEqual({ status: 'ok', subdomain: 'testsubdomain' });
+  });
+
+  it('adds the running version to /healthz under --healthz-version (#469)', async () => {
+    handle = await startHttpTransport({ ...baseConfig, healthzVersion: true });
+    const res = await fetch(`http://127.0.0.1:${handle.port}/healthz`);
+    expect(await res.json()).toStrictEqual({
       status: 'ok',
       subdomain: 'testsubdomain',
       version: readPackageInfo().version,

@@ -95,6 +95,13 @@ const ALLOWED_PROTOCOLS = new Set(['http:', 'https:']);
  * `js/cors-misconfiguration-for-credentials` rule recognises as safe when
  * combined with `Access-Control-Allow-Credentials: true`.
  */
+/** `/healthz` is unauthenticated: the version, which flags a release with a known flaw, is opt-in. */
+const healthzBody = (config: Config): Record<string, string> => ({
+  status: 'ok',
+  subdomain: config.subdomain,
+  ...(config.healthzVersion ? { version: readPackageInfo().version } : {}),
+});
+
 export const resolveAllowedOrigin = (
   origin: string,
   extraOrigins: readonly string[] | undefined,
@@ -794,11 +801,7 @@ export const startHttpTransport = async (
       return;
     }
     if (req.method === 'GET' && url.pathname === '/healthz') {
-      sendJson(res, 200, {
-        status: 'ok',
-        subdomain: config.subdomain,
-        version: readPackageInfo().version,
-      });
+      sendJson(res, 200, healthzBody(config));
       return;
     }
     if (url.pathname === '/mcp') {
