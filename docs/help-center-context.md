@@ -5,8 +5,9 @@ context it needs to work against *your* Help Center, so it stops guessing locale
 or fuzzy-matching section names and uses real IDs instead. This document covers
 what is exposed, what it costs, and how to turn each piece off.
 
-Everything here is active only when the `help_center` namespace is (the SLA
-alert resources, when `list_sla_alerts` is exposed), and every fetch uses **the caller's own
+Everything here but the `instructions` version line is active only when the
+`help_center` namespace is (the SLA alert resources, when `list_sla_alerts` is
+exposed), and every fetch uses **the caller's own
 OAuth token**, so the context respects that user's
 read permissions exactly like the tools do.
 
@@ -136,7 +137,7 @@ per page and per brand in scope, capped by
 
 | Flag | Effect |
 |------|--------|
-| [`--no-topology`](configuration.md#cli-reference) | Disables the `instructions` blob **and** the topology resource. They toggle together. |
+| [`--no-topology`](configuration.md#cli-reference) | Disables the Help Center block of the `instructions` **and** the topology resource. They toggle together; the version line, and the SLA line where it applies, stay. |
 | [`--no-promoted-articles`](configuration.md#cli-reference) | Disables the promoted pre-listing (the resource `list` scan), so the server makes zero preloading requests. **Reading a known article by id and the `list_promoted_articles` tool stay available**: both run only when explicitly asked for. |
 
 ## Branding the URI scheme
