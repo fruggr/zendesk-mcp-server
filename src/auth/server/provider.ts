@@ -123,7 +123,7 @@ export const buildProvider = (options: ProviderOptions): Provider => {
       rpInitiatedLogout: { enabled: false },
       clientIdMetadataDocument: {
         enabled: true,
-        ack: 'draft-02',
+        ack: 'draft-03',
         // SSRF (special-use IPs, redirects, size, time) is guarded by the
         // library's fetch; this only pins the scheme and port.
         allowFetch: async (_ctx, clientId) => {
