@@ -1,4 +1,5 @@
 import type { Config, Namespace } from '../config';
+import { readPackageInfo } from '../utils/package-info';
 import { SLA_RESOURCE_SCHEME } from '../utils/sla-resource';
 import { describeThresholds } from '../utils/sla-thresholds';
 
@@ -133,12 +134,17 @@ export const buildSlaInstructions = (config: Config): string | undefined => {
  * and it stays within a tight token budget. The rich, dynamic topology lives in
  * the pull-only topology resource (default `zendesk-hc://topology`).
  */
-export const buildInstructions = (config: Config): string | undefined => {
-  const blocks = [buildHelpCenterInstructions(config), buildSlaInstructions(config)].filter(
-    (block): block is string => block !== undefined,
-  );
-  return blocks.length > 0 ? blocks.join('\n\n') : undefined;
+// Clients hand `instructions` to the model but not `serverInfo`, so this line is
+// the only way an agent can tell a stale deployment (#469).
+export const versionLine = (): string => {
+  const { name, version } = readPackageInfo();
+  return `Server: ${name} ${version}.`;
 };
+
+export const buildInstructions = (config: Config): string =>
+  [versionLine(), buildHelpCenterInstructions(config), buildSlaInstructions(config)]
+    .filter((block): block is string => block !== undefined)
+    .join('\n\n');
 
 const buildHelpCenterInstructions = (config: Config): string | undefined => {
   if (!helpCenterContextEnabled(config)) return undefined;

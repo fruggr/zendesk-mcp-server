@@ -5,8 +5,9 @@ context it needs to work against *your* Help Center, so it stops guessing locale
 or fuzzy-matching section names and uses real IDs instead. This document covers
 what is exposed, what it costs, and how to turn each piece off.
 
-Everything here is active only when the `help_center` namespace is (the SLA
-alert resources, when `list_sla_alerts` is exposed), and every fetch uses **the caller's own
+Everything here but the `instructions` version line is active only when the
+`help_center` namespace is (the SLA alert resources, when `list_sla_alerts` is
+exposed), and every fetch uses **the caller's own
 OAuth token**, so the context respects that user's
 read permissions exactly like the tools do.
 
@@ -15,7 +16,10 @@ whole feature degrades silently, it never breaks a session.
 
 ## `instructions` (sent on `initialize`)
 
-A short, static blob auto-loaded by compliant clients. It names the Zendesk
+A short, static blob auto-loaded by compliant clients. It always opens with
+one line naming the server package and its running version: clients pass
+`instructions` to the model but not `serverInfo`, so this is how an agent can
+tell which release it talks to. The Help Center part then names the Zendesk
 subdomain (and the brand scope, when `--brand-ids` restricts the server) and
 points at the topology resource. No Zendesk request is made to build it.
 
@@ -25,8 +29,8 @@ set) it ends with one SLA line of its own: that `list_sla_alerts` and the
 and how a user changes theirs: `configure_sla_alerts` only where it is exposed
 too, otherwise the thresholds apply to everyone. That line stays under
 `--no-topology` and without `--sla-push` (it just does not mention subscriptions
-there); with neither Help Center context nor SLA alerts, there are no
-instructions at all.
+there); with neither Help Center context nor SLA alerts, the version line is
+all that is sent.
 
 On HTTP, the instructions Zendesk admins wrote from `/mcp/admin` follow: the
 global ones, then those of each namespace the session exposes. They reach new
@@ -133,7 +137,7 @@ per page and per brand in scope, capped by
 
 | Flag | Effect |
 |------|--------|
-| [`--no-topology`](configuration.md#cli-reference) | Disables the `instructions` blob **and** the topology resource. They toggle together. |
+| [`--no-topology`](configuration.md#cli-reference) | Disables the Help Center block of the `instructions` **and** the topology resource. They toggle together; the version line, and the SLA line where it applies, stay. |
 | [`--no-promoted-articles`](configuration.md#cli-reference) | Disables the promoted pre-listing (the resource `list` scan), so the server makes zero preloading requests. **Reading a known article by id and the `list_promoted_articles` tool stay available**: both run only when explicitly asked for. |
 
 ## Branding the URI scheme

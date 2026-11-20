@@ -8,6 +8,7 @@ import {
   promotedArticlesEnabled,
   topologyResourceUri,
 } from '../../../src/guidance/instructions';
+import { readPackageInfo } from '../../../src/utils/package-info';
 import { makeConfig } from '../../integration/harness';
 
 describe('topologyResourceUri', () => {
@@ -103,21 +104,34 @@ describe('buildInstructions', () => {
     expect(buildInstructions(makeConfig({ namespaces: ['help_center'] }))).toBeDefined();
   });
 
+  it('opens with the server name and version, whatever else is on (#469)', () => {
+    const { name, version } = readPackageInfo();
+    expect(buildInstructions(makeConfig({ namespaces: ['users'] }))).toBe(
+      `Server: ${name} ${version}.`,
+    );
+    expect(buildInstructions(makeConfig({ subdomain: 'acme' }))).toMatch(
+      new RegExp(`^Server: ${name} ${version.replaceAll('.', '\\.')}\\.\\n\\nThis MCP server`),
+    );
+  });
+
   it('keeps only the SLA line when help_center is filtered out', () => {
-    expect(buildInstructions(makeConfig({ namespaces: ['tickets'] }))).toMatch(/^SLA alerts: /);
-    expect(buildInstructions(makeConfig({ namespaces: ['users'] }))).toBeUndefined();
+    expect(buildInstructions(makeConfig({ namespaces: ['tickets'] }))).toMatch(
+      /^Server: .+\.\n\nSLA alerts: /,
+    );
   });
 
   it('keeps only the SLA line when the topology feature is disabled', () => {
-    expect(buildInstructions(makeConfig({ topology: false }))).toMatch(/^SLA alerts: /);
-    expect(
-      buildInstructions(makeConfig({ topology: false, namespaces: ['help_center'] })),
-    ).toBeUndefined();
+    expect(buildInstructions(makeConfig({ topology: false }))).toMatch(
+      /^Server: .+\.\n\nSLA alerts: /,
+    );
+    expect(buildInstructions(makeConfig({ topology: false, namespaces: ['help_center'] }))).toMatch(
+      /^Server: [^\n]+\.$/,
+    );
   });
 
   it('puts the SLA line after the Help Center block', () => {
-    const text = buildInstructions(makeConfig({ subdomain: 'acme' })) ?? '';
-    expect(text.startsWith('This MCP server is connected to')).toBe(true);
+    const text = buildInstructions(makeConfig({ subdomain: 'acme' }));
+    expect(text).toContain('.\n\nThis MCP server is connected to');
     expect(text.endsWith(buildSlaInstructions(makeConfig({ subdomain: 'acme' })) ?? 'x')).toBe(
       true,
     );

@@ -4,7 +4,7 @@ import * as z from 'zod/v4';
 import { ZENDESK_ADMIN_ROLE } from '../auth/server/upstream';
 import { ZendeskApiError, zendeskGet } from '../client/zendesk-api';
 import type { Config } from '../config';
-import { buildInstructions } from '../guidance/instructions';
+import { buildInstructions, versionLine } from '../guidance/instructions';
 import { createTopologyProvider, type TopologyProvider } from '../guidance/topology';
 import type { ToolAnnotations, ToolResult } from '../tools/definitions';
 import { compareCodeUnits } from '../utils/compare';
@@ -79,7 +79,7 @@ const describeAuthor = (author: ChangeAuthor | undefined): string =>
 export const effectiveInstructions = (config: Config, state: Customizations): string =>
   [buildInstructions(config), buildCustomInstructions(state, config)]
     .filter((block): block is string => block !== undefined)
-    .join('\n\n') || '(none)';
+    .join('\n\n');
 
 const listCustomizations = (env: AdminEnv): string => {
   const state = env.service.current();
@@ -191,7 +191,7 @@ type Reader = (
 
 const READERS: Record<Kind, Reader> = {
   built_in: (env, name, _params, topology) => {
-    if (name === 'instructions') return buildInstructions(env.config) ?? '(none)';
+    if (name === 'instructions') return buildInstructions(env.config);
     if (name === 'topology') return topology().read();
     throw customizationError(`Unknown built-in "${name}": use ${BUILT_IN.join(' or ')}.`);
   },
@@ -354,7 +354,7 @@ export const createAdminServer = ({
   const server = new McpServer(
     { name: pkg.name, version: pkg.version },
     {
-      instructions: ADMIN_INSTRUCTIONS,
+      instructions: `${versionLine()}\n\n${ADMIN_INSTRUCTIONS}`,
       requestState: { verify: (state, ctx) => requestStateCodec.verify(state, ctx) },
     },
   );

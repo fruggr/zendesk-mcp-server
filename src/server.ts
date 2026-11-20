@@ -310,20 +310,15 @@ export const createServerShell = (
   // Read name/version from package.json at runtime rather than hardcoding them
   // (the old literals were stale and even carried the wrong package name).
   const pkg = readPackageInfo();
-  // Static, I/O-free Help Center context auto-loaded by clients on initialize.
-  // Built before connect; undefined (and omitted) when the context is disabled.
-  const instructions =
-    [buildInstructions(config), extraInstructions]
-      .filter((block): block is string => block !== undefined)
-      .join('\n\n') || undefined;
+  const instructions = [buildInstructions(config), extraInstructions]
+    .filter((block): block is string => block !== undefined)
+    .join('\n\n');
   // No `logging` capability: diagnostics go to stderr only (see utils/logger.ts).
-  // The `resources` capability is merged in by registerResource below. Spread
-  // `instructions` only when present so the field is omitted entirely
-  // (exactOptionalPropertyTypes).
+  // The `resources` capability is merged in by registerResource below.
   return new McpServer(
     { name: pkg.name, version: pkg.version },
     {
-      ...(instructions ? { instructions } : {}),
+      instructions,
       requestState: { verify: (state, ctx) => requestStateCodec.verify(state, ctx) },
     },
   );

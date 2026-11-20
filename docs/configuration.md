@@ -71,6 +71,8 @@ Options:
                           (repeatable; adds to claude.ai and ChatGPT)
   --no-default-trusted-clients
                           HTTP: drop the built-in trusted clients
+  --healthz-version       HTTP: add the running version to GET /healthz (off
+                          by default). Also HEALTHZ_VERSION=true
   --dev                   Dev-only: expose a reload_tools tool that hot-reloads
                           edited tool code on demand (stdio only; see "Dev mode"
                           below)
@@ -473,6 +475,16 @@ built-in ones (also `--oauth-trusted-client`; `--no-default-trusted-clients`
 drops the built-in ones). See
 [Trusted clients and consent](http-deployment.md#trusted-clients-and-consent).
 **HTTP only.**
+
+### `HEALTHZ_VERSION`
+**Required:** no · **Default:** `false`
+
+`true` (or `on`, `1`) adds `version` to the `GET /healthz` response. Off by
+default because `/healthz` is unauthenticated: a public version tells anyone
+which instances run a release with a known flaw. Signed-in clients always get
+the version: in `serverInfo`, and on the first line of the `instructions`
+(`/mcp` and `/mcp/admin`). Same as
+`--healthz-version`. **HTTP only.**
 
 ### `HC_RESOURCE_SCHEME`
 **Required:** no · **Default:** `zendesk-hc`

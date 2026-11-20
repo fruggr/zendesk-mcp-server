@@ -31,6 +31,7 @@ const LOAD_CONFIG_ENV = [
   'HOST',
   'ZENDESK_OAUTH_CALLBACK_PORT',
   'SLA_PUSH',
+  'HEALTHZ_VERSION',
   'SLA_REPLY_THRESHOLDS',
   'SLA_WAIT_THRESHOLDS',
   'SLA_CACHE_TTL_SECONDS',
@@ -1073,6 +1074,7 @@ describe('what the flags resolve to when none is passed', () => {
       promotedArticles: config.promotedArticles,
       slaPush: config.slaPush,
       slaUserPreferences: config.slaUserPreferences,
+      healthzVersion: config.healthzVersion,
     }).toStrictEqual({
       readOnly: false,
       dev: false,
@@ -1081,6 +1083,7 @@ describe('what the flags resolve to when none is passed', () => {
       promotedArticles: true,
       slaPush: false,
       slaUserPreferences: true,
+      healthzVersion: false,
     });
   });
 
@@ -1097,6 +1100,7 @@ describe('what the flags resolve to when none is passed', () => {
         promotedArticles: config.promotedArticles,
         slaPush: config.slaPush,
         slaUserPreferences: config.slaUserPreferences,
+        healthzVersion: config.healthzVersion,
       };
     };
     const off = {
@@ -1107,6 +1111,7 @@ describe('what the flags resolve to when none is passed', () => {
       promotedArticles: true,
       slaPush: false,
       slaUserPreferences: true,
+      healthzVersion: false,
     };
 
     expect(standalone('--read-only')).toStrictEqual({ ...off, readOnly: true });
@@ -1122,6 +1127,16 @@ describe('what the flags resolve to when none is passed', () => {
       ...off,
       slaUserPreferences: false,
     });
+    expect(standalone('--healthz-version')).toStrictEqual({ ...off, healthzVersion: true });
+  });
+
+  it.each([
+    ['false', false],
+    ['true', true],
+    ['1', true],
+  ])('reads HEALTHZ_VERSION=%j as %s', (raw, value) => {
+    process.env['HEALTHZ_VERSION'] = raw;
+    expect(loadConfig(['mycompany']).healthzVersion).toBe(value);
   });
 
   it('reads the subdomain from argv when loadConfig is called with no arguments', () => {

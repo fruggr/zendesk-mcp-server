@@ -42,6 +42,7 @@ import { createAllTools } from '../tools/index';
 import { createGrantRegistry } from '../utils/grant-registry';
 import { createListenFeed, type ListenFeed, listenedUris } from '../utils/listen-feed';
 import { type Logger, silentLogger } from '../utils/logger';
+import { readPackageInfo } from '../utils/package-info';
 import { createRequestStateCodec } from '../utils/request-state';
 import { startSlaRuntime } from '../utils/sla-service';
 
@@ -76,6 +77,13 @@ const CORS_MAX_AGE = '600';
 
 const LOCALHOST_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
 const ALLOWED_PROTOCOLS = new Set(['http:', 'https:']);
+
+/** `/healthz` is unauthenticated: the version, which flags a release with a known flaw, is opt-in. */
+const healthzBody = (config: Config): Record<string, string> => ({
+  status: 'ok',
+  subdomain: config.subdomain,
+  ...(config.healthzVersion ? { version: readPackageInfo().version } : {}),
+});
 
 /**
  * Returns the origin string to reflect in `Access-Control-Allow-Origin`, or
@@ -793,7 +801,7 @@ export const startHttpTransport = async (
       return;
     }
     if (req.method === 'GET' && url.pathname === '/healthz') {
-      sendJson(res, 200, { status: 'ok', subdomain: config.subdomain });
+      sendJson(res, 200, healthzBody(config));
       return;
     }
     if (url.pathname === '/mcp') {

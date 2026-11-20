@@ -13,6 +13,7 @@ import {
   createCustomizationService,
 } from '../../../src/customization/service';
 import { SETUP_BODY } from '../../../src/customization/setup';
+import { readPackageInfo } from '../../../src/utils/package-info';
 import { createRequestStateCodec } from '../../../src/utils/request-state';
 import { makeConfig } from '../../integration/harness';
 import { MOCK_USER } from '../../msw-handlers';
@@ -127,7 +128,7 @@ describe('manage_customizations', () => {
       );
     });
 
-    it('says when the server sends no built-in instructions', async () => {
+    it('shows the version line alone when the server sends no other built-in instructions', async () => {
       const [bare] = createAdminTools({
         config: makeConfig({ namespaces: ['users'] }),
         service,
@@ -136,7 +137,8 @@ describe('manage_customizations', () => {
         { action: 'get', kind: 'built_in', name: 'instructions' },
         caller,
       );
-      expect(result.content).toEqual([{ type: 'text', text: '(none)' }]);
+      const { name, version } = readPackageInfo();
+      expect(result.content).toEqual([{ type: 'text', text: `Server: ${name} ${version}.` }]);
     });
 
     it('reads each kind of entry, or says it does not exist', async () => {
@@ -208,13 +210,13 @@ describe('manage_customizations', () => {
         `Saved instructions "global". A new session on /mcp now receives these instructions (the built-in part first); check them for repetitions and contradictions:\n\n${effectiveInstructions(config, service.current())}`,
       );
       expect(effectiveInstructions(config, service.current())).toMatch(
-        /^This MCP server is connected to[\s\S]*\n\nYour team's own instructions, set by its Zendesk admins:\n\nBe brief\.$/,
+        /^Server: [^\n]+\.\n\nThis MCP server is connected to[\s\S]*\n\nYour team's own instructions, set by its Zendesk admins:\n\nBe brief\.$/,
       );
       expect(await call({ action: 'delete', kind: 'instructions', name: 'global' })).toMatch(
         /^Deleted instructions "global"\./,
       );
       expect(effectiveInstructions(makeConfig({ namespaces: ['users'] }), service.current())).toBe(
-        '(none)',
+        `Server: ${readPackageInfo().name} ${readPackageInfo().version}.`,
       );
     });
 
@@ -294,6 +296,12 @@ describe('createAdminServer', () => {
     const client = new Client({ name: 't', version: '0' });
     await client.connect(clientTransport);
 
+    const { name, version } = readPackageInfo();
+    expect(client.getInstructions()).toMatch(
+      new RegExp(
+        `^Server: ${name} ${version.replaceAll('.', '\\.')}\\.\\n\\nThis is the back-office`,
+      ),
+    );
     expect(client.getInstructions()).toContain('Start with the "setup" prompt');
     expect((await client.listTools()).tools.map((t) => t.name)).toEqual(['manage_customizations']);
     const setup = await client.getPrompt({ name: 'setup' });

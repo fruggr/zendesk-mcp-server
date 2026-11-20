@@ -67,7 +67,10 @@ carries a before/after comment of what changed inside the base
   ([#344](https://github.com/fruggr/zendesk-mcp-server/issues/344)).
 - **`linux/amd64` only**
   ([#345](https://github.com/fruggr/zendesk-mcp-server/issues/345)).
-- No `HEALTHCHECK`: point your orchestrator's probes at `GET /healthz`.
+- No `HEALTHCHECK`: point your orchestrator's probes at `GET /healthz`. It
+  answers `{ "status": "ok", "subdomain": ... }`; with
+  [`HEALTHZ_VERSION=true`](configuration.md#healthz_version) it adds
+  `"version"`, so a probe can tell which release is running.
 
 ```bash
 docker run --read-only --cap-drop ALL --security-opt no-new-privileges \
@@ -253,7 +256,9 @@ curl -s http://localhost:3000/.well-known/oauth-authorization-server
 # → { "issuer": "http://localhost:3000", "registration_endpoint": "...",
 #     "client_id_metadata_document_supported": true, ... }
 
-curl -s -i http://localhost:3000/healthz   # → 200 OK
+curl -s -i http://localhost:3000/healthz
+# → 200 OK, { "status": "ok", "subdomain": "..." }
+#   (+ "version" with HEALTHZ_VERSION=true)
 ```
 
 `scopes_supported` follows `--read-only`: `["read", "write"]` normally, `["read"]`
