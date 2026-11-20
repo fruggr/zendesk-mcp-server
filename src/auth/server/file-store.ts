@@ -105,7 +105,7 @@ const persist = (path: string, entries: Map<string, StoredEntry>): void => {
 const assertWritable = (path: string): void => {
   let dir = dirname(path);
   try {
-    for (;;) {
+    while (true) {
       try {
         if (!statSync(dir).isDirectory()) {
           throw Object.assign(new Error(`${dir} is not a directory`), { code: 'ENOTDIR' });
