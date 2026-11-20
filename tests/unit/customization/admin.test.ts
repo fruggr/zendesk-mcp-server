@@ -296,6 +296,12 @@ describe('createAdminServer', () => {
     const client = new Client({ name: 't', version: '0' });
     await client.connect(clientTransport);
 
+    const { name, version } = readPackageInfo();
+    expect(client.getInstructions()).toMatch(
+      new RegExp(
+        `^Server: ${name} ${version.replaceAll('.', '\\.')}\\.\\n\\nThis is the back-office`,
+      ),
+    );
     expect(client.getInstructions()).toContain('Start with the "setup" prompt');
     expect((await client.listTools()).tools.map((t) => t.name)).toEqual(['manage_customizations']);
     const setup = await client.getPrompt({ name: 'setup' });

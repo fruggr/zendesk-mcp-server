@@ -4,7 +4,7 @@ import * as z from 'zod/v4';
 import { ZENDESK_ADMIN_ROLE } from '../auth/server/upstream';
 import { ZendeskApiError, zendeskGet } from '../client/zendesk-api';
 import type { Config } from '../config';
-import { buildInstructions } from '../guidance/instructions';
+import { buildInstructions, versionLine } from '../guidance/instructions';
 import { createTopologyProvider, type TopologyProvider } from '../guidance/topology';
 import type { ToolAnnotations, ToolResult } from '../tools/definitions';
 import { compareCodeUnits } from '../utils/compare';
@@ -354,7 +354,7 @@ export const createAdminServer = ({
   const server = new McpServer(
     { name: pkg.name, version: pkg.version },
     {
-      instructions: ADMIN_INSTRUCTIONS,
+      instructions: `${versionLine()}\n\n${ADMIN_INSTRUCTIONS}`,
       requestState: { verify: (state, ctx) => requestStateCodec.verify(state, ctx) },
     },
   );

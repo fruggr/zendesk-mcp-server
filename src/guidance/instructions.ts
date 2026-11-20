@@ -136,7 +136,7 @@ export const buildSlaInstructions = (config: Config): string | undefined => {
  */
 // Clients hand `instructions` to the model but not `serverInfo`, so this line is
 // the only way an agent can tell a stale deployment (#469).
-const versionLine = (): string => {
+export const versionLine = (): string => {
   const { name, version } = readPackageInfo();
   return `Server: ${name} ${version}.`;
 };
