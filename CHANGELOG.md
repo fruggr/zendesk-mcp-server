@@ -1,3 +1,9 @@
+## [3.12.0](https://github.com/fruggr/zendesk-mcp-server/compare/v3.11.0...v3.12.0) (2026-11-20)
+
+### Features
+
+* **server:** expose the running version in instructions and /healthz ([#470](https://github.com/fruggr/zendesk-mcp-server/issues/470)) ([6be6e99](https://github.com/fruggr/zendesk-mcp-server/commit/6be6e99f2ccb25c14eeadb238b24f6a1a8af10d4)), closes [#469](https://github.com/fruggr/zendesk-mcp-server/issues/469)
+
 ## [3.11.0](https://github.com/fruggr/zendesk-mcp-server/compare/v3.10.2...v3.11.0) (2026-11-17)
 
 ### Features
