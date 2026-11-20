@@ -79,7 +79,7 @@ const describeAuthor = (author: ChangeAuthor | undefined): string =>
 export const effectiveInstructions = (config: Config, state: Customizations): string =>
   [buildInstructions(config), buildCustomInstructions(state, config)]
     .filter((block): block is string => block !== undefined)
-    .join('\n\n') || '(none)';
+    .join('\n\n');
 
 const listCustomizations = (env: AdminEnv): string => {
   const state = env.service.current();
@@ -191,7 +191,7 @@ type Reader = (
 
 const READERS: Record<Kind, Reader> = {
   built_in: (env, name, _params, topology) => {
-    if (name === 'instructions') return buildInstructions(env.config) ?? '(none)';
+    if (name === 'instructions') return buildInstructions(env.config);
     if (name === 'topology') return topology().read();
     throw customizationError(`Unknown built-in "${name}": use ${BUILT_IN.join(' or ')}.`);
   },

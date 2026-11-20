@@ -481,8 +481,9 @@ drops the built-in ones). See
 
 `true` (or `on`, `1`) adds `version` to the `GET /healthz` response. Off by
 default because `/healthz` is unauthenticated: a public version tells anyone
-which instances run a release with a known flaw. MCP clients always get the
-version, in `serverInfo` and on the first line of the `instructions`. Same as
+which instances run a release with a known flaw. Signed-in clients always get
+the version: in `serverInfo`, and on `/mcp` on the first line of the
+`instructions`. Same as
 `--healthz-version`. **HTTP only.**
 
 ### `HC_RESOURCE_SCHEME`

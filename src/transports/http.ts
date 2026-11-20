@@ -78,6 +78,13 @@ const CORS_MAX_AGE = '600';
 const LOCALHOST_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
 const ALLOWED_PROTOCOLS = new Set(['http:', 'https:']);
 
+/** `/healthz` is unauthenticated: the version, which flags a release with a known flaw, is opt-in. */
+const healthzBody = (config: Config): Record<string, string> => ({
+  status: 'ok',
+  subdomain: config.subdomain,
+  ...(config.healthzVersion ? { version: readPackageInfo().version } : {}),
+});
+
 /**
  * Returns the origin string to reflect in `Access-Control-Allow-Origin`, or
  * `undefined` if the origin is not allowed.
@@ -95,13 +102,6 @@ const ALLOWED_PROTOCOLS = new Set(['http:', 'https:']);
  * `js/cors-misconfiguration-for-credentials` rule recognises as safe when
  * combined with `Access-Control-Allow-Credentials: true`.
  */
-/** `/healthz` is unauthenticated: the version, which flags a release with a known flaw, is opt-in. */
-const healthzBody = (config: Config): Record<string, string> => ({
-  status: 'ok',
-  subdomain: config.subdomain,
-  ...(config.healthzVersion ? { version: readPackageInfo().version } : {}),
-});
-
 export const resolveAllowedOrigin = (
   origin: string,
   extraOrigins: readonly string[] | undefined,

@@ -310,13 +310,7 @@ export const createServerShell = (
   // Read name/version from package.json at runtime rather than hardcoding them
   // (the old literals were stale and even carried the wrong package name).
   const pkg = readPackageInfo();
-  // Clients hand `instructions` to the model but not `serverInfo`, so the
-  // version line is the only way an agent can tell a stale deployment (#469).
-  const instructions = [
-    `Server: ${pkg.name} ${pkg.version}.`,
-    buildInstructions(config),
-    extraInstructions,
-  ]
+  const instructions = [buildInstructions(config), extraInstructions]
     .filter((block): block is string => block !== undefined)
     .join('\n\n');
   // No `logging` capability: diagnostics go to stderr only (see utils/logger.ts).
