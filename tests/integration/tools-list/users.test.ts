@@ -36,7 +36,6 @@ it('exposes the users tool surface unchanged', async () => {
             "page": {
               "default": 1,
               "description": "1-based page number for offset pagination. Increment it while keeping \`per_page\` fixed to fetch subsequent pages; page 1 is the first page.",
-              "maximum": 9007199254740991,
               "minimum": 1,
               "type": "integer",
             },
@@ -75,8 +74,6 @@ it('exposes the users tool surface unchanged', async () => {
           "properties": {
             "user_id": {
               "description": "Numeric id of the user to fetch, from search_users or a ticket's requester/assignee fields.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
           },
@@ -102,8 +99,6 @@ it('exposes the users tool surface unchanged', async () => {
           "properties": {
             "organization_id": {
               "description": "Numeric id of the organization to fetch, from list_organizations, search or a user record.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
           },

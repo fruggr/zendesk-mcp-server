@@ -130,17 +130,36 @@ type JsonSchemaConversion<Options extends { target: string; libraryOptions?: unk
   options: Options,
 ) => Record<string, unknown>;
 
+// zod stamps `z.number().int()` with ±2^53 bounds: about 4 KB of every
+// `tools/list` that tell an agent nothing, since a Zendesk id never nears them
+// and the strict parser still rejects an unsafe integer.
+const isSafeIntegerBound = ([key, value]: [string, unknown]): boolean =>
+  (key === 'maximum' && value === Number.MAX_SAFE_INTEGER) ||
+  (key === 'minimum' && value === Number.MIN_SAFE_INTEGER);
+
+const withoutSafeIntegerBounds = (node: unknown): unknown => {
+  if (Array.isArray(node)) return node.map(withoutSafeIntegerBounds);
+  if (node === null || typeof node !== 'object') return node;
+  return Object.fromEntries(
+    Object.entries(node)
+      .filter((entry) => !isSafeIntegerBound(entry))
+      .map(([key, value]) => [key, withoutSafeIntegerBounds(value)]),
+  );
+};
+
 // zod converts again on every call, and the SDK asks on every `tools/list`.
 // Library options are the caller's own tuning: those calls are not cached.
 const convertOncePerTarget = <Options extends { target: string; libraryOptions?: unknown }>(
   convert: JsonSchemaConversion<Options>,
 ): JsonSchemaConversion<Options> => {
   const byTarget = new Map<string, Record<string, unknown>>();
+  const compact = (options: Options) =>
+    withoutSafeIntegerBounds(convert(options)) as Record<string, unknown>;
   return (options) => {
-    if (options.libraryOptions) return convert(options);
+    if (options.libraryOptions) return compact(options);
     const known = byTarget.get(options.target);
     if (known) return known;
-    const converted = convert(options);
+    const converted = compact(options);
     byTarget.set(options.target, converted);
     return converted;
   };

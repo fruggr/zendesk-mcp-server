@@ -118,7 +118,10 @@ everything an agent could depend on:
   outranks preserving it. Fewer words for the same facts is a win: this is
   prompt text, re-read on every `tools/list`, not a contract.
 - **Never drop** a `required` field or loosen a type in a way that changes the
-  emitted schema shape.
+  emitted schema shape. One deliberate exception: the ±2^53 `minimum`/`maximum`
+  zod stamps on every `z.number().int()` are stripped at conversion
+  (`utils/validation.ts`); they cost ~4 KB per `tools/list` and tell an agent
+  nothing, and the strict parser still rejects an unsafe integer.
 - **Adding constraints is an enrichment, not a regression.** Tightening
   `z.string().min(1)` to `z.string().min(1).base64()` only *adds* `format` and
   `pattern` to the JSON Schema output and leaves the `description` byte-for-byte

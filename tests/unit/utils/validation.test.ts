@@ -277,6 +277,51 @@ describe('toStrictStandardSchema', () => {
     expect(standard.jsonSchema.input(options)).not.toBe(standard.jsonSchema.input(options));
     expect(standard.jsonSchema.output(options)).not.toBe(standard.jsonSchema.output(options));
   });
+
+  it("drops zod's safe-integer bounds, at any depth, and keeps every real bound", () => {
+    const schema = z.object({
+      ticket_id: z.number().int(),
+      page_size: z.number().int().min(1).max(100),
+      ids: z.array(z.number().int()),
+      nested: z.object({ user_id: z.number().int().optional() }),
+    });
+    const { jsonSchema } = toStrictStandardSchema(schema)['~standard'];
+
+    expect(JSON.stringify(jsonSchema.output({ target: 'draft-2020-12' }))).not.toContain(
+      String(Number.MAX_SAFE_INTEGER),
+    );
+    for (const json of [
+      jsonSchema.input({ target: 'draft-2020-12' }),
+      jsonSchema.input({ target: 'draft-2020-12', libraryOptions: {} }),
+    ]) {
+      expect(json['properties']).toMatchInlineSnapshot(`
+        {
+          "ids": {
+            "items": {
+              "type": "integer",
+            },
+            "type": "array",
+          },
+          "nested": {
+            "properties": {
+              "user_id": {
+                "type": "integer",
+              },
+            },
+            "type": "object",
+          },
+          "page_size": {
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer",
+          },
+          "ticket_id": {
+            "type": "integer",
+          },
+        }
+      `);
+    }
+  });
 });
 
 describe('convertingToJsonSchemaOnce', () => {

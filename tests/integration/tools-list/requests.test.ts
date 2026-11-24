@@ -35,8 +35,6 @@ it('exposes the requests tool surface unchanged', async () => {
           "properties": {
             "form_id": {
               "description": "Form id whose questions to read, as returned by list_request_forms. Omit to describe the account default form.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
           },
@@ -103,8 +101,6 @@ it('exposes the requests tool surface unchanged', async () => {
                 "properties": {
                   "id": {
                     "description": "Numeric id of a question on the chosen form, from get_request_form.",
-                    "maximum": 9007199254740991,
-                    "minimum": -9007199254740991,
                     "type": "integer",
                   },
                   "value": {
@@ -121,8 +117,6 @@ it('exposes the requests tool surface unchanged', async () => {
             },
             "form_id": {
               "description": "Form id from list_request_forms, deciding which questions apply. Omit for the account default form.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
             "subject": {
@@ -155,7 +149,6 @@ it('exposes the requests tool surface unchanged', async () => {
             "page": {
               "default": 1,
               "description": "1-based page number for offset pagination. Increment it while keeping \`per_page\` fixed to fetch subsequent pages; page 1 is the first page.",
-              "maximum": 9007199254740991,
               "minimum": 1,
               "type": "integer",
             },
@@ -230,8 +223,6 @@ it('exposes the requests tool surface unchanged', async () => {
             },
             "request_id": {
               "description": "Number of the request to read, from list_requests or returned when it was submitted.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
           },
@@ -296,8 +287,6 @@ it('exposes the requests tool surface unchanged', async () => {
             },
             "request_id": {
               "description": "Number of the request to reply on, as shown by list_requests.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
           },
@@ -324,8 +313,6 @@ it('exposes the requests tool surface unchanged', async () => {
           "properties": {
             "request_id": {
               "description": "Number of the request to close. Check get_request first: its "can you mark it solved" line has to say yes.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
           },

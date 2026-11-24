@@ -23,7 +23,6 @@ it('exposes the help_center tool surface unchanged', async () => {
             "page": {
               "default": 1,
               "description": "1-based page number for offset pagination. Increment it while keeping \`per_page\` fixed to fetch subsequent pages; page 1 is the first page.",
-              "maximum": 9007199254740991,
               "minimum": 1,
               "type": "integer",
             },
@@ -62,8 +61,6 @@ it('exposes the help_center tool surface unchanged', async () => {
           "properties": {
             "article_id": {
               "description": "Article ID — the numeric id of the Help Center article. Obtain it from list_articles or search_articles.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
             "locale": {
@@ -126,8 +123,6 @@ it('exposes the help_center tool surface unchanged', async () => {
           "properties": {
             "category_id": {
               "description": "Restrict to sections of this category (id from list_categories). Omit to list every section.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
             "cursor": {
@@ -185,8 +180,6 @@ it('exposes the help_center tool surface unchanged', async () => {
             },
             "section_id": {
               "description": "Restrict the listing to one section (numeric id from list_sections). Omit to list articles across all sections.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
             "sort_by": {
@@ -246,8 +239,6 @@ it('exposes the help_center tool surface unchanged', async () => {
           "properties": {
             "article_id": {
               "description": "Article ID — the numeric id of the Help Center article. Obtain it from list_articles or search_articles.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
           },
@@ -273,8 +264,6 @@ it('exposes the help_center tool surface unchanged', async () => {
           "properties": {
             "article_id": {
               "description": "ID of the existing article to translate.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
             "body": {
@@ -322,8 +311,6 @@ it('exposes the help_center tool surface unchanged', async () => {
           "properties": {
             "article_id": {
               "description": "Article ID — the numeric id of the article whose translation to update. Obtain it from list_articles or search_articles.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
             "body": {
@@ -366,8 +353,6 @@ it('exposes the help_center tool surface unchanged', async () => {
           "properties": {
             "section_id": {
               "description": "Section ID — the numeric id of the Help Center section. Obtain it from list_sections or the zendesk-hc://topology resource.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
           },
@@ -393,8 +378,6 @@ it('exposes the help_center tool surface unchanged', async () => {
           "properties": {
             "category_id": {
               "description": "Category ID — the numeric id of the Help Center category. Obtain it from list_categories or the zendesk-hc://topology resource.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
           },
@@ -420,8 +403,6 @@ it('exposes the help_center tool surface unchanged', async () => {
           "properties": {
             "category_id": {
               "description": "Restrict the audit to this category and the sections it contains (id from list_categories). Omit to sweep the whole tree.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
             "locale": {
@@ -468,8 +449,6 @@ it('exposes the help_center tool surface unchanged', async () => {
             },
             "section_id": {
               "description": "Section ID — the numeric id of the section whose translation to write. Obtain it from list_sections, find_translation_gaps or the zendesk-hc://topology resource.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
           },
@@ -496,8 +475,6 @@ it('exposes the help_center tool surface unchanged', async () => {
           "properties": {
             "category_id": {
               "description": "Category ID — the numeric id of the category whose translation to write. Obtain it from list_categories, find_translation_gaps or the zendesk-hc://topology resource.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
             "description": {
@@ -558,8 +535,6 @@ it('exposes the help_center tool surface unchanged', async () => {
           "properties": {
             "author_id": {
               "description": "Author user ID. Defaults to the authenticated user.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
             "body": {
@@ -592,8 +567,6 @@ it('exposes the help_center tool surface unchanged', async () => {
             },
             "permission_group_id": {
               "description": "Permission group controlling who can edit (id from list_permission_groups; if that is forbidden to a non-Guide-admin token, reuse an existing article's from get_article).",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
             "promoted": {
@@ -603,8 +576,6 @@ it('exposes the help_center tool surface unchanged', async () => {
             },
             "section_id": {
               "description": "Section that will contain the article (numeric id from list_sections).",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
             "title": {
@@ -614,8 +585,6 @@ it('exposes the help_center tool surface unchanged', async () => {
             },
             "user_segment_id": {
               "description": "User segment controlling who can see the article; defaults to everyone (id from list_user_segments; if that is forbidden to a non-Guide-admin token, reuse an existing article's from get_article).",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
           },
@@ -644,14 +613,10 @@ it('exposes the help_center tool surface unchanged', async () => {
           "properties": {
             "article_id": {
               "description": "Article ID — the numeric id of the article to update. Obtain it from list_articles or search_articles.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
             "author_id": {
               "description": "User id of the article author (from search_users).",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
             "content_tag_ids": {
@@ -674,13 +639,10 @@ it('exposes the help_center tool surface unchanged', async () => {
             },
             "permission_group_id": {
               "description": "Permission group controlling who can edit (id from list_permission_groups; if that is forbidden to a non-Guide-admin token, reuse an existing article's from get_article).",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
             "position": {
               "description": "Sort position within the section (manual ordering only; 0 = top, where new articles land). To move an article to the end, read the highest position P with list_articles(sort_by="position", sort_order="desc"), then set position = P + 1.",
-              "maximum": 9007199254740991,
               "minimum": 0,
               "type": "integer",
             },
@@ -690,14 +652,10 @@ it('exposes the help_center tool surface unchanged', async () => {
             },
             "section_id": {
               "description": "Move the article to this section (numeric id from list_sections).",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
             "user_segment_id": {
               "description": "User segment controlling who can see the article (id from list_user_segments; if that is forbidden to a non-Guide-admin token, reuse an existing article's from get_article).",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
           },
@@ -723,8 +681,6 @@ it('exposes the help_center tool surface unchanged', async () => {
           "properties": {
             "article_id": {
               "description": "Article ID — the numeric id of the article to move within its section. Obtain it from list_articles or search_articles.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
             "confirm": {
@@ -739,8 +695,6 @@ it('exposes the help_center tool surface unchanged', async () => {
             },
             "reference_article_id": {
               "description": "For "before"/"after" only: the sibling to place the article next to (id from list_articles), in the same section and other than article_id.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
             "target": {
@@ -777,8 +731,6 @@ it('exposes the help_center tool surface unchanged', async () => {
           "properties": {
             "article_id": {
               "description": "Article ID — the numeric id of the Help Center article. Obtain it from list_articles or search_articles.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
             "confirm": {
@@ -921,8 +873,6 @@ it('exposes the help_center tool surface unchanged', async () => {
           "properties": {
             "article_id": {
               "description": "ID of the Help Center article whose attachments to list.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
           },
@@ -948,8 +898,6 @@ it('exposes the help_center tool surface unchanged', async () => {
           "properties": {
             "article_id": {
               "description": "Article ID — the numeric id of the Help Center article. Obtain it from list_articles or search_articles.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
             "locale": {
@@ -979,8 +927,6 @@ it('exposes the help_center tool surface unchanged', async () => {
           "properties": {
             "article_id": {
               "description": "Article ID — the numeric id of the Help Center article. Obtain it from list_articles or search_articles.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
             "format": {
@@ -998,7 +944,6 @@ it('exposes the help_center tool surface unchanged', async () => {
             },
             "section_index": {
               "description": "0-based index of the section (see get_article_outline)",
-              "maximum": 9007199254740991,
               "minimum": 0,
               "type": "integer",
             },
@@ -1027,8 +972,6 @@ it('exposes the help_center tool surface unchanged', async () => {
           "properties": {
             "article_id": {
               "description": "Article ID — the numeric id of the Help Center article. Obtain it from list_articles or search_articles.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
             "content": {
@@ -1050,7 +993,6 @@ it('exposes the help_center tool surface unchanged', async () => {
             },
             "section_index": {
               "description": "0-based index of the section to replace (see get_article_outline). 0 is the heading-less intro when the body has text before its first heading, otherwise the first heading.",
-              "maximum": 9007199254740991,
               "minimum": 0,
               "type": "integer",
             },
@@ -1080,8 +1022,6 @@ it('exposes the help_center tool surface unchanged', async () => {
           "properties": {
             "article_id": {
               "description": "Article ID — the numeric id of the Help Center article. Obtain it from list_articles or search_articles.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
             "source_locale": {
@@ -1117,8 +1057,6 @@ it('exposes the help_center tool surface unchanged', async () => {
           "properties": {
             "article_id": {
               "description": "Article ID — the numeric id of the Help Center article. Obtain it from list_articles or search_articles.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
             "content_type": {

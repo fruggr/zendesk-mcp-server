@@ -23,8 +23,6 @@ it('exposes the tickets tool surface unchanged', async () => {
             },
             "ticket_id": {
               "description": "Numeric id of the ticket to fetch, from search_tickets or list_tickets.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
           },
@@ -61,8 +59,6 @@ it('exposes the tickets tool surface unchanged', async () => {
             },
             "ticket_id": {
               "description": "Numeric id of the ticket whose change history to read, from search_tickets or list_tickets.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
           },
@@ -108,8 +104,6 @@ it('exposes the tickets tool surface unchanged', async () => {
             },
             "ticket_id": {
               "description": "Numeric id of the ticket whose conversation to read, from search_tickets or list_tickets.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
           },
@@ -137,7 +131,6 @@ it('exposes the tickets tool surface unchanged', async () => {
               "description": "Ids of the only files to fetch, as shown by list_ticket_comments or get_ticket(include_comments=true); they also reach files past the page cap. The ticket's comments are then read only until every id is found, and, once every comment is scanned, an id not on the ticket is named rather than listed; if the scan ends early (page cap or a page Zendesk gives no cursor for), an id not yet found is fetched directly and flagged as unchecked. Omit to collect the ticket's attachments, up to the page cap.",
               "items": {
                 "exclusiveMinimum": 0,
-                "maximum": 9007199254740991,
                 "type": "integer",
               },
               "maxItems": 25,
@@ -146,8 +139,6 @@ it('exposes the tickets tool surface unchanged', async () => {
             },
             "ticket_id": {
               "description": "Numeric id of the ticket whose attachments to fetch, from search_tickets or list_tickets.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
           },
@@ -174,7 +165,6 @@ it('exposes the tickets tool surface unchanged', async () => {
             "page": {
               "default": 1,
               "description": "1-based page number for offset pagination. Increment it while keeping \`per_page\` fixed to fetch subsequent pages; page 1 is the first page.",
-              "maximum": 9007199254740991,
               "minimum": 1,
               "type": "integer",
             },
@@ -213,8 +203,6 @@ it('exposes the tickets tool surface unchanged', async () => {
           "properties": {
             "assignee_id": {
               "description": "User id of the agent to assign the ticket to, from search_users.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
             "custom_fields": {
@@ -224,8 +212,6 @@ it('exposes the tickets tool surface unchanged', async () => {
                 "properties": {
                   "id": {
                     "description": "Numeric id of the ticket field to set, as listed by list_ticket_fields.",
-                    "maximum": 9007199254740991,
-                    "minimum": -9007199254740991,
                     "type": "integer",
                   },
                   "value": {
@@ -247,14 +233,10 @@ it('exposes the tickets tool surface unchanged', async () => {
             },
             "group_id": {
               "description": "Id of the group to assign the ticket to, from your Zendesk admin settings.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
             "organization_id": {
               "description": "Id of the organization the ticket belongs to. It must be one the requester is a member of, or Zendesk rejects or ignores it; omit to let Zendesk use the requester's default organization.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
             "priority": {
@@ -269,8 +251,6 @@ it('exposes the tickets tool surface unchanged', async () => {
             },
             "requester_id": {
               "description": "User id of the person the ticket is on behalf of (end user or agent), from search_users; defaults to you.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
             "subject": {
@@ -319,8 +299,6 @@ it('exposes the tickets tool surface unchanged', async () => {
           "properties": {
             "assignee_id": {
               "description": "User id of the agent to assign the ticket to, from search_users.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
             "custom_fields": {
@@ -330,8 +308,6 @@ it('exposes the tickets tool surface unchanged', async () => {
                 "properties": {
                   "id": {
                     "description": "Numeric id of the ticket field to set, as listed by list_ticket_fields.",
-                    "maximum": 9007199254740991,
-                    "minimum": -9007199254740991,
                     "type": "integer",
                   },
                   "value": {
@@ -354,7 +330,6 @@ it('exposes the tickets tool surface unchanged', async () => {
                   "description": "User ids to CC on the ticket. Omit to only remove.",
                   "items": {
                     "exclusiveMinimum": 0,
-                    "maximum": 9007199254740991,
                     "type": "integer",
                   },
                   "maxItems": 48,
@@ -364,7 +339,6 @@ it('exposes the tickets tool surface unchanged', async () => {
                   "description": "User ids to drop from the CC list. Omit to only add.",
                   "items": {
                     "exclusiveMinimum": 0,
-                    "maximum": 9007199254740991,
                     "type": "integer",
                   },
                   "type": "array",
@@ -380,7 +354,6 @@ it('exposes the tickets tool surface unchanged', async () => {
                   "description": "User ids to start following the ticket. Omit to only remove.",
                   "items": {
                     "exclusiveMinimum": 0,
-                    "maximum": 9007199254740991,
                     "type": "integer",
                   },
                   "type": "array",
@@ -389,7 +362,6 @@ it('exposes the tickets tool surface unchanged', async () => {
                   "description": "User ids to stop following the ticket. Omit to only add.",
                   "items": {
                     "exclusiveMinimum": 0,
-                    "maximum": 9007199254740991,
                     "type": "integer",
                   },
                   "type": "array",
@@ -399,14 +371,10 @@ it('exposes the tickets tool surface unchanged', async () => {
             },
             "group_id": {
               "description": "Id of the group to assign the ticket to.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
             "organization_id": {
               "description": "Id of the organization to move the ticket to. It must be one the requester is a member of, or Zendesk rejects or ignores it.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
             "priority": {
@@ -421,8 +389,6 @@ it('exposes the tickets tool surface unchanged', async () => {
             },
             "requester_id": {
               "description": "User id of the new requester (end user or agent), to fix who the ticket is on behalf of, from search_users. Zendesk may move the ticket to an organization of the new requester; pass organization_id to choose which.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
             "status": {
@@ -450,8 +416,6 @@ it('exposes the tickets tool surface unchanged', async () => {
             },
             "ticket_id": {
               "description": "Numeric id of the ticket to update, from search_tickets or list_tickets.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
             "type": {
@@ -526,8 +490,6 @@ it('exposes the tickets tool surface unchanged', async () => {
             },
             "ticket_id": {
               "description": "Numeric id of the ticket to annotate, from search_tickets or list_tickets.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
           },
@@ -593,8 +555,6 @@ it('exposes the tickets tool surface unchanged', async () => {
             },
             "ticket_id": {
               "description": "Numeric id of the ticket to reply on, from search_tickets or list_tickets.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
           },
@@ -650,8 +610,6 @@ it('exposes the tickets tool surface unchanged', async () => {
           "properties": {
             "problem_id": {
               "description": "Numeric id of the ticket of type "problem" whose linked incidents to list, from search_tickets or list_tickets.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
           },
@@ -691,8 +649,6 @@ it('exposes the tickets tool surface unchanged', async () => {
             },
             "ticket_id": {
               "description": "Numeric id of the ticket whose tags to modify, from search_tickets or list_tickets.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
           },
@@ -719,7 +675,6 @@ it('exposes the tickets tool surface unchanged', async () => {
             "page": {
               "default": 1,
               "description": "1-based page number for offset pagination. Increment it while keeping \`per_page\` fixed to fetch subsequent pages; page 1 is the first page.",
-              "maximum": 9007199254740991,
               "minimum": 1,
               "type": "integer",
             },
@@ -752,7 +707,6 @@ it('exposes the tickets tool surface unchanged', async () => {
               "description": "Numeric ids of the tickets to read, from search_tickets, list_tickets or get_view_tickets; duplicates are read once and the answer keeps this order.",
               "items": {
                 "exclusiveMinimum": 0,
-                "maximum": 9007199254740991,
                 "type": "integer",
               },
               "maxItems": 100,
@@ -869,7 +823,6 @@ it('exposes the tickets tool surface unchanged', async () => {
                 },
                 {
                   "exclusiveMinimum": 0,
-                  "maximum": 9007199254740991,
                   "type": "integer",
                 },
               ],
@@ -899,7 +852,6 @@ it('exposes the tickets tool surface unchanged', async () => {
             "page": {
               "default": 1,
               "description": "1-based page number for offset pagination. Increment it while keeping \`per_page\` fixed to fetch subsequent pages; page 1 is the first page.",
-              "maximum": 9007199254740991,
               "minimum": 1,
               "type": "integer",
             },
@@ -930,14 +882,10 @@ it('exposes the tickets tool surface unchanged', async () => {
           "properties": {
             "macro_id": {
               "description": "Numeric id of the macro to preview, from list_macros.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
             "ticket_id": {
               "description": "Numeric id of the ticket to preview the macro against, from search_tickets or list_tickets.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
           },
@@ -993,7 +941,6 @@ it('exposes the tickets tool surface unchanged', async () => {
                 },
                 {
                   "exclusiveMinimum": 0,
-                  "maximum": 9007199254740991,
                   "type": "integer",
                 },
               ],
@@ -1028,7 +975,6 @@ it('exposes the tickets tool surface unchanged', async () => {
             "page": {
               "default": 1,
               "description": "1-based page number for offset pagination. Increment it while keeping \`per_page\` fixed to fetch subsequent pages; page 1 is the first page.",
-              "maximum": 9007199254740991,
               "minimum": 1,
               "type": "integer",
             },
