@@ -284,23 +284,44 @@ describe('toStrictStandardSchema', () => {
       page_size: z.number().int().min(1).max(100),
       ids: z.array(z.number().int()),
       nested: z.object({ user_id: z.number().int().optional() }),
+      kind: z.enum(['a', 'b']),
+      ceiling: z.number().default(Number.MAX_SAFE_INTEGER),
+      floor: z.number().default(Number.MIN_SAFE_INTEGER),
+      note: z.string().nullable().default(null),
     });
     const { jsonSchema } = toStrictStandardSchema(schema)['~standard'];
 
-    expect(JSON.stringify(jsonSchema.output({ target: 'draft-2020-12' }))).not.toContain(
-      String(Number.MAX_SAFE_INTEGER),
-    );
+    const output = jsonSchema.output({ target: 'draft-2020-12' })['properties'] as Record<
+      string,
+      unknown
+    >;
+    expect(output['ticket_id']).toEqual({ type: 'integer' });
     for (const json of [
       jsonSchema.input({ target: 'draft-2020-12' }),
       jsonSchema.input({ target: 'draft-2020-12', libraryOptions: {} }),
     ]) {
       expect(json['properties']).toMatchInlineSnapshot(`
         {
+          "ceiling": {
+            "default": 9007199254740991,
+            "type": "number",
+          },
+          "floor": {
+            "default": -9007199254740991,
+            "type": "number",
+          },
           "ids": {
             "items": {
               "type": "integer",
             },
             "type": "array",
+          },
+          "kind": {
+            "enum": [
+              "a",
+              "b",
+            ],
+            "type": "string",
           },
           "nested": {
             "properties": {
@@ -309,6 +330,13 @@ describe('toStrictStandardSchema', () => {
               },
             },
             "type": "object",
+          },
+          "note": {
+            "default": null,
+            "type": [
+              "string",
+              "null",
+            ],
           },
           "page_size": {
             "maximum": 100,
