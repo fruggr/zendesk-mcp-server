@@ -141,50 +141,48 @@ export const createSlaAlertTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'List SLA Alerts',
       description:
-        "List the SLA metrics breached or about to breach across a set of tickets, most urgent first. Pick the set with exactly one of scope, view or query; with none, the client may ask the user which, else the caller's own tickets are checked. Each running metric past its deadline, or nearer to it than its CRITICAL or WARNING threshold, is one line under BREACHED, CRITICAL or WARNING, soonest first: ticket id, metric, time left or overdue, subject, status, priority. Paused and achieved metrics never appear. Thresholds are per metric family (reply metrics vs the rest): the caller's own from configure_sla_alerts, else the server's. On a user's first call they are shown too, in the same form or in the reply. Never changes Zendesk; its one side effect is remembering, in this connector's own per-user state, that the user was shown the thresholds. Results are cached per user for about a minute; a set over a few hundred tickets is read in part. For one ticket's full SLA state use get_ticket; for elapsed times, get_ticket_metrics.",
+        "List SLA metrics breached or about to breach on a set of tickets, most urgent first. Pick the set with exactly one of scope, view or query; with none, the client may ask the user, else your own tickets are checked. Each running metric past its deadline or inside its CRITICAL or WARNING threshold is one line under that heading, soonest first: ticket id, metric, time left or overdue, subject, status, priority; paused and achieved metrics never appear. Thresholds are per family (reply metrics vs the rest), yours from configure_sla_alerts or else the server's, and are shown on your first call. Never changes Zendesk; it only remembers, per user, that you were shown the thresholds. Cached about a minute per user; a set over a few hundred tickets is read in part. One ticket's full SLA: get_ticket; elapsed times: get_ticket_metrics.",
       inputSchema: z.object({
         scope: z
           .enum(['mine', 'my_groups', 'all'])
           .optional()
           .describe(
-            'A named set of unsolved tickets: "mine" (assigned to you), "my_groups" (in any group you belong to) or "all" (the whole account, as far as your role sees it).',
+            'Unsolved tickets: "mine" (assigned to you), "my_groups" (in your groups) or "all" (all your role sees).',
           ),
         view: z
           .union([z.string().min(1), z.number().int().positive()])
           .optional()
-          .describe(
-            'A Zendesk view, by exact title (case-insensitive) or numeric id, as listed by list_views.',
-          ),
+          .describe('View title (case-insensitive) or id, from list_views.'),
         query: z
           .string()
           .min(1)
           .optional()
           .describe(
-            'A Zendesk ticket search query, e.g. "status<solved priority:urgent" or "organization:acme status<solved"; "type:ticket" is added automatically.',
+            'Ticket search query, e.g. "status<solved priority:urgent"; type:ticket is added.',
           ),
         within: z
           .string()
           .optional()
           .describe(
-            `Only list alerts breaching within this time from now; breached ones follow include_breached. ${DURATION_HINT} Omit to list everything inside the thresholds.`,
+            `Only alerts breaching within this time; breached ones follow include_breached. ${DURATION_HINT}`,
           ),
         include_breached: z
           .boolean()
           .default(true)
           .describe(
-            'List metrics already past their deadline (BREACHED); false shows only what can still be saved.',
+            'Include metrics already past their deadline; false shows only what can still be saved.',
           ),
         warning: z
           .string()
           .optional()
           .describe(
-            `Overrides, for this call only, every metric family's WARNING threshold: the time left before a breach that counts as a warning. Alone, it lowers a family's critical threshold to it where longer. ${DURATION_HINT}`,
+            `This call's WARNING threshold (time left that counts as a warning) for every family; alone, it lowers a longer critical threshold to it. ${DURATION_HINT}`,
           ),
         critical: z
           .string()
           .optional()
           .describe(
-            `Overrides, for this call only, every metric family's CRITICAL threshold. Alone, it raises a family's warning threshold to it where shorter; with warning, it must not exceed it. ${DURATION_HINT}`,
+            `This call's CRITICAL threshold for every family; alone, it raises a shorter warning threshold to it, and with warning it must not exceed it. ${DURATION_HINT}`,
           ),
       }),
       annotations: {

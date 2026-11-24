@@ -148,13 +148,13 @@ it('exposes the requests tool surface unchanged', async () => {
           "properties": {
             "page": {
               "default": 1,
-              "description": "1-based page number for offset pagination. Increment it while keeping \`per_page\` fixed to fetch subsequent pages; page 1 is the first page.",
+              "description": "1-based page number; keep per_page fixed while paging.",
               "minimum": 1,
               "type": "integer",
             },
             "per_page": {
               "default": 100,
-              "description": "Number of results per page for offset pagination (1-100). Pair with \`page\` to walk large result sets; the response header reports the total count and whether more pages remain.",
+              "description": "Results per page; the header gives the total and whether more pages remain.",
               "maximum": 100,
               "minimum": 1,
               "type": "integer",
