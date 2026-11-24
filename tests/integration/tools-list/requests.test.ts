@@ -70,7 +70,7 @@ it('exposes the requests tool surface unchanged', async () => {
                   },
                   "file_base64": {
                     "contentEncoding": "base64",
-                    "description": "File content encoded as base64. At most 10420224 characters (about 7.45 MB of file), and the attachments of one call must stay under that total; the HTTP transport additionally caps request bodies at 4 MB.",
+                    "description": "File content as base64, about 7.45 MB of file at most; the attachments of one call share that limit, and the HTTP transport caps request bodies at 4 MB.",
                     "format": "base64",
                     "maxLength": 10420224,
                     "minLength": 1,
@@ -268,7 +268,7 @@ it('exposes the requests tool surface unchanged', async () => {
                   },
                   "file_base64": {
                     "contentEncoding": "base64",
-                    "description": "File content encoded as base64. At most 10420224 characters (about 7.45 MB of file), and the attachments of one call must stay under that total; the HTTP transport additionally caps request bodies at 4 MB.",
+                    "description": "File content as base64, about 7.45 MB of file at most; the attachments of one call share that limit, and the HTTP transport caps request bodies at 4 MB.",
                     "format": "base64",
                     "maxLength": 10420224,
                     "minLength": 1,

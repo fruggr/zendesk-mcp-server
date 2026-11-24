@@ -498,7 +498,7 @@ it('exposes the tickets tool surface unchanged', async () => {
                   },
                   "file_base64": {
                     "contentEncoding": "base64",
-                    "description": "File content encoded as base64. At most 10420224 characters (about 7.45 MB of file), and the attachments of one call must stay under that total; the HTTP transport additionally caps request bodies at 4 MB.",
+                    "description": "File content as base64, about 7.45 MB of file at most; the attachments of one call share that limit, and the HTTP transport caps request bodies at 4 MB.",
                     "format": "base64",
                     "maxLength": 10420224,
                     "minLength": 1,
@@ -565,7 +565,7 @@ it('exposes the tickets tool surface unchanged', async () => {
                   },
                   "file_base64": {
                     "contentEncoding": "base64",
-                    "description": "File content encoded as base64. At most 10420224 characters (about 7.45 MB of file), and the attachments of one call must stay under that total; the HTTP transport additionally caps request bodies at 4 MB.",
+                    "description": "File content as base64, about 7.45 MB of file at most; the attachments of one call share that limit, and the HTTP transport caps request bodies at 4 MB.",
                     "format": "base64",
                     "maxLength": 10420224,
                     "minLength": 1,
@@ -957,27 +957,27 @@ it('exposes the tickets tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "List the SLA metrics that are breached or about to breach across a set of tickets, most urgent first. Pick the set with exactly one of scope (mine, my_groups or all unsolved tickets), view (a Zendesk view by title or id) or query (any Zendesk ticket search). Each running metric that is breached, or closer to its breach than its CRITICAL or WARNING threshold, is one line under BREACHED, CRITICAL or WARNING, soonest breach first, with the ticket id, metric, time left or overdue, subject, status and priority; paused and achieved metrics never appear. Thresholds are per metric family (reply metrics vs every other metric), the caller's own when set with configure_sla_alerts, else the server's; warning and critical override them for this call only. When no set is given the client may be asked which one, otherwise it defaults to the caller's own tickets and says so; on a user's first call the thresholds are shown too (in that form, or in the reply), and thresholds edited there apply to this call only. Never changes Zendesk; its one side effect is remembering, in this connector's own per-user state, that the user has been shown the thresholds. Results are cached per user for about a minute, and a set larger than a few hundred tickets is read in part, with a notice. For one ticket's full SLA state use get_ticket; for elapsed times use get_ticket_metrics.",
+        "description": "List the SLA metrics breached or about to breach across a set of tickets, most urgent first. Pick the set with exactly one of scope, view or query; with none, the client may ask the user which, else the caller's own tickets are checked. Each running metric past its deadline, or nearer to it than its CRITICAL or WARNING threshold, is one line under BREACHED, CRITICAL or WARNING, soonest first: ticket id, metric, time left or overdue, subject, status, priority. Paused and achieved metrics never appear. Thresholds are per metric family (reply metrics vs the rest): the caller's own from configure_sla_alerts, else the server's. On a user's first call they are shown too, in the same form or in the reply. Never changes Zendesk; its one side effect is remembering, in this connector's own per-user state, that the user was shown the thresholds. Results are cached per user for about a minute; a set over a few hundred tickets is read in part. For one ticket's full SLA state use get_ticket; for elapsed times, get_ticket_metrics.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "critical": {
-              "description": "Override the CRITICAL threshold of every metric family for this call only. Given alone, a family's warning threshold is raised to it where shorter; given with warning, it must not exceed it. A readable duration: 30m, 4h, 2d, 1w, or a mix like 1d4h.",
+              "description": "Overrides, for this call only, every metric family's CRITICAL threshold. Alone, it raises a family's warning threshold to it where shorter; with warning, it must not exceed it. A readable duration: 30m, 4h, 2d, 1w, or a mix like 1d4h.",
               "type": "string",
             },
             "include_breached": {
               "default": true,
-              "description": "Whether to list metrics already past their deadline (BREACHED). Defaults to true; set false to see only what can still be saved.",
+              "description": "List metrics already past their deadline (BREACHED); false shows only what can still be saved.",
               "type": "boolean",
             },
             "query": {
-              "description": "A Zendesk ticket search query selecting the tickets to check, e.g. "status<solved priority:urgent" or "organization:acme status<solved"; "type:ticket" is added automatically. Use instead of scope or view.",
+              "description": "A Zendesk ticket search query, e.g. "status<solved priority:urgent" or "organization:acme status<solved"; "type:ticket" is added automatically.",
               "minLength": 1,
               "type": "string",
             },
             "scope": {
-              "description": "A named set of unsolved tickets: "mine" (assigned to you), "my_groups" (in any group you belong to) or "all" (the whole account, as far as your role sees it). Use instead of view or query.",
+              "description": "A named set of unsolved tickets: "mine" (assigned to you), "my_groups" (in any group you belong to) or "all" (the whole account, as far as your role sees it).",
               "enum": [
                 "mine",
                 "my_groups",
@@ -997,14 +997,14 @@ it('exposes the tickets tool surface unchanged', async () => {
                   "type": "integer",
                 },
               ],
-              "description": "A Zendesk view to check, by its exact title (matched case-insensitively) or numeric id, as listed by list_views. Use instead of scope or query.",
+              "description": "A Zendesk view, by exact title (case-insensitive) or numeric id, as listed by list_views.",
             },
             "warning": {
-              "description": "Override the WARNING threshold of every metric family for this call only: how much time left before a breach counts as a warning. Given alone, a family's critical threshold is lowered to it where longer. A readable duration: 30m, 4h, 2d, 1w, or a mix like 1d4h.",
+              "description": "Overrides, for this call only, every metric family's WARNING threshold: the time left before a breach that counts as a warning. Alone, it lowers a family's critical threshold to it where longer. A readable duration: 30m, 4h, 2d, 1w, or a mix like 1d4h.",
               "type": "string",
             },
             "within": {
-              "description": "Only list alerts breaching within this time from now (breached ones aside, see include_breached). A readable duration: 30m, 4h, 2d, 1w, or a mix like 1d4h. Omit to list everything inside the thresholds.",
+              "description": "Only list alerts breaching within this time from now; breached ones follow include_breached. A readable duration: 30m, 4h, 2d, 1w, or a mix like 1d4h. Omit to list everything inside the thresholds.",
               "type": "string",
             },
           },
@@ -1020,7 +1020,7 @@ it('exposes the tickets tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "Search across tickets, users, and organizations. Supports filters like "type:ticket status:open", "type:user role:agent". Returns total count and paginated results (25 per page by default, up to 100); a ticket description is cut to a 200-character excerpt, which get_ticket returns in full. Organization results include name and ID only — use get_organization for full details (tags, domains, details).",
+        "description": "Search across tickets, users and organizations. Returns the total count and a page of results; a ticket description is cut to a 200-character excerpt (get_ticket returns it in full), and an organization result carries only its name and id (get_organization adds tags, domains and details).",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -1040,7 +1040,7 @@ it('exposes the tickets tool surface unchanged', async () => {
               "type": "integer",
             },
             "query": {
-              "description": "Zendesk search query. Supports type/status/role filters (e.g. "type:ticket status:open", "type:user role:agent") and free text; omit a type filter to search tickets, users and organizations at once. "me" is a value of the user keywords only (assignee:, requester:, submitter:); group:me is read as your group when you belong to exactly one, else the call fails naming your groups, so use group:<id>.",
+              "description": "Zendesk search query: type/status/role filters (e.g. "type:ticket status:open", "type:user role:agent") and free text; without a type filter it searches all three at once. "me" is a value of the user keywords only (assignee:, requester:, submitter:); group:me is read as your group when you belong to exactly one, else the call fails naming your groups, so use group:<id>.",
               "minLength": 1,
               "type": "string",
             },

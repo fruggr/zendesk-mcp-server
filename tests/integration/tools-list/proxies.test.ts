@@ -40,8 +40,8 @@ it('exposes the tickets proxy unchanged', async () => {
     - get_view_tickets(view*, sort_by, sort_order, page_size, cursor): Read the tickets inside a Zendesk view, in the view's own sort order as the agent sees it in Zendesk: the natural way to work a named queue like "Unassigned tickets" or "Breaching today".
     - list_macros(per_page, page): List the active macros available to the authenticated user, offset-paginated: each macro's id, title, description, availability scope and ordered actions.
     - preview_macro_diff(ticket_id*, macro_id*): Preview the exact changes a macro would make to a specific ticket, as a before → after diff, WITHOUT saving anything. (write)
-    - list_sla_alerts(scope, view, query, within, include_breached, warning, critical): List the SLA metrics that are breached or about to breach across a set of tickets, most urgent first.
-    - search(query*, per_page, page): Search across tickets, users, and organizations.",
+    - list_sla_alerts(scope, view, query, within, include_breached, warning, critical): List the SLA metrics breached or about to breach across a set of tickets, most urgent first.
+    - search(query*, per_page, page): Search across tickets, users and organizations.",
               "type": "string",
             },
             "params": {

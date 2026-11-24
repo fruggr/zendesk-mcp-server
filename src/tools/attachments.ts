@@ -28,7 +28,7 @@ export const attachmentSchema = z
       })
       .base64()
       .describe(
-        `File content encoded as base64. At most ${MAX_BASE64_INPUT_CHARS} characters (about ${MAX_BASE64_INPUT_MB} MB of file), and the attachments of one call must stay under that total; the HTTP transport additionally caps request bodies at 4 MB.`,
+        `File content as base64, about ${MAX_BASE64_INPUT_MB} MB of file at most; the attachments of one call share that limit, and the HTTP transport caps request bodies at 4 MB.`,
       ),
     content_type: z
       .string()
