@@ -11,7 +11,7 @@ it('exposes the help_center tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "Full-text search across Help Center articles (metadata only, no body). Use get_article for full content. Supports locale filtering. Returns total count.",
+        "description": "Full-text search across Help Center articles, returning metadata only (no body) and the total count. Use get_article for full content.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -55,7 +55,7 @@ it('exposes the help_center tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "Retrieve an article by ID with full body content. For large articles, prefer get_article_outline + get_article_section to save tokens. Optionally specify locale for a translated version. Returns body (HTML), metadata, source_locale, and list of available translations.",
+        "description": "Retrieve an article by ID with its full HTML body, metadata, source_locale and available translations. Pass locale for a translated version. For large articles, prefer get_article_outline + get_article_section to save tokens.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -86,7 +86,7 @@ it('exposes the help_center tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "List all Help Center categories. Categories are the top level of the Guide hierarchy (category → section → article); each entry includes its id, name and locale. Results are cursor-paginated. Pair a returned category id with list_sections to drill down, then list_articles to reach articles. Pass a locale to read category names in that translation.",
+        "description": "List all Help Center categories, the top level of the Guide hierarchy (category → section → article). Each comes with its id, name and locale; cursor-paginated. Drill down with list_sections, then list_articles.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -101,7 +101,7 @@ it('exposes the help_center tool surface unchanged', async () => {
             },
             "page_size": {
               "default": 100,
-              "description": "Categories per page (1-100, default 100).",
+              "description": "Categories per page.",
               "maximum": 100,
               "minimum": 1,
               "type": "integer",
@@ -119,7 +119,7 @@ it('exposes the help_center tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "List Help Center sections. Sections are the middle level of the Guide hierarchy (category → section → article) and group related articles; each entry includes its id, name, category_id and locale. Results are cursor-paginated. Pass category_id to list only one category's sections (ids come from list_categories), then use a section id with list_articles. Pass a locale to read section names in that translation.",
+        "description": "List Help Center sections, the middle level of the Guide hierarchy (category → section → article). Each groups related articles and comes with its id, name, category_id and locale; cursor-paginated. Use a section id with list_articles.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -140,7 +140,7 @@ it('exposes the help_center tool surface unchanged', async () => {
             },
             "page_size": {
               "default": 100,
-              "description": "Sections per page (1-100, default 100).",
+              "description": "Sections per page.",
               "maximum": 100,
               "minimum": 1,
               "type": "integer",
@@ -158,7 +158,7 @@ it('exposes the help_center tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "List articles (metadata only, no body). Use get_article for full content. Optionally filter by section ID and locale. Supports sort_by ("title", "created_at", "updated_at") and include_translations: true to show available translation locales per article. Note: include_translations must be re-sent on each paginated request.",
+        "description": "List articles (metadata only, no body), optionally in one section or locale, sorted, and with each article's translation locales. Use get_article for full content.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -169,7 +169,7 @@ it('exposes the help_center tool surface unchanged', async () => {
             },
             "include_translations": {
               "default": false,
-              "description": "Include available translation locales per article (causes 1 extra API call per article)",
+              "description": "Include available translation locales per article (1 extra API call per article). Re-send it with each page cursor.",
               "type": "boolean",
             },
             "locale": {
@@ -178,7 +178,7 @@ it('exposes the help_center tool surface unchanged', async () => {
             },
             "page_size": {
               "default": 100,
-              "description": "Articles per page (1-100, default 100).",
+              "description": "Articles per page.",
               "maximum": 100,
               "minimum": 1,
               "type": "integer",
@@ -222,7 +222,7 @@ it('exposes the help_center tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "List the promoted ("featured") Help Center articles — the small, editorially-curated set surfaced at the top of their sections. Returns metadata only (no body); use get_article for full content. COST: the Help Center API has no server-side promoted filter, so this scans article pages (one Zendesk API request per page, up to ARTICLE_RESOURCES_SCAN_MAX_PAGES, default 20) and filters client-side — potentially costly on a large Help Center. Each call performs a fresh, uncached scan, so avoid calling it repeatedly. On a very large Help Center some promoted articles may be omitted, and both the omission and the number of pages scanned are flagged in the output. Lists the default locale. To promote or unpromote an article, use update_article with \`promoted\` (requires Help Center admin / Guide admin rights).",
+        "description": "List the promoted ("featured") Help Center articles, the small editorially-curated set surfaced at the top of their sections. Metadata only, default locale; use get_article for full content. COST: the API has no promoted filter, so each call runs a fresh, uncached scan of article pages (one request per page, up to ARTICLE_RESOURCES_SCAN_MAX_PAGES, default 20) filtered client-side; avoid repeating it. On a very large Help Center some may be omitted, which the output flags with the pages scanned. To promote or unpromote, use update_article with \`promoted\` (Help Center / Guide admin rights).",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -266,7 +266,7 @@ it('exposes the help_center tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": false,
         },
-        "description": "Create a translation for an existing article in a specific locale. The article must already exist (create it with create_article); this adds a new localized version and returns the created translation (locale, title, draft state). The target locale must not already have a translation — use update_article_translation to modify an existing one, and list_article_translations to see which locales exist. Provide the full HTML body.",
+        "description": "Create a translation of an existing article (made with create_article) in a new locale and return it (locale, title, draft state). Provide the full HTML body. The locale must have no translation yet: to modify one use update_article_translation; list_article_translations shows which locales exist.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -284,7 +284,7 @@ it('exposes the help_center tool surface unchanged', async () => {
             },
             "draft": {
               "default": false,
-              "description": "Create the translation as a draft (not visible to end users). Defaults to false (published).",
+              "description": "Create the translation as a draft (not visible to end users); false publishes it.",
               "type": "boolean",
             },
             "locale": {
@@ -315,7 +315,7 @@ it('exposes the help_center tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": false,
         },
-        "description": "Update article content (title, body) in a specific locale. For targeted edits on one or a few sections, prefer update_article_section — this tool replaces the FULL body and re-sends the entire article on each write. Use the article's source_locale (from get_article) for the default language, or another locale for translations.",
+        "description": "Update article content (title, body) in a specific locale, the source locale or a translation. For edits on one or a few sections prefer update_article_section: this tool replaces the FULL body, re-sending the entire article on each write.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -327,7 +327,7 @@ it('exposes the help_center tool surface unchanged', async () => {
               "type": "integer",
             },
             "body": {
-              "description": "New full body (HTML) for this locale. Replaces the entire body — for a single-section edit prefer update_article_section. Omit to leave the body unchanged.",
+              "description": "New full body (HTML) for this locale, replacing the entire body. Omit to leave the body unchanged.",
               "type": "string",
             },
             "draft": {
@@ -359,7 +359,7 @@ it('exposes the help_center tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "List the translations of a Help Center section: for each locale, the localized name, whether a description is set, and whether the translation is published or still a draft. Reach for this when a section looks wrong in a locale, because list_sections with that locale cannot settle it: a section with no translation is omitted from it, while a section whose translation is an unpublished draft may still be listed there under the draft name — so appearing in that listing does not mean published, and the draft flag here is what decides. Fix either case with set_section_translation; to sweep every category and section at once, use find_translation_gaps.",
+        "description": "List the translations of a Help Center section: for each locale, the localized name, whether a description is set, and whether it is published or a draft. Use it when a section looks wrong in a locale, which list_sections in that locale cannot settle: it omits a section with no translation, while a draft translation may still be listed there under its draft name, so only the draft flag here says whether it is published. Fix either case with set_section_translation; to sweep every category and section at once, use find_translation_gaps.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -386,7 +386,7 @@ it('exposes the help_center tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "List the translations of a Help Center category: for each locale, the localized name, whether a description is set, and whether the translation is published or still a draft. Reach for this when a category looks wrong in a locale, because list_categories with that locale cannot settle it: a category with no translation is omitted from it, while a category whose translation is an unpublished draft may still be listed there under the draft name — so appearing in that listing does not mean published, and the draft flag here is what decides. Fix either case with set_category_translation; to sweep every category and section at once, use find_translation_gaps.",
+        "description": "List the translations of a Help Center category: for each locale, the localized name, whether a description is set, and whether it is published or a draft. Use it when a category looks wrong in a locale, which list_categories in that locale cannot settle: it omits a category with no translation, while a draft translation may still be listed there under its draft name, so only the draft flag here says whether it is published. Fix either case with set_category_translation; to sweep every category and section at once, use find_translation_gaps.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -413,13 +413,13 @@ it('exposes the help_center tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "Audit the Help Center tree for a target locale and report every category and section that has no translation, or one that is still an unpublished draft. Use it before or after translating articles: an article published in a second locale is unreachable while its parent section only exists in the source locale. Listing sections in that locale cannot answer this — a node with no translation is simply absent, without saying why, and a node whose translation is an unpublished draft may still be listed under its draft name — so this audit reads the draft flag on each node instead of trusting that listing. Costs two listings and covers up to 100 categories and 100 sections; past that only the first page of each level is audited, and the report says so — pass category_id to narrow it. Fix what it reports with set_section_translation / set_category_translation.",
+        "description": "Audit the Help Center tree for a target locale and report every category and section that has no translation, or only an unpublished draft. Use it before or after translating articles: an article published in a second locale is unreachable while its parent section only exists in the source locale. A listing in that locale cannot answer this — it omits an untranslated node without saying why, and a draft translation may still be listed under its draft name — so the audit reads each node's draft flag. Costs two listings and covers up to 100 categories and 100 sections; past that only the first page of each level is audited, and the report says so — pass category_id to narrow it. Fix what it reports with set_section_translation / set_category_translation.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "category_id": {
-              "description": "Restrict the audit to this category and the sections it contains (id from list_categories). Omit to sweep the whole tree, which costs two listings and covers up to 100 categories and 100 sections.",
+              "description": "Restrict the audit to this category and the sections it contains (id from list_categories). Omit to sweep the whole tree.",
               "maximum": 9007199254740991,
               "minimum": -9007199254740991,
               "type": "integer",
@@ -444,17 +444,17 @@ it('exposes the help_center tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": false,
         },
-        "description": "Create or update the translation of a Help Center section in one locale, and return the resulting translation (locale, localized name, draft state). Creates the translation when the locale has none and updates it otherwise, so no listing call is needed first; only the fields you pass are written, which makes "publish this draft" a single draft: false. Use it to make a section reachable in a locale where its articles are already translated — a gap find_translation_gaps reports and list_sections cannot explain.",
+        "description": "Create or update the translation of a Help Center section in one locale, and return it (locale, localized name, draft state). It creates the translation or updates the existing one, so no listing call is needed first; only the fields you pass are written, so publishing a draft is a single draft: false. Use it to make a section reachable in a locale where its articles are already translated — a gap find_translation_gaps reports and list_sections cannot explain.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "description": {
-              "description": "Localized section description for this locale (sent as the API's translation \`body\`). Omit to leave an existing description untouched; pass an empty string to clear it.",
+              "description": "Localized section description (the API's translation \`body\`). Omit to keep an existing one; an empty string clears it.",
               "type": "string",
             },
             "draft": {
-              "description": "Publication state: false publishes the translation, making the section visible to end users in this locale; true keeps (or puts) it back as a draft. Defaults to false when creating; omit on an existing translation to leave its state unchanged.",
+              "description": "false publishes the translation, making the section visible to end users in this locale; true keeps (or puts) it back as a draft. Defaults to false when creating; omit on an existing translation to keep its state.",
               "type": "boolean",
             },
             "locale": {
@@ -462,7 +462,7 @@ it('exposes the help_center tool surface unchanged', async () => {
               "type": "string",
             },
             "name": {
-              "description": "Localized section name for this locale (sent as the API's translation \`title\`). Required when the locale has no translation yet; omit on an existing one to leave its name untouched, for instance when only publishing a draft.",
+              "description": "Localized section name (the API's translation \`title\`). Required when the locale has no translation yet; omit on an existing one to keep its name, e.g. when only publishing a draft.",
               "minLength": 1,
               "type": "string",
             },
@@ -489,7 +489,7 @@ it('exposes the help_center tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": false,
         },
-        "description": "Create or update the translation of a Help Center category in one locale, and return the resulting translation (locale, localized name, draft state). Creates the translation when the locale has none and updates it otherwise, so no listing call is needed first; only the fields you pass are written, which makes "publish this draft" a single draft: false. Use it to make a category reachable in a locale where its sections or articles are already translated — a gap find_translation_gaps reports and list_categories cannot explain.",
+        "description": "Create or update the translation of a Help Center category in one locale, and return it (locale, localized name, draft state). It creates the translation or updates the existing one, so no listing call is needed first; only the fields you pass are written, so publishing a draft is a single draft: false. Use it to make a category reachable in a locale where its sections or articles are already translated — a gap find_translation_gaps reports and list_categories cannot explain.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -501,11 +501,11 @@ it('exposes the help_center tool surface unchanged', async () => {
               "type": "integer",
             },
             "description": {
-              "description": "Localized category description for this locale (sent as the API's translation \`body\`). Omit to leave an existing description untouched; pass an empty string to clear it.",
+              "description": "Localized category description (the API's translation \`body\`). Omit to keep an existing one; an empty string clears it.",
               "type": "string",
             },
             "draft": {
-              "description": "Publication state: false publishes the translation, making the category visible to end users in this locale; true keeps (or puts) it back as a draft. Defaults to false when creating; omit on an existing translation to leave its state unchanged.",
+              "description": "false publishes the translation, making the category visible to end users in this locale; true keeps (or puts) it back as a draft. Defaults to false when creating; omit on an existing translation to keep its state.",
               "type": "boolean",
             },
             "locale": {
@@ -513,7 +513,7 @@ it('exposes the help_center tool surface unchanged', async () => {
               "type": "string",
             },
             "name": {
-              "description": "Localized category name for this locale (sent as the API's translation \`title\`). Required when the locale has no translation yet; omit on an existing one to leave its name untouched, for instance when only publishing a draft.",
+              "description": "Localized category name (the API's translation \`title\`). Required when the locale has no translation yet; omit on an existing one to keep its name, e.g. when only publishing a draft.",
               "minLength": 1,
               "type": "string",
             },
@@ -534,7 +534,7 @@ it('exposes the help_center tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "List all Guide permission groups, which control who can edit and publish an article, with each group's id, name and whether it is built-in. Use this to find the permission_group_id required when creating articles with create_article, or to change it with update_article; to control who can view an article instead, use list_user_segments. Zendesk restricts this list to Guide admins and Help Center managers: without that role the call fails, and you can reuse the permission_group_id of an existing article read with get_article.",
+        "description": "List all Guide permission groups, which control who can edit and publish an article, with each group's id, name and whether it is built-in. Use it to find the permission_group_id that create_article requires and update_article changes; to control who can view an article, use list_user_segments. Zendesk restricts it to Guide admins and Help Center managers: without that role the call fails, and you can reuse an existing article's permission_group_id from get_article.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -551,7 +551,7 @@ it('exposes the help_center tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": false,
         },
-        "description": "Create a new article in a section and return the created article with its id. The locale becomes the article's source_locale. Requires a permission_group_id (use list_permission_groups to find available IDs). To add content in other locales afterwards, use create_article_translation.",
+        "description": "Create a new article in a section and return the created article with its id. To add content in other locales afterwards, use create_article_translation.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -563,7 +563,7 @@ it('exposes the help_center tool surface unchanged', async () => {
               "type": "integer",
             },
             "body": {
-              "description": "Article body as HTML (this becomes the source-locale content).",
+              "description": "Article body as HTML, in the source locale.",
               "minLength": 1,
               "type": "string",
             },
@@ -576,7 +576,7 @@ it('exposes the help_center tool surface unchanged', async () => {
             },
             "draft": {
               "default": true,
-              "description": "When true (default), the article is created unpublished; set false to publish immediately.",
+              "description": "When true, the article is created unpublished; set false to publish immediately.",
               "type": "boolean",
             },
             "label_names": {
@@ -587,18 +587,18 @@ it('exposes the help_center tool surface unchanged', async () => {
               "type": "array",
             },
             "locale": {
-              "description": "Source locale for the article, e.g. "en-us" or "fr". Defaults to the Help Center's default locale; becomes the article's source_locale.",
+              "description": "Locale of the new article, e.g. "en-us" or "fr"; it becomes the article's source_locale. Defaults to the Help Center's default locale.",
               "type": "string",
             },
             "permission_group_id": {
-              "description": "Permission group ID (use list_permission_groups to find it; if that is forbidden because the token is not a Guide admin, reuse the permission_group_id of an existing article from get_article).",
+              "description": "Permission group controlling who can edit (id from list_permission_groups; if that is forbidden to a non-Guide-admin token, reuse an existing article's from get_article).",
               "maximum": 9007199254740991,
               "minimum": -9007199254740991,
               "type": "integer",
             },
             "promoted": {
               "default": false,
-              "description": "When true, marks the article as promoted (featured) in its section. Defaults to false.",
+              "description": "When true, marks the article as promoted (featured) in its section.",
               "type": "boolean",
             },
             "section_id": {
@@ -613,7 +613,7 @@ it('exposes the help_center tool surface unchanged', async () => {
               "type": "string",
             },
             "user_segment_id": {
-              "description": "User segment ID for visibility (use list_user_segments to find it; if that is forbidden because the token is not a Guide admin, reuse the user_segment_id of an existing article from get_article). Defaults to everyone.",
+              "description": "User segment controlling who can see the article; defaults to everyone (id from list_user_segments; if that is forbidden to a non-Guide-admin token, reuse an existing article's from get_article).",
               "maximum": 9007199254740991,
               "minimum": -9007199254740991,
               "type": "integer",
@@ -637,7 +637,7 @@ it('exposes the help_center tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": false,
         },
-        "description": "Update article metadata only (draft, promoted, labels as label_names, content tags as content_tag_ids, visibility as permission_group_id / user_segment_id, section_id, sort position, author, etc.) and return the updated article; fields you omit keep their value. Does NOT update content (title, body) — use update_article_translation for that, or update_article_section to edit one section. To put an article first or last in its section, prefer reorder_article: a plain position write is ambiguous while articles share position 0. To remove an article from the Help Center, use archive_article (a Guide admin can restore it); draft: true only unpublishes it.",
+        "description": "Update article metadata only (publication, promotion, labels, content tags, visibility, section, position, author) and return the updated article; omitted fields keep their value. Title and body are content: edit them with update_article_translation, or one section with update_article_section. To put an article first or last in its section, prefer reorder_article: a plain position write is ambiguous while articles share position 0. To remove an article from the Help Center, use archive_article (a Guide admin can restore it); draft: true only unpublishes it.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -673,13 +673,13 @@ it('exposes the help_center tool surface unchanged', async () => {
               "type": "array",
             },
             "permission_group_id": {
-              "description": "Guide permission group controlling who can edit (id from list_permission_groups; if that is forbidden because the token is not a Guide admin, reuse the permission_group_id of an existing article from get_article).",
+              "description": "Permission group controlling who can edit (id from list_permission_groups; if that is forbidden to a non-Guide-admin token, reuse an existing article's from get_article).",
               "maximum": 9007199254740991,
               "minimum": -9007199254740991,
               "type": "integer",
             },
             "position": {
-              "description": "Sort position within the section (manual ordering only; 0 = first/top). New articles default to position 0. To move an article to the END of its section, set this to one more than the highest current position: read the highest position P from list_articles with sort_by="position", sort_order="desc", then set position = P + 1.",
+              "description": "Sort position within the section (manual ordering only; 0 = top, where new articles land). To move an article to the end, read the highest position P with list_articles(sort_by="position", sort_order="desc"), then set position = P + 1.",
               "maximum": 9007199254740991,
               "minimum": 0,
               "type": "integer",
@@ -695,7 +695,7 @@ it('exposes the help_center tool surface unchanged', async () => {
               "type": "integer",
             },
             "user_segment_id": {
-              "description": "User segment that controls who can see the article (id from list_user_segments; if that is forbidden because the token is not a Guide admin, reuse the user_segment_id of an existing article from get_article).",
+              "description": "User segment controlling who can see the article (id from list_user_segments; if that is forbidden to a non-Guide-admin token, reuse an existing article's from get_article).",
               "maximum": 9007199254740991,
               "minimum": -9007199254740991,
               "type": "integer",
@@ -716,7 +716,7 @@ it('exposes the help_center tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": false,
         },
-        "description": "Reorder an article within its current section by moving it relative to its siblings (top, bottom, or before/after another article), and return whether the new order was applied. This is the reliable way to satisfy "put this article first/last" requests: it writes the minimal set of article positions needed to make the order deterministic, because Zendesk leaves newly created articles tied at position 0 where a plain position update is silently ambiguous. It does NOT move the article to a different section — use update_article with section_id for that. Zendesk exposes no way to read whether a section is manually or automatically sorted, so when the section is sorted automatically (by date or alphabetically) the position writes are ignored; this tool detects that after the fact and returns guidance to switch the section to manual ordering in Guide. A move may reposition several neighbouring articles; when that count exceeds a configurable safety threshold the call is refused unless confirm is set to true.",
+        "description": "Reorder an article within its current section (top, bottom, or before/after another article) and return whether the new order was applied. The reliable way to put an article first or last: it writes the fewest positions that make the order deterministic, where a plain position update is silently ambiguous because Zendesk leaves new articles tied at position 0. To move an article to another section, use update_article with section_id. Zendesk does not expose whether a section is sorted manually or automatically (by date or alphabetically); in an automatic one the writes are ignored, and the tool detects it afterwards and says to switch the section to manual ordering in Guide. A move may reposition several neighbouring articles, so a large one needs confirm.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -729,22 +729,22 @@ it('exposes the help_center tool surface unchanged', async () => {
             },
             "confirm": {
               "default": false,
-              "description": "Safety guard for large reorders. When the move would rewrite more article positions than the configured threshold (REORDER_CONFIRM_THRESHOLD, default 20), the tool refuses and reports the count until you pass true here. Has no effect on small reorders.",
+              "description": "Pass true to allow a move that rewrites more positions than REORDER_CONFIRM_THRESHOLD (default 20); without it such a call is refused with the count. No effect on smaller moves.",
               "type": "boolean",
             },
             "normalize": {
               "default": false,
-              "description": "When true, also renumber every article in the section to contiguous positions (0, 1, 2, …) so the stored positions stay tidy. Defaults to false, which writes the fewest positions possible and lets gaps remain. Either way the confirmation threshold still applies.",
+              "description": "When true, also renumber the whole section to contiguous positions (0, 1, 2, …); false writes the fewest positions and leaves gaps. The confirm threshold applies either way.",
               "type": "boolean",
             },
             "reference_article_id": {
-              "description": "The sibling article to position next to when target is "before" or "after" (numeric id from list_articles). Must belong to the same section and differ from article_id; leave it unset for "top" or "bottom".",
+              "description": "For "before"/"after" only: the sibling to place the article next to (id from list_articles), in the same section and other than article_id.",
               "maximum": 9007199254740991,
               "minimum": -9007199254740991,
               "type": "integer",
             },
             "target": {
-              "description": "Where to move the article relative to its section siblings: "top" (becomes first), "bottom" (becomes last), or "before"/"after" a specific reference article. "before" and "after" require reference_article_id.",
+              "description": "Where to move the article: first ("top"), last ("bottom"), or "before"/"after" reference_article_id.",
               "enum": [
                 "top",
                 "bottom",
@@ -770,7 +770,7 @@ it('exposes the help_center tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": false,
         },
-        "description": "Archive (soft-delete) a Help Center article: it is removed from the Help Center but can be restored from the Guide admin UI. Returns a confirmation message; the article and all its translations become invisible to end users. This is the only removal the Zendesk API offers — permanent deletion is not available via the API (do it from the Guide admin UI). To only hide an article temporarily while keeping it in the knowledge base, use update_article with draft: true (unpublish) instead. Guarded by a required confirm flag.",
+        "description": "Archive (soft-delete) a Help Center article: it is removed from the Help Center but can be restored from the Guide admin UI. Returns a confirmation; the article and all its translations become invisible to end users. It is the only removal the API offers; permanent deletion is done in the Guide admin UI. To only hide an article while keeping it in the knowledge base, use update_article with draft: true (unpublish). Guarded by a required confirm flag.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -782,7 +782,7 @@ it('exposes the help_center tool surface unchanged', async () => {
               "type": "integer",
             },
             "confirm": {
-              "description": "Explicit safety guard: must be set to true to archive the article. Any other value refuses the operation without calling Zendesk.",
+              "description": "Safety guard: must be true to archive the article; any other value refuses without calling Zendesk.",
               "type": "boolean",
             },
           },
@@ -802,7 +802,7 @@ it('exposes the help_center tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "List Guide content tags, which are end-user-visible labels that help readers find related articles. Results are cursor-paginated (follow the returned cursor to enumerate the full list) and sorted by name by default. Pass name_prefix to look a tag up by the start of its name — do this before create_content_tag to reuse an existing tag rather than fragment the taxonomy. For internal, non-end-user search labels, see list_labels instead.",
+        "description": "List Guide content tags, the end-user-visible labels that help readers find related articles. Cursor-paginated: follow the cursor for the full list. Look a tag up with name_prefix before create_content_tag, to reuse it rather than fragment the taxonomy. For internal search labels not shown to end users, use list_labels.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -812,13 +812,13 @@ it('exposes the help_center tool surface unchanged', async () => {
               "type": "string",
             },
             "name_prefix": {
-              "description": "Return only content tags whose name starts with this prefix (prefix match — not a substring or fuzzy search). Use the full name to check whether a specific tag already exists before creating it.",
+              "description": "Return only content tags whose name starts with this prefix (not a substring or fuzzy match). Pass a full name to check whether that tag already exists.",
               "minLength": 1,
               "type": "string",
             },
             "page_size": {
               "default": 30,
-              "description": "Content tags per page (1-30, default 30). The Guide content-tags endpoint caps each page at 30; follow the returned cursor to enumerate the full list.",
+              "description": "Content tags per page; the Guide endpoint caps a page at 30.",
               "maximum": 30,
               "minimum": 1,
               "type": "integer",
@@ -854,7 +854,7 @@ it('exposes the help_center tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": false,
         },
-        "description": "Create a new content tag for Guide articles. Content tags are end-user visible labels that help readers discover related articles; this returns the created tag with its id. Check list_content_tags first (filter by name_prefix) to avoid duplicates, then attach the new id via the content_tag_ids parameter of create_article or update_article. For internal search-ranking labels that are not shown to end users, use article labels (list_labels) instead.",
+        "description": "Create a new content tag for Guide articles — an end-user-visible label that helps readers discover related articles — and return it with its id. Check list_content_tags (name_prefix) first to avoid duplicates, then attach the id through content_tag_ids of create_article or update_article. For internal search-ranking labels not shown to end users, use article labels (list_labels).",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -880,7 +880,7 @@ it('exposes the help_center tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "List all article labels, with each label's id and name. Labels improve Help Center search ranking and are not visible to end users. Attach them to an article through the label_names parameter of create_article or update_article, reusing an existing label rather than coining a near-duplicate. Labels are not content tags: for the end-user-visible tags readers browse by, use list_content_tags.",
+        "description": "List all article labels, with each label's id and name. Labels improve Help Center search ranking and are not visible to end users; attach them through label_names of create_article or update_article, reusing an existing label rather than coining a near-duplicate. For the end-user-visible content tags readers browse by, use list_content_tags.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -897,7 +897,7 @@ it('exposes the help_center tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "List all Help Center user segments, which control article visibility (who can view an article), with each segment's id, name, user type and whether it is built-in. Use the id as user_segment_id when creating or updating articles with create_article or update_article; to control who can edit an article instead, use list_permission_groups. Zendesk restricts this list to Guide admins and Help Center managers: without that role the call fails, and you can reuse the user_segment_id of an existing article from get_article, or omit it on create_article to make the article visible to everyone.",
+        "description": "List all Help Center user segments, which control who can view an article, with each segment's id, name, user type and whether it is built-in. Pass the id as user_segment_id to create_article or update_article; to control who can edit an article, use list_permission_groups. Zendesk restricts it to Guide admins and Help Center managers: without that role the call fails, and you can reuse an existing article's user_segment_id from get_article, or omit it on create_article to make the article visible to everyone.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -914,7 +914,7 @@ it('exposes the help_center tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "List all attachments for an article. Returns attachment metadata only (id, file name, content type, size, URL), not the file bytes; both inline and block attachments are included. This is for Help Center articles — for attachments on support tickets use get_ticket_attachments instead. Upload new files with create_article_attachment.",
+        "description": "List all attachments of a Help Center article as metadata (id, file name, content type, size, URL), not the file bytes; inline and block attachments alike. For attachments on support tickets use get_ticket_attachments; upload new files with create_article_attachment.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -941,7 +941,7 @@ it('exposes the help_center tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "Return a compact outline of an article (list of sections delimited by h1/h2/h3, with word counts) for the given locale (defaults to source_locale). Includes available translations with their outdated status. Use get_article_section to fetch a specific section.",
+        "description": "Return a compact outline of an article in one locale: its sections delimited by h1/h2/h3, with word counts, and its available translations with their outdated status. Use get_article_section to fetch a specific section.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -972,7 +972,7 @@ it('exposes the help_center tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "Retrieve the content of a single section of an article in a given locale. Use get_article_outline first to discover section indexes. Default format="html" for round-trip safety. Pass format="markdown" only for human review — the Markdown representation is lossy on some structures (<pre> with <br>, tables with multi-<p> cells are kept as raw HTML to limit the damage, but do not round-trip markdown content back through update_article_section). The "## [n] hN: ..." line at the top is a label, not part of the content.",
+        "description": "Retrieve the content of a single section of an article in a given locale. Use get_article_outline first to discover section indexes. The "## [n] hN: ..." line at the top is a label, not part of the content.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -985,7 +985,7 @@ it('exposes the help_center tool surface unchanged', async () => {
             },
             "format": {
               "default": "html",
-              "description": "Output format. "html" (default) is round-trip safe. "markdown" is lossy on some HTML structures — use only for human review, not before update_article_section.",
+              "description": "Output format. "html" is round-trip safe. "markdown" is for human review only: it is lossy on some structures (<pre> with <br>, tables with multi-<p> cells, kept as raw HTML to limit the damage), so never send it back through update_article_section.",
               "enum": [
                 "html",
                 "markdown",
@@ -1020,7 +1020,7 @@ it('exposes the help_center tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": false,
         },
-        "description": "Replace the body of one article section, heading excluded (the heading is kept as is), in a given locale, leaving the rest of the article intact. The server fetches the current body, replaces the targeted section, and PUTs the full reconstructed body via the Translations API. A leading heading in content that repeats the section heading is removed; any other h1-h3 in content creates new sections and shifts the later indexes (the response warns). section_index 0 is the heading-less intro, which exists only when the body has text before its first heading. Default format="html" for fidelity. Use format="markdown" only when you control the input and know it does not rely on structures that round-trip poorly (code blocks with line breaks, tables with multi-paragraph cells).",
+        "description": "Replace the body of one article section, heading excluded (the heading is kept as is), in a given locale, leaving the rest of the article intact. The server fetches the current body, replaces the section, and PUTs the full rebuilt body via the Translations API. A leading heading in content that repeats the section heading is removed; any other h1-h3 creates new sections and shifts the later indexes (the response warns).",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -1037,7 +1037,7 @@ it('exposes the help_center tool surface unchanged', async () => {
             },
             "format": {
               "default": "html",
-              "description": "Input format. "html" (default) is the safe path. "markdown" is converted to HTML server-side but may introduce artifacts on complex content.",
+              "description": "Input format. "html" is the safe path. "markdown" is converted to HTML server-side and may introduce artifacts: use it only when you control the input and it has no structures that round-trip poorly (code blocks with line breaks, tables with multi-paragraph cells).",
               "enum": [
                 "html",
                 "markdown",
@@ -1073,7 +1073,7 @@ it('exposes the help_center tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "Compare two locales of the same article to decide whether the target translation needs work, reporting independent signals instead of one ambiguous verdict. (1) Header — a "Freshness" verdict for the target, derived from the two translations' updated_at timestamps: if the source was edited after the target it is "likely behind, review recommended" (with the day gap), otherwise "up to date". This is the primary staleness signal and is always available. (2) Zendesk's own per-translation "outdated" flag for the target ("yes"/"no"/"unknown"), shown as a secondary overlay: it is only set through Guide's native "mark out of date" workflow and NOT by API edits, so a "no" does not by itself mean current — prefer Freshness. (3) A global structure check (section count and heading-tag sequence); on mismatch the header warns the per-index rows may be misaligned. (4) A per-section table matched by index, status "ok" (present in both), "missing" (present in source, absent in target) or "extra" (present in target, absent in source). (5) Per-section source/target word counts, INFORMATIONAL ONLY: a length difference between languages is normal and is deliberately NOT flagged as a divergence — do not read a word-count gap as an edit regression or staleness. Read-only; performs three Help Center GET calls (both translations plus the translations list for the outdated flag).",
+        "description": "Compare two locales of the same article to decide whether the target translation needs work, as independent signals rather than one verdict. (1) Freshness, the primary staleness signal, always available: if the source's updated_at is later than the target's, the target is "likely behind, review recommended" (with the day gap), otherwise "up to date". (2) Zendesk's "outdated" flag for the target (yes/no/unknown), secondary: only Guide's "mark out of date" workflow sets it, never an API edit, so "no" alone does not mean current. (3) A structure check (section count, heading-tag sequence) that warns when the per-index rows may be misaligned. (4) A per-section table matched by index: "ok" (in both), "missing" (source only) or "extra" (target only). (5) Per-section word counts, informational only: a length gap between languages is normal, not a divergence, an edit regression or staleness. Read-only; three Help Center GET calls (both translations, plus the translations list for the outdated flag).",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -1110,7 +1110,7 @@ it('exposes the help_center tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": false,
         },
-        "description": "Upload a file to a Help Center article and return the created attachment (its id, file name, content type, size and content URL). Not idempotent: calling it again uploads another copy rather than replacing the previous one. This is for article assets — for files on support tickets use get_ticket_attachments, and to see an article's existing attachments use list_article_attachments.",
+        "description": "Upload a file to a Help Center article and return the created attachment (id, file name, content type, size, content URL). Calling it again uploads another copy rather than replacing the previous one. For files on support tickets use get_ticket_attachments; to see an article's existing attachments, list_article_attachments.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -1123,11 +1123,11 @@ it('exposes the help_center tool surface unchanged', async () => {
             },
             "content_type": {
               "default": "application/octet-stream",
-              "description": "MIME type of the file, e.g. "image/png" or "application/pdf". Defaults to application/octet-stream when omitted.",
+              "description": "MIME type of the file, e.g. "image/png" or "application/pdf".",
               "type": "string",
             },
             "file_base64": {
-              "description": "The file's raw bytes as a base64-encoded string; the server decodes them before upload. At most 10420224 characters (about 7.45 MB of file); the HTTP transport additionally caps request bodies at 4 MB.",
+              "description": "The file's raw bytes, base64-encoded; the server decodes them before upload. The length cap is about 7.45 MB of file; the HTTP transport also caps request bodies at 4 MB.",
               "maxLength": 10420224,
               "minLength": 1,
               "type": "string",
