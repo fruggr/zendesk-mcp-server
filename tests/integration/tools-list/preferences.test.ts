@@ -11,21 +11,21 @@ it('exposes the preferences tool surface unchanged', async () => {
           "openWorldHint": false,
           "readOnlyHint": false,
         },
-        "description": "Read or change your personal SLA alert thresholds: how close to a breach a running SLA metric must be to count as WARNING or CRITICAL. With no parameters it changes nothing and reports the thresholds in force for you and where each comes from (your preference or the server default). With parameters it saves your thresholds per metric family on this MCP server, never in Zendesk; they then drive list_sla_alerts and the Urgency line of get_ticket / search_tickets, for you only. When the operator turned personal thresholds off (SLA_USER_PREFERENCES=off), only the read works and the reply says so.",
+        "description": "Read or set your SLA alert thresholds: how close to a breach a metric must be to count as WARNING or CRITICAL. Without parameters it returns the thresholds in force and their source (yours or the server default). With them it saves yours per metric family on this server, never in Zendesk, for list_sla_alerts and the Urgency line of get_ticket / search_tickets. If the operator disabled personal thresholds, only reading works and the reply says so.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "reply_critical": {
-              "description": "Time left before a reply metric breaches at which it turns CRITICAL; must not exceed the reply warning threshold. A readable duration: 30m, 4h, 2d, 1w, or a mix like 1d4h. Omit to keep the current value.",
+              "description": "Time left at which a reply metric turns CRITICAL; at most reply_warning. A readable duration: 30m, 4h, 2d, 1w, or a mix like 1d4h.",
               "type": "string",
             },
             "reply_warning": {
-              "description": "Time left before a reply metric (first_reply_time, next_reply_time) breaches at which it turns WARNING. A readable duration: 30m, 4h, 2d, 1w, or a mix like 1d4h. Omit to keep the current value.",
+              "description": "Time left at which a reply metric (first_reply_time, next_reply_time) turns WARNING. A readable duration: 30m, 4h, 2d, 1w, or a mix like 1d4h.",
               "type": "string",
             },
             "reset": {
-              "description": "Drop your personal thresholds for one family ("reply" or "wait") or both ("all") and follow the server defaults again; "all" also makes your next list_sla_alerts call explain the thresholds again. Cannot be combined with new values for the same family.",
+              "description": "Go back to the server defaults for "reply", "wait" or "all"; "all" also makes list_sla_alerts explain the thresholds again. Not with new values for the same family.",
               "enum": [
                 "reply",
                 "wait",
@@ -34,11 +34,11 @@ it('exposes the preferences tool surface unchanged', async () => {
               "type": "string",
             },
             "wait_critical": {
-              "description": "Time left before a wait or resolution metric breaches at which it turns CRITICAL; must not exceed the wait warning threshold. A readable duration: 30m, 4h, 2d, 1w, or a mix like 1d4h. Omit to keep the current value.",
+              "description": "Time left at which any other metric turns CRITICAL; at most wait_warning. A readable duration: 30m, 4h, 2d, 1w, or a mix like 1d4h.",
               "type": "string",
             },
             "wait_warning": {
-              "description": "Time left before a wait or resolution metric (requester_wait_time, agent_work_time and every other non-reply metric) breaches at which it turns WARNING. A readable duration: 30m, 4h, 2d, 1w, or a mix like 1d4h. Omit to keep the current value.",
+              "description": "Time left at which any other metric (requester_wait_time, agent_work_time…) turns WARNING. A readable duration: 30m, 4h, 2d, 1w, or a mix like 1d4h.",
               "type": "string",
             },
           },
@@ -69,7 +69,7 @@ it('exposes the preferences proxy unchanged', async () => {
           "properties": {
             "operation": {
               "description": "One of the operations below. Each line reads name(parameters): summary, where the parameters are the exact names "params" accepts and * marks a required one; (write) marks an operation that changes data.
-    - configure_sla_alerts(reply_warning, reply_critical, wait_warning, wait_critical, reset): Read or change your personal SLA alert thresholds: how close to a breach a running SLA metric must be to count as WARNING or CRITICAL. (write)",
+    - configure_sla_alerts(reply_warning, reply_critical, wait_warning, wait_critical, reset): Read or set your SLA alert thresholds: how close to a breach a metric must be to count as WARNING or CRITICAL. (write)",
               "type": "string",
             },
             "params": {

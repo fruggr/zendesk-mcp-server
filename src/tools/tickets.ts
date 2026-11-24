@@ -1762,7 +1762,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
         cursor: z
           .string()
           .optional()
-          .describe('Pagination cursor from a previous response; omit for the first page.'),
+          .describe('Cursor from the previous response; omit for the first page.'),
       }),
       annotations: {
         readOnlyHint: true,
@@ -2019,7 +2019,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
         cursor: z
           .string()
           .optional()
-          .describe('Pagination cursor from a previous response; omit for the first page.'),
+          .describe('Cursor from the previous response; omit for the first page.'),
       }),
       annotations: {
         readOnlyHint: true,
@@ -2069,7 +2069,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
         cursor: z
           .string()
           .optional()
-          .describe('Pagination cursor from a previous response; omit for the first page.'),
+          .describe('Cursor from the previous response; omit for the first page.'),
       }),
       annotations: {
         readOnlyHint: true,
@@ -2138,7 +2138,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
         cursor: z
           .string()
           .optional()
-          .describe('Pagination cursor from a previous response; omit for the first page.'),
+          .describe('Cursor from the previous response; omit for the first page.'),
       }),
       annotations: {
         readOnlyHint: true,

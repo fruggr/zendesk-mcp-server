@@ -155,11 +155,11 @@ it('exposes the users proxy unchanged', async () => {
           "properties": {
             "operation": {
               "description": "One of the operations below. Each line reads name(parameters): summary, where the parameters are the exact names "params" accepts and * marks a required one; (write) marks an operation that changes data.
-    - get_current_user(): Get the currently authenticated Zendesk user.
-    - search_users(query*, per_page, page): Search users by name, email or other criteria in Zendesk query syntax, returning each match's id, name, email, role, active flag and organization id, with the total count.
-    - get_user(user_id*): Retrieve one user by numeric id, with name, email, role, role type, active state and organization id.
-    - get_organization(organization_id*): Retrieve one organization by numeric id, with its name, details, domains and tags.
-    - list_organizations(page_size, cursor): List all organizations, cursor-paginated, with each one's name, id, details, domains and tags.",
+    - get_current_user(): Get the signed-in Zendesk user.
+    - search_users(query*, per_page, page): Find users by name, email or Zendesk query, with id, name, email, role, active flag and organization id, plus the total.
+    - get_user(user_id*): Get a user by id: name, email, role, role type, active state, organization id.
+    - get_organization(organization_id*): Get an organization by id: name, details, domains, tags.
+    - list_organizations(page_size, cursor): List organizations with name, id, details, domains and tags; they group end users and can scope tickets.",
               "type": "string",
             },
             "params": {
@@ -202,13 +202,13 @@ it('exposes the requests proxy unchanged', async () => {
           "properties": {
             "operation": {
               "description": "One of the operations below. Each line reads name(parameters): summary, where the parameters are the exact names "params" accepts and * marks a required one; (write) marks an operation that changes data.
-    - list_request_forms(): List the kinds of request you can submit to this Zendesk: the Help Center forms a customer picks between, such as "Report a bug" or "Feature request".
-    - get_request_form(form_id): Read what one request form asks for, to walk the user through it question by question.
-    - create_request(subject*, body*, form_id, custom_fields, attachments): Submit a new support request as the signed-in user, like the Help Center's "Submit a request" form. (write)
-    - list_requests(query, status, sort_by, sort_order, per_page, page): List the requests the signed-in user submitted, newest activity first by default, or search them by free text.
-    - get_request(request_id*, include_comments): Read one of the signed-in user's own requests, optionally with its whole conversation.
-    - add_request_comment(request_id*, body*, attachments): Reply on one of the signed-in user's own requests, optionally attaching files. (write)
-    - mark_request_solved(request_id*): Mark one of the signed-in user's own requests solved, when they consider it resolved. (write)",
+    - list_request_forms(): List the request forms you can submit, such as "Report a bug" or "Feature request".
+    - get_request_form(form_id): Read what one request form asks, to walk the user through it.
+    - create_request(subject*, body*, form_id, custom_fields, attachments): Submit a support request as the signed-in user, like the Help Center's "Submit a request". (write)
+    - list_requests(query, status, sort_by, sort_order, per_page, page): List your own requests, newest activity first by default, or search them by text.
+    - get_request(request_id*, include_comments): Read one of your own requests, optionally with its conversation.
+    - add_request_comment(request_id*, body*, attachments): Reply on one of your own requests, optionally with files; returns its status after. (write)
+    - mark_request_solved(request_id*): Mark one of your own requests solved; returns the status read back from Zendesk. (write)",
               "type": "string",
             },
             "params": {

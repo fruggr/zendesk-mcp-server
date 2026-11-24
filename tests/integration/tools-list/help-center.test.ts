@@ -89,7 +89,7 @@ it('exposes the help_center tool surface unchanged', async () => {
           "additionalProperties": false,
           "properties": {
             "cursor": {
-              "description": "Pagination cursor from a previous response; omit for the first page.",
+              "description": "Cursor from the previous response; omit for the first page.",
               "type": "string",
             },
             "locale": {
@@ -126,7 +126,7 @@ it('exposes the help_center tool surface unchanged', async () => {
               "type": "integer",
             },
             "cursor": {
-              "description": "Pagination cursor from a previous response; omit for the first page.",
+              "description": "Cursor from the previous response; omit for the first page.",
               "type": "string",
             },
             "locale": {
@@ -159,7 +159,7 @@ it('exposes the help_center tool surface unchanged', async () => {
           "additionalProperties": false,
           "properties": {
             "cursor": {
-              "description": "Pagination cursor from a previous response; omit for the first page.",
+              "description": "Cursor from the previous response; omit for the first page.",
               "type": "string",
             },
             "include_translations": {
@@ -760,7 +760,7 @@ it('exposes the help_center tool surface unchanged', async () => {
           "additionalProperties": false,
           "properties": {
             "cursor": {
-              "description": "Pagination cursor from a previous response; omit for the first page.",
+              "description": "Cursor from the previous response; omit for the first page.",
               "type": "string",
             },
             "name_prefix": {

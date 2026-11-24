@@ -54,7 +54,7 @@ const forbidden = (tool: string, endpoint: string, error: ZendeskApiError, hint?
 // Zendesk renders Markdown in comment.body only for an agent author (Ticket
 // Comments API, "Bodies"), never for an end user; HTML there shows as literal text.
 const END_USER_COMMENT_FORMAT =
-  'Sent as plain text: an end user sees Markdown and HTML as literal text, so write it without formatting markup.';
+  'Plain text: Markdown and HTML show as literal text for an end user.';
 
 // A path scoped to one request id has a cause the generic message does not: the
 // id may belong to someone else, which Zendesk also answers 403. Named only
@@ -546,7 +546,7 @@ export const createRequestTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'List Request Forms',
       description:
-        'List the kinds of request you can submit to this Zendesk: the Help Center forms a customer picks between, such as "Report a bug" or "Feature request". Returns each active, end-user-visible form\'s customer-facing name, numeric id, and which is the account default; a single-form account returns just that one. Call it first when opening a request so the user picks the right kind, then get_request_form for what that form asks. End-user view: agents picking a form for someone else want list_ticket_fields and create_ticket instead.',
+        'List the request forms you can submit, such as "Report a bug" or "Feature request". Returns each visible form\'s name, id and which is the default. Call it first when opening a request, then get_request_form. End-user view: agents filing for someone else want list_ticket_fields and create_ticket.',
       inputSchema: z.object({}),
       annotations: {
         readOnlyHint: true,
@@ -595,15 +595,13 @@ export const createRequestTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'Get Request Form',
       description:
-        'Read what one request form asks for, to walk the user through it question by question. Returns the form\'s fields in portal order (joined from the field definitions, since the form carries only ids), each with its customer-facing label, whether it is required and, for a dropdown, the exact values Zendesk accepts, plus conditional rules ("if Type is Bug, Version becomes required"), left unresolved because they depend on answers not yet given. Use it after list_request_forms and before create_request.',
+        'Read what one request form asks, to walk the user through it. Returns its fields in portal order with label, required flag and, for a dropdown, the accepted values, plus conditional rules ("if Type is Bug, Version becomes required") left for you to apply as answers come. Use it after list_request_forms, before create_request.',
       inputSchema: z.object({
         form_id: z
           .number()
           .int()
           .optional()
-          .describe(
-            'Form id whose questions to read, as returned by list_request_forms. Omit to describe the account default form.',
-          ),
+          .describe('Form id from list_request_forms; omit for the default form.'),
       }),
       annotations: {
         readOnlyHint: true,
@@ -634,27 +632,20 @@ export const createRequestTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: false,
       title: 'Submit a Request',
       description:
-        'Submit a new support request as the signed-in user, like the Help Center\'s "Submit a request" form. Returns the created request with its number, to follow with list_requests and get_request. Call get_request_form first for the fields to gather. Refused before sending: an unknown form id, a field id the form does not carry, a missing required field, or a dropdown answer the form does not offer, because Zendesk would answer 201 after silently substituting the default form, accepting an empty subject or dropping the answer. An end user cannot set priority or type (Zendesk drops them); triage is left to the agents. An agent opening a ticket on someone else\'s behalf wants create_ticket instead.',
+        'Submit a support request as the signed-in user, like the Help Center\'s "Submit a request". Returns the created request with its number. Gather fields with get_request_form first: an unknown form, a field the form lacks, a missing required field or a dropdown value it does not offer is refused before sending, since Zendesk would silently accept and drop it. End users cannot set priority or type. An agent filing for someone else wants create_ticket.',
       inputSchema: z.object({
-        subject: z
-          .string()
-          .min(1)
-          .describe(
-            'One-line summary, shown as the ticket title to the support agents who pick it up.',
-          ),
+        subject: z.string().min(1).describe('One-line summary, the title agents see.'),
         body: z
           .string()
           .min(1)
           .describe(
-            `The request itself: what happened, what was expected, any steps to reproduce. Becomes the ticket's first public comment. ${END_USER_COMMENT_FORMAT}`,
+            `What happened, what was expected, steps to reproduce; the first public comment. ${END_USER_COMMENT_FORMAT}`,
           ),
         form_id: z
           .number()
           .int()
           .optional()
-          .describe(
-            'Form id from list_request_forms, deciding which questions apply. Omit for the account default form.',
-          ),
+          .describe('Form id from list_request_forms; omit for the default form.'),
         custom_fields: z
           .array(
             z
@@ -673,11 +664,9 @@ export const createRequestTools = (env: ToolEnv): ToolDefinition[] => {
           )
           .optional()
           .describe(
-            "Answers to the form's own questions, as { id, value } pairs; take both the ids and the accepted values from get_request_form.",
+            "{ id, value } answers to the form's questions; ids and accepted values from get_request_form.",
           ),
-        attachments: attachmentsParam(
-          'Files to attach to the request, such as a screenshot or a log.',
-        ),
+        attachments: attachmentsParam('Files to attach, such as a screenshot or a log.'),
       }),
       annotations: {
         readOnlyHint: false,
@@ -728,30 +717,26 @@ export const createRequestTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'List My Requests',
       description:
-        "List the requests the signed-in user submitted, newest activity first by default, or search them by free text. Returns each with its number, subject, status and whether the user can mark it solved. Zendesk scopes it to the caller, so it never returns anyone else's tickets: an agent sees only requests they raised, not their queue (for that, list_tickets, search_tickets or get_view_tickets). Read one with its full conversation via get_request.",
+        "List your own requests, newest activity first by default, or search them by text. Returns each with number, subject, status and whether you can mark it solved. Never anyone else's: an agent sees only requests they raised, not their queue (list_tickets, search_tickets, get_view_tickets). One with its conversation: get_request.",
       inputSchema: z.object({
         query: z
           .string()
           .min(1)
           .optional()
-          .describe(
-            "Free text matched against the caller's own requests, through the search endpoint instead of the plain listing; omit to list everything.",
-          ),
+          .describe('Free text to search your requests; omit to list all.'),
         status: z
           .array(REQUEST_STATUS)
           .min(1)
           .optional()
-          .describe(
-            'Restrict to these states, e.g. ["open","pending"] for anything still being worked. Checked here because Zendesk silently returns every request for a status it does not recognise.',
-          ),
+          .describe('Only these states, e.g. ["open","pending"] for anything in progress.'),
         sort_by: z
           .enum(['created_at', 'updated_at'])
           .default('updated_at')
-          .describe('updated_at surfaces recent activity, created_at the newest submissions.'),
+          .describe('updated_at for recent activity, created_at for newest submissions.'),
         sort_order: z
           .enum(['asc', 'desc'])
           .default('desc')
-          .describe('desc puts the most recent first, what a user following their tickets wants.'),
+          .describe('desc puts the most recent first.'),
         per_page: z
           .number()
           .int()
@@ -818,19 +803,17 @@ export const createRequestTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'Get My Request',
       description:
-        'Read one of the signed-in user\'s own requests, optionally with its whole conversation. Returns its status, the form it was submitted on and whether the user may mark it solved; with include_comments, each public message is labelled with its author and marked when that author is a support agent. Internal agent notes are never returned, so nothing agent-private can leak. Someone else\'s request answers "permission denied", not "not found", so a denial does not tell whether the id exists. Agents reading a ticket they do not own want get_ticket instead.',
+        'Read one of your own requests, optionally with its conversation. Returns status, form and whether you may mark it solved; messages show their author, agents marked, and internal notes never appear. Someone else\'s request says "permission denied", which does not tell whether it exists. Agents reading a ticket want get_ticket.',
       inputSchema: z.object({
         request_id: z
           .number()
           .int()
-          .describe(
-            'Number of the request to read, from list_requests or returned when it was submitted.',
-          ),
+          .describe('Request number, from list_requests or create_request.'),
         include_comments: z
           .boolean()
           .default(false)
           .describe(
-            "When true, appends every public message: agent replies and the user's own. Leave off for a cheap status check.",
+            "Append every public message, agents' and yours; leave off for a quick status check.",
           ),
       }),
       annotations: {
@@ -876,21 +859,16 @@ export const createRequestTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: false,
       title: 'Reply on My Request',
       description:
-        "Reply on one of the signed-in user's own requests, optionally attaching files. Returns the request's status after the reply: replying on a solved request REOPENS it (Zendesk moves it back to open), and the user should know their message did that. Always public: end users cannot post internal notes, and Zendesk silently ignores a private flag. A closed request rejects new comments. Agents replying to a requester want add_public_comment, or add_private_note for an internal note.",
+        'Reply on one of your own requests, optionally with files; returns its status after. Replying on a solved request REOPENS it: tell the user. Always public; a closed request rejects replies. Agents replying to a requester want add_public_comment, or add_private_note.',
       inputSchema: z.object({
-        request_id: z
-          .number()
-          .int()
-          .describe('Number of the request to reply on, as shown by list_requests.'),
+        request_id: z.number().int().describe('Request number, from list_requests.'),
         body: z
           .string()
           .min(1)
           .describe(
-            `The message, visible to the support agents on the ticket and included in their email notification. ${END_USER_COMMENT_FORMAT}`,
+            `The message, seen by the agents and in their email. ${END_USER_COMMENT_FORMAT}`,
           ),
-        attachments: attachmentsParam(
-          'Files to attach to this reply, such as a screenshot or a log.',
-        ),
+        attachments: attachmentsParam('Files to attach, such as a screenshot or a log.'),
       }),
       annotations: {
         readOnlyHint: false,
@@ -934,14 +912,12 @@ export const createRequestTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: false,
       title: 'Mark My Request Solved',
       description:
-        "Mark one of the signed-in user's own requests solved, when they consider it resolved. Returns the status read back from Zendesk, not a bare acknowledgement: a request its requester cannot solve is refused, because Zendesk would answer 200, change nothing and look successful. It becomes solvable only once an agent is assigned, so a new or unassigned one cannot be closed this way: leave it, or say it is no longer needed with add_request_comment. Already solved is a no-op. Agents closing a ticket want update_ticket with status solved.",
+        'Mark one of your own requests solved; returns the status read back from Zendesk. A request you cannot solve yet, such as one no agent is assigned to, is refused rather than faked: say it is no longer needed with add_request_comment instead. Already solved is a no-op. Agents closing a ticket want update_ticket with status solved.',
       inputSchema: z.object({
         request_id: z
           .number()
           .int()
-          .describe(
-            'Number of the request to close. Check get_request first: its "can you mark it solved" line has to say yes.',
-          ),
+          .describe('Request number; get_request must say you can mark it solved.'),
       }),
       annotations: {
         readOnlyHint: false,

@@ -1000,7 +1000,7 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
         cursor: z
           .string()
           .optional()
-          .describe('Pagination cursor from a previous response; omit for the first page.'),
+          .describe('Cursor from the previous response; omit for the first page.'),
         ...brandIdPart,
       }),
       annotations: {
@@ -1069,7 +1069,7 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
         cursor: z
           .string()
           .optional()
-          .describe('Pagination cursor from a previous response; omit for the first page.'),
+          .describe('Cursor from the previous response; omit for the first page.'),
         ...brandIdPart,
       }),
       annotations: {
@@ -1136,7 +1136,7 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
         cursor: z
           .string()
           .optional()
-          .describe('Pagination cursor from a previous response; omit for the first page.'),
+          .describe('Cursor from the previous response; omit for the first page.'),
         sort_by: z
           .enum(['created_at', 'updated_at', 'position', 'title'])
           .default('position')
@@ -2153,7 +2153,7 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
         cursor: z
           .string()
           .optional()
-          .describe('Pagination cursor from a previous response; omit for the first page.'),
+          .describe('Cursor from the previous response; omit for the first page.'),
       }),
       annotations: {
         readOnlyHint: true,

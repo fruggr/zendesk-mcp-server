@@ -11,7 +11,7 @@ it('exposes the users tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "Get the currently authenticated Zendesk user. Useful to verify identity and permissions.",
+        "description": "Get the signed-in Zendesk user. Use it to check who you act as and your role.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -28,7 +28,7 @@ it('exposes the users tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "Search users by name, email or other criteria in Zendesk query syntax, returning each match's id, name, email, role, active flag and organization id, with the total count. Use it to turn a person into the user id other tools take, such as update_ticket followers; a name can match several users, so confirm the right one. With an id in hand use get_user; for your own account, get_current_user. Prefer it over \`search\` for users only: \`search\` mixes in tickets and organizations unless the query says type:user.",
+        "description": "Find users by name, email or Zendesk query, with id, name, email, role, active flag and organization id, plus the total. Use it to get the user id other tools take; a name can match several users, so confirm. By id: get_user; yourself: get_current_user. Prefer it to \`search\`, which mixes in tickets and organizations.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -47,7 +47,7 @@ it('exposes the users tool surface unchanged', async () => {
               "type": "integer",
             },
             "query": {
-              "description": "Free text matched against name and email, and/or field filters like "email:jane@acme.com", "role:agent", "organization_id:123". "type:user" is added automatically.",
+              "description": "Name or email text and/or filters like "role:agent" or "organization_id:123"; type:user is added.",
               "minLength": 1,
               "type": "string",
             },
@@ -67,13 +67,13 @@ it('exposes the users tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "Retrieve one user by numeric id, with name, email, role, role type, active state and organization id. Use search_users when you only have a name or email, or get_current_user for the authenticated identity.",
+        "description": "Get a user by id: name, email, role, role type, active state, organization id. By name or email: search_users; yourself: get_current_user.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "user_id": {
-              "description": "Numeric id of the user to fetch, from search_users or a ticket's requester/assignee fields.",
+              "description": "User id, from search_users or a ticket's requester or assignee.",
               "type": "integer",
             },
           },
@@ -92,13 +92,13 @@ it('exposes the users tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "Retrieve one organization by numeric id, with its name, details, domains and tags. Use list_organizations to browse, or search to look one up by name.",
+        "description": "Get an organization by id: name, details, domains, tags. Browse: list_organizations; by name: search.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "organization_id": {
-              "description": "Numeric id of the organization to fetch, from list_organizations, search or a user record.",
+              "description": "Organization id, from list_organizations, search or a user.",
               "type": "integer",
             },
           },
@@ -117,13 +117,13 @@ it('exposes the users tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "List all organizations, cursor-paginated, with each one's name, id, details, domains and tags. Organizations group end users and can be referenced when creating or filtering tickets. Use get_organization when you already have an id, or search to look one up by name.",
+        "description": "List organizations with name, id, details, domains and tags; they group end users and can scope tickets. By id: get_organization; by name: search.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "cursor": {
-              "description": "Pagination cursor from a previous response; omit for the first page.",
+              "description": "Cursor from the previous response; omit for the first page.",
               "type": "string",
             },
             "page_size": {
