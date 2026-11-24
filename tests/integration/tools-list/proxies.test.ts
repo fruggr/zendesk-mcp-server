@@ -84,35 +84,35 @@ it('exposes the help_center proxy unchanged', async () => {
           "properties": {
             "operation": {
               "description": "One of the operations below. Each line reads name(parameters): summary, where the parameters are the exact names "params" accepts and * marks a required one; (write) marks an operation that changes data.
-    - search_articles(query*, locale, per_page, page): Full-text search across Help Center articles, returning metadata only (no body) and the total count.
-    - get_article(article_id*, locale): Retrieve an article by ID with its full HTML body, metadata, source_locale and available translations.
-    - list_categories(locale, page_size, cursor): List all Help Center categories, the top level of the Guide hierarchy (category → section → article).
-    - list_sections(category_id, locale, page_size, cursor): List Help Center sections, the middle level of the Guide hierarchy (category → section → article).
-    - list_articles(section_id, locale, page_size, cursor, sort_by, sort_order, include_translations): List articles (metadata only, no body), optionally in one section or locale, sorted, or with each article's translation locales (include_translations).
-    - list_promoted_articles(): List the promoted ("featured") Help Center articles, the small editorially-curated set surfaced at the top of their sections.
-    - list_article_translations(article_id*): List all available translations for an article (metadata only, no body: locale, title, draft, updated_at).
-    - create_article_translation(article_id*, locale*, title*, body*, draft): Create a translation of an existing article (made with create_article) in a new locale and return it (locale, title, draft state). (write)
-    - update_article_translation(article_id*, locale*, title, body, draft): Update article content (title, body) in a specific locale, the source locale or a translation. (write)
-    - list_section_translations(section_id*): List the translations of a Help Center section: for each locale, the localized name, whether a description is set, and whether it is published or a draft.
-    - list_category_translations(category_id*): List the translations of a Help Center category: for each locale, the localized name, whether a description is set, and whether it is published or a draft.
-    - find_translation_gaps(locale*, category_id): Audit the Help Center tree for a target locale and report every category and section that has no translation, or only an unpublished draft.
-    - set_section_translation(section_id*, locale*, name, description, draft): Create or update the translation of a Help Center section in one locale, and return it (locale, localized name, draft state). (write)
-    - set_category_translation(category_id*, locale*, name, description, draft): Create or update the translation of a Help Center category in one locale, and return it (locale, localized name, draft state). (write)
-    - list_permission_groups(): List all Guide permission groups, which control who can edit and publish an article, with each group's id, name and whether it is built-in.
+    - search_articles(query*, locale, per_page, page): Search Help Center articles by full text; returns metadata (no body) and the total count.
+    - get_article(article_id*, locale): Get an article with its full HTML body, metadata, source_locale and translations.
+    - list_categories(locale, page_size, cursor): List Help Center categories (top of category → section → article) with id, name and locale.
+    - list_sections(category_id, locale, page_size, cursor): List Help Center sections (the level between category and article) with id, name, category_id and locale.
+    - list_articles(section_id, locale, page_size, cursor, sort_by, sort_order, include_translations): List article metadata (no body), optionally by section or locale, sorted, or with translation locales.
+    - list_promoted_articles(): List promoted ("featured") articles, shown at the top of their sections: metadata only, default locale (full content: get_article).
+    - list_article_translations(article_id*): List an article's translations: locale, title, draft, updated_at (no body).
+    - create_article_translation(article_id*, locale*, title*, body*, draft): Add an article translation in a locale that has none yet, and return it (locale, title, draft state). (write)
+    - update_article_translation(article_id*, locale*, title, body, draft): Replace an article's title or full body in one locale, source or translation. (write)
+    - list_section_translations(section_id*): List a section's translations: per locale, its name, whether a description is set, and draft or published.
+    - list_category_translations(category_id*): List a category's translations: per locale, its name, whether a description is set, and draft or published.
+    - find_translation_gaps(locale*, category_id): Report every category and section with no translation, or only a draft, in a locale.
+    - set_section_translation(section_id*, locale*, name, description, draft): Create or update a section's translation in one locale and return it (locale, name, draft state); no listing needed first. (write)
+    - set_category_translation(category_id*, locale*, name, description, draft): Create or update a category's translation in one locale and return it (locale, name, draft state); no listing needed first. (write)
+    - list_permission_groups(): List Guide permission groups (who can edit and publish an article) with id, name and built-in flag, for create_article and update_article.
     - create_article(section_id*, title*, body*, permission_group_id*, user_segment_id, author_id, content_tag_ids, locale, draft, promoted, label_names): Create a new article in a section and return the created article with its id. (write)
-    - update_article(article_id*, draft, promoted, label_names, content_tag_ids, user_segment_id, author_id, permission_group_id, section_id, position): Update article metadata only (publication, promotion, labels, content tags, visibility, section, position, author) and return the updated article; omitted fields keep their value. (write)
-    - reorder_article(article_id*, target*, reference_article_id, normalize, confirm): Reorder an article within its current section (top, bottom, or before/after another article) and return whether the new order was applied. (write)
-    - archive_article(article_id*, confirm*): Archive (soft-delete) a Help Center article: it is removed from the Help Center but can be restored from the Guide admin UI. (write)
-    - list_content_tags(name_prefix, sort_by, sort_order, page_size, cursor): List Guide content tags, the end-user-visible labels that help readers find related articles.
-    - create_content_tag(name*): Create a new content tag for Guide articles — an end-user-visible label that helps readers discover related articles — and return it with its id. (write)
-    - list_labels(): List all article labels, with each label's id and name.
-    - list_user_segments(): List all Help Center user segments, which control who can view an article, with each segment's id, name, user type and whether it is built-in.
-    - list_article_attachments(article_id*): List all attachments of a Help Center article as metadata (id, file name, content type, size), not the file bytes; inline and block attachments alike.
-    - get_article_outline(article_id*, locale): Return a compact outline of an article in one locale: its sections delimited by h1/h2/h3, with word counts, and its available translations with their outdated status.
-    - get_article_section(article_id*, locale*, section_index*, format): Retrieve the content of a single section of an article in a given locale.
-    - update_article_section(article_id*, locale*, section_index*, content*, format): Replace the body of one article section, heading excluded (the heading is kept as is), in a given locale, leaving the rest of the article intact. (write)
-    - compare_translations(article_id*, source_locale*, target_locale*): Compare two locales of the same article to decide whether the target translation needs work, as independent signals rather than one verdict.
-    - create_article_attachment(article_id*, file_name*, file_base64*, content_type): Upload a file to a Help Center article and return the created attachment (id, file name, content type, size). (write)",
+    - update_article(article_id*, draft, promoted, label_names, content_tag_ids, user_segment_id, author_id, permission_group_id, section_id, position): Change article metadata (publication, promotion, labels, tags, visibility, section, position, author) and return the updated article; omitted fields are kept. (write)
+    - reorder_article(article_id*, target*, reference_article_id, normalize, confirm): Move an article within its section (top, bottom, or before/after another) and return whether the order took. (write)
+    - archive_article(article_id*, confirm*): Archive an article: it and its translations leave the Help Center, restorable in Guide (permanent deletion is Guide-only); returns a confirmation. (write)
+    - list_content_tags(name_prefix, sort_by, sort_order, page_size, cursor): List content tags, the labels readers see on articles.
+    - create_content_tag(name*): Create a content tag, a label readers see on articles, and return it with its id. (write)
+    - list_labels(): List article labels (id and name): hidden from readers, they tune search ranking.
+    - list_user_segments(): List user segments (who can view an article) with id, name, user type and built-in flag, for user_segment_id in create_article or update_article.
+    - list_article_attachments(article_id*): List an article's attachments, inline and block: id, file name, type, size, no bytes.
+    - get_article_outline(article_id*, locale): Outline an article in one locale: its h1-h3 sections with word counts, and its translations with their outdated flag.
+    - get_article_section(article_id*, locale*, section_index*, format): Read one section of an article in a locale; get its index from get_article_outline.
+    - update_article_section(article_id*, locale*, section_index*, content*, format): Replace one section of an article in a locale, heading excluded, keeping the rest of the article. (write)
+    - compare_translations(article_id*, source_locale*, target_locale*): Compare two locales of an article to see whether the target translation needs work, as separate signals.
+    - create_article_attachment(article_id*, file_name*, file_base64*, content_type): Upload a file to an article and return the created attachment (id, name, type, size); a second call adds another copy. (write)",
               "type": "string",
             },
             "params": {
