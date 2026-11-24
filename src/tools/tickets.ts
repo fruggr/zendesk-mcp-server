@@ -87,7 +87,7 @@ import type { ToolDefinition, ToolEnv, ToolImageContent, ToolTextContent } from 
 // Comments API, "Bodies"); these tools post as the calling agent. HTML there is
 // shown as literal text (#418 validation), despite the docs saying "stripped".
 const AGENT_COMMENT_FORMAT =
-  'Markdown is rendered (**bold**, lists, links): wrap code, identifiers containing _ or * and <placeholders> in backticks so they show literally. HTML is not rendered (tags show as literal text), so do not send HTML.';
+  'Markdown is rendered (**bold**, lists, links): wrap code, identifiers containing _ or *, and <placeholders> in backticks to show them literally. Do not send HTML: its tags show as literal text.';
 
 // The per-image cap in MB, for the skip message. Derived once: both operands
 // are module constants.
@@ -1071,19 +1071,17 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'Get Zendesk Ticket',
       description:
-        'Retrieve a Zendesk ticket by ID, including its live SLA state (per-metric stage and breach countdown) when an SLA policy applies, plus its comments if requested. Returns ticket details (subject, status, priority, assignee, tags, description) and optionally all comments/internal notes. It also lists the followers and email CCs on the ticket, resolved to names, which is how you tell who a ticket update actually reaches: followers are notified of updates including internal notes, email CCs take part in the public correspondence, and being the requester makes someone neither. Both lists come back empty on an account where the "CCs and followers" setting is not enabled in Zendesk. The per-ticket Show endpoint exposes no SLA, so the SLA block is resolved via a scoped search and may be absent for a very high-volume requester or a just-updated ticket; SLA targets and policy conditions live in list_sla_policies. When the operator turned SLA push on, the SLA block also carries an Urgency line naming the most urgent running metric as BREACHED, CRITICAL or WARNING against the caller\'s alert thresholds. This returns the ticket as it stands now; for the history of changes behind that state (who changed what, and when), use get_ticket_history. The comment thread is appended in one block — the first page of comments Zendesk returns, cut past the response character limit — so on a long ticket read it with list_ticket_comments, which pages the comments and returns the newest first.',
+        'Retrieve a Zendesk ticket by ID as it stands now: its details (subject, status, priority, assignee, tags, description), its live SLA state when an SLA policy applies, and optionally its comments and internal notes. Followers and email CCs are listed by name, which tells who an update reaches: followers are notified of every update, internal notes included, email CCs take part in the public correspondence, and being the requester makes someone neither; both lists are empty when the account\'s "CCs and followers" setting is off. The SLA block (per-metric stage and breach countdown) comes from a scoped search, since the ticket endpoint exposes no SLA, so it may be absent for a very high-volume requester or a just-updated ticket; when the operator turned SLA push on, it adds an Urgency line naming the most urgent running metric as BREACHED, CRITICAL or WARNING against the caller\'s alert thresholds. SLA targets and policy conditions: list_sla_policies. Who changed what, and when: get_ticket_history. A long thread, newest first and paged: list_ticket_comments.',
       inputSchema: z.object({
         ticket_id: z
           .number()
           .int()
-          .describe(
-            'Ticket ID — the numeric id of the ticket to fetch. Obtain it from search_tickets or list_tickets.',
-          ),
+          .describe('Numeric id of the ticket to fetch, from search_tickets or list_tickets.'),
         include_comments: z
           .boolean()
           .default(false)
           .describe(
-            "When true, appends the full public comment and internal note thread to the response. Defaults to false to keep the payload small; enable it when you need the conversation, not just the ticket fields. On a long thread prefer list_ticket_comments — this flag appends one unpaginated block, so comments past Zendesk's first page are absent and the rest is cut at the response character limit.",
+            "When true, appends the public comment and internal note thread; off by default to keep the payload small. The thread is one unpaginated block: comments past Zendesk's first page are absent and the rest is cut at the response character limit, so on a long thread use list_ticket_comments instead.",
           ),
       }),
       annotations: {
@@ -1152,13 +1150,13 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'Get Zendesk Ticket History',
       description:
-        'Read a ticket\'s change history — its audit trail — as a chronological, oldest-first timeline of who changed what and when. Each entry shows the actor (name and id) and the channel, then the field changes that update carried (status, priority, assignee, group, tags, custom fields) as before → after, with assignee/requester/group ids resolved to names. Comments appear as one-line presence markers (public comment vs internal note added), not their text — fetch the bodies with list_ticket_comments (or get_ticket(include_comments=true) for a short thread). Purely system-generated notification events (trigger emails, collaborator/CC notifications, pushes) are filtered out — note this filters notification delivery, not CC-list edits, which are shown as changes — and an update carrying only such events produces no entry, so the timeline stays a readable narrative rather than a raw log. Use it to answer "what happened on this ticket?", "why was it reassigned?" or "when did it go to pending?", reading oldest-first so the founding context is not missed. Read-only, and cursor-paginated oldest-first: pass the returned cursor to page a long-lived ticket toward its most recent changes.',
+        'Read a ticket\'s change history — its audit trail — as an oldest-first timeline of who changed what and when. Each entry gives the actor (name and id), the channel and the field changes (status, priority, assignee, group, tags, custom fields) as before → after, with assignee, requester and group ids resolved to names. Comments show only as a public comment or internal note marker: read their bodies with list_ticket_comments (or get_ticket(include_comments=true) on a short thread). System notification events (trigger emails, collaborator/CC notifications, pushes) are dropped, and so is an update carrying nothing else; CC-list edits still show as changes. Use it to answer "what happened on this ticket?", "why was it reassigned?" or "when did it go to pending?", from the founding context onward.',
       inputSchema: z.object({
         ticket_id: z
           .number()
           .int()
           .describe(
-            'Ticket ID — the numeric id of the ticket whose change history to read. Obtain it from search_tickets or list_tickets.',
+            'Numeric id of the ticket whose change history to read, from search_tickets or list_tickets.',
           ),
         page_size: z
           .number()
@@ -1167,13 +1165,13 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
           .max(MAX_PAGE_SIZE)
           .default(DEFAULT_PAGE_SIZE)
           .describe(
-            'Audits (ticket updates) per page (1-100, default 100). Each audit is one update to the ticket and may expand to several change lines; audits carrying only system events are dropped, so a page can render fewer entries than this.',
+            'Audits (ticket updates) per page. One audit can expand to several change lines, and audits carrying only system events are dropped, so a page can show fewer entries than this.',
           ),
         cursor: z
           .string()
           .optional()
           .describe(
-            'Pagination cursor from a previous response; omit for the first page. The timeline is ordered oldest-first, so paging forward moves toward the most recent changes.',
+            'Pagination cursor from a previous response; omit for the first page. Pages run oldest-first, so following the cursor moves toward the most recent changes.',
           ),
       }),
       annotations: {
@@ -1240,19 +1238,19 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'List Zendesk Ticket Comments',
       description:
-        'Read a ticket\'s conversation — public replies and internal notes with their full bodies — one cursor-paginated page at a time, newest comment first. Each entry carries the comment id, the author resolved to a name, the timestamp, whether it is public or internal, and the ids of any attached files. Prefer this over get_ticket(include_comments=true) whenever a thread is long or you only need the latest exchange: get_ticket appends the thread as one unpaginated block and cuts it past the response character limit, which drops the most recent comments first. Keep sort_order "desc" (the default) to read the latest reply first and follow the returned cursor to walk further back in time, or pass "asc" to replay the conversation forward from the ticket\'s opening description. For who changed which field and when — without comment bodies — use get_ticket_history; to download the attached files themselves, pass the attachment ids shown here to get_ticket_attachments.',
+        "Read a ticket's conversation — public replies and internal notes with their full bodies — one cursor-paginated page at a time, newest comment first. Each entry carries the comment id, the author's name, the timestamp, public or internal, and the ids of attached files. Prefer it over get_ticket(include_comments=true) on a long thread or when you only need the latest exchange: get_ticket appends the thread as one unpaginated block cut at the response character limit, which drops the most recent comments first. Who changed which field and when, without bodies: get_ticket_history. To download the attached files, pass their ids to get_ticket_attachments.",
       inputSchema: z.object({
         ticket_id: z
           .number()
           .int()
           .describe(
-            'Ticket ID — the numeric id of the ticket whose conversation to read. Obtain it from search_tickets or list_tickets.',
+            'Numeric id of the ticket whose conversation to read, from search_tickets or list_tickets.',
           ),
         sort_order: z
           .enum(['asc', 'desc'])
           .default('desc')
           .describe(
-            'Chronological direction of the page. "desc" (the default) starts at the most recent comment and walks backward in time, which is what you want to see the latest reply; "asc" replays the conversation forward, starting from the ticket\'s opening description — that first comment therefore lands on the last page under "desc".',
+            'Chronological direction. "desc" starts at the latest reply and the cursor walks back in time; "asc" replays the conversation forward from the ticket\'s opening description, which under "desc" lands on the last page.',
           ),
         page_size: z
           .number()
@@ -1261,13 +1259,13 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
           .max(MAX_PAGE_SIZE)
           .default(DEFAULT_TICKET_COMMENT_PAGE_SIZE)
           .describe(
-            'Comments per page (1-100, default 20). The default is deliberately small because comment bodies are long and a bigger page risks being cut short by the response character limit; follow the returned cursor rather than raising it.',
+            'Comments per page. The default is small on purpose: comment bodies are long and a bigger page risks being cut at the response character limit, so follow the cursor rather than raising it.',
           ),
         cursor: z
           .string()
           .optional()
           .describe(
-            'Pagination cursor from a previous response; omit for the first page. Zendesk issues it for the ordering that response used, so after changing sort_order drop the cursor and start again from the first page.',
+            "Pagination cursor from a previous response; omit for the first page. It holds that response's sort_order: after changing sort_order, start again without it.",
           ),
       }),
       annotations: {
@@ -1344,14 +1342,14 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'Get Zendesk Ticket Attachments',
       description:
-        "Download the files attached to a ticket's comments so you can look at them: images come back embedded inline, other files as text references (file name, id, content type, size, download URL). To learn which files a comment carries, list_ticket_comments is enough; pass their ids as attachment_ids to fetch only those. Without attachment_ids, the ticket's comments are read up to a page cap (10 pages of 100 comments by default; the response says when later ones were not scanned, and attachment_ids reaches their files): files attached to comments come first, then images pasted into email bodies, once each (quoted replies repeat them), those under 4 KB (signature icons) as references only. An image over the per-image size limit or past the embedded-image cap comes back as a reference saying why; once the response size budget is spent, the remaining files are counted as omitted.",
+        "Download the files attached to a ticket's comments so you can look at them: images come back embedded inline, other files as text references (file name, id, content type, size, download URL). To only learn which files a comment carries, list_ticket_comments is enough. Without attachment_ids, comments are read up to a page cap (10 pages of 100 by default; the response says when later ones were not scanned): files attached to comments come first, then images pasted into email bodies, once each (quoted replies repeat them), those under 4 KB (signature icons) as references only. An image over the per-image size limit or past the embedded-image cap comes back as a reference saying why; once the response size budget is spent, the remaining files are counted as omitted.",
 
       inputSchema: z.object({
         ticket_id: z
           .number()
           .int()
           .describe(
-            'Ticket ID — the numeric id of the ticket whose attachments to fetch. Obtain it from search_tickets or list_tickets.',
+            'Numeric id of the ticket whose attachments to fetch, from search_tickets or list_tickets.',
           ),
         attachment_ids: z
           .array(z.number().int().positive())
@@ -1365,7 +1363,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
           )
           .optional()
           .describe(
-            "Attachment IDs to fetch (e.g. extracted from a previous list_ticket_comments or get_ticket(include_comments=true) call). When provided, the ticket's comments are read only until every id is found, and an id that is not on the ticket is named rather than listed. When omitted, the attachments of the ticket's comments are returned (repeated inline images once), read up to a page cap: on a very long thread the scan stops there, and the response says so.",
+            "Ids of the only files to fetch, as shown by list_ticket_comments or get_ticket(include_comments=true); they also reach files past the page cap. The ticket's comments are then read only until every id is found, and an id not on the ticket is named rather than listed. Omit to collect all the ticket's attachments.",
           ),
       }),
       annotations: {
@@ -1417,13 +1415,13 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
       namespace: 'tickets',
       readOnly: true,
       title: 'Search Zendesk Tickets',
-      description: `Search tickets using Zendesk query syntax, returning each result with its live SLA state (per-metric stage and breach countdown) when an SLA policy applies. Examples: "status:open assignee:me", "priority:urgent ticket_type:incident". Returns total count, so queue triage like "breaching today" works without a per-ticket fetch. When the operator turned SLA push on, each SLA block also carries an Urgency line (BREACHED, CRITICAL or WARNING) against the caller's alert thresholds. ${EXCERPT_NOTE}`,
+      description: `Search tickets using Zendesk query syntax, returning each result with its live SLA state (per-metric stage and breach countdown) when an SLA policy applies. The total count comes back too, so queue triage like "breaching today" needs no per-ticket fetch. When the operator turned SLA push on, each SLA block also carries an Urgency line (BREACHED, CRITICAL or WARNING) against the caller's alert thresholds. ${EXCERPT_NOTE}`,
       inputSchema: z.object({
         query: z
           .string()
           .min(1)
           .describe(
-            'Zendesk ticket search query — field filters like "status:open", "assignee:me", "priority:urgent ticket_type:incident", combined with free text. A "type:ticket" scope is added automatically, so filter the ticket kind with ticket_type: (e.g. ticket_type:incident), never type: (which the API rejects here). "me" is a value of the user keywords only (assignee:, requester:, submitter:); group:me is read as your group when you belong to exactly one, else the call fails naming your groups, so use group:<id>.',
+            'Zendesk ticket search query: field filters like "status:open assignee:me" or "priority:urgent ticket_type:incident", combined with free text. A "type:ticket" scope is added for you, so filter the ticket kind with ticket_type:, never type: (which the API rejects here). "me" is a value of the user keywords only (assignee:, requester:, submitter:); group:me is read as your group when you belong to exactly one, else the call fails naming your groups, so use group:<id>.',
           ),
         per_page: z
           .number()
@@ -1491,40 +1489,42 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: false,
       title: 'Create Zendesk Ticket',
       description:
-        'Create a new Zendesk support ticket with subject, description, and optional requester, organization, priority, type, assignee and tags. The description becomes the first public comment of the ticket, and the new ticket id is returned. After creation, use update_ticket to change status or assignee, add_public_comment or add_private_note to reply, and manage_tags to adjust tags. Without requester_id the ticket is filed on your behalf; the organization must be one the requester is a member of, and a value Zendesk did not keep is reported as not applied. Look up valid requester_id / assignee_id via search_users, group_id via your Zendesk admin settings. Discover custom field ids and their accepted option values with list_ticket_fields.',
+        'Create a new Zendesk support ticket from a subject and a description, with optional requester, organization, priority, type, assignee, group, tags and custom fields; the new ticket is returned with its id. A requester or organization Zendesk did not keep is reported as not applied. After creation, use update_ticket to change status or assignee, add_public_comment or add_private_note to reply, and manage_tags to adjust tags.',
       inputSchema: z.object({
         subject: z
           .string()
           .min(1)
-          .describe(
-            'Ticket subject — the short summary line shown in ticket lists and search results.',
-          ),
+          .describe('Short summary line shown in ticket lists and search results.'),
         description: z
           .string()
           .min(1)
           .describe(
-            `Ticket description — the body of the request. It becomes the ticket's first public comment (visible to the requester). ${AGENT_COMMENT_FORMAT}`,
+            `Body of the request; it becomes the ticket's first public comment, visible to the requester. ${AGENT_COMMENT_FORMAT}`,
           ),
         priority: z
           .enum(['urgent', 'high', 'normal', 'low'])
           .optional()
-          .describe('Ticket priority. One of urgent, high, normal, low.'),
+          .describe('Priority level of the ticket.'),
         type: z
           .enum(['problem', 'incident', 'question', 'task'])
           .optional()
-          .describe('Ticket type. One of problem, incident, question, task.'),
+          .describe('Kind of ticket, as Zendesk classifies it.'),
         assignee_id: z
           .number()
           .int()
           .optional()
-          .describe('User id of the agent to assign the ticket to.'),
-        group_id: z.number().int().optional().describe('Id of the group to assign the ticket to.'),
+          .describe('User id of the agent to assign the ticket to, from search_users.'),
+        group_id: z
+          .number()
+          .int()
+          .optional()
+          .describe('Id of the group to assign the ticket to, from your Zendesk admin settings.'),
         requester_id: z
           .number()
           .int()
           .optional()
           .describe(
-            'User id of the person the ticket is on behalf of (end user or agent); defaults to you. Resolve it with search_users.',
+            'User id of the person the ticket is on behalf of (end user or agent), from search_users; defaults to you.',
           ),
         organization_id: z
           .number()
@@ -1537,13 +1537,13 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
           .array(z.string())
           .optional()
           .describe(
-            'Tags to set on the new ticket. Each tag is a single lowercase token (join multi-word tags with an underscore). Use manage_tags later to add or remove individual tags.',
+            'Tags for the new ticket, each a single lowercase token (join multi-word tags with an underscore).',
           ),
         custom_fields: z
           .array(customFieldEntry)
           .optional()
           .describe(
-            'Custom field values as { id, value } pairs (field ids come from your Zendesk admin settings). Call list_ticket_fields first to discover the numeric field ids and, for dropdown/multiselect fields, the exact option values Zendesk accepts.',
+            'Custom field values as { id, value } pairs. Call list_ticket_fields first for the numeric field ids and, for dropdown/multiselect fields, the exact option values Zendesk accepts.',
           ),
       }),
       annotations: {
@@ -1579,38 +1579,36 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: false,
       title: 'Update Zendesk Ticket',
       description:
-        'Update an existing ticket (status, priority, type, requester, organization, assignee, group, subject, tags, custom fields, followers, email CCs). Only the fields you pass are changed, except that Zendesk may move the ticket to an organization of a new requester; the updated ticket is returned. The organization must be one the requester is a member of. A requested requester or organization that Zendesk did not set is reported as not applied; an organization Zendesk moved along with a new requester, when organization_id was not passed, is reported as changed with the requester. Followers and email CCs are incremental instead of replacing: pass { add, remove } lists of user ids, and the response reports who is subscribed afterwards. Zendesk applies those two silently, so a requested change it did not apply comes back listed as unconfirmed rather than raised as an error. Setting tags here replaces the whole tag set — use manage_tags to add or remove individual tags without overwriting the rest. This tool does not post replies: use add_public_comment or add_private_note for that. Find the ticket id via search_tickets or list_tickets.',
+        "Update an existing ticket's fields, followers and email CCs; only the fields you pass are changed, and the updated ticket is returned. Tags passed here replace the whole set: use manage_tags to add or remove single tags without overwriting the rest. Followers and email CCs are edited incrementally, and the response lists who is subscribed afterwards. Zendesk can skip a change without an error, so the response names it: a requester or organization it did not set as not applied, a follower or CC change as unconfirmed, and an organization it moved along with a new requester (organization_id not passed) as changed with the requester. This tool does not post replies: use add_public_comment or add_private_note.",
       inputSchema: z.object({
         ticket_id: z
           .number()
           .int()
-          .describe(
-            'Ticket ID — the numeric id of the ticket to update. Obtain it from search_tickets or list_tickets.',
-          ),
+          .describe('Numeric id of the ticket to update, from search_tickets or list_tickets.'),
         status: z
           .enum(['new', 'open', 'pending', 'hold', 'solved', 'closed'])
           .optional()
-          .describe('New ticket status. One of new, open, pending, hold, solved, closed.'),
+          .describe('New status of the ticket.'),
         priority: z
           .enum(['urgent', 'high', 'normal', 'low'])
           .optional()
-          .describe('Ticket priority. One of urgent, high, normal, low.'),
+          .describe('Priority level of the ticket.'),
         type: z
           .enum(['problem', 'incident', 'question', 'task'])
           .optional()
-          .describe('Ticket type. One of problem, incident, question, task.'),
+          .describe('Kind of ticket, as Zendesk classifies it.'),
         assignee_id: z
           .number()
           .int()
           .optional()
-          .describe('User id of the agent to assign the ticket to.'),
+          .describe('User id of the agent to assign the ticket to, from search_users.'),
         group_id: z.number().int().optional().describe('Id of the group to assign the ticket to.'),
         requester_id: z
           .number()
           .int()
           .optional()
           .describe(
-            'User id of the new requester (end user or agent), to fix who the ticket is on behalf of. Resolve it with search_users. Zendesk may move the ticket to an organization of the new requester; pass organization_id to choose which.',
+            'User id of the new requester (end user or agent), to fix who the ticket is on behalf of, from search_users. Zendesk may move the ticket to an organization of the new requester; pass organization_id to choose which.',
           ),
         organization_id: z
           .number()
@@ -1619,21 +1617,16 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
           .describe(
             'Id of the organization to move the ticket to. It must be one the requester is a member of, or Zendesk rejects or ignores it.',
           ),
-        subject: z
-          .string()
-          .optional()
-          .describe('New subject line for the ticket; replaces the current subject when provided.'),
+        subject: z.string().optional().describe('New subject line, replacing the current one.'),
         tags: z
           .array(z.string())
           .optional()
-          .describe(
-            'Replaces the full tag set on the ticket. Use manage_tags for incremental add/remove.',
-          ),
+          .describe('The full new tag set; tags left out are removed from the ticket.'),
         custom_fields: z
           .array(customFieldEntry)
           .optional()
           .describe(
-            'Custom field values as { id, value } pairs (field ids come from your Zendesk admin settings). Call list_ticket_fields first to discover the numeric field ids and, for dropdown/multiselect fields, the exact option values Zendesk accepts.',
+            'Custom field values as { id, value } pairs. Call list_ticket_fields first for the numeric field ids and, for dropdown/multiselect fields, the exact option values Zendesk accepts.',
           ),
         followers: z
           .object({
@@ -1643,20 +1636,17 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
           .strict()
           .optional()
           .describe(
-            "Agents to add to or remove from the ticket's follower list, as numeric user ids: { add: [123], remove: [456] }. Followers are notified of ticket updates, internal notes included, so this controls who hears about the ticket. Numeric ids only, no email addresses: resolve the person with search_users first and confirm the match before writing, because a name query can return several users and removing the wrong id succeeds silently. Adding someone already following, or removing someone who is not, is a no-op. An id listed in both add and remove is removed. Omit to leave followers untouched.",
+            'Agents to add to or remove from the follower list, as user ids: { add: [123], remove: [456] }. Followers are notified of ticket updates, internal notes included. Ids only, not email addresses: resolve each person with search_users and confirm the match before writing, since a name query can return several users and removing the wrong id succeeds silently. Adding a current follower or removing a non-follower is a no-op; an id in both lists is removed. Omit to leave followers untouched.',
           ),
         email_ccs: z
           .object({
-            add: subscriberIdList(
-              'User ids to CC on the ticket, at most 48. Omit to only remove.',
-              48,
-            ),
+            add: subscriberIdList('User ids to CC on the ticket. Omit to only remove.', 48),
             remove: subscriberIdList('User ids to drop from the CC list. Omit to only add.'),
           })
           .strict()
           .optional()
           .describe(
-            "End users or agents to add to or remove from the ticket's email CC list, as numeric user ids: { add: [123], remove: [456] }. CCs receive the ticket's public correspondence, subject to your account's triggers. Numeric ids only, no email addresses: resolve the person with search_users first and confirm the match, because a name query can return several users. Zendesk caps a ticket at 48 email CCs and this tool cannot know how many are already set, so going over shows up as an unconfirmed entry in the response rather than a validation error. An id listed in both add and remove is removed. Omit to leave CCs untouched.",
+            "End users or agents to add to or remove from the email CC list, as user ids: { add: [123], remove: [456] }. CCs receive the public correspondence, subject to your account's triggers. Ids only, not email addresses: resolve each person with search_users and confirm the match, since a name query can return several users. Zendesk caps a ticket at 48 email CCs, those already set included, so going over comes back as unconfirmed rather than as a validation error. An id in both lists is removed. Omit to leave CCs untouched.",
           ),
       }),
       annotations: {
@@ -1711,20 +1701,13 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: false,
       title: 'Add Private Note',
       description:
-        'Add an internal note (not visible to requester) to a ticket, optionally with file attachments (uploaded via the Zendesk Uploads API and carried on the note). The note is appended to the ticket thread; use add_public_comment instead when the reply should be visible to the requester.',
+        'Add an internal note, hidden from the requester, to a ticket, optionally with file attachments uploaded through the Zendesk Uploads API. The note is appended to the ticket thread; use add_public_comment instead when the requester should see the reply.',
       inputSchema: z.object({
         ticket_id: z
           .number()
           .int()
-          .describe(
-            'Ticket ID — the numeric id of the ticket to annotate. Obtain it from search_tickets or list_tickets.',
-          ),
-        body: z
-          .string()
-          .min(1)
-          .describe(
-            `Note text (internal, agent-only); not shown to the requester. ${AGENT_COMMENT_FORMAT}`,
-          ),
+          .describe('Numeric id of the ticket to annotate, from search_tickets or list_tickets.'),
+        body: z.string().min(1).describe(`Note text, seen by agents only. ${AGENT_COMMENT_FORMAT}`),
         attachments: attachmentsParam('Files to attach to this note (base64-encoded content).'),
       }),
       annotations: {
@@ -1758,19 +1741,17 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: false,
       title: 'Add Public Comment',
       description:
-        'Add a public comment (visible to requester) to a ticket, optionally with file attachments (uploaded via the Zendesk Uploads API and carried on the comment). The comment is appended to the ticket thread and emails the requester; use add_private_note instead for an internal, agent-only note.',
+        'Add a public comment, visible to the requester, to a ticket, optionally with file attachments uploaded through the Zendesk Uploads API. The comment is appended to the ticket thread and emails the requester; use add_private_note instead for an internal, agent-only note.',
       inputSchema: z.object({
         ticket_id: z
           .number()
           .int()
-          .describe(
-            'Ticket ID — the numeric id of the ticket to reply on. Obtain it from search_tickets or list_tickets.',
-          ),
+          .describe('Numeric id of the ticket to reply on, from search_tickets or list_tickets.'),
         body: z
           .string()
           .min(1)
           .describe(
-            `Comment text sent to the requester; visible in the ticket. ${AGENT_COMMENT_FORMAT}`,
+            `Comment text sent to the requester and shown in the ticket. ${AGENT_COMMENT_FORMAT}`,
           ),
         attachments: attachmentsParam('Files to attach to this comment (base64-encoded content).'),
       }),
@@ -1806,7 +1787,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
       namespace: 'tickets',
       readOnly: true,
       title: 'List Zendesk Tickets',
-      description: `List tickets with cursor-based pagination, in Zendesk's default order (ascending ticket id), not by recency. Page size is controlled by page_size (not per_page, which is the offset-based parameter used by search_tickets); paginate by passing the returned cursor. To find tickets by recency or any other criterion, use search_tickets with a query. ${EXCERPT_NOTE}`,
+      description: `List tickets with cursor-based pagination, in Zendesk's default order (ascending ticket id), not by recency: page with page_size and the returned cursor, not search_tickets' offset per_page. To find tickets by recency or any other criterion, use search_tickets with a query. ${EXCERPT_NOTE}`,
       inputSchema: z.object({
         page_size: z
           .number()
@@ -1814,7 +1795,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
           .min(1)
           .max(MAX_PAGE_SIZE)
           .default(DEFAULT_TICKET_LIST_PAGE_SIZE)
-          .describe(`Tickets per page (1-100, default ${DEFAULT_TICKET_LIST_PAGE_SIZE}).`),
+          .describe('Number of tickets returned per page.'),
         cursor: z
           .string()
           .optional()
@@ -1856,13 +1837,13 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
       namespace: 'tickets',
       readOnly: true,
       title: 'Get Linked Incidents',
-      description: `Get all incident tickets linked to a problem ticket. Returns the list of incidents that reference the given problem (Zendesk problem/incident relationship); useful to gauge a problem's blast radius before resolving it. ${EXCERPT_NOTE}`,
+      description: `Get all incident tickets linked to a problem ticket (Zendesk's problem/incident relationship), to gauge a problem's blast radius before resolving it. ${EXCERPT_NOTE}`,
       inputSchema: z.object({
         problem_id: z
           .number()
           .int()
           .describe(
-            'Problem ticket ID — the numeric id of the ticket of type "problem" whose linked incidents to list. Obtain it from search_tickets or list_tickets.',
+            'Numeric id of the ticket of type "problem" whose linked incidents to list, from search_tickets or list_tickets.',
           ),
       }),
       annotations: {
@@ -1903,26 +1884,24 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: false,
       title: 'Manage Ticket Tags',
       description:
-        "Add or remove tags on a ticket. Performs an incremental read-modify-write: it fetches the ticket's current tags, adds those in `add` and deletes those in `remove`, then saves the merged set — tags you don't list are left untouched and duplicates are collapsed. Adding a tag already present, or removing one that is absent, is a no-op (idempotent). Returns the ticket's full tag set after the update. Use this for incremental tag edits; to overwrite the entire tag set at once, or to change tags alongside other fields, use update_ticket instead. Find the ticket id via search_tickets or list_tickets.",
+        "Add or remove tags on a ticket, leaving the others untouched. It reads the current tags, applies `add` and `remove`, and saves the merged set with duplicates collapsed; adding a present tag or removing an absent one is a no-op (idempotent). Returns the ticket's full tag set after the update. To overwrite the whole tag set, or to change tags alongside other fields, use update_ticket instead.",
       inputSchema: z.object({
         ticket_id: z
           .number()
           .int()
           .describe(
-            'Ticket ID — the numeric id of the ticket whose tags to modify. Obtain it from search_tickets or list_tickets.',
+            'Numeric id of the ticket whose tags to modify, from search_tickets or list_tickets.',
           ),
         add: z
           .array(z.string())
           .optional()
           .describe(
-            'Tags to add. Zendesk tags are single tokens: a value containing spaces is stored as separate tags rather than one tag, so join multi-word tags yourself with an underscore or dash (e.g. "urgent_request"). Adding a tag already on the ticket is a no-op. Omit to only remove.',
+            'Tags to add. Zendesk tags are single tokens: a value containing spaces is stored as separate tags, so join multi-word tags with an underscore or dash (e.g. "urgent_request"). Omit to only remove.',
           ),
         remove: z
           .array(z.string())
           .optional()
-          .describe(
-            'Tags to remove. Removing a tag that is not present is a no-op; tags not listed here stay in place. Omit to only add.',
-          ),
+          .describe('Tags to remove from the ticket. Omit to only add.'),
       }),
       annotations: {
         readOnlyHint: false,
@@ -1971,7 +1950,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'List SLA Policies',
       description:
-        'List the configured SLA policies with their filter conditions and per-priority reply/resolution targets. Use this to explain why a given target applies to a ticket and to reconstruct deadlines deterministically instead of hard-coding the policy matrix. Requires an admin token (or a custom role granted the SLA-management permission); a standard agent token gets 403 here, though it can still read live per-ticket SLA via get_ticket / search_tickets.',
+        'List the configured SLA policies with their filter conditions and per-priority reply/resolution targets, to explain why a target applies to a ticket and reconstruct deadlines instead of hard-coding the policy matrix. Requires an admin token (or a custom role granted the SLA-management permission); a standard agent token gets 403 here, though it can still read live per-ticket SLA via get_ticket / search_tickets.',
       inputSchema: z.object({
         per_page: z
           .number()
@@ -2028,14 +2007,14 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'Get Ticket Metrics',
       description:
-        'Read the elapsed-time metrics (reply, resolution, wait and on-hold times, reopens, replies) of up to 100 tickets in one call. Each ticket gets first reply, first and full resolution, agent wait, requester wait and on-hold times in calendar and business minutes, plus reopen, reply, assignee-station and group-station counts and the key timestamps (assigned, solved, latest comment). These are facts Zendesk records on every ticket, so they are available even on tickets no SLA policy covers; they say how long things took, not how long is left — for the live breach countdown use get_ticket, search_tickets or list_sla_alerts. A duration still running reads "not reached yet". Read-only; tickets the caller cannot see are reported as such rather than failing the call.',
+        'Read the elapsed-time metrics of up to 100 tickets in one call: first reply, first and full resolution, agent wait, requester wait and on-hold times in calendar and business minutes, reopen, reply, assignee-station and group-station counts, and the assigned, solved and latest-comment timestamps. Zendesk records them on every ticket, so they exist even where no SLA policy applies; they say how long things took, not how long is left (live breach countdown: get_ticket, search_tickets or list_sla_alerts). A duration still running reads "not reached yet"; a ticket the caller cannot see is reported as such rather than failing the call.',
       inputSchema: z.object({
         ticket_ids: z
           .array(z.number().int().positive())
           .min(1)
           .max(MAX_PAGE_SIZE)
           .describe(
-            'Ticket IDs to read metrics for, 1 to 100 numeric ids (duplicates are read once), as returned by search_tickets, list_tickets or get_view_tickets. The answer keeps this order.',
+            'Numeric ids of the tickets to read, from search_tickets, list_tickets or get_view_tickets; duplicates are read once and the answer keeps this order.',
           ),
       }),
       annotations: {
@@ -2075,7 +2054,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'List Ticket Fields',
       description:
-        'List the ticket field definitions configured on this Zendesk (both system fields and custom fields), returning each field\'s id, type, whether it is active/required, and — for dropdown and multiselect fields — the valid option values. Use this to discover the numeric field ids and accepted option tags that create_ticket and update_ticket expect in their custom_fields argument, so a natural-language intent ("set severity to High") maps to the right id and a value Zendesk will accept instead of a blind guess. Read-only reference lookup; cursor-paginated in Zendesk\'s default field order.',
+        'List the ticket field definitions configured on this Zendesk (system and custom), returning each field\'s id, type, whether it is active/required and, for dropdown and multiselect fields, the valid option values. Use it to map an intent such as "set severity to High" to the field id and option tag that create_ticket and update_ticket expect in custom_fields, instead of guessing. Cursor-paginated in Zendesk\'s default field order.',
       inputSchema: z.object({
         page_size: z
           .number()
@@ -2083,7 +2062,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
           .min(1)
           .max(MAX_PAGE_SIZE)
           .default(DEFAULT_PAGE_SIZE)
-          .describe('Ticket field definitions per page (1-100, default 100).'),
+          .describe('Number of field definitions returned per page.'),
         cursor: z
           .string()
           .optional()
@@ -2125,7 +2104,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'List Zendesk Views',
       description:
-        'List the agent\'s active Zendesk views — the saved ticket queues ("Unassigned tickets", "My open tickets", "Breaching today") the agent sees in the Zendesk UI — each with its current ticket count so you can tell at a glance where the workload sits. Views are per-agent scoped, so per-user auth returns exactly the queues this agent can see, with no shared key. Counts come from Zendesk\'s cache and can lag by up to about an hour (shown as "(count updating)" while a fresh value is still being computed); pass a view\'s title or id to get_view_tickets to read the tickets inside it.',
+        'List the agent\'s active Zendesk views — saved ticket queues such as "Unassigned tickets" or "Breaching today" — each with its ticket count, to see where the workload sits. Views are scoped per agent, so per-user auth returns exactly the queues this agent sees, with no shared key. Counts come from Zendesk\'s cache and can lag by up to about an hour ("(count updating)" while a fresh value is computed). To read the tickets inside a view, pass its title or id to get_view_tickets.',
       inputSchema: z.object({
         page_size: z
           .number()
@@ -2133,7 +2112,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
           .min(1)
           .max(MAX_PAGE_SIZE)
           .default(DEFAULT_PAGE_SIZE)
-          .describe('Views per page (1-100, default 100).'),
+          .describe('Number of views returned per page.'),
         cursor: z
           .string()
           .optional()
@@ -2179,24 +2158,24 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
       namespace: 'tickets',
       readOnly: true,
       title: 'Get Tickets In A View',
-      description: `Read the tickets inside a Zendesk view, in the view's own configured sort order — the same order the agent sees in the Zendesk UI — which is the natural way to work a named queue like "Unassigned tickets" or "Breaching today". Accepts the view by title or by numeric id (discover both with list_views); a title is matched case-insensitively against the agent's active views, and on no match the available titles are returned so you can retry in one step. Tickets come back with the same fields as list_tickets and are cursor-paginated. Each ticket an SLA policy covers also shows its next SLA breach: only the one metric closest to breaching, read from the view itself at no extra cost (use get_ticket or search_tickets for every metric). sort_by/sort_order override the view's order when you want a different cut. ${EXCERPT_NOTE}`,
+      description: `Read the tickets inside a Zendesk view, in the view's own sort order as the agent sees it in Zendesk: the natural way to work a named queue like "Unassigned tickets" or "Breaching today". Tickets carry the same fields as list_tickets, cursor-paginated, and each one an SLA policy covers shows its next SLA breach: the one metric closest to breaching, read from the view at no extra cost (every metric: get_ticket or search_tickets). ${EXCERPT_NOTE}`,
       inputSchema: z.object({
         view: z
           .union([z.string().min(1), z.number().int().positive()])
           .describe(
-            'The view to read: its exact title as shown in Zendesk (e.g. "Unassigned tickets") or its numeric id from list_views. A title is matched case-insensitively against your active views; on no match the tool returns the available titles instead of erroring, so you can retry with a correct one.',
+            'The view to read: its title as shown in Zendesk (e.g. "Unassigned tickets") or its numeric id, both listed by list_views. A title is matched case-insensitively against your active views; on no match the available titles come back instead of an error, so you can retry in one step.',
           ),
         sort_by: z
           .string()
           .optional()
           .describe(
-            'Optional column to sort by, overriding the view\'s own sort. Must be one of the view\'s columns (e.g. "status", "priority", "updated_at", or a custom field id); "subject" and "submitter" are not sortable. Omit to keep the view\'s configured order.',
+            'Column to sort by instead of the view\'s own order: one of the view\'s columns (e.g. "status", "priority", "updated_at", or a custom field id), except "subject" and "submitter". Omit to keep the view\'s order.',
           ),
         sort_order: z
           .enum(['asc', 'desc'])
           .optional()
           .describe(
-            'Sort direction applied to sort_by: "asc" (oldest/lowest first) or "desc" (newest/highest first). Only meaningful together with sort_by; omit to keep the view\'s configured direction.',
+            'Direction for sort_by, and only meaningful with it: "asc" (oldest/lowest first) or "desc" (newest/highest first). Omit to keep the view\'s direction.',
           ),
         page_size: z
           .number()
@@ -2204,7 +2183,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
           .min(1)
           .max(MAX_PAGE_SIZE)
           .default(DEFAULT_TICKET_LIST_PAGE_SIZE)
-          .describe(`Tickets per page (1-100, default ${DEFAULT_TICKET_LIST_PAGE_SIZE}).`),
+          .describe('Number of tickets returned per page.'),
         cursor: z
           .string()
           .optional()
@@ -2285,7 +2264,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'List Zendesk Macros',
       description:
-        'List the active macros available to the authenticated user. A macro bundles a canned reply and/or a set of field changes (status, priority, assignee, group, tags, custom fields) an agent applies to a ticket in one gesture; this returns each macro id, title, description, availability scope, and its ordered list of actions, offset-paginated. Results are scoped by per-user OAuth to what the current user can see, so no shared admin key is needed. Pass a macro id from here to preview_macro_diff to preview its effect on a specific ticket.',
+        "List the active macros available to the authenticated user, offset-paginated: each macro's id, title, description, availability scope and ordered actions. A macro bundles a canned reply and/or field changes (status, priority, assignee, group, tags, custom fields) an agent applies to a ticket in one gesture. Per-user OAuth scopes the list to what the current user can see, with no shared admin key. Pass a macro id to preview_macro_diff to preview its effect on a ticket.",
       inputSchema: z.object({
         per_page: z
           .number()
@@ -2328,20 +2307,18 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: false,
       title: 'Preview a Macro Diff on a Ticket',
       description:
-        "Preview the exact changes a macro would make to a specific ticket, as a before → after diff, WITHOUT saving anything. Orchestrates two reads — the ticket's current state and Zendesk's macro-apply preview (which returns the whole resulting ticket) — and returns only the fields the macro actually changes (status, priority, assignee, group, tags, custom fields) plus the canned reply with its public/internal flag; unchanged and identity fields are omitted. Nothing is committed: to apply it, follow up with update_ticket for the field changes and add_public_comment or add_private_note for the reply. This deliberate two-step keeps the mutation explicit and reviewable rather than hidden. Find macro ids via list_macros and the ticket id via search_tickets or list_tickets.",
+        "Preview the exact changes a macro would make to a specific ticket, as a before → after diff, WITHOUT saving anything. It reads the ticket and Zendesk's macro-apply preview, then returns only the fields the macro changes (status, priority, assignee, group, tags, custom fields) plus the canned reply with its public/internal flag; unchanged and identity fields are omitted. To apply it, follow up with update_ticket for the fields and add_public_comment or add_private_note for the reply: a deliberate two-step that keeps the mutation explicit and reviewable.",
       inputSchema: z.object({
         ticket_id: z
           .number()
           .int()
           .describe(
-            'Ticket ID — the numeric id of the ticket to preview the macro against. Obtain it from search_tickets or list_tickets.',
+            'Numeric id of the ticket to preview the macro against, from search_tickets or list_tickets.',
           ),
         macro_id: z
           .number()
           .int()
-          .describe(
-            'Macro ID — the numeric id of the macro to preview. Obtain it from list_macros.',
-          ),
+          .describe('Numeric id of the macro to preview, from list_macros.'),
       }),
       annotations: {
         readOnlyHint: false,
