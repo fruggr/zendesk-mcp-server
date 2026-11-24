@@ -134,7 +134,7 @@ it('exposes the tickets tool surface unchanged', async () => {
           "additionalProperties": false,
           "properties": {
             "attachment_ids": {
-              "description": "Ids of the only files to fetch, as shown by list_ticket_comments or get_ticket(include_comments=true); they also reach files past the page cap. The ticket's comments are then read only until every id is found, and an id not on the ticket is named rather than listed; if the scan stops at the page cap, an id not yet found is fetched directly and flagged as unchecked. Omit to collect the ticket's attachments, up to the page cap.",
+              "description": "Ids of the only files to fetch, as shown by list_ticket_comments or get_ticket(include_comments=true); they also reach files past the page cap. The ticket's comments are then read only until every id is found, and, once every comment is scanned, an id not on the ticket is named rather than listed; if the scan ends early (page cap or a page Zendesk gives no cursor for), an id not yet found is fetched directly and flagged as unchecked. Omit to collect the ticket's attachments, up to the page cap.",
               "items": {
                 "exclusiveMinimum": 0,
                 "maximum": 9007199254740991,
