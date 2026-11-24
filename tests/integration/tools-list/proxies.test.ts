@@ -205,7 +205,7 @@ it('exposes the requests proxy unchanged', async () => {
     - list_request_forms(): List the kinds of request you can submit to this Zendesk: the Help Center forms a customer picks between, such as "Report a bug" or "Feature request".
     - get_request_form(form_id): Read what one request form asks for, to walk the user through it question by question.
     - create_request(subject*, body*, form_id, custom_fields, attachments): Submit a new support request as the signed-in user, like the Help Center's "Submit a request" form. (write)
-    - list_requests(query, status, sort_by, sort_order, per_page, page): List the requests the signed-in user submitted, or search them by free text.
+    - list_requests(query, status, sort_by, sort_order, per_page, page): List the requests the signed-in user submitted, newest activity first by default, or search them by free text.
     - get_request(request_id*, include_comments): Read one of the signed-in user's own requests, optionally with its whole conversation.
     - add_request_comment(request_id*, body*, attachments): Reply on one of the signed-in user's own requests, optionally attaching files. (write)
     - mark_request_solved(request_id*): Mark one of the signed-in user's own requests solved, when they consider it resolved. (write)",

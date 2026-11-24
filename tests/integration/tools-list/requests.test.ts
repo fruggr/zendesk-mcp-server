@@ -147,7 +147,7 @@ it('exposes the requests tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "List the requests the signed-in user submitted, or search them by free text. Returns each with its number, subject, status and whether the user can mark it solved. Zendesk scopes it to the caller, so it never returns anyone else's tickets: an agent sees only requests they raised, not their queue (for that, list_tickets, search_tickets or get_view_tickets). Read one with its full conversation via get_request.",
+        "description": "List the requests the signed-in user submitted, newest activity first by default, or search them by free text. Returns each with its number, subject, status and whether the user can mark it solved. Zendesk scopes it to the caller, so it never returns anyone else's tickets: an agent sees only requests they raised, not their queue (for that, list_tickets, search_tickets or get_view_tickets). Read one with its full conversation via get_request.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,

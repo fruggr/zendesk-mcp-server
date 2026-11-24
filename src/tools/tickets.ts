@@ -1071,7 +1071,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'Get Zendesk Ticket',
       description:
-        'Retrieve a Zendesk ticket by ID as it stands now: its details (subject, status, priority, assignee, tags, description), its live SLA state when an SLA policy applies, and optionally its comments and internal notes. Followers and email CCs are listed by name, which tells who an update reaches: followers are notified of every update, internal notes included, email CCs take part in the public correspondence, and being the requester makes someone neither; both lists are empty when the account\'s "CCs and followers" setting is off. The SLA block (per-metric stage and breach countdown) comes from a scoped search, since the ticket endpoint exposes no SLA, so it may be absent for a very high-volume requester or a just-updated ticket; when the operator turned SLA push on, it adds an Urgency line naming the most urgent running metric as BREACHED, CRITICAL or WARNING against the caller\'s alert thresholds. SLA targets and policy conditions: list_sla_policies. Who changed what, and when: get_ticket_history. A long thread, newest first and paged: list_ticket_comments.',
+        'Retrieve a Zendesk ticket by ID as it stands now: its details (subject, status, priority, assignee, tags, description), its live SLA state when an SLA policy applies, and optionally its comments and internal notes. Followers and email CCs are listed by name, which tells who an update reaches: followers are notified of updates, internal notes included, email CCs take part in the public correspondence, and being the requester makes someone neither; both lists are empty when the account\'s "CCs and followers" setting is off. The SLA block (per-metric stage and breach countdown) comes from a scoped search, since the ticket endpoint exposes no SLA, so it may be absent for a very high-volume requester or a just-updated ticket; when the operator turned SLA push on, it adds an Urgency line naming the most urgent running metric as BREACHED, CRITICAL or WARNING against the caller\'s alert thresholds. SLA targets and policy conditions: list_sla_policies. Who changed what, and when: get_ticket_history. A long thread, newest first and paged: list_ticket_comments.',
       inputSchema: z.object({
         ticket_id: z
           .number()
@@ -1363,7 +1363,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
           )
           .optional()
           .describe(
-            "Ids of the only files to fetch, as shown by list_ticket_comments or get_ticket(include_comments=true); they also reach files past the page cap. The ticket's comments are then read only until every id is found, and an id not on the ticket is named rather than listed. Omit to collect all the ticket's attachments.",
+            "Ids of the only files to fetch, as shown by list_ticket_comments or get_ticket(include_comments=true); they also reach files past the page cap. The ticket's comments are then read only until every id is found, and an id not on the ticket is named rather than listed. Omit to collect the ticket's attachments, up to the page cap.",
           ),
       }),
       annotations: {
