@@ -156,10 +156,10 @@ it('exposes the users proxy unchanged', async () => {
             "operation": {
               "description": "One of the operations below. Each line reads name(parameters): summary, where the parameters are the exact names "params" accepts and * marks a required one; (write) marks an operation that changes data.
     - get_current_user(): Get the currently authenticated Zendesk user.
-    - search_users(query*, per_page, page): Search for users by name, email, or other criteria using Zendesk search query syntax, returning each match's id, name, email, role, active flag and organization id, with the total count.
-    - get_user(user_id*): Retrieve a single user by their numeric id.
-    - get_organization(organization_id*): Retrieve a single organization by its numeric id.
-    - list_organizations(page_size, cursor): List all organizations with pagination.",
+    - search_users(query*, per_page, page): Search users by name, email or other criteria in Zendesk query syntax, returning each match's id, name, email, role, active flag and organization id, with the total count.
+    - get_user(user_id*): Retrieve one user by numeric id, with the full record (name, email, role, organization, tags).
+    - get_organization(organization_id*): Retrieve one organization by numeric id, with full details (name, tags, domains, notes).
+    - list_organizations(page_size, cursor): List all organizations, cursor-paginated, with each one's name, id and basic fields.",
               "type": "string",
             },
             "params": {

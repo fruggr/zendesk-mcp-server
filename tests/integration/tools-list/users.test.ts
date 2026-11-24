@@ -28,7 +28,7 @@ it('exposes the users tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "Search for users by name, email, or other criteria using Zendesk search query syntax, returning each match's id, name, email, role, active flag and organization id, with the total count. Use it to turn a person into the numeric user id other tools take, such as the followers of update_ticket; a name can match several users, so confirm the right one. With an id already in hand, call get_user to read that one user, and for your own account get_current_user. Prefer it over \`search\` when you want users only: \`search\` mixes in tickets and organizations unless the query says type:user.",
+        "description": "Search users by name, email or other criteria in Zendesk query syntax, returning each match's id, name, email, role, active flag and organization id, with the total count. Use it to turn a person into the user id other tools take, such as update_ticket followers; a name can match several users, so confirm the right one. With an id in hand use get_user; for your own account, get_current_user. Prefer it over \`search\` for users only: \`search\` mixes in tickets and organizations unless the query says type:user.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -48,7 +48,7 @@ it('exposes the users tool surface unchanged', async () => {
               "type": "integer",
             },
             "query": {
-              "description": "Zendesk user search query — free text matched against name and email, and/or field filters like "email:jane@acme.com", "role:agent", "organization_id:123". A "type:user" scope is added automatically.",
+              "description": "Free text matched against name and email, and/or field filters like "email:jane@acme.com", "role:agent", "organization_id:123". "type:user" is added automatically.",
               "minLength": 1,
               "type": "string",
             },
@@ -68,13 +68,13 @@ it('exposes the users tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "Retrieve a single user by their numeric id. Returns the full user record (name, email, role, organization, tags). Use search_users when you only have a name or email, or get_current_user for the authenticated identity.",
+        "description": "Retrieve one user by numeric id, with the full record (name, email, role, organization, tags). Use search_users when you only have a name or email, or get_current_user for the authenticated identity.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "user_id": {
-              "description": "User ID — the numeric id of the Zendesk user to fetch. Obtain it from search_users, or from the requester/assignee fields of a ticket.",
+              "description": "Numeric id of the user to fetch, from search_users or a ticket's requester/assignee fields.",
               "maximum": 9007199254740991,
               "minimum": -9007199254740991,
               "type": "integer",
@@ -95,13 +95,13 @@ it('exposes the users tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "Retrieve a single organization by its numeric id. Returns full details (name, tags, domains, notes) — more than the name/id that search or list_organizations surface. Use list_organizations to browse or search for a name-based lookup.",
+        "description": "Retrieve one organization by numeric id, with full details (name, tags, domains, notes). That is more than the name and id search or list_organizations show. Use list_organizations to browse, or search to look one up by name.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "organization_id": {
-              "description": "Organization ID — the numeric id of the Zendesk organization to fetch. Obtain it from list_organizations, search, or a user record.",
+              "description": "Numeric id of the organization to fetch, from list_organizations, search or a user record.",
               "maximum": 9007199254740991,
               "minimum": -9007199254740991,
               "type": "integer",
@@ -122,7 +122,7 @@ it('exposes the users tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "List all organizations with pagination. Returns the name and id of each organization plus basic fields; results are cursor-paginated. Use get_organization with an id for full details (tags, domains, notes), or search for query-based lookups by name. Organizations group end users and can be referenced when creating or filtering tickets.",
+        "description": "List all organizations, cursor-paginated, with each one's name, id and basic fields. Organizations group end users and can be referenced when creating or filtering tickets. Use get_organization for full details (tags, domains, notes), or search to look one up by name.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -133,7 +133,7 @@ it('exposes the users tool surface unchanged', async () => {
             },
             "page_size": {
               "default": 100,
-              "description": "Organizations per page (1-100, default 100).",
+              "description": "Organizations per page.",
               "maximum": 100,
               "minimum": 1,
               "type": "integer",
