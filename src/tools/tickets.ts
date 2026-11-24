@@ -1363,7 +1363,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
           )
           .optional()
           .describe(
-            "Ids of the only files to fetch, as shown by list_ticket_comments or get_ticket(include_comments=true); they also reach files past the page cap. The ticket's comments are then read only until every id is found, and an id not on the ticket is named rather than listed. Omit to collect the ticket's attachments, up to the page cap.",
+            "Ids of the only files to fetch, as shown by list_ticket_comments or get_ticket(include_comments=true); they also reach files past the page cap. The ticket's comments are then read only until every id is found, and an id not on the ticket is named rather than listed; if the scan stops at the page cap, an id not yet found is fetched directly and flagged as unchecked. Omit to collect the ticket's attachments, up to the page cap.",
           ),
       }),
       annotations: {

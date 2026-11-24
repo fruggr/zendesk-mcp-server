@@ -68,7 +68,7 @@ it('exposes the users tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "Retrieve one user by numeric id, with the full record (name, email, role, organization, tags). Use search_users when you only have a name or email, or get_current_user for the authenticated identity.",
+        "description": "Retrieve one user by numeric id, with name, email, role, role type, active state and organization id. Use search_users when you only have a name or email, or get_current_user for the authenticated identity.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -95,7 +95,7 @@ it('exposes the users tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "Retrieve one organization by numeric id, with full details (name, tags, domains, notes). That is more than the name and id search or list_organizations show. Use list_organizations to browse, or search to look one up by name.",
+        "description": "Retrieve one organization by numeric id, with its name, details, domains and tags. Use list_organizations to browse, or search to look one up by name.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -122,7 +122,7 @@ it('exposes the users tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "List all organizations, cursor-paginated, with each one's name, id and basic fields. Organizations group end users and can be referenced when creating or filtering tickets. Use get_organization for full details (tags, domains, notes), or search to look one up by name.",
+        "description": "List all organizations, cursor-paginated, with each one's name, id, details, domains and tags. Organizations group end users and can be referenced when creating or filtering tickets. Use get_organization when you already have an id, or search to look one up by name.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,

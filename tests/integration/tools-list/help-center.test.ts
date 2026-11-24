@@ -158,7 +158,7 @@ it('exposes the help_center tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "List articles (metadata only, no body), optionally in one section or locale, sorted, and with each article's translation locales. Use get_article for full content.",
+        "description": "List articles (metadata only, no body), optionally in one section or locale, sorted, or with each article's translation locales (include_translations). Use get_article for full content.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -914,7 +914,7 @@ it('exposes the help_center tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "List all attachments of a Help Center article as metadata (id, file name, content type, size, URL), not the file bytes; inline and block attachments alike. For attachments on support tickets use get_ticket_attachments; upload new files with create_article_attachment.",
+        "description": "List all attachments of a Help Center article as metadata (id, file name, content type, size), not the file bytes; inline and block attachments alike. For attachments on support tickets use get_ticket_attachments; upload new files with create_article_attachment.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -1110,7 +1110,7 @@ it('exposes the help_center tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": false,
         },
-        "description": "Upload a file to a Help Center article and return the created attachment (id, file name, content type, size, content URL). Calling it again uploads another copy rather than replacing the previous one. For files on support tickets use get_ticket_attachments; to see an article's existing attachments, list_article_attachments.",
+        "description": "Upload a file to a Help Center article and return the created attachment (id, file name, content type, size). Calling it again uploads another copy rather than replacing the previous one. For files on support tickets use get_ticket_attachments; to see an article's existing attachments, list_article_attachments.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,

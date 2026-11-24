@@ -1117,7 +1117,7 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'List Help Center Articles',
       description:
-        "List articles (metadata only, no body), optionally in one section or locale, sorted, and with each article's translation locales. Use get_article for full content.",
+        "List articles (metadata only, no body), optionally in one section or locale, sorted, or with each article's translation locales (include_translations). Use get_article for full content.",
       inputSchema: z.object({
         section_id: z
           .number()
@@ -2394,7 +2394,7 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'List Article Attachments',
       description:
-        'List all attachments of a Help Center article as metadata (id, file name, content type, size, URL), not the file bytes; inline and block attachments alike. For attachments on support tickets use get_ticket_attachments; upload new files with create_article_attachment.',
+        'List all attachments of a Help Center article as metadata (id, file name, content type, size), not the file bytes; inline and block attachments alike. For attachments on support tickets use get_ticket_attachments; upload new files with create_article_attachment.',
       inputSchema: z.object({
         article_id: z
           .number()
@@ -2756,7 +2756,7 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: false,
       title: 'Create Article Attachment',
       description:
-        "Upload a file to a Help Center article and return the created attachment (id, file name, content type, size, content URL). Calling it again uploads another copy rather than replacing the previous one. For files on support tickets use get_ticket_attachments; to see an article's existing attachments, list_article_attachments.",
+        "Upload a file to a Help Center article and return the created attachment (id, file name, content type, size). Calling it again uploads another copy rather than replacing the previous one. For files on support tickets use get_ticket_attachments; to see an article's existing attachments, list_article_attachments.",
       inputSchema: z.object({
         article_id: z.number().int().describe(ARTICLE_ID_DESC),
         file_name: z

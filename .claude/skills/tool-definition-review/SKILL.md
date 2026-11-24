@@ -56,8 +56,8 @@ would misread or misuse it, and a rewrite. A rewrite must:
 
 - drop nothing an agent can act on (`docs/mcp-metadata.md`, "Never drop"):
   a removed sentence is either false, stated elsewhere in the definition or
-  the reply (say where), or not actionable by an agent (a rationale); saying
-  the same in fewer words is a win;
+  in the reply at the point of need (say where), or not actionable by an
+  agent (a rationale); saying the same in fewer words is a win;
 - keep the first sentence standalone, because proxy modes show only it;
 - state only Zendesk behaviour that the code, a test or the Zendesk docs back;
   otherwise ask instead of asserting;

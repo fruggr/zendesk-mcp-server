@@ -88,7 +88,7 @@ it('exposes the help_center proxy unchanged', async () => {
     - get_article(article_id*, locale): Retrieve an article by ID with its full HTML body, metadata, source_locale and available translations.
     - list_categories(locale, page_size, cursor): List all Help Center categories, the top level of the Guide hierarchy (category → section → article).
     - list_sections(category_id, locale, page_size, cursor): List Help Center sections, the middle level of the Guide hierarchy (category → section → article).
-    - list_articles(section_id, locale, page_size, cursor, sort_by, sort_order, include_translations): List articles (metadata only, no body), optionally in one section or locale, sorted, and with each article's translation locales.
+    - list_articles(section_id, locale, page_size, cursor, sort_by, sort_order, include_translations): List articles (metadata only, no body), optionally in one section or locale, sorted, or with each article's translation locales (include_translations).
     - list_promoted_articles(): List the promoted ("featured") Help Center articles, the small editorially-curated set surfaced at the top of their sections.
     - list_article_translations(article_id*): List all available translations for an article (metadata only, no body: locale, title, draft, updated_at).
     - create_article_translation(article_id*, locale*, title*, body*, draft): Create a translation of an existing article (made with create_article) in a new locale and return it (locale, title, draft state). (write)
@@ -107,12 +107,12 @@ it('exposes the help_center proxy unchanged', async () => {
     - create_content_tag(name*): Create a new content tag for Guide articles — an end-user-visible label that helps readers discover related articles — and return it with its id. (write)
     - list_labels(): List all article labels, with each label's id and name.
     - list_user_segments(): List all Help Center user segments, which control who can view an article, with each segment's id, name, user type and whether it is built-in.
-    - list_article_attachments(article_id*): List all attachments of a Help Center article as metadata (id, file name, content type, size, URL), not the file bytes; inline and block attachments alike.
+    - list_article_attachments(article_id*): List all attachments of a Help Center article as metadata (id, file name, content type, size), not the file bytes; inline and block attachments alike.
     - get_article_outline(article_id*, locale): Return a compact outline of an article in one locale: its sections delimited by h1/h2/h3, with word counts, and its available translations with their outdated status.
     - get_article_section(article_id*, locale*, section_index*, format): Retrieve the content of a single section of an article in a given locale.
     - update_article_section(article_id*, locale*, section_index*, content*, format): Replace the body of one article section, heading excluded (the heading is kept as is), in a given locale, leaving the rest of the article intact. (write)
     - compare_translations(article_id*, source_locale*, target_locale*): Compare two locales of the same article to decide whether the target translation needs work, as independent signals rather than one verdict.
-    - create_article_attachment(article_id*, file_name*, file_base64*, content_type): Upload a file to a Help Center article and return the created attachment (id, file name, content type, size, content URL). (write)",
+    - create_article_attachment(article_id*, file_name*, file_base64*, content_type): Upload a file to a Help Center article and return the created attachment (id, file name, content type, size). (write)",
               "type": "string",
             },
             "params": {
@@ -157,9 +157,9 @@ it('exposes the users proxy unchanged', async () => {
               "description": "One of the operations below. Each line reads name(parameters): summary, where the parameters are the exact names "params" accepts and * marks a required one; (write) marks an operation that changes data.
     - get_current_user(): Get the currently authenticated Zendesk user.
     - search_users(query*, per_page, page): Search users by name, email or other criteria in Zendesk query syntax, returning each match's id, name, email, role, active flag and organization id, with the total count.
-    - get_user(user_id*): Retrieve one user by numeric id, with the full record (name, email, role, organization, tags).
-    - get_organization(organization_id*): Retrieve one organization by numeric id, with full details (name, tags, domains, notes).
-    - list_organizations(page_size, cursor): List all organizations, cursor-paginated, with each one's name, id and basic fields.",
+    - get_user(user_id*): Retrieve one user by numeric id, with name, email, role, role type, active state and organization id.
+    - get_organization(organization_id*): Retrieve one organization by numeric id, with its name, details, domains and tags.
+    - list_organizations(page_size, cursor): List all organizations, cursor-paginated, with each one's name, id, details, domains and tags.",
               "type": "string",
             },
             "params": {
