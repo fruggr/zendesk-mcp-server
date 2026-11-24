@@ -54,8 +54,10 @@ node -e "import('mcp-tdqs').then(m => console.log(JSON.stringify({tool: m.TOOL_D
 State the tool, the dimension, the sentence at fault (quoted), why an agent
 would misread or misuse it, and a rewrite. A rewrite must:
 
-- drop nothing the old text said, unless it was false (`AGENTS.md`,
-  multi-agent rule); saying the same in fewer words is a win;
+- drop nothing an agent can act on (`docs/mcp-metadata.md`, "Never drop"):
+  a removed sentence is either false, stated elsewhere in the definition or
+  the reply (say where), or not actionable by an agent (a rationale); saying
+  the same in fewer words is a win;
 - keep the first sentence standalone, because proxy modes show only it;
 - state only Zendesk behaviour that the code, a test or the Zendesk docs back;
   otherwise ask instead of asserting;
@@ -65,5 +67,5 @@ Do not ask for an `outputSchema`: tools return text shaped for the agent, by
 decision (`docs/decisions/tool-definition-quality.md`).
 
 When asked to apply the rewrites, run `pnpm test` after: the `tools/list`
-snapshots will show the change, and each changed `description` must keep every
-fact the old one stated.
+snapshots will show the change, and every actionable fact the old
+`description` stated must survive in the definition or the reply.

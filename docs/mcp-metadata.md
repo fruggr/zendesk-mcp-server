@@ -108,8 +108,14 @@ internally through zod's Standard JSON Schema interface (the target is fixed by
 the SDK, not configurable here), so you don't import `v4-mini` yourself. A change is *multi-agent-safe* only when the exposed schema keeps
 everything an agent could depend on:
 
-- **Never drop what a description said** — unless it became false, where fixing
-  it outranks preserving it. Fewer words for the same facts is a win: this is
+- **Never drop what a description lets an agent do or avoid**: a constraint, a
+  side effect, a limit, the arbitration with a sibling tool. A sentence may go
+  only when the agent loses nothing it can act on: the fact is stated elsewhere
+  in the definition (schema keyword, parameter description, annotation) or in
+  the reply at the point of need (a notice, a validation error with its
+  remedy), or the agent cannot act on it (a rationale, a pointer to something
+  it cannot reach, such as admin settings). A false statement is fixed, which
+  outranks preserving it. Fewer words for the same facts is a win: this is
   prompt text, re-read on every `tools/list`, not a contract.
 - **Never drop** a `required` field or loosen a type in a way that changes the
   emitted schema shape.
