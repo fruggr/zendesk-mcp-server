@@ -28,7 +28,7 @@ it('exposes the users tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "Find users by name, email or Zendesk query, with id, name, email, role, active flag and organization id, plus the total. Use it to get the user id other tools take; a name can match several users, so confirm. By id: get_user; yourself: get_current_user. Prefer it to \`search\`, which mixes in tickets and organizations.",
+        "description": "Find users by name, email or Zendesk query. Each match has id, name, email, role, active flag and organization id, plus the total. Use it to get the user id other tools take; a name can match several users, so confirm. By id: get_user; yourself: get_current_user. Prefer it to \`search\`, which mixes in tickets and organizations.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,

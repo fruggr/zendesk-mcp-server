@@ -1327,7 +1327,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'Get Zendesk Ticket Attachments',
       description:
-        "Download a ticket's attached files to look at them: images inline, other files as references (name, id, type, size, download URL). To only see which files a comment has, use list_ticket_comments. Without attachment_ids it scans up to 10 pages of 100 comments (and says if it stopped): comment files first, then images pasted into email bodies once each, those under 4 KB (signature icons) as references only. An oversized image or one past the embed cap comes back as a reference saying why; past the response budget, the rest are counted as omitted.",
+        "Download a ticket's attached files to look at them. Images come inline, other files as references (name, id, type, size, download URL). To only see which files a comment has, use list_ticket_comments. Without attachment_ids it scans up to 10 pages of 100 comments (and says if it stopped): comment files first, then images pasted into email bodies once each, those under 4 KB (signature icons) as references only. An oversized image or one past the embed cap comes back as a reference saying why; past the response budget, the rest are counted as omitted.",
 
       inputSchema: z.object({
         ticket_id: z.number().int().describe('Ticket id, from search_tickets or list_tickets.'),
@@ -1553,7 +1553,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: false,
       title: 'Update Zendesk Ticket',
       description:
-        "Change a ticket's fields, followers or email CCs; only what you pass changes, and the updated ticket is returned. Tags here replace the whole set (single tags: manage_tags). Zendesk can skip a change silently, so the response says when a requester or organization was not applied, a follower or CC change is unconfirmed, or the organization moved with a new requester. It posts no reply: use add_public_comment or add_private_note.",
+        "Change a ticket's fields, followers or email CCs and return the updated ticket. Only what you pass changes. Tags here replace the whole set (single tags: manage_tags). Zendesk can skip a change silently, so the response says when a requester or organization was not applied, a follower or CC change is unconfirmed, or the organization moved with a new requester. It posts no reply: use add_public_comment or add_private_note.",
       inputSchema: z.object({
         ticket_id: z.number().int().describe('Ticket id, from search_tickets or list_tickets.'),
         status: z
@@ -1903,7 +1903,7 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'List SLA Policies',
       description:
-        'List SLA policies with their conditions and per-priority reply and resolution targets, to explain which target applies to a ticket. Needs an admin or a role with the SLA-management permission; other agents get 403 but still see live SLA via get_ticket / search_tickets.',
+        'List SLA policies with their conditions and per-priority targets. Use it to explain which reply or resolution target applies to a ticket. Needs an admin or a role with the SLA-management permission; other agents get 403 but still see live SLA via get_ticket / search_tickets.',
       inputSchema: z.object({
         per_page: z
           .number()

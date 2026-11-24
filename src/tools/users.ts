@@ -42,7 +42,7 @@ export const createUserTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'Search Zendesk Users',
       description:
-        'Find users by name, email or Zendesk query, with id, name, email, role, active flag and organization id, plus the total. Use it to get the user id other tools take; a name can match several users, so confirm. By id: get_user; yourself: get_current_user. Prefer it to `search`, which mixes in tickets and organizations.',
+        'Find users by name, email or Zendesk query. Each match has id, name, email, role, active flag and organization id, plus the total. Use it to get the user id other tools take; a name can match several users, so confirm. By id: get_user; yourself: get_current_user. Prefer it to `search`, which mixes in tickets and organizations.',
       inputSchema: z.object({
         query: z
           .string()

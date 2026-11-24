@@ -24,16 +24,16 @@ it('exposes the tickets proxy unchanged', async () => {
     - get_ticket(ticket_id*, include_comments): Get a ticket as it stands now, with its live SLA state and who an update reaches.
     - get_ticket_history(ticket_id*, page_size, cursor): Read a ticket's audit trail: who changed which field and when, oldest first.
     - list_ticket_comments(ticket_id*, sort_order, page_size, cursor): Read a ticket's replies and internal notes in full, newest first, a page at a time.
-    - get_ticket_attachments(ticket_id*, attachment_ids): Download a ticket's attached files to look at them: images inline, other files as references (name, id, type, size, download URL).
+    - get_ticket_attachments(ticket_id*, attachment_ids): Download a ticket's attached files to look at them.
     - search_tickets(query*, per_page, page): Search tickets with Zendesk query syntax; each result carries its live SLA state, and the total count comes back.
     - create_ticket(subject*, description*, priority, type, assignee_id, group_id, requester_id, organization_id, tags, custom_fields): Create a ticket from a subject and a description; the new ticket is returned with its id. (write)
-    - update_ticket(ticket_id*, status, priority, type, assignee_id, group_id, requester_id, organization_id, subject, tags, custom_fields, followers, email_ccs): Change a ticket's fields, followers or email CCs; only what you pass changes, and the updated ticket is returned. (write)
+    - update_ticket(ticket_id*, status, priority, type, assignee_id, group_id, requester_id, organization_id, subject, tags, custom_fields, followers, email_ccs): Change a ticket's fields, followers or email CCs and return the updated ticket. (write)
     - add_private_note(ticket_id*, body*, attachments): Add an internal note, hidden from the requester, to a ticket, optionally with files. (write)
     - add_public_comment(ticket_id*, body*, attachments): Post a public reply on a ticket, optionally with files. (write)
     - list_tickets(page_size, cursor): List tickets by ascending id, cursor-paginated, not by recency.
     - get_linked_incidents(problem_id*): List the incidents linked to a problem ticket, to gauge its impact before solving it.
     - manage_tags(ticket_id*, add, remove): Add or remove single tags on a ticket, keeping the others; returns the ticket's full tag set. (write)
-    - list_sla_policies(per_page, page): List SLA policies with their conditions and per-priority reply and resolution targets, to explain which target applies to a ticket.
+    - list_sla_policies(per_page, page): List SLA policies with their conditions and per-priority targets.
     - get_ticket_metrics(ticket_ids*): Read elapsed-time metrics for up to 100 tickets: reply, resolution, wait and on-hold times.
     - list_ticket_fields(page_size, cursor): List ticket fields (system and custom) with id, type, active and required flags, and dropdown/multiselect options.
     - list_views(page_size, cursor): List your active views (saved ticket queues) with their ticket counts.
@@ -89,30 +89,30 @@ it('exposes the help_center proxy unchanged', async () => {
     - list_categories(locale, page_size, cursor): List Help Center categories (top of category → section → article) with id, name and locale.
     - list_sections(category_id, locale, page_size, cursor): List Help Center sections (the level between category and article) with id, name, category_id and locale.
     - list_articles(section_id, locale, page_size, cursor, sort_by, sort_order, include_translations): List article metadata (no body), optionally by section or locale, sorted, or with translation locales.
-    - list_promoted_articles(): List promoted ("featured") articles, shown at the top of their sections: metadata only, default locale (full content: get_article).
+    - list_promoted_articles(): List promoted ("featured") articles, shown at the top of their sections.
     - list_article_translations(article_id*): List an article's translations: locale, title, draft, updated_at (no body).
     - create_article_translation(article_id*, locale*, title*, body*, draft): Add an article translation in a locale that has none yet, and return it (locale, title, draft state). (write)
     - update_article_translation(article_id*, locale*, title, body, draft): Replace an article's title or full body in one locale, source or translation. (write)
     - list_section_translations(section_id*): List a section's translations: per locale, its name, whether a description is set, and draft or published.
     - list_category_translations(category_id*): List a category's translations: per locale, its name, whether a description is set, and draft or published.
     - find_translation_gaps(locale*, category_id): Report every category and section with no translation, or only a draft, in a locale.
-    - set_section_translation(section_id*, locale*, name, description, draft): Create or update a section's translation in one locale and return it (locale, name, draft state); no listing needed first. (write)
-    - set_category_translation(category_id*, locale*, name, description, draft): Create or update a category's translation in one locale and return it (locale, name, draft state); no listing needed first. (write)
-    - list_permission_groups(): List Guide permission groups (who can edit and publish an article) with id, name and built-in flag, for create_article and update_article.
+    - set_section_translation(section_id*, locale*, name, description, draft): Create or update a section's translation in one locale and return it. (write)
+    - set_category_translation(category_id*, locale*, name, description, draft): Create or update a category's translation in one locale and return it. (write)
+    - list_permission_groups(): List Guide permission groups, which set who can edit and publish an article.
     - create_article(section_id*, title*, body*, permission_group_id*, user_segment_id, author_id, content_tag_ids, locale, draft, promoted, label_names): Create a new article in a section and return the created article with its id. (write)
-    - update_article(article_id*, draft, promoted, label_names, content_tag_ids, user_segment_id, author_id, permission_group_id, section_id, position): Change article metadata (publication, promotion, labels, tags, visibility, section, position, author) and return the updated article; omitted fields are kept. (write)
+    - update_article(article_id*, draft, promoted, label_names, content_tag_ids, user_segment_id, author_id, permission_group_id, section_id, position): Change article metadata and return the updated article. (write)
     - reorder_article(article_id*, target*, reference_article_id, normalize, confirm): Move an article within its section (top, bottom, or before/after another) and return whether the order took. (write)
-    - archive_article(article_id*, confirm*): Archive an article: it and its translations leave the Help Center, restorable in Guide (permanent deletion is Guide-only); returns a confirmation. (write)
+    - archive_article(article_id*, confirm*): Archive an article and its translations, restorable in Guide; returns a confirmation. (write)
     - list_content_tags(name_prefix, sort_by, sort_order, page_size, cursor): List content tags, the labels readers see on articles.
     - create_content_tag(name*): Create a content tag, a label readers see on articles, and return it with its id. (write)
     - list_labels(): List article labels (id and name): hidden from readers, they tune search ranking.
-    - list_user_segments(): List user segments (who can view an article) with id, name, user type and built-in flag, for user_segment_id in create_article or update_article.
+    - list_user_segments(): List user segments, which set who can view an article.
     - list_article_attachments(article_id*): List an article's attachments, inline and block: id, file name, type, size, no bytes.
     - get_article_outline(article_id*, locale): Outline an article in one locale: its h1-h3 sections with word counts, and its translations with their outdated flag.
     - get_article_section(article_id*, locale*, section_index*, format): Read one section of an article in a locale; get its index from get_article_outline.
     - update_article_section(article_id*, locale*, section_index*, content*, format): Replace one section of an article in a locale, heading excluded, keeping the rest of the article. (write)
     - compare_translations(article_id*, source_locale*, target_locale*): Compare two locales of an article to see whether the target translation needs work, as separate signals.
-    - create_article_attachment(article_id*, file_name*, file_base64*, content_type): Upload a file to an article and return the created attachment (id, name, type, size); a second call adds another copy. (write)",
+    - create_article_attachment(article_id*, file_name*, file_base64*, content_type): Upload a file to an article and return the created attachment (id, name, type, size). (write)",
               "type": "string",
             },
             "params": {
@@ -156,7 +156,7 @@ it('exposes the users proxy unchanged', async () => {
             "operation": {
               "description": "One of the operations below. Each line reads name(parameters): summary, where the parameters are the exact names "params" accepts and * marks a required one; (write) marks an operation that changes data.
     - get_current_user(): Get the signed-in Zendesk user.
-    - search_users(query*, per_page, page): Find users by name, email or Zendesk query, with id, name, email, role, active flag and organization id, plus the total.
+    - search_users(query*, per_page, page): Find users by name, email or Zendesk query.
     - get_user(user_id*): Get a user by id: name, email, role, role type, active state, organization id.
     - get_organization(organization_id*): Get an organization by id: name, details, domains, tags.
     - list_organizations(page_size, cursor): List organizations with name, id, details, domains and tags; they group end users and can scope tickets.",

@@ -1223,7 +1223,7 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'List Promoted Help Center Articles',
       description:
-        'List promoted ("featured") articles, shown at the top of their sections: metadata only, default locale (full content: get_article). Each call scans article pages afresh (one request each, up to 20 by default), so avoid repeating it. On a very large Help Center some may be missed, which the output flags. To promote or unpromote: update_article with `promoted` (Guide admin rights).',
+        'List promoted ("featured") articles, shown at the top of their sections. Metadata only, default locale (full content: get_article). Each call scans article pages afresh (one request each, up to 20 by default), so avoid repeating it. On a very large Help Center some may be missed, which the output flags. To promote or unpromote: update_article with `promoted` (Guide admin rights).',
       inputSchema: z.object({
         ...brandIdPart,
       }),
@@ -1589,7 +1589,7 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: false,
       title: 'Create or Update a Section Translation',
       description:
-        "Create or update a section's translation in one locale and return it (locale, name, draft state); no listing needed first. Only fields you pass are written, so publishing a draft is just draft: false. Use it for the gaps find_translation_gaps reports.",
+        "Create or update a section's translation in one locale and return it. The reply gives locale, name and draft state; no listing is needed first. Only fields you pass are written, so publishing a draft is just draft: false. Use it for the gaps find_translation_gaps reports.",
       inputSchema: z.object({
         section_id: z
           .number()
@@ -1661,7 +1661,7 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: false,
       title: 'Create or Update a Category Translation',
       description:
-        "Create or update a category's translation in one locale and return it (locale, name, draft state); no listing needed first. Only fields you pass are written, so publishing a draft is just draft: false. Use it for the gaps find_translation_gaps reports.",
+        "Create or update a category's translation in one locale and return it. The reply gives locale, name and draft state; no listing is needed first. Only fields you pass are written, so publishing a draft is just draft: false. Use it for the gaps find_translation_gaps reports.",
       inputSchema: z.object({
         category_id: z
           .number()
@@ -1733,7 +1733,7 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'List Permission Groups',
       description:
-        "List Guide permission groups (who can edit and publish an article) with id, name and built-in flag, for create_article and update_article. Who can view: list_user_segments. Guide admins and Help Center managers only; otherwise reuse an article's permission_group_id from get_article.",
+        "List Guide permission groups, which set who can edit and publish an article. Each has id, name and built-in flag, for create_article and update_article. Who can view: list_user_segments. Guide admins and Help Center managers only; otherwise reuse an article's permission_group_id from get_article.",
       inputSchema: z.object({}),
       annotations: {
         readOnlyHint: true,
@@ -1857,7 +1857,7 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: false,
       title: 'Update Help Center Article',
       description:
-        'Change article metadata (publication, promotion, labels, tags, visibility, section, position, author) and return the updated article; omitted fields are kept. Title and body: update_article_translation, or update_article_section for one section. First or last in a section: reorder_article, since articles often share position 0. To remove an article use archive_article; draft: true only unpublishes it.',
+        'Change article metadata and return the updated article. It covers publication, promotion, labels, tags, visibility, section, position and author; omitted fields are kept. Title and body: update_article_translation, or update_article_section for one section. First or last in a section: reorder_article, since articles often share position 0. To remove an article use archive_article; draft: true only unpublishes it.',
       inputSchema: z.object({
         article_id: z.number().int().describe('Article id, from list_articles or search_articles.'),
         draft: z
@@ -2082,7 +2082,7 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: false,
       title: 'Archive Help Center Article',
       description:
-        'Archive an article: it and its translations leave the Help Center, restorable in Guide (permanent deletion is Guide-only); returns a confirmation. To only unpublish, use update_article with draft: true. Requires confirm: true.',
+        'Archive an article and its translations, restorable in Guide; returns a confirmation. Permanent deletion is Guide-only. To only unpublish, use update_article with draft: true. Requires confirm: true.',
       inputSchema: z.object({
         article_id: z.number().int().describe(ARTICLE_ID_DESC),
         confirm: z
@@ -2279,7 +2279,7 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'List User Segments',
       description:
-        "List user segments (who can view an article) with id, name, user type and built-in flag, for user_segment_id in create_article or update_article. Who can edit: list_permission_groups. Guide admins and Help Center managers only; otherwise reuse an article's user_segment_id from get_article, or omit it on create_article for everyone.",
+        "List user segments, which set who can view an article. Each has id, name, user type and built-in flag, for user_segment_id in create_article or update_article. Who can edit: list_permission_groups. Guide admins and Help Center managers only; otherwise reuse an article's user_segment_id from get_article, or omit it on create_article for everyone.",
       inputSchema: z.object({}),
       annotations: {
         readOnlyHint: true,
@@ -2685,7 +2685,7 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: false,
       title: 'Create Article Attachment',
       description:
-        'Upload a file to an article and return the created attachment (id, name, type, size); a second call adds another copy. Existing ones: list_article_attachments; ticket files: get_ticket_attachments.',
+        'Upload a file to an article and return the created attachment (id, name, type, size). A second call adds another copy. Existing ones: list_article_attachments; ticket files: get_ticket_attachments.',
       inputSchema: z.object({
         article_id: z.number().int().describe(ARTICLE_ID_DESC),
         file_name: z
