@@ -11,7 +11,7 @@ it('exposes the requests tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "List the kinds of request you can submit to this Zendesk — the forms a customer picks between on the Help Center, such as "Report a bug" or "Feature request". Returns each form's customer-facing name, its numeric id, and which one is the account default. Call this first when opening a request so the user chooses the right kind, then get_request_form to learn what that form asks for. Only forms that are active and visible to end users are listed; an account with a single form returns just that one. This is the end-user view: agents picking a form for someone else want list_ticket_fields and create_ticket instead.",
+        "description": "List the kinds of request you can submit to this Zendesk: the Help Center forms a customer picks between, such as "Report a bug" or "Feature request". Returns each active, end-user-visible form's customer-facing name, numeric id, and which is the account default; a single-form account returns just that one. Call it first when opening a request so the user picks the right kind, then get_request_form for what that form asks. End-user view: agents picking a form for someone else want list_ticket_fields and create_ticket instead.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -28,7 +28,7 @@ it('exposes the requests tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "Read what one request form actually asks for, so the user can be walked through it question by question. Returns the fields on that form in the order the portal shows them, each with its customer-facing label, whether it is required, and for dropdowns the exact values Zendesk accepts — plus any conditional rules ("if Type is Bug, Version becomes required"). Joins the form definition with the field definitions, because the form itself carries only field ids. Use it after list_request_forms and before create_request; omit form_id to describe the account default form. Conditional fields are reported as rules rather than resolved, since which ones apply depends on answers not yet given.",
+        "description": "Read what one request form asks for, to walk the user through it question by question. Returns the form's fields in portal order (joined from the field definitions, since the form carries only ids), each with its customer-facing label, whether it is required and, for a dropdown, the exact values Zendesk accepts, plus conditional rules ("if Type is Bug, Version becomes required"), left unresolved because they depend on answers not yet given. Use it after list_request_forms and before create_request.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -52,13 +52,13 @@ it('exposes the requests tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": false,
         },
-        "description": "Submit a new support request as the signed-in user — the MCP equivalent of the Help Center's "Submit a request" form. Returns the created request with its number, which the user can then follow with list_requests and get_request. The submission is checked before sending: an unknown form id, a missing field the form marks required, or a dropdown answer the form does not offer is refused here rather than sent, because Zendesk would answer 201 having silently substituted the default form, accepted an empty subject or dropped the unrecognised value. Call get_request_form first to learn which fields to gather. Priority and type cannot be set by an end user — Zendesk drops them — so triage is left to the agents. This posts as the authenticated user; an agent opening a ticket on someone else's behalf wants create_ticket instead.",
+        "description": "Submit a new support request as the signed-in user, like the Help Center's "Submit a request" form. Returns the created request with its number, to follow with list_requests and get_request. Call get_request_form first for the fields to gather. Refused before sending: an unknown form id, a field id the form does not carry, a missing required field, or a dropdown answer the form does not offer, because Zendesk would answer 201 after silently substituting the default form, accepting an empty subject or dropping the answer. An end user cannot set priority or type (Zendesk drops them); triage is left to the agents. An agent opening a ticket on someone else's behalf wants create_ticket instead.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "attachments": {
-              "description": "Files to attach to the request, such as a screenshot or a log, with their content base64-encoded.",
+              "description": "Files to attach to the request, such as a screenshot or a log.",
               "items": {
                 "additionalProperties": false,
                 "properties": {
@@ -92,12 +92,12 @@ it('exposes the requests tool surface unchanged', async () => {
               "type": "array",
             },
             "body": {
-              "description": "The request itself: what happened, what was expected, and any steps to reproduce. Becomes the first public comment on the ticket. Sent as plain text: neither Markdown nor HTML is rendered for an end user (both show as literal text), so write it without formatting markup.",
+              "description": "The request itself: what happened, what was expected, any steps to reproduce. Becomes the ticket's first public comment. Sent as plain text: an end user sees Markdown and HTML as literal text, so write it without formatting markup.",
               "minLength": 1,
               "type": "string",
             },
             "custom_fields": {
-              "description": "Answers to the form's own questions, as { id, value } pairs. Take both the ids and the accepted values from get_request_form; an id this form does not carry, or a value a dropdown does not offer, is refused here because Zendesk would drop it without an error. Option values are the tag strings, never numbers.",
+              "description": "Answers to the form's own questions, as { id, value } pairs; take both the ids and the accepted values from get_request_form.",
               "items": {
                 "additionalProperties": false,
                 "properties": {
@@ -120,13 +120,13 @@ it('exposes the requests tool surface unchanged', async () => {
               "type": "array",
             },
             "form_id": {
-              "description": "Form id chosen from list_request_forms, deciding which questions apply. Omit to use the account default form.",
+              "description": "Form id from list_request_forms, deciding which questions apply. Omit for the account default form.",
               "maximum": 9007199254740991,
               "minimum": -9007199254740991,
               "type": "integer",
             },
             "subject": {
-              "description": "One-line summary of the request, shown as the ticket title to the support agents who pick it up.",
+              "description": "One-line summary, shown as the ticket title to the support agents who pick it up.",
               "minLength": 1,
               "type": "string",
             },
@@ -147,7 +147,7 @@ it('exposes the requests tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "List the requests the signed-in user submitted, newest activity first by default. Returns each request with its number, subject, status and whether the user can mark it solved; pass a query to search their own requests by free text instead of listing all of them. Scoped to the caller by Zendesk itself — it can never return anyone else's tickets — which is why an agent calling this sees only requests they raised, not their queue. Use get_request to read one with its full conversation. Agents wanting a queue want list_tickets, search_tickets or get_view_tickets instead.",
+        "description": "List the requests the signed-in user submitted, or search them by free text. Returns each with its number, subject, status and whether the user can mark it solved. Zendesk scopes it to the caller, so it never returns anyone else's tickets: an agent sees only requests they raised, not their queue (for that, list_tickets, search_tickets or get_view_tickets). Read one with its full conversation via get_request.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -167,13 +167,13 @@ it('exposes the requests tool surface unchanged', async () => {
               "type": "integer",
             },
             "query": {
-              "description": "Free text to match against the caller's own requests. When given, the search endpoint is used instead of the plain listing; omit it to list everything.",
+              "description": "Free text matched against the caller's own requests, through the search endpoint instead of the plain listing; omit to list everything.",
               "minLength": 1,
               "type": "string",
             },
             "sort_by": {
               "default": "updated_at",
-              "description": "Which timestamp orders the results: updated_at surfaces recent activity, created_at the newest submissions.",
+              "description": "updated_at surfaces recent activity, created_at the newest submissions.",
               "enum": [
                 "created_at",
                 "updated_at",
@@ -182,7 +182,7 @@ it('exposes the requests tool surface unchanged', async () => {
             },
             "sort_order": {
               "default": "desc",
-              "description": "Direction of that ordering; desc puts the most recent first, which is what a user following their tickets wants.",
+              "description": "desc puts the most recent first, what a user following their tickets wants.",
               "enum": [
                 "asc",
                 "desc",
@@ -190,7 +190,7 @@ it('exposes the requests tool surface unchanged', async () => {
               "type": "string",
             },
             "status": {
-              "description": "Restrict to these ticket states, e.g. ["open","pending"] for anything still being worked. Validated here because Zendesk silently returns every request when it does not recognise a status.",
+              "description": "Restrict to these states, e.g. ["open","pending"] for anything still being worked. Checked here because Zendesk silently returns every request for a status it does not recognise.",
               "items": {
                 "enum": [
                   "new",
@@ -218,18 +218,18 @@ it('exposes the requests tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "Read one of the signed-in user's own requests, optionally with the whole conversation on it. Returns the request's status, the form it was submitted on, whether the user may mark it solved, and — with include_comments — every public message on it, each labelled with its author and marked when that author is a support agent. Internal agent notes are never returned on this path, so nothing agent-private can leak through it. A request belonging to someone else answers "permission denied" rather than "not found", so a denial here does not tell you whether that id exists. Find the number with list_requests; agents reading a ticket they do not own want get_ticket instead.",
+        "description": "Read one of the signed-in user's own requests, optionally with its whole conversation. Returns its status, the form it was submitted on and whether the user may mark it solved; with include_comments, each public message is labelled with its author and marked when that author is a support agent. Internal agent notes are never returned, so nothing agent-private can leak. Someone else's request answers "permission denied", not "not found", so a denial does not tell whether the id exists. Agents reading a ticket they do not own want get_ticket instead.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "include_comments": {
               "default": false,
-              "description": "When true, appends the full public conversation — agent replies and the user's own messages. Defaults to false so a status check stays cheap.",
+              "description": "When true, appends every public message: agent replies and the user's own. Leave off for a cheap status check.",
               "type": "boolean",
             },
             "request_id": {
-              "description": "Number of the request to read, as shown by list_requests or returned when it was submitted.",
+              "description": "Number of the request to read, from list_requests or returned when it was submitted.",
               "maximum": 9007199254740991,
               "minimum": -9007199254740991,
               "type": "integer",
@@ -250,13 +250,13 @@ it('exposes the requests tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": false,
         },
-        "description": "Reply on one of the signed-in user's own requests, optionally attaching files. Returns confirmation with the request's status after the reply, which matters because replying on a request that was already solved REOPENS it — Zendesk moves it back to open, and the user should know that is what their message did. The comment is always public: end users cannot post internal notes, and Zendesk silently ignores any attempt to mark one private. A closed request rejects new comments outright. Agents replying to a requester want add_public_comment, or add_private_note for an internal note.",
+        "description": "Reply on one of the signed-in user's own requests, optionally attaching files. Returns the request's status after the reply: replying on a solved request REOPENS it (Zendesk moves it back to open), and the user should know their message did that. Always public: end users cannot post internal notes, and Zendesk silently ignores a private flag. A closed request rejects new comments. Agents replying to a requester want add_public_comment, or add_private_note for an internal note.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "attachments": {
-              "description": "Files to attach to this reply, such as a screenshot or a log, with their content base64-encoded.",
+              "description": "Files to attach to this reply, such as a screenshot or a log.",
               "items": {
                 "additionalProperties": false,
                 "properties": {
@@ -290,7 +290,7 @@ it('exposes the requests tool surface unchanged', async () => {
               "type": "array",
             },
             "body": {
-              "description": "The message to send. Visible to the support agents on the ticket and included in their email notification. Sent as plain text: neither Markdown nor HTML is rendered for an end user (both show as literal text), so write it without formatting markup.",
+              "description": "The message, visible to the support agents on the ticket and included in their email notification. Sent as plain text: an end user sees Markdown and HTML as literal text, so write it without formatting markup.",
               "minLength": 1,
               "type": "string",
             },
@@ -317,7 +317,7 @@ it('exposes the requests tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": false,
         },
-        "description": "Close one of the signed-in user's own requests, for when they consider it resolved. Returns the request's status read back from Zendesk, not merely an acknowledgement: this operation is refused unless the request is actually solvable by its requester, because Zendesk answers 200 and changes nothing when it is not, which would otherwise be reported as success. A request is only solvable once an agent has been assigned to it, so a brand-new or unassigned one cannot be closed this way — leave it, or reply with add_request_comment to say it is no longer needed. Marking an already-solved request solved again is a no-op. Agents closing a ticket want update_ticket with status solved.",
+        "description": "Mark one of the signed-in user's own requests solved, when they consider it resolved. Returns the status read back from Zendesk, not a bare acknowledgement: a request its requester cannot solve is refused, because Zendesk would answer 200, change nothing and look successful. It becomes solvable only once an agent is assigned, so a new or unassigned one cannot be closed this way: leave it, or say it is no longer needed with add_request_comment. Already solved is a no-op. Agents closing a ticket want update_ticket with status solved.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
