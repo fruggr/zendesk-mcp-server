@@ -1,3 +1,19 @@
+## [3.13.0](https://github.com/fruggr/zendesk-mcp-server/compare/v3.12.0...v3.13.0) (2026-11-25)
+
+### Features
+
+* **tools:** leaner tool definitions, a third smaller tools/list ([#475](https://github.com/fruggr/zendesk-mcp-server/issues/475)) ([b8fe938](https://github.com/fruggr/zendesk-mcp-server/commit/b8fe9380e552c76da477a227fbdf55376a2b60da)), closes [#459](https://github.com/fruggr/zendesk-mcp-server/issues/459)
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Chores
+
+* **deps:** update dependencies ([#473](https://github.com/fruggr/zendesk-mcp-server/issues/473)) ([669a7b7](https://github.com/fruggr/zendesk-mcp-server/commit/669a7b748e95341a587cd215ccf22ee6c3696ee3))
+* **deps:** update dependencies (oidc-provider 9.15, Biome 2.6.8) ([#472](https://github.com/fruggr/zendesk-mcp-server/issues/472)) ([598dfbf](https://github.com/fruggr/zendesk-mcp-server/commit/598dfbfe68f967baeacd02941f8ededd7a3badf8)), references [#464](https://github.com/fruggr/zendesk-mcp-server/issues/464) [#464](https://github.com/fruggr/zendesk-mcp-server/issues/464) [#464](https://github.com/fruggr/zendesk-mcp-server/issues/464) [#464](https://github.com/fruggr/zendesk-mcp-server/issues/464)
+* **deps:** update pnpm to v12.22.0 ([#474](https://github.com/fruggr/zendesk-mcp-server/issues/474)) ([9984e5b](https://github.com/fruggr/zendesk-mcp-server/commit/9984e5b21ea62f4e7968971c88a7481f1fc96776))
+</details>
+
 ## [3.12.0](https://github.com/fruggr/zendesk-mcp-server/compare/v3.11.0...v3.12.0) (2026-11-20)
 
 ### Features
