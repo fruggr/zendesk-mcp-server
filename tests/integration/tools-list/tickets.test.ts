@@ -157,7 +157,7 @@ it('exposes the tickets tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "Search tickets with Zendesk query syntax; each result carries its live SLA state, and the total count comes back. With SLA push on, each SLA block adds an Urgency line (BREACHED, CRITICAL or WARNING) against your thresholds. Descriptions are cut to 200 characters (full text: get_ticket).",
+        "description": "Search tickets with Zendesk query syntax, with the total count and live SLA state where a policy applies. With SLA push on, each SLA block adds an Urgency line (BREACHED, CRITICAL or WARNING) against your thresholds. Descriptions are cut to 200 characters (full text: get_ticket).",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,

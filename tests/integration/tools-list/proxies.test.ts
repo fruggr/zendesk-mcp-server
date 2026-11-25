@@ -25,7 +25,7 @@ it('exposes the tickets proxy unchanged', async () => {
     - get_ticket_history(ticket_id*, page_size, cursor): Read a ticket's audit trail: who changed which field and when, oldest first.
     - list_ticket_comments(ticket_id*, sort_order, page_size, cursor): Read a ticket's replies and internal notes in full, newest first, a page at a time.
     - get_ticket_attachments(ticket_id*, attachment_ids): Download a ticket's attached files to look at them.
-    - search_tickets(query*, per_page, page): Search tickets with Zendesk query syntax; each result carries its live SLA state, and the total count comes back.
+    - search_tickets(query*, per_page, page): Search tickets with Zendesk query syntax, with the total count and live SLA state where a policy applies.
     - create_ticket(subject*, description*, priority, type, assignee_id, group_id, requester_id, organization_id, tags, custom_fields): Create a ticket from a subject and a description; the new ticket is returned with its id. (write)
     - update_ticket(ticket_id*, status, priority, type, assignee_id, group_id, requester_id, organization_id, subject, tags, custom_fields, followers, email_ccs): Change a ticket's fields, followers or email CCs and return the updated ticket. (write)
     - add_private_note(ticket_id*, body*, attachments): Add an internal note, hidden from the requester, to a ticket, optionally with files. (write)

@@ -288,6 +288,10 @@ describe('toStrictStandardSchema', () => {
       ceiling: z.number().default(Number.MAX_SAFE_INTEGER),
       floor: z.number().default(Number.MIN_SAFE_INTEGER),
       note: z.string().nullable().default(null),
+      capped: z.number().max(Number.MAX_SAFE_INTEGER),
+      big: z.number().int().default(Number.MAX_SAFE_INTEGER),
+      small: z.number().int().default(Number.MIN_SAFE_INTEGER),
+      limits: z.object({ maximum: z.number() }).default({ maximum: Number.MAX_SAFE_INTEGER }),
     });
     const { jsonSchema } = toStrictStandardSchema(schema)['~standard'];
 
@@ -302,6 +306,14 @@ describe('toStrictStandardSchema', () => {
     ]) {
       expect(json['properties']).toMatchInlineSnapshot(`
         {
+          "big": {
+            "default": 9007199254740991,
+            "type": "integer",
+          },
+          "capped": {
+            "maximum": 9007199254740991,
+            "type": "number",
+          },
           "ceiling": {
             "default": 9007199254740991,
             "type": "number",
@@ -323,6 +335,20 @@ describe('toStrictStandardSchema', () => {
             ],
             "type": "string",
           },
+          "limits": {
+            "default": {
+              "maximum": 9007199254740991,
+            },
+            "properties": {
+              "maximum": {
+                "type": "number",
+              },
+            },
+            "required": [
+              "maximum",
+            ],
+            "type": "object",
+          },
           "nested": {
             "properties": {
               "user_id": {
@@ -341,6 +367,10 @@ describe('toStrictStandardSchema', () => {
           "page_size": {
             "maximum": 100,
             "minimum": 1,
+            "type": "integer",
+          },
+          "small": {
+            "default": -9007199254740991,
             "type": "integer",
           },
           "ticket_id": {

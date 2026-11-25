@@ -11,7 +11,7 @@ it('exposes the preferences tool surface unchanged', async () => {
           "openWorldHint": false,
           "readOnlyHint": false,
         },
-        "description": "Read or set your SLA alert thresholds: how close to a breach a metric must be to count as WARNING or CRITICAL. Without parameters it returns the thresholds in force and their source (yours or the server default). With them it saves yours per metric family on this server, never in Zendesk, for list_sla_alerts and the Urgency line of get_ticket / search_tickets. If the operator disabled personal thresholds, only reading works and the reply says so.",
+        "description": "Read or set your SLA alert thresholds: how close to a breach a metric must be to count as WARNING or CRITICAL. Without parameters it returns the thresholds in force and their source (yours or the server default). With them it saves yours per metric family on this server, never in Zendesk, and omitted ones keep their value, for list_sla_alerts and the Urgency line of get_ticket / search_tickets. If the operator disabled personal thresholds, only reading works and the reply says so.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,

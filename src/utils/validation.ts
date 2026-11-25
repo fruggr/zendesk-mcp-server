@@ -133,6 +133,8 @@ type JsonSchemaConversion<Options extends { target: string; libraryOptions?: unk
 // zod stamps `z.number().int()` with ±2^53 bounds: about 4 KB of every
 // `tools/list` that tell an agent nothing, since a Zendesk id never nears them
 // and the strict parser still rejects an unsafe integer.
+// Only on an integer schema: an explicit bound on a number schema is a real one,
+// and a value under `default` or `const` is no integer schema, so it stays whole.
 const isSafeIntegerBound = ([key, value]: [string, unknown]): boolean =>
   (key === 'maximum' && value === Number.MAX_SAFE_INTEGER) ||
   (key === 'minimum' && value === Number.MIN_SAFE_INTEGER);
@@ -140,9 +142,10 @@ const isSafeIntegerBound = ([key, value]: [string, unknown]): boolean =>
 const withoutSafeIntegerBounds = (node: unknown): unknown => {
   if (Array.isArray(node)) return node.map(withoutSafeIntegerBounds);
   if (node === null || typeof node !== 'object') return node;
+  const isInteger = (node as { type?: unknown }).type === 'integer';
   return Object.fromEntries(
     Object.entries(node)
-      .filter((entry) => !isSafeIntegerBound(entry))
+      .filter((entry) => !(isInteger && isSafeIntegerBound(entry)))
       .map(([key, value]) => [key, withoutSafeIntegerBounds(value)]),
   );
 };
