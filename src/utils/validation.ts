@@ -149,10 +149,20 @@ const withoutSafeIntegerBounds = (node: unknown): unknown => {
   return Object.fromEntries(
     Object.entries(node)
       .filter((entry) => !(isInteger && isSafeIntegerBound(entry)))
-      .map(([key, value]) => [
-        key,
-        INSTANCE_KEYWORDS.has(key) ? value : withoutSafeIntegerBounds(value),
-      ]),
+      .map(([key, value]) => [key, compactKeyword(key, value)]),
+  );
+};
+
+// Under `properties` the keys are property names (`default` included), each a
+// schema. zod emits no other name-to-schema map for these tools' inputs.
+const compactKeyword = (key: string, value: unknown): unknown => {
+  if (INSTANCE_KEYWORDS.has(key)) return value;
+  if (key !== 'properties') return withoutSafeIntegerBounds(value);
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([name, schema]) => [
+      name,
+      withoutSafeIntegerBounds(schema),
+    ]),
   );
 };
 

@@ -296,6 +296,12 @@ describe('toStrictStandardSchema', () => {
         enum: [integerShaped],
         examples: [integerShaped],
       }),
+      keywords: z.object({
+        default: z.number().int(),
+        const: z.number().int(),
+        enum: z.number().int(),
+        examples: z.number().int(),
+      }),
       big: z.number().int().default(Number.MAX_SAFE_INTEGER),
       small: z.number().int().default(Number.MIN_SAFE_INTEGER),
       limits: z.object({ maximum: z.number() }).default({ maximum: Number.MAX_SAFE_INTEGER }),
@@ -334,6 +340,29 @@ describe('toStrictStandardSchema', () => {
               "type": "integer",
             },
             "type": "array",
+          },
+          "keywords": {
+            "properties": {
+              "const": {
+                "type": "integer",
+              },
+              "default": {
+                "type": "integer",
+              },
+              "enum": {
+                "type": "integer",
+              },
+              "examples": {
+                "type": "integer",
+              },
+            },
+            "required": [
+              "default",
+              "const",
+              "enum",
+              "examples",
+            ],
+            "type": "object",
           },
           "kind": {
             "enum": [
