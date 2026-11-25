@@ -2456,7 +2456,9 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
           .number()
           .int()
           .min(0)
-          .describe('0-based section index, from get_article_outline.'),
+          .describe(
+            '0-based section index, from get_article_outline; 0 is the heading-less intro when text precedes the first heading.',
+          ),
         format: z
           .enum(['html', 'markdown'])
           .default('html')

@@ -943,7 +943,7 @@ it('exposes the help_center tool surface unchanged', async () => {
               "type": "string",
             },
             "section_index": {
-              "description": "0-based section index, from get_article_outline.",
+              "description": "0-based section index, from get_article_outline; 0 is the heading-less intro when text precedes the first heading.",
               "minimum": 0,
               "type": "integer",
             },
