@@ -2304,7 +2304,7 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
           // content-editor fallback for setting article visibility.
           if (error instanceof ZendeskApiError && error.status === 403) {
             throw new Error(
-              "list_user_segments reads Help Center user segments (GET /help_center/user_segments), which Zendesk restricts to Guide admins / Help Center managers. The current token lacks that role (HTTP 403). To set an article's visibility without it, reuse the user_segment_id of an existing article (get_article), or omit user_segment_id when creating/updating to default to everyone.",
+              "list_user_segments reads Help Center user segments (GET /help_center/user_segments), which Zendesk restricts to Guide admins / Help Center managers. The current token lacks that role (HTTP 403). To set an article's visibility without it, reuse the user_segment_id of an existing article (get_article). On create_article, omitting user_segment_id makes the article visible to everyone; on update_article, omitting it keeps the current visibility.",
               { cause: error },
             );
           }
