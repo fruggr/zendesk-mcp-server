@@ -22,8 +22,7 @@ export const createUserTools = (env: ToolEnv): ToolDefinition[] => {
       namespace: 'users',
       readOnly: true,
       title: 'Get Current Zendesk User',
-      description:
-        'Get the currently authenticated Zendesk user. Useful to verify identity and permissions.',
+      description: 'Get the signed-in Zendesk user. Use it to check who you act as and your role.',
       inputSchema: z.object({}),
       annotations: {
         readOnlyHint: true,
@@ -43,13 +42,13 @@ export const createUserTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'Search Zendesk Users',
       description:
-        "Search for users by name, email, or other criteria using Zendesk search query syntax, returning each match's id, name, email, role, active flag and organization id, with the total count. Use it to turn a person into the numeric user id other tools take, such as the followers of update_ticket; a name can match several users, so confirm the right one. With an id already in hand, call get_user to read that one user, and for your own account get_current_user. Prefer it over `search` when you want users only: `search` mixes in tickets and organizations unless the query says type:user.",
+        'Find users by name, email or Zendesk query. Each match has id, name, email, role, active flag and organization id, plus the total. Use it to get the user id other tools take; a name can match several users, so confirm. By id: get_user; yourself: get_current_user. Prefer it to `search`, which mixes in tickets and organizations.',
       inputSchema: z.object({
         query: z
           .string()
           .min(1)
           .describe(
-            'Zendesk user search query — free text matched against name and email, and/or field filters like "email:jane@acme.com", "role:agent", "organization_id:123". A "type:user" scope is added automatically.',
+            'Name or email text and/or filters like "role:agent" or "organization_id:123"; type:user is added.',
           ),
         per_page: z
           .number()
@@ -102,14 +101,12 @@ export const createUserTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'Get Zendesk User',
       description:
-        'Retrieve a single user by their numeric id. Returns the full user record (name, email, role, organization, tags). Use search_users when you only have a name or email, or get_current_user for the authenticated identity.',
+        'Get a user by id: name, email, role, role type, active state, organization id. By name or email: search_users; yourself: get_current_user.',
       inputSchema: z.object({
         user_id: z
           .number()
           .int()
-          .describe(
-            'User ID — the numeric id of the Zendesk user to fetch. Obtain it from search_users, or from the requester/assignee fields of a ticket.',
-          ),
+          .describe("User id, from search_users or a ticket's requester or assignee."),
       }),
       annotations: {
         readOnlyHint: true,
@@ -134,14 +131,12 @@ export const createUserTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'Get Zendesk Organization',
       description:
-        'Retrieve a single organization by its numeric id. Returns full details (name, tags, domains, notes) — more than the name/id that search or list_organizations surface. Use list_organizations to browse or search for a name-based lookup.',
+        'Get an organization by id: name, details, domains, tags. Browse: list_organizations; by name: search.',
       inputSchema: z.object({
         organization_id: z
           .number()
           .int()
-          .describe(
-            'Organization ID — the numeric id of the Zendesk organization to fetch. Obtain it from list_organizations, search, or a user record.',
-          ),
+          .describe('Organization id, from list_organizations, search or a user.'),
       }),
       annotations: {
         readOnlyHint: true,
@@ -166,7 +161,7 @@ export const createUserTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'List Zendesk Organizations',
       description:
-        'List all organizations with pagination. Returns the name and id of each organization plus basic fields; results are cursor-paginated. Use get_organization with an id for full details (tags, domains, notes), or search for query-based lookups by name. Organizations group end users and can be referenced when creating or filtering tickets.',
+        'List organizations with name, id, details, domains and tags; they group end users and can scope tickets. By id: get_organization; by name: search.',
       inputSchema: z.object({
         page_size: z
           .number()
@@ -174,11 +169,11 @@ export const createUserTools = (env: ToolEnv): ToolDefinition[] => {
           .min(1)
           .max(MAX_PAGE_SIZE)
           .default(DEFAULT_PAGE_SIZE)
-          .describe('Organizations per page (1-100, default 100).'),
+          .describe('Organizations per page.'),
         cursor: z
           .string()
           .optional()
-          .describe('Pagination cursor from a previous response; omit for the first page.'),
+          .describe('Cursor from the previous response; omit for the first page.'),
       }),
       annotations: {
         readOnlyHint: true,

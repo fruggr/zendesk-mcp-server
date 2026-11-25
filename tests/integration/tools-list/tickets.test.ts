@@ -11,20 +11,18 @@ it('exposes the tickets tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "Retrieve a Zendesk ticket by ID, including its live SLA state (per-metric stage and breach countdown) when an SLA policy applies, plus its comments if requested. Returns ticket details (subject, status, priority, assignee, tags, description) and optionally all comments/internal notes. It also lists the followers and email CCs on the ticket, resolved to names, which is how you tell who a ticket update actually reaches: followers are notified of updates including internal notes, email CCs take part in the public correspondence, and being the requester makes someone neither. Both lists come back empty on an account where the "CCs and followers" setting is not enabled in Zendesk. The per-ticket Show endpoint exposes no SLA, so the SLA block is resolved via a scoped search and may be absent for a very high-volume requester or a just-updated ticket; SLA targets and policy conditions live in list_sla_policies. When the operator turned SLA push on, the SLA block also carries an Urgency line naming the most urgent running metric as BREACHED, CRITICAL or WARNING against the caller's alert thresholds. This returns the ticket as it stands now; for the history of changes behind that state (who changed what, and when), use get_ticket_history. The comment thread is appended in one block — the first page of comments Zendesk returns, cut past the response character limit — so on a long ticket read it with list_ticket_comments, which pages the comments and returns the newest first.",
+        "description": "Get a ticket as it stands now, with its live SLA state and who an update reaches. Followers (notified of updates, internal notes included) and email CCs (public correspondence only) are listed by name; the requester is neither, and both lists are empty when "CCs and followers" is off. The SLA block (per-metric stage and countdown) comes from a search, so it can be missing for a very high-volume requester or a just-updated ticket; with SLA push on it adds an Urgency line (BREACHED, CRITICAL or WARNING) against your thresholds. Policies: list_sla_policies. Change history: get_ticket_history. Long thread: list_ticket_comments.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "include_comments": {
               "default": false,
-              "description": "When true, appends the full public comment and internal note thread to the response. Defaults to false to keep the payload small; enable it when you need the conversation, not just the ticket fields. On a long thread prefer list_ticket_comments — this flag appends one unpaginated block, so comments past Zendesk's first page are absent and the rest is cut at the response character limit.",
+              "description": "Append the comments and internal notes as one block: only Zendesk's first page, cut at the response limit. On a long thread use list_ticket_comments.",
               "type": "boolean",
             },
             "ticket_id": {
-              "description": "Ticket ID — the numeric id of the ticket to fetch. Obtain it from search_tickets or list_tickets.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
+              "description": "Ticket id, from search_tickets or list_tickets.",
               "type": "integer",
             },
           },
@@ -43,26 +41,24 @@ it('exposes the tickets tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "Read a ticket's change history — its audit trail — as a chronological, oldest-first timeline of who changed what and when. Each entry shows the actor (name and id) and the channel, then the field changes that update carried (status, priority, assignee, group, tags, custom fields) as before → after, with assignee/requester/group ids resolved to names. Comments appear as one-line presence markers (public comment vs internal note added), not their text — fetch the bodies with list_ticket_comments (or get_ticket(include_comments=true) for a short thread). Purely system-generated notification events (trigger emails, collaborator/CC notifications, pushes) are filtered out — note this filters notification delivery, not CC-list edits, which are shown as changes — and an update carrying only such events produces no entry, so the timeline stays a readable narrative rather than a raw log. Use it to answer "what happened on this ticket?", "why was it reassigned?" or "when did it go to pending?", reading oldest-first so the founding context is not missed. Read-only, and cursor-paginated oldest-first: pass the returned cursor to page a long-lived ticket toward its most recent changes.",
+        "description": "Read a ticket's audit trail: who changed which field and when, oldest first. Each entry gives the actor (name and id), the channel and each field change as before → after, user and group ids resolved to names. Comments show only as public or internal markers (bodies: list_ticket_comments). Notification events (trigger emails, CC notifications, pushes) are dropped; CC-list edits still show. Use it for "why was it reassigned?" or "when did it go to pending?".",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "cursor": {
-              "description": "Pagination cursor from a previous response; omit for the first page. The timeline is ordered oldest-first, so paging forward moves toward the most recent changes.",
+              "description": "Cursor from the previous response; it moves toward the latest changes.",
               "type": "string",
             },
             "page_size": {
               "default": 100,
-              "description": "Audits (ticket updates) per page (1-100, default 100). Each audit is one update to the ticket and may expand to several change lines; audits carrying only system events are dropped, so a page can render fewer entries than this.",
+              "description": "Audits (ticket updates) per page; one can give several lines, and audits with only system events are dropped, so a page can show fewer.",
               "maximum": 100,
               "minimum": 1,
               "type": "integer",
             },
             "ticket_id": {
-              "description": "Ticket ID — the numeric id of the ticket whose change history to read. Obtain it from search_tickets or list_tickets.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
+              "description": "Ticket id, from search_tickets or list_tickets.",
               "type": "integer",
             },
           },
@@ -81,25 +77,25 @@ it('exposes the tickets tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "Read a ticket's conversation — public replies and internal notes with their full bodies — one cursor-paginated page at a time, newest comment first. Each entry carries the comment id, the author resolved to a name, the timestamp, whether it is public or internal, and the ids of any attached files. Prefer this over get_ticket(include_comments=true) whenever a thread is long or you only need the latest exchange: get_ticket appends the thread as one unpaginated block and cuts it past the response character limit, which drops the most recent comments first. Keep sort_order "desc" (the default) to read the latest reply first and follow the returned cursor to walk further back in time, or pass "asc" to replay the conversation forward from the ticket's opening description. For who changed which field and when — without comment bodies — use get_ticket_history; to download the attached files themselves, pass the attachment ids shown here to get_ticket_attachments.",
+        "description": "Read a ticket's replies and internal notes in full, newest first, a page at a time. Each entry has the comment id, author, time, public or internal, and attachment ids (download: get_ticket_attachments). Prefer it to get_ticket(include_comments=true) on a long thread, whose cut drops the newest comments. Field changes: get_ticket_history.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "cursor": {
-              "description": "Pagination cursor from a previous response; omit for the first page. Zendesk issues it for the ordering that response used, so after changing sort_order drop the cursor and start again from the first page.",
+              "description": "Cursor from the previous response; it keeps that sort_order, so drop it when changing sort_order.",
               "type": "string",
             },
             "page_size": {
               "default": 20,
-              "description": "Comments per page (1-100, default 20). The default is deliberately small because comment bodies are long and a bigger page risks being cut short by the response character limit; follow the returned cursor rather than raising it.",
+              "description": "Comments per page; bodies are long, so follow the cursor rather than raise it past the response limit.",
               "maximum": 100,
               "minimum": 1,
               "type": "integer",
             },
             "sort_order": {
               "default": "desc",
-              "description": "Chronological direction of the page. "desc" (the default) starts at the most recent comment and walks backward in time, which is what you want to see the latest reply; "asc" replays the conversation forward, starting from the ticket's opening description — that first comment therefore lands on the last page under "desc".",
+              "description": ""desc" walks back from the latest reply; "asc" reads forward from the opening description.",
               "enum": [
                 "asc",
                 "desc",
@@ -107,9 +103,7 @@ it('exposes the tickets tool surface unchanged', async () => {
               "type": "string",
             },
             "ticket_id": {
-              "description": "Ticket ID — the numeric id of the ticket whose conversation to read. Obtain it from search_tickets or list_tickets.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
+              "description": "Ticket id, from search_tickets or list_tickets.",
               "type": "integer",
             },
           },
@@ -128,16 +122,15 @@ it('exposes the tickets tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "Download the files attached to a ticket's comments so you can look at them: images come back embedded inline, other files as text references (file name, id, content type, size, download URL). To learn which files a comment carries, list_ticket_comments is enough; pass their ids as attachment_ids to fetch only those. Without attachment_ids, the ticket's comments are read up to a page cap (10 pages of 100 comments by default; the response says when later ones were not scanned, and attachment_ids reaches their files): files attached to comments come first, then images pasted into email bodies, once each (quoted replies repeat them), those under 4 KB (signature icons) as references only. An image over the per-image size limit or past the embedded-image cap comes back as a reference saying why; once the response size budget is spent, the remaining files are counted as omitted.",
+        "description": "Download a ticket's attached files to look at them. Images come inline, other files as references (name, id, type, size, download URL). To only see which files a comment has, use list_ticket_comments. Without attachment_ids it scans up to 10 pages of 100 comments (and says if it stopped): comment files first, then images pasted into email bodies once each, those under 4 KB (signature icons) as references only. An oversized image or one past the embed cap comes back as a reference saying why; past the response budget, the rest are counted as omitted.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "attachment_ids": {
-              "description": "Attachment IDs to fetch (e.g. extracted from a previous list_ticket_comments or get_ticket(include_comments=true) call). When provided, the ticket's comments are read only until every id is found, and an id that is not on the ticket is named rather than listed. When omitted, the attachments of the ticket's comments are returned (repeated inline images once), read up to a page cap: on a very long thread the scan stops there, and the response says so.",
+              "description": "Fetch only these files (ids from list_ticket_comments), even past the page cap; comments are read until all are found. After a full scan an id not on the ticket is named, not fetched; if the scan ends early (page cap, or a page without cursor), a missing id is fetched directly and flagged unchecked.",
               "items": {
                 "exclusiveMinimum": 0,
-                "maximum": 9007199254740991,
                 "type": "integer",
               },
               "maxItems": 25,
@@ -145,9 +138,7 @@ it('exposes the tickets tool surface unchanged', async () => {
               "type": "array",
             },
             "ticket_id": {
-              "description": "Ticket ID — the numeric id of the ticket whose attachments to fetch. Obtain it from search_tickets or list_tickets.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
+              "description": "Ticket id, from search_tickets or list_tickets.",
               "type": "integer",
             },
           },
@@ -166,27 +157,26 @@ it('exposes the tickets tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "Search tickets using Zendesk query syntax, returning each result with its live SLA state (per-metric stage and breach countdown) when an SLA policy applies. Examples: "status:open assignee:me", "priority:urgent ticket_type:incident". Returns total count, so queue triage like "breaching today" works without a per-ticket fetch. When the operator turned SLA push on, each SLA block also carries an Urgency line (BREACHED, CRITICAL or WARNING) against the caller's alert thresholds. Each ticket's description is cut to a 200-character excerpt; get_ticket returns it in full.",
+        "description": "Search tickets with Zendesk query syntax, with the total count and live SLA state where a policy applies. With SLA push on, each SLA block adds an Urgency line (BREACHED, CRITICAL or WARNING) against your thresholds. Descriptions are cut to 200 characters (full text: get_ticket).",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "page": {
               "default": 1,
-              "description": "1-based page number for offset pagination. Increment it while keeping \`per_page\` fixed to fetch subsequent pages; page 1 is the first page.",
-              "maximum": 9007199254740991,
+              "description": "1-based page number; keep per_page fixed while paging.",
               "minimum": 1,
               "type": "integer",
             },
             "per_page": {
               "default": 25,
-              "description": "Number of results per page for offset pagination (1-100). Pair with \`page\` to walk large result sets; the response header reports the total count and whether more pages remain.",
+              "description": "Results per page; the header gives the total and whether more pages remain.",
               "maximum": 100,
               "minimum": 1,
               "type": "integer",
             },
             "query": {
-              "description": "Zendesk ticket search query — field filters like "status:open", "assignee:me", "priority:urgent ticket_type:incident", combined with free text. A "type:ticket" scope is added automatically, so filter the ticket kind with ticket_type: (e.g. ticket_type:incident), never type: (which the API rejects here). "me" is a value of the user keywords only (assignee:, requester:, submitter:); group:me is read as your group when you belong to exactly one, else the call fails naming your groups, so use group:<id>.",
+              "description": "Field filters like "status:open assignee:me" or "priority:urgent ticket_type:incident", plus free text. type:ticket is added for you: filter the kind with ticket_type:, never type:. "me" works only with assignee:, requester:, submitter:; group:me works if you are in exactly one group (else the error names them), otherwise use group:<id>.",
               "minLength": 1,
               "type": "string",
             },
@@ -206,26 +196,22 @@ it('exposes the tickets tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": false,
         },
-        "description": "Create a new Zendesk support ticket with subject, description, and optional requester, organization, priority, type, assignee and tags. The description becomes the first public comment of the ticket, and the new ticket id is returned. After creation, use update_ticket to change status or assignee, add_public_comment or add_private_note to reply, and manage_tags to adjust tags. Without requester_id the ticket is filed on your behalf; the organization must be one the requester is a member of, and a value Zendesk did not keep is reported as not applied. Look up valid requester_id / assignee_id via search_users, group_id via your Zendesk admin settings. Discover custom field ids and their accepted option values with list_ticket_fields.",
+        "description": "Create a ticket from a subject and a description; the new ticket is returned with its id. A requester or organization Zendesk did not keep is reported as not applied. Afterwards: update_ticket for status or assignee, add_public_comment or add_private_note to reply, manage_tags for tags.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "assignee_id": {
-              "description": "User id of the agent to assign the ticket to.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
+              "description": "User id of the agent to assign the ticket to, from search_users.",
               "type": "integer",
             },
             "custom_fields": {
-              "description": "Custom field values as { id, value } pairs (field ids come from your Zendesk admin settings). Call list_ticket_fields first to discover the numeric field ids and, for dropdown/multiselect fields, the exact option values Zendesk accepts.",
+              "description": "{ id, value } pairs; field ids and accepted dropdown/multiselect values come from list_ticket_fields.",
               "items": {
                 "additionalProperties": false,
                 "properties": {
                   "id": {
                     "description": "Numeric id of the ticket field to set, as listed by list_ticket_fields.",
-                    "maximum": 9007199254740991,
-                    "minimum": -9007199254740991,
                     "type": "integer",
                   },
                   "value": {
@@ -241,24 +227,20 @@ it('exposes the tickets tool surface unchanged', async () => {
               "type": "array",
             },
             "description": {
-              "description": "Ticket description — the body of the request. It becomes the ticket's first public comment (visible to the requester). Markdown is rendered (**bold**, lists, links): wrap code, identifiers containing _ or * and <placeholders> in backticks so they show literally. HTML is not rendered (tags show as literal text), so do not send HTML.",
+              "description": "The ticket's first public comment, seen by the requester. Markdown, not HTML (tags show as literal text); put code, identifiers with _ or *, and <placeholders> in backticks.",
               "minLength": 1,
               "type": "string",
             },
             "group_id": {
               "description": "Id of the group to assign the ticket to.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
             "organization_id": {
-              "description": "Id of the organization the ticket belongs to. It must be one the requester is a member of, or Zendesk rejects or ignores it; omit to let Zendesk use the requester's default organization.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
+              "description": "Organization of the ticket; it must be one of the requester's, or Zendesk rejects or ignores it. Omit for the requester's default.",
               "type": "integer",
             },
             "priority": {
-              "description": "Ticket priority. One of urgent, high, normal, low.",
+              "description": "Priority level of the ticket.",
               "enum": [
                 "urgent",
                 "high",
@@ -268,25 +250,23 @@ it('exposes the tickets tool surface unchanged', async () => {
               "type": "string",
             },
             "requester_id": {
-              "description": "User id of the person the ticket is on behalf of (end user or agent); defaults to you. Resolve it with search_users.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
+              "description": "User the ticket is on behalf of (end user or agent), from search_users; defaults to you.",
               "type": "integer",
             },
             "subject": {
-              "description": "Ticket subject — the short summary line shown in ticket lists and search results.",
+              "description": "Summary line shown in ticket lists and search results.",
               "minLength": 1,
               "type": "string",
             },
             "tags": {
-              "description": "Tags to set on the new ticket. Each tag is a single lowercase token (join multi-word tags with an underscore). Use manage_tags later to add or remove individual tags.",
+              "description": "Single lowercase tokens; join words with an underscore.",
               "items": {
                 "type": "string",
               },
               "type": "array",
             },
             "type": {
-              "description": "Ticket type. One of problem, incident, question, task.",
+              "description": "Kind of ticket, as Zendesk classifies it.",
               "enum": [
                 "problem",
                 "incident",
@@ -312,26 +292,22 @@ it('exposes the tickets tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": false,
         },
-        "description": "Update an existing ticket (status, priority, type, requester, organization, assignee, group, subject, tags, custom fields, followers, email CCs). Only the fields you pass are changed, except that Zendesk may move the ticket to an organization of a new requester; the updated ticket is returned. The organization must be one the requester is a member of. A requested requester or organization that Zendesk did not set is reported as not applied; an organization Zendesk moved along with a new requester, when organization_id was not passed, is reported as changed with the requester. Followers and email CCs are incremental instead of replacing: pass { add, remove } lists of user ids, and the response reports who is subscribed afterwards. Zendesk applies those two silently, so a requested change it did not apply comes back listed as unconfirmed rather than raised as an error. Setting tags here replaces the whole tag set — use manage_tags to add or remove individual tags without overwriting the rest. This tool does not post replies: use add_public_comment or add_private_note for that. Find the ticket id via search_tickets or list_tickets.",
+        "description": "Change a ticket's fields, followers or email CCs and return the updated ticket. Only what you pass changes. Tags here replace the whole set (single tags: manage_tags). Zendesk can skip a change silently, so the response says when a requester or organization was not applied, a follower or CC change is unconfirmed, or the organization moved with a new requester. It posts no reply: use add_public_comment or add_private_note.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "assignee_id": {
-              "description": "User id of the agent to assign the ticket to.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
+              "description": "User id of the agent to assign the ticket to, from search_users.",
               "type": "integer",
             },
             "custom_fields": {
-              "description": "Custom field values as { id, value } pairs (field ids come from your Zendesk admin settings). Call list_ticket_fields first to discover the numeric field ids and, for dropdown/multiselect fields, the exact option values Zendesk accepts.",
+              "description": "{ id, value } pairs; field ids and accepted dropdown/multiselect values come from list_ticket_fields.",
               "items": {
                 "additionalProperties": false,
                 "properties": {
                   "id": {
                     "description": "Numeric id of the ticket field to set, as listed by list_ticket_fields.",
-                    "maximum": 9007199254740991,
-                    "minimum": -9007199254740991,
                     "type": "integer",
                   },
                   "value": {
@@ -348,13 +324,12 @@ it('exposes the tickets tool surface unchanged', async () => {
             },
             "email_ccs": {
               "additionalProperties": false,
-              "description": "End users or agents to add to or remove from the ticket's email CC list, as numeric user ids: { add: [123], remove: [456] }. CCs receive the ticket's public correspondence, subject to your account's triggers. Numeric ids only, no email addresses: resolve the person with search_users first and confirm the match, because a name query can return several users. Zendesk caps a ticket at 48 email CCs and this tool cannot know how many are already set, so going over shows up as an unconfirmed entry in the response rather than a validation error. An id listed in both add and remove is removed. Omit to leave CCs untouched.",
+              "description": "Users to add or remove, as user ids: { add: [123], remove: [456] }; CCs get the public correspondence, subject to your triggers. Resolve each person with search_users and confirm the match. Zendesk caps a ticket at 48 CCs, existing ones included: going over comes back unconfirmed, not as an error. An id in both lists is removed.",
               "properties": {
                 "add": {
-                  "description": "User ids to CC on the ticket, at most 48. Omit to only remove.",
+                  "description": "User ids to CC on the ticket. Omit to only remove.",
                   "items": {
                     "exclusiveMinimum": 0,
-                    "maximum": 9007199254740991,
                     "type": "integer",
                   },
                   "maxItems": 48,
@@ -364,7 +339,6 @@ it('exposes the tickets tool surface unchanged', async () => {
                   "description": "User ids to drop from the CC list. Omit to only add.",
                   "items": {
                     "exclusiveMinimum": 0,
-                    "maximum": 9007199254740991,
                     "type": "integer",
                   },
                   "type": "array",
@@ -374,13 +348,12 @@ it('exposes the tickets tool surface unchanged', async () => {
             },
             "followers": {
               "additionalProperties": false,
-              "description": "Agents to add to or remove from the ticket's follower list, as numeric user ids: { add: [123], remove: [456] }. Followers are notified of ticket updates, internal notes included, so this controls who hears about the ticket. Numeric ids only, no email addresses: resolve the person with search_users first and confirm the match before writing, because a name query can return several users and removing the wrong id succeeds silently. Adding someone already following, or removing someone who is not, is a no-op. An id listed in both add and remove is removed. Omit to leave followers untouched.",
+              "description": "Agents to add or remove, as user ids: { add: [123], remove: [456] }; followers are notified of updates, internal notes included. Resolve each person with search_users and confirm the match: removing a wrong id succeeds silently. A change already in place is a no-op; an id in both lists is removed.",
               "properties": {
                 "add": {
                   "description": "User ids to start following the ticket. Omit to only remove.",
                   "items": {
                     "exclusiveMinimum": 0,
-                    "maximum": 9007199254740991,
                     "type": "integer",
                   },
                   "type": "array",
@@ -389,7 +362,6 @@ it('exposes the tickets tool surface unchanged', async () => {
                   "description": "User ids to stop following the ticket. Omit to only add.",
                   "items": {
                     "exclusiveMinimum": 0,
-                    "maximum": 9007199254740991,
                     "type": "integer",
                   },
                   "type": "array",
@@ -399,18 +371,14 @@ it('exposes the tickets tool surface unchanged', async () => {
             },
             "group_id": {
               "description": "Id of the group to assign the ticket to.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
               "type": "integer",
             },
             "organization_id": {
-              "description": "Id of the organization to move the ticket to. It must be one the requester is a member of, or Zendesk rejects or ignores it.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
+              "description": "Organization to move the ticket to; it must be one of the requester's, or Zendesk rejects or ignores it.",
               "type": "integer",
             },
             "priority": {
-              "description": "Ticket priority. One of urgent, high, normal, low.",
+              "description": "Priority level of the ticket.",
               "enum": [
                 "urgent",
                 "high",
@@ -420,13 +388,11 @@ it('exposes the tickets tool surface unchanged', async () => {
               "type": "string",
             },
             "requester_id": {
-              "description": "User id of the new requester (end user or agent), to fix who the ticket is on behalf of. Resolve it with search_users. Zendesk may move the ticket to an organization of the new requester; pass organization_id to choose which.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
+              "description": "New requester (end user or agent), from search_users. Zendesk may move the ticket to one of their organizations; pass organization_id to choose.",
               "type": "integer",
             },
             "status": {
-              "description": "New ticket status. One of new, open, pending, hold, solved, closed.",
+              "description": "New status of the ticket.",
               "enum": [
                 "new",
                 "open",
@@ -438,24 +404,22 @@ it('exposes the tickets tool surface unchanged', async () => {
               "type": "string",
             },
             "subject": {
-              "description": "New subject line for the ticket; replaces the current subject when provided.",
+              "description": "Replacement subject line.",
               "type": "string",
             },
             "tags": {
-              "description": "Replaces the full tag set on the ticket. Use manage_tags for incremental add/remove.",
+              "description": "The full new tag set; tags left out are removed.",
               "items": {
                 "type": "string",
               },
               "type": "array",
             },
             "ticket_id": {
-              "description": "Ticket ID — the numeric id of the ticket to update. Obtain it from search_tickets or list_tickets.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
+              "description": "Ticket id, from search_tickets or list_tickets.",
               "type": "integer",
             },
             "type": {
-              "description": "Ticket type. One of problem, incident, question, task.",
+              "description": "Kind of ticket, as Zendesk classifies it.",
               "enum": [
                 "problem",
                 "incident",
@@ -480,13 +444,13 @@ it('exposes the tickets tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": false,
         },
-        "description": "Add an internal note (not visible to requester) to a ticket, optionally with file attachments (uploaded via the Zendesk Uploads API and carried on the note). The note is appended to the ticket thread; use add_public_comment instead when the reply should be visible to the requester.",
+        "description": "Add an internal note, hidden from the requester, to a ticket, optionally with files. It is appended to the thread; for a reply the requester sees, use add_public_comment.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "attachments": {
-              "description": "Files to attach to this note (base64-encoded content).",
+              "description": "Files to attach to the note.",
               "items": {
                 "additionalProperties": false,
                 "properties": {
@@ -498,7 +462,7 @@ it('exposes the tickets tool surface unchanged', async () => {
                   },
                   "file_base64": {
                     "contentEncoding": "base64",
-                    "description": "File content encoded as base64. At most 10420224 characters (about 7.45 MB of file), and the attachments of one call must stay under that total; the HTTP transport additionally caps request bodies at 4 MB.",
+                    "description": "File content as base64, about 7.45 MB of file at most; the attachments of one call share that limit, and the HTTP transport caps request bodies at 4 MB.",
                     "format": "base64",
                     "maxLength": 10420224,
                     "minLength": 1,
@@ -520,14 +484,12 @@ it('exposes the tickets tool surface unchanged', async () => {
               "type": "array",
             },
             "body": {
-              "description": "Note text (internal, agent-only); not shown to the requester. Markdown is rendered (**bold**, lists, links): wrap code, identifiers containing _ or * and <placeholders> in backticks so they show literally. HTML is not rendered (tags show as literal text), so do not send HTML.",
+              "description": "Note text, for agents only. Markdown, not HTML (tags show as literal text); put code, identifiers with _ or *, and <placeholders> in backticks.",
               "minLength": 1,
               "type": "string",
             },
             "ticket_id": {
-              "description": "Ticket ID — the numeric id of the ticket to annotate. Obtain it from search_tickets or list_tickets.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
+              "description": "Ticket id, from search_tickets or list_tickets.",
               "type": "integer",
             },
           },
@@ -547,13 +509,13 @@ it('exposes the tickets tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": false,
         },
-        "description": "Add a public comment (visible to requester) to a ticket, optionally with file attachments (uploaded via the Zendesk Uploads API and carried on the comment). The comment is appended to the ticket thread and emails the requester; use add_private_note instead for an internal, agent-only note.",
+        "description": "Post a public reply on a ticket, optionally with files. It is appended to the thread and emails the requester; for an agent-only note, use add_private_note.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "attachments": {
-              "description": "Files to attach to this comment (base64-encoded content).",
+              "description": "Files to attach to the reply.",
               "items": {
                 "additionalProperties": false,
                 "properties": {
@@ -565,7 +527,7 @@ it('exposes the tickets tool surface unchanged', async () => {
                   },
                   "file_base64": {
                     "contentEncoding": "base64",
-                    "description": "File content encoded as base64. At most 10420224 characters (about 7.45 MB of file), and the attachments of one call must stay under that total; the HTTP transport additionally caps request bodies at 4 MB.",
+                    "description": "File content as base64, about 7.45 MB of file at most; the attachments of one call share that limit, and the HTTP transport caps request bodies at 4 MB.",
                     "format": "base64",
                     "maxLength": 10420224,
                     "minLength": 1,
@@ -587,14 +549,12 @@ it('exposes the tickets tool surface unchanged', async () => {
               "type": "array",
             },
             "body": {
-              "description": "Comment text sent to the requester; visible in the ticket. Markdown is rendered (**bold**, lists, links): wrap code, identifiers containing _ or * and <placeholders> in backticks so they show literally. HTML is not rendered (tags show as literal text), so do not send HTML.",
+              "description": "Reply text, sent to the requester. Markdown, not HTML (tags show as literal text); put code, identifiers with _ or *, and <placeholders> in backticks.",
               "minLength": 1,
               "type": "string",
             },
             "ticket_id": {
-              "description": "Ticket ID — the numeric id of the ticket to reply on. Obtain it from search_tickets or list_tickets.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
+              "description": "Ticket id, from search_tickets or list_tickets.",
               "type": "integer",
             },
           },
@@ -614,18 +574,18 @@ it('exposes the tickets tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "List tickets with cursor-based pagination, in Zendesk's default order (ascending ticket id), not by recency. Page size is controlled by page_size (not per_page, which is the offset-based parameter used by search_tickets); paginate by passing the returned cursor. To find tickets by recency or any other criterion, use search_tickets with a query. Each ticket's description is cut to a 200-character excerpt; get_ticket returns it in full.",
+        "description": "List tickets by ascending id, cursor-paginated, not by recency. To filter or sort, use search_tickets. Descriptions are cut to 200 characters (full text: get_ticket).",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "cursor": {
-              "description": "Pagination cursor from a previous response; omit for the first page.",
+              "description": "Cursor from the previous response; omit for the first page.",
               "type": "string",
             },
             "page_size": {
               "default": 25,
-              "description": "Tickets per page (1-100, default 25).",
+              "description": "Tickets per page.",
               "maximum": 100,
               "minimum": 1,
               "type": "integer",
@@ -643,15 +603,13 @@ it('exposes the tickets tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "Get all incident tickets linked to a problem ticket. Returns the list of incidents that reference the given problem (Zendesk problem/incident relationship); useful to gauge a problem's blast radius before resolving it. Each ticket's description is cut to a 200-character excerpt; get_ticket returns it in full.",
+        "description": "List the incidents linked to a problem ticket, to gauge its impact before solving it. Descriptions are cut to 200 characters (full text: get_ticket).",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "problem_id": {
-              "description": "Problem ticket ID — the numeric id of the ticket of type "problem" whose linked incidents to list. Obtain it from search_tickets or list_tickets.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
+              "description": "Id of a ticket of type "problem", from search_tickets or list_tickets.",
               "type": "integer",
             },
           },
@@ -670,29 +628,27 @@ it('exposes the tickets tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": false,
         },
-        "description": "Add or remove tags on a ticket. Performs an incremental read-modify-write: it fetches the ticket's current tags, adds those in \`add\` and deletes those in \`remove\`, then saves the merged set — tags you don't list are left untouched and duplicates are collapsed. Adding a tag already present, or removing one that is absent, is a no-op (idempotent). Returns the ticket's full tag set after the update. Use this for incremental tag edits; to overwrite the entire tag set at once, or to change tags alongside other fields, use update_ticket instead. Find the ticket id via search_tickets or list_tickets.",
+        "description": "Add or remove single tags on a ticket, keeping the others; returns the ticket's full tag set. Adding a present tag or removing an absent one is a no-op (idempotent). To replace the whole set, or change tags with other fields, use update_ticket.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "add": {
-              "description": "Tags to add. Zendesk tags are single tokens: a value containing spaces is stored as separate tags rather than one tag, so join multi-word tags yourself with an underscore or dash (e.g. "urgent_request"). Adding a tag already on the ticket is a no-op. Omit to only remove.",
+              "description": "Tags to add; a value with spaces becomes several tags, so join words with _ or - (e.g. "urgent_request").",
               "items": {
                 "type": "string",
               },
               "type": "array",
             },
             "remove": {
-              "description": "Tags to remove. Removing a tag that is not present is a no-op; tags not listed here stay in place. Omit to only add.",
+              "description": "Tags to take off the ticket.",
               "items": {
                 "type": "string",
               },
               "type": "array",
             },
             "ticket_id": {
-              "description": "Ticket ID — the numeric id of the ticket whose tags to modify. Obtain it from search_tickets or list_tickets.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
+              "description": "Ticket id, from search_tickets or list_tickets.",
               "type": "integer",
             },
           },
@@ -711,21 +667,20 @@ it('exposes the tickets tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "List the configured SLA policies with their filter conditions and per-priority reply/resolution targets. Use this to explain why a given target applies to a ticket and to reconstruct deadlines deterministically instead of hard-coding the policy matrix. Requires an admin token (or a custom role granted the SLA-management permission); a standard agent token gets 403 here, though it can still read live per-ticket SLA via get_ticket / search_tickets.",
+        "description": "List SLA policies with their conditions and per-priority targets. Use it to explain which reply or resolution target applies to a ticket. Needs an admin or a role with the SLA-management permission; other agents get 403 but still see live SLA via get_ticket / search_tickets.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "page": {
               "default": 1,
-              "description": "1-based page number for offset pagination. Increment it while keeping \`per_page\` fixed to fetch subsequent pages; page 1 is the first page.",
-              "maximum": 9007199254740991,
+              "description": "1-based page number; keep per_page fixed while paging.",
               "minimum": 1,
               "type": "integer",
             },
             "per_page": {
               "default": 100,
-              "description": "Number of results per page for offset pagination (1-100). Pair with \`page\` to walk large result sets; the response header reports the total count and whether more pages remain.",
+              "description": "Results per page; the header gives the total and whether more pages remain.",
               "maximum": 100,
               "minimum": 1,
               "type": "integer",
@@ -743,16 +698,15 @@ it('exposes the tickets tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "Read the elapsed-time metrics (reply, resolution, wait and on-hold times, reopens, replies) of up to 100 tickets in one call. Each ticket gets first reply, first and full resolution, agent wait, requester wait and on-hold times in calendar and business minutes, plus reopen, reply, assignee-station and group-station counts and the key timestamps (assigned, solved, latest comment). These are facts Zendesk records on every ticket, so they are available even on tickets no SLA policy covers; they say how long things took, not how long is left — for the live breach countdown use get_ticket, search_tickets or list_sla_alerts. A duration still running reads "not reached yet". Read-only; tickets the caller cannot see are reported as such rather than failing the call.",
+        "description": "Read elapsed-time metrics for up to 100 tickets: reply, resolution, wait and on-hold times. Times come in calendar and business minutes, with reopen, reply and station counts and key timestamps; they exist without any SLA policy and say how long things took, not time left (countdown: get_ticket, search_tickets, list_sla_alerts). A running duration reads "not reached yet"; a ticket you cannot see is reported, not fatal.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "ticket_ids": {
-              "description": "Ticket IDs to read metrics for, 1 to 100 numeric ids (duplicates are read once), as returned by search_tickets, list_tickets or get_view_tickets. The answer keeps this order.",
+              "description": "Ticket ids, from search_tickets, list_tickets or get_view_tickets; duplicates are read once, order is kept.",
               "items": {
                 "exclusiveMinimum": 0,
-                "maximum": 9007199254740991,
                 "type": "integer",
               },
               "maxItems": 100,
@@ -775,18 +729,18 @@ it('exposes the tickets tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "List the ticket field definitions configured on this Zendesk (both system fields and custom fields), returning each field's id, type, whether it is active/required, and — for dropdown and multiselect fields — the valid option values. Use this to discover the numeric field ids and accepted option tags that create_ticket and update_ticket expect in their custom_fields argument, so a natural-language intent ("set severity to High") maps to the right id and a value Zendesk will accept instead of a blind guess. Read-only reference lookup; cursor-paginated in Zendesk's default field order.",
+        "description": "List ticket fields (system and custom) with id, type, active and required flags, and dropdown/multiselect options. Use it to turn "set severity to High" into the field id and option tag custom_fields expects in create_ticket and update_ticket.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "cursor": {
-              "description": "Pagination cursor from a previous response; omit for the first page.",
+              "description": "Cursor from the previous response; omit for the first page.",
               "type": "string",
             },
             "page_size": {
               "default": 100,
-              "description": "Ticket field definitions per page (1-100, default 100).",
+              "description": "Field definitions per page.",
               "maximum": 100,
               "minimum": 1,
               "type": "integer",
@@ -804,18 +758,18 @@ it('exposes the tickets tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "List the agent's active Zendesk views — the saved ticket queues ("Unassigned tickets", "My open tickets", "Breaching today") the agent sees in the Zendesk UI — each with its current ticket count so you can tell at a glance where the workload sits. Views are per-agent scoped, so per-user auth returns exactly the queues this agent can see, with no shared key. Counts come from Zendesk's cache and can lag by up to about an hour (shown as "(count updating)" while a fresh value is still being computed); pass a view's title or id to get_view_tickets to read the tickets inside it.",
+        "description": "List your active views (saved ticket queues) with their ticket counts. Counts are cached and can lag up to about an hour ("(count updating)" while refreshed). To read a view's tickets, pass its title or id to get_view_tickets.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "cursor": {
-              "description": "Pagination cursor from a previous response; omit for the first page.",
+              "description": "Cursor from the previous response; omit for the first page.",
               "type": "string",
             },
             "page_size": {
               "default": 100,
-              "description": "Views per page (1-100, default 100).",
+              "description": "Views per page.",
               "maximum": 100,
               "minimum": 1,
               "type": "integer",
@@ -833,28 +787,28 @@ it('exposes the tickets tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "Read the tickets inside a Zendesk view, in the view's own configured sort order — the same order the agent sees in the Zendesk UI — which is the natural way to work a named queue like "Unassigned tickets" or "Breaching today". Accepts the view by title or by numeric id (discover both with list_views); a title is matched case-insensitively against the agent's active views, and on no match the available titles are returned so you can retry in one step. Tickets come back with the same fields as list_tickets and are cursor-paginated. Each ticket an SLA policy covers also shows its next SLA breach: only the one metric closest to breaching, read from the view itself at no extra cost (use get_ticket or search_tickets for every metric). sort_by/sort_order override the view's order when you want a different cut. Each ticket's description is cut to a 200-character excerpt; get_ticket returns it in full.",
+        "description": "Read a view's tickets in the view's own order, as the agent sees it in Zendesk. Same fields as list_tickets, cursor-paginated; each SLA-covered ticket shows its next breach (every metric: get_ticket or search_tickets). Descriptions are cut to 200 characters (full text: get_ticket).",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "cursor": {
-              "description": "Pagination cursor from a previous response; omit for the first page.",
+              "description": "Cursor from the previous response; omit for the first page.",
               "type": "string",
             },
             "page_size": {
               "default": 25,
-              "description": "Tickets per page (1-100, default 25).",
+              "description": "Tickets per page.",
               "maximum": 100,
               "minimum": 1,
               "type": "integer",
             },
             "sort_by": {
-              "description": "Optional column to sort by, overriding the view's own sort. Must be one of the view's columns (e.g. "status", "priority", "updated_at", or a custom field id); "subject" and "submitter" are not sortable. Omit to keep the view's configured order.",
+              "description": "One of the view's columns to sort by instead (e.g. "status", "priority", "updated_at", a custom field id), except "subject" and "submitter".",
               "type": "string",
             },
             "sort_order": {
-              "description": "Sort direction applied to sort_by: "asc" (oldest/lowest first) or "desc" (newest/highest first). Only meaningful together with sort_by; omit to keep the view's configured direction.",
+              "description": "Direction for sort_by only: "asc" (oldest/lowest first) or "desc".",
               "enum": [
                 "asc",
                 "desc",
@@ -869,11 +823,10 @@ it('exposes the tickets tool surface unchanged', async () => {
                 },
                 {
                   "exclusiveMinimum": 0,
-                  "maximum": 9007199254740991,
                   "type": "integer",
                 },
               ],
-              "description": "The view to read: its exact title as shown in Zendesk (e.g. "Unassigned tickets") or its numeric id from list_views. A title is matched case-insensitively against your active views; on no match the tool returns the available titles instead of erroring, so you can retry with a correct one.",
+              "description": "View title (case-insensitive) or id, from list_views; on no match the available titles come back so you can retry.",
             },
           },
           "required": [
@@ -891,21 +844,20 @@ it('exposes the tickets tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "List the active macros available to the authenticated user. A macro bundles a canned reply and/or a set of field changes (status, priority, assignee, group, tags, custom fields) an agent applies to a ticket in one gesture; this returns each macro id, title, description, availability scope, and its ordered list of actions, offset-paginated. Results are scoped by per-user OAuth to what the current user can see, so no shared admin key is needed. Pass a macro id from here to preview_macro_diff to preview its effect on a specific ticket.",
+        "description": "List the active macros you can use: id, title, description, scope and ordered actions. A macro applies a canned reply and/or field changes to a ticket in one step; preview its effect with preview_macro_diff.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "page": {
               "default": 1,
-              "description": "1-based page number for offset pagination. Increment it while keeping \`per_page\` fixed to fetch subsequent pages; page 1 is the first page.",
-              "maximum": 9007199254740991,
+              "description": "1-based page number; keep per_page fixed while paging.",
               "minimum": 1,
               "type": "integer",
             },
             "per_page": {
               "default": 100,
-              "description": "Number of results per page for offset pagination (1-100). Pair with \`page\` to walk large result sets; the response header reports the total count and whether more pages remain.",
+              "description": "Results per page; the header gives the total and whether more pages remain.",
               "maximum": 100,
               "minimum": 1,
               "type": "integer",
@@ -923,21 +875,17 @@ it('exposes the tickets tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": false,
         },
-        "description": "Preview the exact changes a macro would make to a specific ticket, as a before → after diff, WITHOUT saving anything. Orchestrates two reads — the ticket's current state and Zendesk's macro-apply preview (which returns the whole resulting ticket) — and returns only the fields the macro actually changes (status, priority, assignee, group, tags, custom fields) plus the canned reply with its public/internal flag; unchanged and identity fields are omitted. Nothing is committed: to apply it, follow up with update_ticket for the field changes and add_public_comment or add_private_note for the reply. This deliberate two-step keeps the mutation explicit and reviewable rather than hidden. Find macro ids via list_macros and the ticket id via search_tickets or list_tickets.",
+        "description": "Preview what a macro would change on a ticket, as a before → after diff, without saving. Returns only the changed fields and the canned reply with its public/internal flag. To apply it, call update_ticket for the fields and add_public_comment or add_private_note for the reply.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "macro_id": {
-              "description": "Macro ID — the numeric id of the macro to preview. Obtain it from list_macros.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
+              "description": "Macro id, from list_macros.",
               "type": "integer",
             },
             "ticket_id": {
-              "description": "Ticket ID — the numeric id of the ticket to preview the macro against. Obtain it from search_tickets or list_tickets.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
+              "description": "Ticket id, from search_tickets or list_tickets.",
               "type": "integer",
             },
           },
@@ -957,27 +905,27 @@ it('exposes the tickets tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "List the SLA metrics that are breached or about to breach across a set of tickets, most urgent first. Pick the set with exactly one of scope (mine, my_groups or all unsolved tickets), view (a Zendesk view by title or id) or query (any Zendesk ticket search). Each running metric that is breached, or closer to its breach than its CRITICAL or WARNING threshold, is one line under BREACHED, CRITICAL or WARNING, soonest breach first, with the ticket id, metric, time left or overdue, subject, status and priority; paused and achieved metrics never appear. Thresholds are per metric family (reply metrics vs every other metric), the caller's own when set with configure_sla_alerts, else the server's; warning and critical override them for this call only. When no set is given the client may be asked which one, otherwise it defaults to the caller's own tickets and says so; on a user's first call the thresholds are shown too (in that form, or in the reply), and thresholds edited there apply to this call only. Never changes Zendesk; its one side effect is remembering, in this connector's own per-user state, that the user has been shown the thresholds. Results are cached per user for about a minute, and a set larger than a few hundred tickets is read in part, with a notice. For one ticket's full SLA state use get_ticket; for elapsed times use get_ticket_metrics.",
+        "description": "List SLA metrics breached or about to breach on a set of tickets, most urgent first. Pick the set with exactly one of scope, view or query; with none, the client may ask the user, else your own tickets are checked. Each running metric past its deadline or inside its CRITICAL or WARNING threshold is one line under that heading, soonest first: ticket id, metric, time left or overdue, subject, status, priority; paused and achieved metrics never appear. Thresholds are per family (reply metrics vs the rest), yours from configure_sla_alerts or else the server's, and are shown on your first call. Never changes Zendesk; it only remembers, per user, that you were shown the thresholds. Cached about a minute per user; a set over a few hundred tickets is read in part. One ticket's full SLA: get_ticket; elapsed times: get_ticket_metrics.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "critical": {
-              "description": "Override the CRITICAL threshold of every metric family for this call only. Given alone, a family's warning threshold is raised to it where shorter; given with warning, it must not exceed it. A readable duration: 30m, 4h, 2d, 1w, or a mix like 1d4h.",
+              "description": "This call's CRITICAL threshold for every family; alone, it raises a shorter warning threshold to it, and with warning it must not exceed it. A readable duration: 30m, 4h, 2d, 1w, or a mix like 1d4h.",
               "type": "string",
             },
             "include_breached": {
               "default": true,
-              "description": "Whether to list metrics already past their deadline (BREACHED). Defaults to true; set false to see only what can still be saved.",
+              "description": "Include metrics already past their deadline; false shows only what can still be saved.",
               "type": "boolean",
             },
             "query": {
-              "description": "A Zendesk ticket search query selecting the tickets to check, e.g. "status<solved priority:urgent" or "organization:acme status<solved"; "type:ticket" is added automatically. Use instead of scope or view.",
+              "description": "Ticket search query, e.g. "status<solved priority:urgent"; type:ticket is added.",
               "minLength": 1,
               "type": "string",
             },
             "scope": {
-              "description": "A named set of unsolved tickets: "mine" (assigned to you), "my_groups" (in any group you belong to) or "all" (the whole account, as far as your role sees it). Use instead of view or query.",
+              "description": "Unsolved tickets: "mine" (assigned to you), "my_groups" (in your groups) or "all" (all your role sees).",
               "enum": [
                 "mine",
                 "my_groups",
@@ -993,18 +941,17 @@ it('exposes the tickets tool surface unchanged', async () => {
                 },
                 {
                   "exclusiveMinimum": 0,
-                  "maximum": 9007199254740991,
                   "type": "integer",
                 },
               ],
-              "description": "A Zendesk view to check, by its exact title (matched case-insensitively) or numeric id, as listed by list_views. Use instead of scope or query.",
+              "description": "View title (case-insensitive) or id, from list_views.",
             },
             "warning": {
-              "description": "Override the WARNING threshold of every metric family for this call only: how much time left before a breach counts as a warning. Given alone, a family's critical threshold is lowered to it where longer. A readable duration: 30m, 4h, 2d, 1w, or a mix like 1d4h.",
+              "description": "This call's WARNING threshold (time left that counts as a warning) for every family; alone, it lowers a longer critical threshold to it. A readable duration: 30m, 4h, 2d, 1w, or a mix like 1d4h.",
               "type": "string",
             },
             "within": {
-              "description": "Only list alerts breaching within this time from now (breached ones aside, see include_breached). A readable duration: 30m, 4h, 2d, 1w, or a mix like 1d4h. Omit to list everything inside the thresholds.",
+              "description": "Only alerts breaching within this time; breached ones follow include_breached. A readable duration: 30m, 4h, 2d, 1w, or a mix like 1d4h.",
               "type": "string",
             },
           },
@@ -1020,27 +967,26 @@ it('exposes the tickets tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "Search across tickets, users, and organizations. Supports filters like "type:ticket status:open", "type:user role:agent". Returns total count and paginated results (25 per page by default, up to 100); a ticket description is cut to a 200-character excerpt, which get_ticket returns in full. Organization results include name and ID only — use get_organization for full details (tags, domains, details).",
+        "description": "Search tickets, users and organizations at once; returns the total count and a page of results. Ticket descriptions are cut to 200 characters (full text: get_ticket); organizations show only name and id (more: get_organization).",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "page": {
               "default": 1,
-              "description": "1-based page number for offset pagination. Increment it while keeping \`per_page\` fixed to fetch subsequent pages; page 1 is the first page.",
-              "maximum": 9007199254740991,
+              "description": "1-based page number; keep per_page fixed while paging.",
               "minimum": 1,
               "type": "integer",
             },
             "per_page": {
               "default": 25,
-              "description": "Number of results per page for offset pagination (1-100). Pair with \`page\` to walk large result sets; the response header reports the total count and whether more pages remain.",
+              "description": "Results per page; the header gives the total and whether more pages remain.",
               "maximum": 100,
               "minimum": 1,
               "type": "integer",
             },
             "query": {
-              "description": "Zendesk search query. Supports type/status/role filters (e.g. "type:ticket status:open", "type:user role:agent") and free text; omit a type filter to search tickets, users and organizations at once. "me" is a value of the user keywords only (assignee:, requester:, submitter:); group:me is read as your group when you belong to exactly one, else the call fails naming your groups, so use group:<id>.",
+              "description": "Filters like "type:ticket status:open" or "type:user role:agent", plus free text; no type filter searches all three. "me" works only with assignee:, requester:, submitter:; group:me works if you are in exactly one group (else the error names them), otherwise use group:<id>.",
               "minLength": 1,
               "type": "string",
             },

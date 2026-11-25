@@ -130,17 +130,55 @@ type JsonSchemaConversion<Options extends { target: string; libraryOptions?: unk
   options: Options,
 ) => Record<string, unknown>;
 
+// zod stamps `z.number().int()` with ±2^53 bounds: about 4 KB of every
+// `tools/list` that tell an agent nothing, since a Zendesk id never nears them
+// and the strict parser still rejects an unsafe integer.
+// Only on an integer schema: an explicit bound on a number schema is a real one.
+const isSafeIntegerBound = ([key, value]: [string, unknown]): boolean =>
+  (key === 'maximum' && value === Number.MAX_SAFE_INTEGER) ||
+  (key === 'minimum' && value === Number.MIN_SAFE_INTEGER);
+
+// Values, not schemas: even one shaped like an integer schema is the caller's data.
+const INSTANCE_KEYWORDS = new Set(['default', 'const', 'enum', 'examples']);
+
+const withoutSafeIntegerBounds = (node: unknown): unknown => {
+  if (Array.isArray(node)) return node.map(withoutSafeIntegerBounds);
+  // Stryker disable next-line ConditionalExpression: a schema holds null only under default or const, never walked.
+  if (node === null || typeof node !== 'object') return node;
+  const isInteger = (node as { type?: unknown }).type === 'integer';
+  return Object.fromEntries(
+    Object.entries(node)
+      .filter((entry) => !(isInteger && isSafeIntegerBound(entry)))
+      .map(([key, value]) => [key, compactKeyword(key, value)]),
+  );
+};
+
+// Under `properties` the keys are property names (`default` included), each a
+// schema. zod emits no other name-to-schema map for these tools' inputs.
+const compactKeyword = (key: string, value: unknown): unknown => {
+  if (INSTANCE_KEYWORDS.has(key)) return value;
+  if (key !== 'properties') return withoutSafeIntegerBounds(value);
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([name, schema]) => [
+      name,
+      withoutSafeIntegerBounds(schema),
+    ]),
+  );
+};
+
 // zod converts again on every call, and the SDK asks on every `tools/list`.
 // Library options are the caller's own tuning: those calls are not cached.
 const convertOncePerTarget = <Options extends { target: string; libraryOptions?: unknown }>(
   convert: JsonSchemaConversion<Options>,
 ): JsonSchemaConversion<Options> => {
   const byTarget = new Map<string, Record<string, unknown>>();
+  const compact = (options: Options) =>
+    withoutSafeIntegerBounds(convert(options)) as Record<string, unknown>;
   return (options) => {
-    if (options.libraryOptions) return convert(options);
+    if (options.libraryOptions) return compact(options);
     const known = byTarget.get(options.target);
     if (known) return known;
-    const converted = convert(options);
+    const converted = compact(options);
     byTarget.set(options.target, converted);
     return converted;
   };

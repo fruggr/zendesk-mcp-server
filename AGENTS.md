@@ -257,8 +257,10 @@ set coherent (naming, disambiguation, no needless duplication) — the server
 score is `60% mean + 40% min`, so one weak tool drags the whole surface down.
 Every **tool change** must keep what agents depend on in the exposed JSON Schema
 (draft 2020-12): never drop a field or loosen a type, and never drop what a
-description said — though saying it in fewer words is a win, and fixing a false
-one is a duty. Criteria, the checklist and how to diff the schema:
+description lets an agent do or avoid. A sentence may go only when the agent
+loses nothing it can act on — the fact lives elsewhere in the definition or in
+the reply at the point of need, or the agent cannot act on it (a rationale, a
+place it cannot reach). Rewording is a win; fixing a false statement is a duty. Criteria, the checklist and how to diff the schema:
 `docs/mcp-metadata.md`. Reviewing a diff that touches `src/tools/**`,
 `/code-review` included: apply the `tool-definition-review` skill — a tool
 definition an agent now reads worse is a finding, not a style point.

@@ -6,9 +6,8 @@ import type { PaginationMeta, ZendeskListResponse } from '../types';
 // lives here once instead of being re-typed (and drifting) per tool. Keep them
 // informative enough to clear the tool-quality gate (tests/unit/tools/tool-quality.test.ts).
 export const PER_PAGE_DESC =
-  'Number of results per page for offset pagination (1-100). Pair with `page` to walk large result sets; the response header reports the total count and whether more pages remain.';
-export const PAGE_DESC =
-  '1-based page number for offset pagination. Increment it while keeping `per_page` fixed to fetch subsequent pages; page 1 is the first page.';
+  'Results per page; the header gives the total and whether more pages remain.';
+export const PAGE_DESC = '1-based page number; keep per_page fixed while paging.';
 
 // Cursor-based pagination (for list endpoints: /tickets, /organizations, etc.)
 export const buildCursorParams = (pageSize: number, cursor?: string): Record<string, string> => {

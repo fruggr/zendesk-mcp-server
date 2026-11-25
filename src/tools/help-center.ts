@@ -77,8 +77,7 @@ import type { ToolCaller, ToolDefinition, ToolEnv } from './definitions';
 // article id. Kept as one constant (like PER_PAGE_DESC/PAGE_DESC) so the "how to
 // obtain it" guidance can't drift between copies. The two article-write tools
 // use their own variant ("...to update" / "...whose translation to update").
-const ARTICLE_ID_DESC =
-  'Article ID — the numeric id of the Help Center article. Obtain it from list_articles or search_articles.';
+const ARTICLE_ID_DESC = 'Article id, from list_articles or search_articles.';
 
 // Shared `brand_id` input field factory. In unset/single mode the field is
 // ABSENT from the schema (strict parsing rejects it); in multi/all mode it is
@@ -866,15 +865,13 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'Search Help Center Articles',
       description:
-        'Full-text search across Help Center articles (metadata only, no body). Use get_article for full content. Supports locale filtering. Returns total count.',
+        'Search Help Center articles by full text; returns metadata (no body) and the total count. Full content: get_article.',
       inputSchema: z.object({
-        query: z
+        query: z.string().min(1).describe('Plain keywords matched against titles and bodies.'),
+        locale: z
           .string()
-          .min(1)
-          .describe(
-            'Full-text query matched against article titles and body. Plain keywords; combine with the locale filter to scope to one language.',
-          ),
-        locale: z.string().optional().describe('Filter by locale (e.g., "en-us", "fr")'),
+          .optional()
+          .describe('Only articles in this locale (e.g. "en-us", "fr").'),
         per_page: z
           .number()
           .int()
@@ -929,10 +926,13 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'Get Help Center Article',
       description:
-        'Retrieve an article by ID with full body content. For large articles, prefer get_article_outline + get_article_section to save tokens. Optionally specify locale for a translated version. Returns body (HTML), metadata, source_locale, and list of available translations.',
+        'Get an article with its full HTML body, metadata, source_locale and translations. For a large article, get_article_outline then get_article_section costs fewer tokens.',
       inputSchema: z.object({
         article_id: z.number().int().describe(ARTICLE_ID_DESC),
-        locale: z.string().optional().describe('Locale for translated version'),
+        locale: z
+          .string()
+          .optional()
+          .describe('Locale of the translation to return; omit for the source.'),
         ...brandIdPart,
       }),
       annotations: {
@@ -982,13 +982,13 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'List Help Center Categories',
       description:
-        'List all Help Center categories. Categories are the top level of the Guide hierarchy (category → section → article); each entry includes its id, name and locale. Results are cursor-paginated. Pair a returned category id with list_sections to drill down, then list_articles to reach articles. Pass a locale to read category names in that translation.',
+        'List Help Center categories (top of category → section → article) with id, name and locale. Drill down with list_sections, then list_articles.',
       inputSchema: z.object({
         locale: z
           .string()
           .optional()
           .describe(
-            'Locale for category names (e.g., "en-us", "fr"). Defaults to the Help Center default locale.',
+            'Locale of the names (e.g. "en-us", "fr"); defaults to the Help Center default.',
           ),
         page_size: z
           .number()
@@ -996,11 +996,11 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
           .min(1)
           .max(MAX_PAGE_SIZE)
           .default(DEFAULT_PAGE_SIZE)
-          .describe('Categories per page (1-100, default 100).'),
+          .describe('Categories per page.'),
         cursor: z
           .string()
           .optional()
-          .describe('Pagination cursor from a previous response; omit for the first page.'),
+          .describe('Cursor from the previous response; omit for the first page.'),
         ...brandIdPart,
       }),
       annotations: {
@@ -1046,20 +1046,18 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'List Help Center Sections',
       description:
-        "List Help Center sections. Sections are the middle level of the Guide hierarchy (category → section → article) and group related articles; each entry includes its id, name, category_id and locale. Results are cursor-paginated. Pass category_id to list only one category's sections (ids come from list_categories), then use a section id with list_articles. Pass a locale to read section names in that translation.",
+        'List Help Center sections (the level between category and article) with id, name, category_id and locale. Use a section id with list_articles.',
       inputSchema: z.object({
         category_id: z
           .number()
           .int()
           .optional()
-          .describe(
-            'Restrict to sections of this category (id from list_categories). Omit to list every section.',
-          ),
+          .describe('Only sections of this category (id from list_categories).'),
         locale: z
           .string()
           .optional()
           .describe(
-            'Locale for section names (e.g., "en-us", "fr"). Defaults to the Help Center default locale.',
+            'Locale of the names (e.g. "en-us", "fr"); defaults to the Help Center default.',
           ),
         page_size: z
           .number()
@@ -1067,11 +1065,11 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
           .min(1)
           .max(MAX_PAGE_SIZE)
           .default(DEFAULT_PAGE_SIZE)
-          .describe('Sections per page (1-100, default 100).'),
+          .describe('Sections per page.'),
         cursor: z
           .string()
           .optional()
-          .describe('Pagination cursor from a previous response; omit for the first page.'),
+          .describe('Cursor from the previous response; omit for the first page.'),
         ...brandIdPart,
       }),
       annotations: {
@@ -1117,36 +1115,32 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'List Help Center Articles',
       description:
-        'List articles (metadata only, no body). Use get_article for full content. Optionally filter by section ID and locale. Supports sort_by ("title", "created_at", "updated_at") and include_translations: true to show available translation locales per article. Note: include_translations must be re-sent on each paginated request.',
+        'List article metadata (no body), optionally by section or locale, sorted, or with translation locales. Full content: get_article.',
       inputSchema: z.object({
         section_id: z
           .number()
           .int()
           .optional()
-          .describe(
-            'Restrict the listing to one section (numeric id from list_sections). Omit to list articles across all sections.',
-          ),
+          .describe('Only articles of this section (id from list_sections).'),
         locale: z
           .string()
           .optional()
-          .describe(
-            'Restrict to a single locale, e.g. "en-us" or "fr". Omit for the default locale.',
-          ),
+          .describe('Only this locale, e.g. "en-us" or "fr"; defaults to the default locale.'),
         page_size: z
           .number()
           .int()
           .min(1)
           .max(MAX_PAGE_SIZE)
           .default(DEFAULT_PAGE_SIZE)
-          .describe('Articles per page (1-100, default 100).'),
+          .describe('Articles per page.'),
         cursor: z
           .string()
           .optional()
-          .describe('Pagination cursor from a previous response; omit for the first page.'),
+          .describe('Cursor from the previous response; omit for the first page.'),
         sort_by: z
           .enum(['created_at', 'updated_at', 'position', 'title'])
           .default('position')
-          .describe('Field to sort by; "position" (the default) is the manual order set in Guide.'),
+          .describe('Sort field; "position" is the manual order set in Guide.'),
         sort_order: z
           .enum(['asc', 'desc'])
           .default('asc')
@@ -1155,7 +1149,7 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
           .boolean()
           .default(false)
           .describe(
-            'Include available translation locales per article (causes 1 extra API call per article)',
+            "Add each article's translation locales (one extra call per article); re-send it with each cursor.",
           ),
         ...brandIdPart,
       }),
@@ -1229,7 +1223,7 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'List Promoted Help Center Articles',
       description:
-        'List the promoted ("featured") Help Center articles — the small, editorially-curated set surfaced at the top of their sections. Returns metadata only (no body); use get_article for full content. COST: the Help Center API has no server-side promoted filter, so this scans article pages (one Zendesk API request per page, up to ARTICLE_RESOURCES_SCAN_MAX_PAGES, default 20) and filters client-side — potentially costly on a large Help Center. Each call performs a fresh, uncached scan, so avoid calling it repeatedly. On a very large Help Center some promoted articles may be omitted, and both the omission and the number of pages scanned are flagged in the output. Lists the default locale. To promote or unpromote an article, use update_article with `promoted` (requires Help Center admin / Guide admin rights).',
+        'List promoted ("featured") articles, shown at the top of their sections. Metadata only, default locale (full content: get_article). Each call scans article pages afresh (one request each, up to 20 by default), so avoid repeating it. On a very large Help Center some may be missed, which the output flags. To promote or unpromote: update_article with `promoted` (Guide admin rights).',
       inputSchema: z.object({
         ...brandIdPart,
       }),
@@ -1276,7 +1270,7 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'List Article Translations',
       description:
-        'List all available translations for an article (metadata only, no body: locale, title, draft, updated_at). Use get_article with locale for full translated content.',
+        "List an article's translations: locale, title, draft, updated_at (no body). Full translated content: get_article with locale.",
       inputSchema: z.object({
         article_id: z.number().int().describe(ARTICLE_ID_DESC),
         ...brandIdPart,
@@ -1316,18 +1310,16 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: false,
       title: 'Create Article Translation',
       description:
-        'Create a translation for an existing article in a specific locale. The article must already exist (create it with create_article); this adds a new localized version and returns the created translation (locale, title, draft state). The target locale must not already have a translation — use update_article_translation to modify an existing one, and list_article_translations to see which locales exist. Provide the full HTML body.',
+        'Add an article translation in a locale that has none yet, and return it (locale, title, draft state). To change an existing one use update_article_translation; list_article_translations shows which exist.',
       inputSchema: z.object({
-        article_id: z.number().int().describe('ID of the existing article to translate.'),
-        locale: z.string().describe('Target locale (e.g., "fr", "de")'),
+        article_id: z.number().int().describe('Article id, from list_articles or search_articles.'),
+        locale: z.string().describe('Locale of the new translation (e.g. "fr", "de").'),
         title: z.string().min(1).describe('Translated article title.'),
-        body: z.string().min(1).describe('Translated body (HTML)'),
+        body: z.string().min(1).describe('Full translated body, in HTML.'),
         draft: z
           .boolean()
           .default(false)
-          .describe(
-            'Create the translation as a draft (not visible to end users). Defaults to false (published).',
-          ),
+          .describe('true keeps it a draft, hidden from end users; false publishes it.'),
         ...brandIdPart,
       }),
       annotations: {
@@ -1369,33 +1361,20 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: false,
       title: 'Update Article Translation',
       description:
-        "Update article content (title, body) in a specific locale. For targeted edits on one or a few sections, prefer update_article_section — this tool replaces the FULL body and re-sends the entire article on each write. Use the article's source_locale (from get_article) for the default language, or another locale for translations.",
+        "Replace an article's title or full body in one locale, source or translation. To edit one or a few sections, prefer update_article_section: this re-sends the whole body.",
       inputSchema: z.object({
-        article_id: z
-          .number()
-          .int()
-          .describe(
-            'Article ID — the numeric id of the article whose translation to update. Obtain it from list_articles or search_articles.',
-          ),
+        article_id: z.number().int().describe('Article id, from list_articles or search_articles.'),
         locale: z
           .string()
           .describe(
-            'Locale of the translation to update, e.g. "en-us" or "fr". Use the source_locale (from get_article) to edit the default language.',
+            'Locale to update, e.g. "fr"; the source_locale (from get_article) edits the original.',
           ),
-        title: z
-          .string()
-          .optional()
-          .describe('New title for this locale. Omit to leave the current title unchanged.'),
-        body: z
-          .string()
-          .optional()
-          .describe(
-            'New full body (HTML) for this locale. Replaces the entire body — for a single-section edit prefer update_article_section. Omit to leave the body unchanged.',
-          ),
+        title: z.string().optional().describe('New title for this locale.'),
+        body: z.string().optional().describe('New full body in HTML, replacing the whole body.'),
         draft: z
           .boolean()
           .optional()
-          .describe('When true, keeps this translation as a draft; when false, publishes it.'),
+          .describe('true keeps this translation a draft; false publishes it.'),
         ...brandIdPart,
       }),
       annotations: {
@@ -1434,14 +1413,12 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'List Section Translations',
       description:
-        'List the translations of a Help Center section: for each locale, the localized name, whether a description is set, and whether the translation is published or still a draft. Reach for this when a section looks wrong in a locale, because list_sections with that locale cannot settle it: a section with no translation is omitted from it, while a section whose translation is an unpublished draft may still be listed there under the draft name — so appearing in that listing does not mean published, and the draft flag here is what decides. Fix either case with set_section_translation; to sweep every category and section at once, use find_translation_gaps.',
+        "List a section's translations: per locale, its name, whether a description is set, and draft or published. Use it when a section looks wrong in a locale: list_sections omits an untranslated section, and a draft may still be listed there under its name, so only this draft flag says if it is published. Fix with set_section_translation; for the whole tree, find_translation_gaps.",
       inputSchema: z.object({
         section_id: z
           .number()
           .int()
-          .describe(
-            'Section ID — the numeric id of the Help Center section. Obtain it from list_sections or the zendesk-hc://topology resource.',
-          ),
+          .describe('Section id, from list_sections or zendesk-hc://topology.'),
         ...brandIdPart,
       }),
       annotations: {
@@ -1485,14 +1462,12 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'List Category Translations',
       description:
-        'List the translations of a Help Center category: for each locale, the localized name, whether a description is set, and whether the translation is published or still a draft. Reach for this when a category looks wrong in a locale, because list_categories with that locale cannot settle it: a category with no translation is omitted from it, while a category whose translation is an unpublished draft may still be listed there under the draft name — so appearing in that listing does not mean published, and the draft flag here is what decides. Fix either case with set_category_translation; to sweep every category and section at once, use find_translation_gaps.',
+        "List a category's translations: per locale, its name, whether a description is set, and draft or published. Use it when a category looks wrong in a locale: list_categories omits an untranslated category, and a draft may still be listed there under its name, so only this draft flag says if it is published. Fix with set_category_translation; for the whole tree, find_translation_gaps.",
       inputSchema: z.object({
         category_id: z
           .number()
           .int()
-          .describe(
-            'Category ID — the numeric id of the Help Center category. Obtain it from list_categories or the zendesk-hc://topology resource.',
-          ),
+          .describe('Category id, from list_categories or zendesk-hc://topology.'),
         ...brandIdPart,
       }),
       annotations: {
@@ -1536,20 +1511,18 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'Find Help Center Translation Gaps',
       description:
-        'Audit the Help Center tree for a target locale and report every category and section that has no translation, or one that is still an unpublished draft. Use it before or after translating articles: an article published in a second locale is unreachable while its parent section only exists in the source locale. Listing sections in that locale cannot answer this — a node with no translation is simply absent, without saying why, and a node whose translation is an unpublished draft may still be listed under its draft name — so this audit reads the draft flag on each node instead of trusting that listing. Costs two listings and covers up to 100 categories and 100 sections; past that only the first page of each level is audited, and the report says so — pass category_id to narrow it. Fix what it reports with set_section_translation / set_category_translation.',
+        'Report every category and section with no translation, or only a draft, in a locale. Run it around article translation: an article published in a locale is unreachable while its section exists only in the source locale. A listing in that locale cannot show this (a draft may still be listed under its name), so the audit reads each draft flag. Two listings, up to 100 categories and 100 sections; past that only the first page of each level is audited and the report says so (narrow with category_id). Fix with set_section_translation / set_category_translation.',
       inputSchema: z.object({
         locale: z
           .string()
           .describe(
-            'Locale to audit, e.g. "fr" or "de" — usually a non-default active locale of the Help Center (zendesk-hc://topology lists them). A locale that is not active is reported as a warning, since every node would then look untranslated.',
+            'Locale to audit, e.g. "fr", usually a non-default active one (zendesk-hc://topology); an inactive locale is reported as a warning.',
           ),
         category_id: z
           .number()
           .int()
           .optional()
-          .describe(
-            'Restrict the audit to this category and the sections it contains (id from list_categories). Omit to sweep the whole tree, which costs two listings and covers up to 100 categories and 100 sections.',
-          ),
+          .describe('Only this category and its sections (id from list_categories).'),
         ...brandIdPart,
       }),
       annotations: {
@@ -1616,37 +1589,35 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: false,
       title: 'Create or Update a Section Translation',
       description:
-        'Create or update the translation of a Help Center section in one locale, and return the resulting translation (locale, localized name, draft state). Creates the translation when the locale has none and updates it otherwise, so no listing call is needed first; only the fields you pass are written, which makes "publish this draft" a single draft: false. Use it to make a section reachable in a locale where its articles are already translated — a gap find_translation_gaps reports and list_sections cannot explain.',
+        "Create or update a section's translation in one locale and return it. The reply gives locale, name and draft state; no listing is needed first. Only fields you pass are written, so publishing a draft is just draft: false. Use it for the gaps find_translation_gaps reports.",
       inputSchema: z.object({
         section_id: z
           .number()
           .int()
           .describe(
-            'Section ID — the numeric id of the section whose translation to write. Obtain it from list_sections, find_translation_gaps or the zendesk-hc://topology resource.',
+            'Section id, from list_sections, find_translation_gaps or zendesk-hc://topology.',
           ),
         locale: z
           .string()
           .describe(
-            'Locale to write, e.g. "fr" or "de". Must be an active locale of the Help Center (zendesk-hc://topology lists them); list_section_translations shows which ones the section already has.',
+            'Locale to write, e.g. "fr"; must be active (zendesk-hc://topology). Existing ones: list_section_translations.',
           ),
         name: z
           .string()
           .min(1)
           .optional()
           .describe(
-            "Localized section name for this locale (sent as the API's translation `title`). Required when the locale has no translation yet; omit on an existing one to leave its name untouched, for instance when only publishing a draft.",
+            'Localized name; required for a new translation, omit to keep an existing one.',
           ),
         description: z
           .string()
           .optional()
-          .describe(
-            "Localized section description for this locale (sent as the API's translation `body`). Omit to leave an existing description untouched; pass an empty string to clear it.",
-          ),
+          .describe('Localized description; an empty string clears it.'),
         draft: z
           .boolean()
           .optional()
           .describe(
-            'Publication state: false publishes the translation, making the section visible to end users in this locale; true keeps (or puts) it back as a draft. Defaults to false when creating; omit on an existing translation to leave its state unchanged.',
+            'false publishes it to end users in this locale, true makes it a draft. A new translation defaults to false; omit to keep an existing state.',
           ),
         ...brandIdPart,
       }),
@@ -1690,37 +1661,35 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: false,
       title: 'Create or Update a Category Translation',
       description:
-        'Create or update the translation of a Help Center category in one locale, and return the resulting translation (locale, localized name, draft state). Creates the translation when the locale has none and updates it otherwise, so no listing call is needed first; only the fields you pass are written, which makes "publish this draft" a single draft: false. Use it to make a category reachable in a locale where its sections or articles are already translated — a gap find_translation_gaps reports and list_categories cannot explain.',
+        "Create or update a category's translation in one locale and return it. The reply gives locale, name and draft state; no listing is needed first. Only fields you pass are written, so publishing a draft is just draft: false. Use it for the gaps find_translation_gaps reports.",
       inputSchema: z.object({
         category_id: z
           .number()
           .int()
           .describe(
-            'Category ID — the numeric id of the category whose translation to write. Obtain it from list_categories, find_translation_gaps or the zendesk-hc://topology resource.',
+            'Category id, from list_categories, find_translation_gaps or zendesk-hc://topology.',
           ),
         locale: z
           .string()
           .describe(
-            'Locale to write, e.g. "fr" or "de". Must be an active locale of the Help Center (zendesk-hc://topology lists them); list_category_translations shows which ones the category already has.',
+            'Locale to write, e.g. "fr"; must be active (zendesk-hc://topology). Existing ones: list_category_translations.',
           ),
         name: z
           .string()
           .min(1)
           .optional()
           .describe(
-            "Localized category name for this locale (sent as the API's translation `title`). Required when the locale has no translation yet; omit on an existing one to leave its name untouched, for instance when only publishing a draft.",
+            'Localized name; required for a new translation, omit to keep an existing one.',
           ),
         description: z
           .string()
           .optional()
-          .describe(
-            "Localized category description for this locale (sent as the API's translation `body`). Omit to leave an existing description untouched; pass an empty string to clear it.",
-          ),
+          .describe('Localized description; an empty string clears it.'),
         draft: z
           .boolean()
           .optional()
           .describe(
-            'Publication state: false publishes the translation, making the category visible to end users in this locale; true keeps (or puts) it back as a draft. Defaults to false when creating; omit on an existing translation to leave its state unchanged.',
+            'false publishes it to end users in this locale, true makes it a draft. A new translation defaults to false; omit to keep an existing state.',
           ),
         ...brandIdPart,
       }),
@@ -1764,7 +1733,7 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'List Permission Groups',
       description:
-        "List all Guide permission groups, which control who can edit and publish an article, with each group's id, name and whether it is built-in. Use this to find the permission_group_id required when creating articles with create_article, or to change it with update_article; to control who can view an article instead, use list_user_segments. Zendesk restricts this list to Guide admins and Help Center managers: without that role the call fails, and you can reuse the permission_group_id of an existing article read with get_article.",
+        "List Guide permission groups, which set who can edit and publish an article. Each has id, name and built-in flag, for create_article and update_article. Who can view: list_user_segments. Guide admins and Help Center managers only; otherwise reuse an article's permission_group_id from get_article.",
       inputSchema: z.object({}),
       annotations: {
         readOnlyHint: true,
@@ -1813,61 +1782,47 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: false,
       title: 'Create Help Center Article',
       description:
-        "Create a new article in a section and return the created article with its id. The locale becomes the article's source_locale. Requires a permission_group_id (use list_permission_groups to find available IDs). To add content in other locales afterwards, use create_article_translation.",
+        'Create a new article in a section and return the created article with its id. To add content in other locales afterwards, use create_article_translation.',
       inputSchema: z.object({
-        section_id: z
-          .number()
-          .int()
-          .describe('Section that will contain the article (numeric id from list_sections).'),
-        title: z.string().min(1).describe('Title of the new article, in its source locale.'),
-        body: z
-          .string()
-          .min(1)
-          .describe('Article body as HTML (this becomes the source-locale content).'),
+        section_id: z.number().int().describe('Section to create it in (id from list_sections).'),
+        title: z.string().min(1).describe('Article title, in its source locale.'),
+        body: z.string().min(1).describe('Article body in HTML, in the source locale.'),
         permission_group_id: z
           .number()
           .int()
           .describe(
-            'Permission group ID (use list_permission_groups to find it; if that is forbidden because the token is not a Guide admin, reuse the permission_group_id of an existing article from get_article).',
+            "Who can edit (id from list_permission_groups, or an existing article's from get_article).",
           ),
         user_segment_id: z
           .number()
           .int()
           .optional()
           .describe(
-            'User segment ID for visibility (use list_user_segments to find it; if that is forbidden because the token is not a Guide admin, reuse the user_segment_id of an existing article from get_article). Defaults to everyone.',
+            "Who can see it, everyone by default (id from list_user_segments, or an existing article's from get_article).",
           ),
-        author_id: z
-          .number()
-          .int()
-          .optional()
-          .describe('Author user ID. Defaults to the authenticated user.'),
+        author_id: z.number().int().optional().describe('Author user id; defaults to you.'),
         content_tag_ids: z
           .array(z.string())
           .optional()
-          .describe('Content tag IDs (use list_content_tags to find them)'),
+          .describe('Content tag ids, from list_content_tags.'),
         locale: z
           .string()
           .optional()
           .describe(
-            'Source locale for the article, e.g. "en-us" or "fr". Defaults to the Help Center\'s default locale; becomes the article\'s source_locale.',
+            'Source locale of the article, e.g. "en-us"; defaults to the Help Center default.',
           ),
         draft: z
           .boolean()
           .default(true)
-          .describe(
-            'When true (default), the article is created unpublished; set false to publish immediately.',
-          ),
+          .describe('true creates it unpublished; false publishes it now.'),
         promoted: z
           .boolean()
           .default(false)
-          .describe(
-            'When true, marks the article as promoted (featured) in its section. Defaults to false.',
-          ),
+          .describe('true features it at the top of its section.'),
         label_names: z
           .array(z.string())
           .optional()
-          .describe('Label names for search ranking (use list_labels to see existing labels)'),
+          .describe('Search-ranking labels (existing ones: list_labels).'),
         ...brandIdPart,
       }),
       annotations: {
@@ -1902,63 +1857,49 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: false,
       title: 'Update Help Center Article',
       description:
-        'Update article metadata only (draft, promoted, labels as label_names, content tags as content_tag_ids, visibility as permission_group_id / user_segment_id, section_id, sort position, author, etc.) and return the updated article; fields you omit keep their value. Does NOT update content (title, body) — use update_article_translation for that, or update_article_section to edit one section. To put an article first or last in its section, prefer reorder_article: a plain position write is ambiguous while articles share position 0. To remove an article from the Help Center, use archive_article (a Guide admin can restore it); draft: true only unpublishes it.',
+        'Change article metadata and return the updated article. It covers publication, promotion, labels, tags, visibility, section, position and author; omitted fields are kept. Title and body: update_article_translation, or update_article_section for one section. First or last in a section: reorder_article, since articles often share position 0. To remove an article use archive_article; draft: true only unpublishes it.',
       inputSchema: z.object({
-        article_id: z
-          .number()
-          .int()
-          .describe(
-            'Article ID — the numeric id of the article to update. Obtain it from list_articles or search_articles.',
-          ),
+        article_id: z.number().int().describe('Article id, from list_articles or search_articles.'),
         draft: z
           .boolean()
           .optional()
-          .describe('Set true to unpublish the article (revert to draft) or false to publish it.'),
-        promoted: z
-          .boolean()
-          .optional()
-          .describe(
-            'Set true to promote (feature) the article in its section, or false to unpromote it.',
-          ),
+          .describe('true unpublishes (back to draft), false publishes.'),
+        promoted: z.boolean().optional().describe('true features it in its section, false stops.'),
         label_names: z
           .array(z.string())
           .optional()
-          .describe('Label names for search ranking (use list_labels to see existing labels).'),
+          .describe('Search-ranking labels (existing ones: list_labels).'),
         content_tag_ids: z
           .array(z.string())
           .optional()
-          .describe('Content tag ids to attach (use list_content_tags to find them).'),
+          .describe('Content tag ids, from list_content_tags.'),
         user_segment_id: z
           .number()
           .int()
           .optional()
           .describe(
-            'User segment that controls who can see the article (id from list_user_segments; if that is forbidden because the token is not a Guide admin, reuse the user_segment_id of an existing article from get_article).',
+            "Who can see it (id from list_user_segments, or an existing article's from get_article).",
           ),
-        author_id: z
-          .number()
-          .int()
-          .optional()
-          .describe('User id of the article author (from search_users).'),
+        author_id: z.number().int().optional().describe('Author user id, from search_users.'),
         permission_group_id: z
           .number()
           .int()
           .optional()
           .describe(
-            'Guide permission group controlling who can edit (id from list_permission_groups; if that is forbidden because the token is not a Guide admin, reuse the permission_group_id of an existing article from get_article).',
+            "Who can edit (id from list_permission_groups, or an existing article's from get_article).",
           ),
         section_id: z
           .number()
           .int()
           .optional()
-          .describe('Move the article to this section (numeric id from list_sections).'),
+          .describe('Section to move it to (id from list_sections).'),
         position: z
           .number()
           .int()
           .min(0)
           .optional()
           .describe(
-            'Sort position within the section (manual ordering only; 0 = first/top). New articles default to position 0. To move an article to the END of its section, set this to one more than the highest current position: read the highest position P from list_articles with sort_by="position", sort_order="desc", then set position = P + 1.',
+            'Position in a manually sorted section (0 = top, where new articles land). For the end, read the highest P with list_articles(sort_by="position", sort_order="desc") and set P + 1.',
           ),
         ...brandIdPart,
       }),
@@ -1994,37 +1935,30 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: false,
       title: 'Reorder Help Center Article',
       description:
-        'Reorder an article within its current section by moving it relative to its siblings (top, bottom, or before/after another article), and return whether the new order was applied. This is the reliable way to satisfy "put this article first/last" requests: it writes the minimal set of article positions needed to make the order deterministic, because Zendesk leaves newly created articles tied at position 0 where a plain position update is silently ambiguous. It does NOT move the article to a different section — use update_article with section_id for that. Zendesk exposes no way to read whether a section is manually or automatically sorted, so when the section is sorted automatically (by date or alphabetically) the position writes are ignored; this tool detects that after the fact and returns guidance to switch the section to manual ordering in Guide. A move may reposition several neighbouring articles; when that count exceeds a configurable safety threshold the call is refused unless confirm is set to true.',
+        'Move an article within its section (top, bottom, or before/after another) and return whether the order took. It writes the fewest positions that make the order certain, unlike a plain position write while articles tie at 0. Another section: update_article with section_id. In a section sorted automatically the writes are ignored, and the reply says to switch it to manual ordering in Guide. A move can shift neighbours, so a large one needs confirm.',
       inputSchema: z.object({
-        article_id: z
-          .number()
-          .int()
-          .describe(
-            'Article ID — the numeric id of the article to move within its section. Obtain it from list_articles or search_articles.',
-          ),
+        article_id: z.number().int().describe('Article id, from list_articles or search_articles.'),
         target: z
           .enum(['top', 'bottom', 'before', 'after'])
-          .describe(
-            'Where to move the article relative to its section siblings: "top" (becomes first), "bottom" (becomes last), or "before"/"after" a specific reference article. "before" and "after" require reference_article_id.',
-          ),
+          .describe('"top", "bottom", or "before"/"after" reference_article_id.'),
         reference_article_id: z
           .number()
           .int()
           .optional()
           .describe(
-            'The sibling article to position next to when target is "before" or "after" (numeric id from list_articles). Must belong to the same section and differ from article_id; leave it unset for "top" or "bottom".',
+            'For "before"/"after": the other article of the same section to place it next to.',
           ),
         normalize: z
           .boolean()
           .default(false)
           .describe(
-            'When true, also renumber every article in the section to contiguous positions (0, 1, 2, …) so the stored positions stay tidy. Defaults to false, which writes the fewest positions possible and lets gaps remain. Either way the confirmation threshold still applies.',
+            'true also renumbers the section 0, 1, 2, …; false leaves gaps. The confirm threshold applies either way.',
           ),
         confirm: z
           .boolean()
           .default(false)
           .describe(
-            'Safety guard for large reorders. When the move would rewrite more article positions than the configured threshold (REORDER_CONFIRM_THRESHOLD, default 20), the tool refuses and reports the count until you pass true here. Has no effect on small reorders.',
+            'Pass true to allow a move that rewrites more positions than REORDER_CONFIRM_THRESHOLD (default 20); without it such a call is refused with the count. No effect on smaller moves.',
           ),
         ...brandIdPart,
       }),
@@ -2148,14 +2082,12 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: false,
       title: 'Archive Help Center Article',
       description:
-        'Archive (soft-delete) a Help Center article: it is removed from the Help Center but can be restored from the Guide admin UI. Returns a confirmation message; the article and all its translations become invisible to end users. This is the only removal the Zendesk API offers — permanent deletion is not available via the API (do it from the Guide admin UI). To only hide an article temporarily while keeping it in the knowledge base, use update_article with draft: true (unpublish) instead. Guarded by a required confirm flag.',
+        'Archive an article and its translations, restorable in Guide; returns a confirmation. Permanent deletion is Guide-only. To only unpublish, use update_article with draft: true. Requires confirm: true.',
       inputSchema: z.object({
         article_id: z.number().int().describe(ARTICLE_ID_DESC),
         confirm: z
           .boolean()
-          .describe(
-            'Explicit safety guard: must be set to true to archive the article. Any other value refuses the operation without calling Zendesk.',
-          ),
+          .describe('Must be true; anything else refuses without calling Zendesk.'),
         ...brandIdPart,
       }),
       annotations: {
@@ -2194,19 +2126,19 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'List Content Tags',
       description:
-        'List Guide content tags, which are end-user-visible labels that help readers find related articles. Results are cursor-paginated (follow the returned cursor to enumerate the full list) and sorted by name by default. Pass name_prefix to look a tag up by the start of its name — do this before create_content_tag to reuse an existing tag rather than fragment the taxonomy. For internal, non-end-user search labels, see list_labels instead.',
+        'List content tags, the labels readers see on articles. Check name_prefix before create_content_tag to reuse a tag. Hidden search labels: list_labels.',
       inputSchema: z.object({
         name_prefix: z
           .string()
           .min(1)
           .optional()
           .describe(
-            'Return only content tags whose name starts with this prefix (prefix match — not a substring or fuzzy search). Use the full name to check whether a specific tag already exists before creating it.',
+            'Only tags whose name starts with this (no fuzzy match); a full name checks if it exists.',
           ),
         sort_by: z
           .enum(['name', 'id'])
           .default('name')
-          .describe('Field to sort by; "name" (the default) lists tags alphabetically.'),
+          .describe('Sort field; "name" is alphabetical.'),
         sort_order: z
           .enum(['asc', 'desc'])
           .default('asc')
@@ -2217,13 +2149,11 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
           .min(1)
           .max(CONTENT_TAGS_MAX_PAGE_SIZE)
           .default(CONTENT_TAGS_MAX_PAGE_SIZE)
-          .describe(
-            'Content tags per page (1-30, default 30). The Guide content-tags endpoint caps each page at 30; follow the returned cursor to enumerate the full list.',
-          ),
+          .describe('Content tags per page.'),
         cursor: z
           .string()
           .optional()
-          .describe('Pagination cursor from a previous response; omit for the first page.'),
+          .describe('Cursor from the previous response; omit for the first page.'),
       }),
       annotations: {
         readOnlyHint: true,
@@ -2273,12 +2203,12 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: false,
       title: 'Create Content Tag',
       description:
-        'Create a new content tag for Guide articles. Content tags are end-user visible labels that help readers discover related articles; this returns the created tag with its id. Check list_content_tags first (filter by name_prefix) to avoid duplicates, then attach the new id via the content_tag_ids parameter of create_article or update_article. For internal search-ranking labels that are not shown to end users, use article labels (list_labels) instead.',
+        'Create a content tag, a label readers see on articles, and return it with its id. Check list_content_tags (name_prefix) first, then attach it via content_tag_ids of create_article or update_article. Hidden search labels: list_labels.',
       inputSchema: z.object({
         name: z
           .string()
           .min(1)
-          .describe('Content tag name as shown to end users (e.g., "billing", "getting-started").'),
+          .describe('Name shown to readers (e.g. "billing", "getting-started").'),
       }),
       annotations: {
         readOnlyHint: false,
@@ -2308,7 +2238,7 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'List Article Labels',
       description:
-        "List all article labels, with each label's id and name. Labels improve Help Center search ranking and are not visible to end users. Attach them to an article through the label_names parameter of create_article or update_article, reusing an existing label rather than coining a near-duplicate. Labels are not content tags: for the end-user-visible tags readers browse by, use list_content_tags.",
+        'List article labels (id and name): hidden from readers, they tune search ranking. Attach them via label_names of create_article or update_article, reusing existing ones. Labels readers see: list_content_tags.',
       inputSchema: z.object({
         ...brandIdPart,
       }),
@@ -2349,7 +2279,7 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'List User Segments',
       description:
-        "List all Help Center user segments, which control article visibility (who can view an article), with each segment's id, name, user type and whether it is built-in. Use the id as user_segment_id when creating or updating articles with create_article or update_article; to control who can edit an article instead, use list_permission_groups. Zendesk restricts this list to Guide admins and Help Center managers: without that role the call fails, and you can reuse the user_segment_id of an existing article from get_article, or omit it on create_article to make the article visible to everyone.",
+        "List user segments, which set who can view an article. Each has id, name, user type and built-in flag, for user_segment_id in create_article or update_article. Who can edit: list_permission_groups. Guide admins and Help Center managers only; otherwise reuse an article's user_segment_id from get_article, or omit it on create_article for everyone.",
       inputSchema: z.object({}),
       annotations: {
         readOnlyHint: true,
@@ -2401,12 +2331,9 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'List Article Attachments',
       description:
-        'List all attachments for an article. Returns attachment metadata only (id, file name, content type, size, URL), not the file bytes; both inline and block attachments are included. This is for Help Center articles — for attachments on support tickets use get_ticket_attachments instead. Upload new files with create_article_attachment.',
+        "List an article's attachments, inline and block: id, file name, type, size, no bytes. Ticket files: get_ticket_attachments; uploads: create_article_attachment.",
       inputSchema: z.object({
-        article_id: z
-          .number()
-          .int()
-          .describe('ID of the Help Center article whose attachments to list.'),
+        article_id: z.number().int().describe('Article id, from list_articles or search_articles.'),
         ...brandIdPart,
       }),
       annotations: {
@@ -2453,13 +2380,10 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'Get Article Outline',
       description:
-        'Return a compact outline of an article (list of sections delimited by h1/h2/h3, with word counts) for the given locale (defaults to source_locale). Includes available translations with their outdated status. Use get_article_section to fetch a specific section.',
+        'Outline an article in one locale: its h1-h3 sections with word counts, and its translations with their outdated flag. Then read one section with get_article_section.',
       inputSchema: z.object({
         article_id: z.number().int().describe(ARTICLE_ID_DESC),
-        locale: z
-          .string()
-          .optional()
-          .describe('Locale of the body to outline (defaults to article source_locale)'),
+        locale: z.string().optional().describe('Locale to outline; defaults to the source_locale.'),
         ...brandIdPart,
       }),
       annotations: {
@@ -2524,20 +2448,22 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'Get Article Section',
       description:
-        'Retrieve the content of a single section of an article in a given locale. Use get_article_outline first to discover section indexes. Default format="html" for round-trip safety. Pass format="markdown" only for human review — the Markdown representation is lossy on some structures (<pre> with <br>, tables with multi-<p> cells are kept as raw HTML to limit the damage, but do not round-trip markdown content back through update_article_section). The "## [n] hN: ..." line at the top is a label, not part of the content.',
+        'Read one section of an article in a locale; get its index from get_article_outline. The leading "## [n] hN: ..." line is a label, not content.',
       inputSchema: z.object({
         article_id: z.number().int().describe(ARTICLE_ID_DESC),
-        locale: z.string().describe('Locale of the body (e.g., "en-us", "fr")'),
+        locale: z.string().describe('Locale to read (e.g. "en-us", "fr").'),
         section_index: z
           .number()
           .int()
           .min(0)
-          .describe('0-based index of the section (see get_article_outline)'),
+          .describe(
+            '0-based section index, from get_article_outline; 0 is the heading-less intro when text precedes the first heading.',
+          ),
         format: z
           .enum(['html', 'markdown'])
           .default('html')
           .describe(
-            'Output format. "html" (default) is round-trip safe. "markdown" is lossy on some HTML structures — use only for human review, not before update_article_section.',
+            '"html" round-trips safely; "markdown" is for reading only (lossy on <pre> with <br> and tables with multi-<p> cells), never to send back to update_article_section.',
           ),
         ...brandIdPart,
       }),
@@ -2596,27 +2522,27 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: false,
       title: 'Update Article Section',
       description:
-        'Replace the body of one article section, heading excluded (the heading is kept as is), in a given locale, leaving the rest of the article intact. The server fetches the current body, replaces the targeted section, and PUTs the full reconstructed body via the Translations API. A leading heading in content that repeats the section heading is removed; any other h1-h3 in content creates new sections and shifts the later indexes (the response warns). section_index 0 is the heading-less intro, which exists only when the body has text before its first heading. Default format="html" for fidelity. Use format="markdown" only when you control the input and know it does not rely on structures that round-trip poorly (code blocks with line breaks, tables with multi-paragraph cells).',
+        'Replace one section of an article in a locale, heading excluded, keeping the rest of the article. A leading heading repeating the section heading is dropped; any other h1-h3 creates sections and shifts later indexes (the reply warns).',
       inputSchema: z.object({
         article_id: z.number().int().describe(ARTICLE_ID_DESC),
-        locale: z.string().describe('Locale of the translation to update'),
+        locale: z.string().describe('Locale of the translation to edit.'),
         section_index: z
           .number()
           .int()
           .min(0)
           .describe(
-            '0-based index of the section to replace (see get_article_outline). 0 is the heading-less intro when the body has text before its first heading, otherwise the first heading.',
+            '0-based index from get_article_outline; 0 is the heading-less intro when text precedes the first heading.',
           ),
         content: z
           .string()
           .describe(
-            'New content for the section (heading excluded: send neither the heading nor the "## [n] hN: ..." label line that get_article_section prints). HTML by default, Markdown if format="markdown".',
+            'New section content, heading excluded (and without the "## [n] hN: ..." label line). HTML, or Markdown with format="markdown".',
           ),
         format: z
           .enum(['html', 'markdown'])
           .default('html')
           .describe(
-            'Input format. "html" (default) is the safe path. "markdown" is converted to HTML server-side but may introduce artifacts on complex content.',
+            '"html" is safe; "markdown" is converted and can leave artifacts, so avoid it for code blocks with line breaks or tables with multi-paragraph cells.',
           ),
         ...brandIdPart,
       }),
@@ -2685,15 +2611,13 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'Compare Article Translations',
       description:
-        'Compare two locales of the same article to decide whether the target translation needs work, reporting independent signals instead of one ambiguous verdict. (1) Header — a "Freshness" verdict for the target, derived from the two translations\' updated_at timestamps: if the source was edited after the target it is "likely behind, review recommended" (with the day gap), otherwise "up to date". This is the primary staleness signal and is always available. (2) Zendesk\'s own per-translation "outdated" flag for the target ("yes"/"no"/"unknown"), shown as a secondary overlay: it is only set through Guide\'s native "mark out of date" workflow and NOT by API edits, so a "no" does not by itself mean current — prefer Freshness. (3) A global structure check (section count and heading-tag sequence); on mismatch the header warns the per-index rows may be misaligned. (4) A per-section table matched by index, status "ok" (present in both), "missing" (present in source, absent in target) or "extra" (present in target, absent in source). (5) Per-section source/target word counts, INFORMATIONAL ONLY: a length difference between languages is normal and is deliberately NOT flagged as a divergence — do not read a word-count gap as an edit regression or staleness. Read-only; performs three Help Center GET calls (both translations plus the translations list for the outdated flag).',
+        'Compare two locales of an article to see whether the target translation needs work, as separate signals. Freshness (main signal): a source updated after the target is "likely behind" with the day gap. Zendesk\'s "outdated" flag: set only by Guide\'s "mark out of date", so "no" proves nothing. A structure check warns when sections may be misaligned; a per-section table marks each "ok", "missing" or "extra". Word counts are informational: languages differ in length. Three GET calls.',
       inputSchema: z.object({
         article_id: z.number().int().describe(ARTICLE_ID_DESC),
         source_locale: z
           .string()
-          .describe(
-            'Reference locale to diff against, e.g. "en-us". Usually the article source_locale (from get_article).',
-          ),
-        target_locale: z.string().describe('Target locale to compare against source'),
+          .describe('Reference locale, e.g. "en-us", usually the source_locale.'),
+        target_locale: z.string().describe('Locale of the translation to check.'),
         ...brandIdPart,
       }),
       annotations: {
@@ -2763,15 +2687,13 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: false,
       title: 'Create Article Attachment',
       description:
-        "Upload a file to a Help Center article and return the created attachment (its id, file name, content type, size and content URL). Not idempotent: calling it again uploads another copy rather than replacing the previous one. This is for article assets — for files on support tickets use get_ticket_attachments, and to see an article's existing attachments use list_article_attachments.",
+        'Upload a file to an article and return the created attachment (id, name, type, size). A second call adds another copy. Existing ones: list_article_attachments; ticket files: get_ticket_attachments.',
       inputSchema: z.object({
         article_id: z.number().int().describe(ARTICLE_ID_DESC),
         file_name: z
           .string()
           .min(1)
-          .describe(
-            'Name to store the file under, including its extension (e.g. "screenshot.png"); used as the download name.',
-          ),
+          .describe('File name with extension (e.g. "screenshot.png"), used for download.'),
         file_base64: z
           .string()
           .min(1)
@@ -2784,14 +2706,12 @@ export const createHelpCenterTools = (env: ToolEnv): ToolDefinition[] => {
               `File too large: ${(issue.input as string).length} base64 characters, limit ${MAX_BASE64_INPUT_CHARS}. Downscale the file, split it, or host it elsewhere and link to it.`,
           })
           .describe(
-            `The file's raw bytes as a base64-encoded string; the server decodes them before upload. At most ${MAX_BASE64_INPUT_CHARS} characters (about ${MAX_BASE64_INPUT_MB} MB of file); the HTTP transport additionally caps request bodies at 4 MB.`,
+            `The file's raw bytes, base64-encoded; the server decodes them before upload. The length cap is about ${MAX_BASE64_INPUT_MB} MB of file; the HTTP transport also caps request bodies at 4 MB.`,
           ),
         content_type: z
           .string()
           .default('application/octet-stream')
-          .describe(
-            'MIME type of the file, e.g. "image/png" or "application/pdf". Defaults to application/octet-stream when omitted.',
-          ),
+          .describe('MIME type, e.g. "image/png".'),
         ...brandIdPart,
       }),
       annotations: {

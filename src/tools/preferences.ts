@@ -26,37 +26,37 @@ export const createPreferenceTools = (): ToolDefinition[] => [
     readOnly: true,
     title: 'Configure SLA Alert Thresholds',
     description:
-      'Read or change your personal SLA alert thresholds: how close to a breach a running SLA metric must be to count as WARNING or CRITICAL. Called with no parameters it changes nothing and reports the thresholds in force for you and where each comes from (your preference or the server default). With parameters it saves your own thresholds per metric family (reply: first_reply_time and next_reply_time; wait: every other metric) on this MCP server — nothing is written to Zendesk — and they then drive list_sla_alerts and the Urgency line of get_ticket / search_tickets for you only; reset goes back to the server defaults. When the operator turned personal thresholds off (SLA_USER_PREFERENCES=off), only the read works and the reply says so.',
+      'Read or set your SLA alert thresholds: how close to a breach a metric must be to count as WARNING or CRITICAL. Without parameters it returns the thresholds in force and their source (yours or the server default). With them it saves yours per metric family on this server, never in Zendesk, and omitted ones keep their value, for list_sla_alerts and the Urgency line of get_ticket / search_tickets. If the operator disabled personal thresholds, only reading works and the reply says so.',
     inputSchema: z.object({
       reply_warning: z
         .string()
         .optional()
         .describe(
-          `Time left before a reply metric (first_reply_time, next_reply_time) breaches at which it turns WARNING. ${DURATION_HINT} Omit to keep the current value.`,
+          `Time left at which a reply metric (first_reply_time, next_reply_time) turns WARNING. ${DURATION_HINT}`,
         ),
       reply_critical: z
         .string()
         .optional()
         .describe(
-          `Time left before a reply metric breaches at which it turns CRITICAL; must not exceed the reply warning threshold. ${DURATION_HINT} Omit to keep the current value.`,
+          `Time left at which a reply metric turns CRITICAL; at most reply_warning. ${DURATION_HINT}`,
         ),
       wait_warning: z
         .string()
         .optional()
         .describe(
-          `Time left before a wait or resolution metric (requester_wait_time, agent_work_time and every other non-reply metric) breaches at which it turns WARNING. ${DURATION_HINT} Omit to keep the current value.`,
+          `Time left at which any other metric (requester_wait_time, agent_work_time…) turns WARNING. ${DURATION_HINT}`,
         ),
       wait_critical: z
         .string()
         .optional()
         .describe(
-          `Time left before a wait or resolution metric breaches at which it turns CRITICAL; must not exceed the wait warning threshold. ${DURATION_HINT} Omit to keep the current value.`,
+          `Time left at which any other metric turns CRITICAL; at most wait_warning. ${DURATION_HINT}`,
         ),
       reset: z
         .enum(['reply', 'wait', 'all'])
         .optional()
         .describe(
-          'Drop your personal thresholds for one family ("reply" or "wait") or both ("all") and follow the server defaults again; "all" also makes your next list_sla_alerts call explain the thresholds again. Cannot be combined with new values for the same family.',
+          'Go back to the server defaults for "reply", "wait" or "all"; "all" also makes list_sla_alerts explain the thresholds again. Not with new values for the same family.',
         ),
     }),
     annotations: {

@@ -215,6 +215,28 @@ describe('proxy surface budgets (real tool set)', () => {
     },
   );
 
+  // The summary is all a proxy shows of a tool, on every tools/list: it says
+  // what the tool does, and the detail stays in the full description.
+  // Ratchets, from #459: lower them when summaries shrink, never raise them.
+  const MAX_SUMMARY_LENGTH = 120;
+  const SUMMARY_BUDGET = 5300;
+
+  it(`keeps every tool summary within ${MAX_SUMMARY_LENGTH} characters`, () => {
+    const tooLong = tools()
+      .map((tool) => ({ name: tool.name, summary: summarizeDescription(tool.description) }))
+      .filter(({ summary }) => summary.length > MAX_SUMMARY_LENGTH)
+      .map(({ name, summary }) => `${name} (${summary.length}): ${summary}`);
+    expect(tooLong).toEqual([]);
+  });
+
+  it(`keeps the summaries of all tools within ${SUMMARY_BUDGET} characters`, () => {
+    const total = tools().reduce(
+      (sum, tool) => sum + summarizeDescription(tool.description).length,
+      0,
+    );
+    expect(total).toBeLessThanOrEqual(SUMMARY_BUDGET);
+  });
+
   describe('every tool signature', () => {
     const signatures = () =>
       tools().map((tool) => {

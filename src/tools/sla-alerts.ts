@@ -141,50 +141,48 @@ export const createSlaAlertTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'List SLA Alerts',
       description:
-        "List the SLA metrics that are breached or about to breach across a set of tickets, most urgent first. Pick the set with exactly one of scope (mine, my_groups or all unsolved tickets), view (a Zendesk view by title or id) or query (any Zendesk ticket search). Each running metric that is breached, or closer to its breach than its CRITICAL or WARNING threshold, is one line under BREACHED, CRITICAL or WARNING, soonest breach first, with the ticket id, metric, time left or overdue, subject, status and priority; paused and achieved metrics never appear. Thresholds are per metric family (reply metrics vs every other metric), the caller's own when set with configure_sla_alerts, else the server's; warning and critical override them for this call only. When no set is given the client may be asked which one, otherwise it defaults to the caller's own tickets and says so; on a user's first call the thresholds are shown too (in that form, or in the reply), and thresholds edited there apply to this call only. Never changes Zendesk; its one side effect is remembering, in this connector's own per-user state, that the user has been shown the thresholds. Results are cached per user for about a minute, and a set larger than a few hundred tickets is read in part, with a notice. For one ticket's full SLA state use get_ticket; for elapsed times use get_ticket_metrics.",
+        "List SLA metrics breached or about to breach on a set of tickets, most urgent first. Pick the set with exactly one of scope, view or query; with none, the client may ask the user, else your own tickets are checked. Each running metric past its deadline or inside its CRITICAL or WARNING threshold is one line under that heading, soonest first: ticket id, metric, time left or overdue, subject, status, priority; paused and achieved metrics never appear. Thresholds are per family (reply metrics vs the rest), yours from configure_sla_alerts or else the server's, and are shown on your first call. Never changes Zendesk; it only remembers, per user, that you were shown the thresholds. Cached about a minute per user; a set over a few hundred tickets is read in part. One ticket's full SLA: get_ticket; elapsed times: get_ticket_metrics.",
       inputSchema: z.object({
         scope: z
           .enum(['mine', 'my_groups', 'all'])
           .optional()
           .describe(
-            'A named set of unsolved tickets: "mine" (assigned to you), "my_groups" (in any group you belong to) or "all" (the whole account, as far as your role sees it). Use instead of view or query.',
+            'Unsolved tickets: "mine" (assigned to you), "my_groups" (in your groups) or "all" (all your role sees).',
           ),
         view: z
           .union([z.string().min(1), z.number().int().positive()])
           .optional()
-          .describe(
-            'A Zendesk view to check, by its exact title (matched case-insensitively) or numeric id, as listed by list_views. Use instead of scope or query.',
-          ),
+          .describe('View title (case-insensitive) or id, from list_views.'),
         query: z
           .string()
           .min(1)
           .optional()
           .describe(
-            'A Zendesk ticket search query selecting the tickets to check, e.g. "status<solved priority:urgent" or "organization:acme status<solved"; "type:ticket" is added automatically. Use instead of scope or view.',
+            'Ticket search query, e.g. "status<solved priority:urgent"; type:ticket is added.',
           ),
         within: z
           .string()
           .optional()
           .describe(
-            `Only list alerts breaching within this time from now (breached ones aside, see include_breached). ${DURATION_HINT} Omit to list everything inside the thresholds.`,
+            `Only alerts breaching within this time; breached ones follow include_breached. ${DURATION_HINT}`,
           ),
         include_breached: z
           .boolean()
           .default(true)
           .describe(
-            'Whether to list metrics already past their deadline (BREACHED). Defaults to true; set false to see only what can still be saved.',
+            'Include metrics already past their deadline; false shows only what can still be saved.',
           ),
         warning: z
           .string()
           .optional()
           .describe(
-            `Override the WARNING threshold of every metric family for this call only: how much time left before a breach counts as a warning. Given alone, a family's critical threshold is lowered to it where longer. ${DURATION_HINT}`,
+            `This call's WARNING threshold (time left that counts as a warning) for every family; alone, it lowers a longer critical threshold to it. ${DURATION_HINT}`,
           ),
         critical: z
           .string()
           .optional()
           .describe(
-            `Override the CRITICAL threshold of every metric family for this call only. Given alone, a family's warning threshold is raised to it where shorter; given with warning, it must not exceed it. ${DURATION_HINT}`,
+            `This call's CRITICAL threshold for every family; alone, it raises a shorter warning threshold to it, and with warning it must not exceed it. ${DURATION_HINT}`,
           ),
       }),
       annotations: {

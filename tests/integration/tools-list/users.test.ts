@@ -11,7 +11,7 @@ it('exposes the users tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "Get the currently authenticated Zendesk user. Useful to verify identity and permissions.",
+        "description": "Get the signed-in Zendesk user. Use it to check who you act as and your role.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -28,27 +28,26 @@ it('exposes the users tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "Search for users by name, email, or other criteria using Zendesk search query syntax, returning each match's id, name, email, role, active flag and organization id, with the total count. Use it to turn a person into the numeric user id other tools take, such as the followers of update_ticket; a name can match several users, so confirm the right one. With an id already in hand, call get_user to read that one user, and for your own account get_current_user. Prefer it over \`search\` when you want users only: \`search\` mixes in tickets and organizations unless the query says type:user.",
+        "description": "Find users by name, email or Zendesk query. Each match has id, name, email, role, active flag and organization id, plus the total. Use it to get the user id other tools take; a name can match several users, so confirm. By id: get_user; yourself: get_current_user. Prefer it to \`search\`, which mixes in tickets and organizations.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "page": {
               "default": 1,
-              "description": "1-based page number for offset pagination. Increment it while keeping \`per_page\` fixed to fetch subsequent pages; page 1 is the first page.",
-              "maximum": 9007199254740991,
+              "description": "1-based page number; keep per_page fixed while paging.",
               "minimum": 1,
               "type": "integer",
             },
             "per_page": {
               "default": 100,
-              "description": "Number of results per page for offset pagination (1-100). Pair with \`page\` to walk large result sets; the response header reports the total count and whether more pages remain.",
+              "description": "Results per page; the header gives the total and whether more pages remain.",
               "maximum": 100,
               "minimum": 1,
               "type": "integer",
             },
             "query": {
-              "description": "Zendesk user search query — free text matched against name and email, and/or field filters like "email:jane@acme.com", "role:agent", "organization_id:123". A "type:user" scope is added automatically.",
+              "description": "Name or email text and/or filters like "role:agent" or "organization_id:123"; type:user is added.",
               "minLength": 1,
               "type": "string",
             },
@@ -68,15 +67,13 @@ it('exposes the users tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "Retrieve a single user by their numeric id. Returns the full user record (name, email, role, organization, tags). Use search_users when you only have a name or email, or get_current_user for the authenticated identity.",
+        "description": "Get a user by id: name, email, role, role type, active state, organization id. By name or email: search_users; yourself: get_current_user.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "user_id": {
-              "description": "User ID — the numeric id of the Zendesk user to fetch. Obtain it from search_users, or from the requester/assignee fields of a ticket.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
+              "description": "User id, from search_users or a ticket's requester or assignee.",
               "type": "integer",
             },
           },
@@ -95,15 +92,13 @@ it('exposes the users tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "Retrieve a single organization by its numeric id. Returns full details (name, tags, domains, notes) — more than the name/id that search or list_organizations surface. Use list_organizations to browse or search for a name-based lookup.",
+        "description": "Get an organization by id: name, details, domains, tags. Browse: list_organizations; by name: search.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "organization_id": {
-              "description": "Organization ID — the numeric id of the Zendesk organization to fetch. Obtain it from list_organizations, search, or a user record.",
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
+              "description": "Organization id, from list_organizations, search or a user.",
               "type": "integer",
             },
           },
@@ -122,18 +117,18 @@ it('exposes the users tool surface unchanged', async () => {
           "openWorldHint": true,
           "readOnlyHint": true,
         },
-        "description": "List all organizations with pagination. Returns the name and id of each organization plus basic fields; results are cursor-paginated. Use get_organization with an id for full details (tags, domains, notes), or search for query-based lookups by name. Organizations group end users and can be referenced when creating or filtering tickets.",
+        "description": "List organizations with name, id, details, domains and tags; they group end users and can scope tickets. By id: get_organization; by name: search.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "cursor": {
-              "description": "Pagination cursor from a previous response; omit for the first page.",
+              "description": "Cursor from the previous response; omit for the first page.",
               "type": "string",
             },
             "page_size": {
               "default": 100,
-              "description": "Organizations per page (1-100, default 100).",
+              "description": "Organizations per page.",
               "maximum": 100,
               "minimum": 1,
               "type": "integer",

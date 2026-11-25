@@ -34,13 +34,13 @@ export const createSearchTools = (env: ToolEnv): ToolDefinition[] => {
       readOnly: true,
       title: 'Zendesk Unified Search',
       description:
-        'Search across tickets, users, and organizations. Supports filters like "type:ticket status:open", "type:user role:agent". Returns total count and paginated results (25 per page by default, up to 100); a ticket description is cut to a 200-character excerpt, which get_ticket returns in full. Organization results include name and ID only — use get_organization for full details (tags, domains, details).',
+        'Search tickets, users and organizations at once; returns the total count and a page of results. Ticket descriptions are cut to 200 characters (full text: get_ticket); organizations show only name and id (more: get_organization).',
       inputSchema: z.object({
         query: z
           .string()
           .min(1)
           .describe(
-            'Zendesk search query. Supports type/status/role filters (e.g. "type:ticket status:open", "type:user role:agent") and free text; omit a type filter to search tickets, users and organizations at once. "me" is a value of the user keywords only (assignee:, requester:, submitter:); group:me is read as your group when you belong to exactly one, else the call fails naming your groups, so use group:<id>.',
+            'Filters like "type:ticket status:open" or "type:user role:agent", plus free text; no type filter searches all three. "me" works only with assignee:, requester:, submitter:; group:me works if you are in exactly one group (else the error names them), otherwise use group:<id>.',
           ),
         per_page: z
           .number()

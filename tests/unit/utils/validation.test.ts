@@ -277,6 +277,168 @@ describe('toStrictStandardSchema', () => {
     expect(standard.jsonSchema.input(options)).not.toBe(standard.jsonSchema.input(options));
     expect(standard.jsonSchema.output(options)).not.toBe(standard.jsonSchema.output(options));
   });
+
+  it("drops zod's safe-integer bounds, at any depth, and keeps every real bound", () => {
+    const integerShaped = { type: 'integer', maximum: Number.MAX_SAFE_INTEGER };
+    const schema = z.object({
+      ticket_id: z.number().int(),
+      page_size: z.number().int().min(1).max(100),
+      ids: z.array(z.number().int()),
+      nested: z.object({ user_id: z.number().int().optional() }),
+      kind: z.enum(['a', 'b']),
+      ceiling: z.number().default(Number.MAX_SAFE_INTEGER),
+      floor: z.number().default(Number.MIN_SAFE_INTEGER),
+      note: z.string().nullable().default(null),
+      capped: z.number().max(Number.MAX_SAFE_INTEGER),
+      shaped: z.number().meta({
+        default: integerShaped,
+        const: integerShaped,
+        enum: [integerShaped],
+        examples: [integerShaped],
+      }),
+      keywords: z.object({
+        default: z.number().int(),
+        const: z.number().int(),
+        enum: z.number().int(),
+        examples: z.number().int(),
+      }),
+      big: z.number().int().default(Number.MAX_SAFE_INTEGER),
+      small: z.number().int().default(Number.MIN_SAFE_INTEGER),
+      limits: z.object({ maximum: z.number() }).default({ maximum: Number.MAX_SAFE_INTEGER }),
+    });
+    const { jsonSchema } = toStrictStandardSchema(schema)['~standard'];
+
+    const output = jsonSchema.output({ target: 'draft-2020-12' })['properties'] as Record<
+      string,
+      unknown
+    >;
+    expect(output['ticket_id']).toEqual({ type: 'integer' });
+    for (const json of [
+      jsonSchema.input({ target: 'draft-2020-12' }),
+      jsonSchema.input({ target: 'draft-2020-12', libraryOptions: {} }),
+    ]) {
+      expect(json['properties']).toMatchInlineSnapshot(`
+        {
+          "big": {
+            "default": 9007199254740991,
+            "type": "integer",
+          },
+          "capped": {
+            "maximum": 9007199254740991,
+            "type": "number",
+          },
+          "ceiling": {
+            "default": 9007199254740991,
+            "type": "number",
+          },
+          "floor": {
+            "default": -9007199254740991,
+            "type": "number",
+          },
+          "ids": {
+            "items": {
+              "type": "integer",
+            },
+            "type": "array",
+          },
+          "keywords": {
+            "properties": {
+              "const": {
+                "type": "integer",
+              },
+              "default": {
+                "type": "integer",
+              },
+              "enum": {
+                "type": "integer",
+              },
+              "examples": {
+                "type": "integer",
+              },
+            },
+            "required": [
+              "default",
+              "const",
+              "enum",
+              "examples",
+            ],
+            "type": "object",
+          },
+          "kind": {
+            "enum": [
+              "a",
+              "b",
+            ],
+            "type": "string",
+          },
+          "limits": {
+            "default": {
+              "maximum": 9007199254740991,
+            },
+            "properties": {
+              "maximum": {
+                "type": "number",
+              },
+            },
+            "required": [
+              "maximum",
+            ],
+            "type": "object",
+          },
+          "nested": {
+            "properties": {
+              "user_id": {
+                "type": "integer",
+              },
+            },
+            "type": "object",
+          },
+          "note": {
+            "default": null,
+            "type": [
+              "string",
+              "null",
+            ],
+          },
+          "page_size": {
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer",
+          },
+          "shaped": {
+            "const": {
+              "maximum": 9007199254740991,
+              "type": "integer",
+            },
+            "default": {
+              "maximum": 9007199254740991,
+              "type": "integer",
+            },
+            "enum": [
+              {
+                "maximum": 9007199254740991,
+                "type": "integer",
+              },
+            ],
+            "examples": [
+              {
+                "maximum": 9007199254740991,
+                "type": "integer",
+              },
+            ],
+            "type": "number",
+          },
+          "small": {
+            "default": -9007199254740991,
+            "type": "integer",
+          },
+          "ticket_id": {
+            "type": "integer",
+          },
+        }
+      `);
+    }
+  });
 });
 
 describe('convertingToJsonSchemaOnce', () => {
