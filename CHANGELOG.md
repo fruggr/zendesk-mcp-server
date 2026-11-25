@@ -1,3 +1,17 @@
+## [3.13.1](https://github.com/fruggr/zendesk-mcp-server/compare/v3.13.0...v3.13.1) (2026-11-25)
+
+### Bug Fixes
+
+* **help-center:** stop advising to omit user_segment_id on update ([#477](https://github.com/fruggr/zendesk-mcp-server/issues/477)) ([baeeb02](https://github.com/fruggr/zendesk-mcp-server/commit/baeeb02e92ccc098e3a27a00b1754b7d103796c3)), references [#475](https://github.com/fruggr/zendesk-mcp-server/issues/475)
+
+<details>
+<summary>🔧 Internal changes (chore, ci, build, refactor, tests, docs…)</summary>
+
+### Chores
+
+* **deps:** update pnpm to v12.23.0 ([#476](https://github.com/fruggr/zendesk-mcp-server/issues/476)) ([c21afd8](https://github.com/fruggr/zendesk-mcp-server/commit/c21afd8cd37d6d0e5f70ab001983122d37d7fa4f))
+</details>
+
 ## [3.13.0](https://github.com/fruggr/zendesk-mcp-server/compare/v3.12.0...v3.13.0) (2026-11-25)
 
 ### Features
