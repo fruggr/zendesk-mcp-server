@@ -279,6 +279,7 @@ describe('toStrictStandardSchema', () => {
   });
 
   it("drops zod's safe-integer bounds, at any depth, and keeps every real bound", () => {
+    const integerShaped = { type: 'integer', maximum: Number.MAX_SAFE_INTEGER };
     const schema = z.object({
       ticket_id: z.number().int(),
       page_size: z.number().int().min(1).max(100),
@@ -289,6 +290,12 @@ describe('toStrictStandardSchema', () => {
       floor: z.number().default(Number.MIN_SAFE_INTEGER),
       note: z.string().nullable().default(null),
       capped: z.number().max(Number.MAX_SAFE_INTEGER),
+      shaped: z.number().meta({
+        default: integerShaped,
+        const: integerShaped,
+        enum: [integerShaped],
+        examples: [integerShaped],
+      }),
       big: z.number().int().default(Number.MAX_SAFE_INTEGER),
       small: z.number().int().default(Number.MIN_SAFE_INTEGER),
       limits: z.object({ maximum: z.number() }).default({ maximum: Number.MAX_SAFE_INTEGER }),
@@ -368,6 +375,29 @@ describe('toStrictStandardSchema', () => {
             "maximum": 100,
             "minimum": 1,
             "type": "integer",
+          },
+          "shaped": {
+            "const": {
+              "maximum": 9007199254740991,
+              "type": "integer",
+            },
+            "default": {
+              "maximum": 9007199254740991,
+              "type": "integer",
+            },
+            "enum": [
+              {
+                "maximum": 9007199254740991,
+                "type": "integer",
+              },
+            ],
+            "examples": [
+              {
+                "maximum": 9007199254740991,
+                "type": "integer",
+              },
+            ],
+            "type": "number",
           },
           "small": {
             "default": -9007199254740991,

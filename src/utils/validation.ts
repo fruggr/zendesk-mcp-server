@@ -133,20 +133,26 @@ type JsonSchemaConversion<Options extends { target: string; libraryOptions?: unk
 // zod stamps `z.number().int()` with ±2^53 bounds: about 4 KB of every
 // `tools/list` that tell an agent nothing, since a Zendesk id never nears them
 // and the strict parser still rejects an unsafe integer.
-// Only on an integer schema: an explicit bound on a number schema is a real one,
-// and a value under `default` or `const` is no integer schema, so it stays whole.
+// Only on an integer schema: an explicit bound on a number schema is a real one.
 const isSafeIntegerBound = ([key, value]: [string, unknown]): boolean =>
   (key === 'maximum' && value === Number.MAX_SAFE_INTEGER) ||
   (key === 'minimum' && value === Number.MIN_SAFE_INTEGER);
 
+// Values, not schemas: even one shaped like an integer schema is the caller's data.
+const INSTANCE_KEYWORDS = new Set(['default', 'const', 'enum', 'examples']);
+
 const withoutSafeIntegerBounds = (node: unknown): unknown => {
   if (Array.isArray(node)) return node.map(withoutSafeIntegerBounds);
+  // Stryker disable next-line ConditionalExpression: a schema holds null only under default or const, never walked.
   if (node === null || typeof node !== 'object') return node;
   const isInteger = (node as { type?: unknown }).type === 'integer';
   return Object.fromEntries(
     Object.entries(node)
       .filter((entry) => !(isInteger && isSafeIntegerBound(entry)))
-      .map(([key, value]) => [key, withoutSafeIntegerBounds(value)]),
+      .map(([key, value]) => [
+        key,
+        INSTANCE_KEYWORDS.has(key) ? value : withoutSafeIntegerBounds(value),
+      ]),
   );
 };
 
