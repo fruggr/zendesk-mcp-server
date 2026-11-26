@@ -1,3 +1,9 @@
+## [3.14.0](https://github.com/fruggr/zendesk-mcp-server/compare/v3.13.1...v3.14.0) (2026-11-26)
+
+### Features
+
+* **tickets:** mark add_public_comment as destructive ([#479](https://github.com/fruggr/zendesk-mcp-server/issues/479)) ([9f209e7](https://github.com/fruggr/zendesk-mcp-server/commit/9f209e7860e66d2e422b1ab8ffeea6c83735951c)), closes [#478](https://github.com/fruggr/zendesk-mcp-server/issues/478)
+
 ## [3.13.1](https://github.com/fruggr/zendesk-mcp-server/compare/v3.13.0...v3.13.1) (2026-11-25)
 
 ### Bug Fixes
