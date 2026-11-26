@@ -504,7 +504,7 @@ it('exposes the tickets tool surface unchanged', async () => {
       },
       {
         "annotations": {
-          "destructiveHint": false,
+          "destructiveHint": true,
           "idempotentHint": false,
           "openWorldHint": true,
           "readOnlyHint": false,

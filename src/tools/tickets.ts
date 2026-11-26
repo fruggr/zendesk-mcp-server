@@ -1720,7 +1720,10 @@ export const createTicketTools = (env: ToolEnv): ToolDefinition[] => {
       }),
       annotations: {
         readOnlyHint: false,
-        destructiveHint: false,
+        // Additive per the MCP spec, but an email to the customer cannot be unsent:
+        // flagged destructive so a client auto-approving non-destructive calls still
+        // asks, as it does for update_ticket and manage_tags.
+        destructiveHint: true,
         idempotentHint: false,
         openWorldHint: true,
       },

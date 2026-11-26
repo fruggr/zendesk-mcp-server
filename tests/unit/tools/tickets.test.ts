@@ -2566,6 +2566,16 @@ describe('ticket tools', () => {
   });
 
   describe('add_public_comment', () => {
+    it('is announced as destructive: it emails the requester and cannot be unsent', () => {
+      const tool = findTool('add_public_comment');
+      expect(tool.annotations).toEqual({
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: true,
+      });
+    });
+
     it('adds a comment', async () => {
       const tool = findTool('add_public_comment');
       const result = await tool.handler({ ticket_id: 1, body: 'Public reply' });
