@@ -124,7 +124,7 @@ runs:
         node "$GITHUB_WORKSPACE/scripts/container-smoke.mjs" "$REF"
 
     # No floating major tag in this repository: pin the release.
-    - uses: sigstore/cosign-installer@v4.1.3
+    - uses: sigstore/cosign-installer@v4.1.4
 
     - name: Sign (cosign keyless)
       shell: bash
